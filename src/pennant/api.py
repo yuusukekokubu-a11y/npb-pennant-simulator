@@ -24,6 +24,7 @@ from .config import load_generation_config, load_name_parts
 from .decisions import Decisions, decide
 from .game_stats import game_story
 from .metrics import MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
+from .parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkEstimate, ParkTally, add_game, estimate_parks, load_park_settings, player_park_factor, raw_ratio, season_tallies
 from .records import (
     Records,
     game_records,
@@ -170,9 +171,18 @@ def metrics_guide() -> dict:
     return {"groups": groups, "baseline_names": [{"key": k, "label": v} for k, v in names.items()]}
 
 
-def _values(config: MetricsConfig, role: str, counts, baselines: Baselines | None = None) -> dict:
-    """元の数と指標の値(並べ替え用の数と、表示用の文字)。"""
-    metrics = compute(config, role, counts, baselines.values if baselines else None)
+def raw_rate(c, key: str) -> Fraction | None:
+    """球場の集計の率(得点/打席、本塁打/打席、BABIP = HIT/BIP)。"""
+    num, den = {"runs": ("R", "PA"), "home_run": ("HR", "PA"), "babip": ("HIT", "BIP")}[key]
+    return Fraction(c[num], c[den]) if c[den] else None
+
+
+def _values(config: MetricsConfig, role: str, counts, baselines: Baselines | None = None, park_factor: Fraction | None = None) -> dict:
+    """元の数と指標の値(並べ替え用の数と、表示用の文字)。park_factor は選手ごとの球場補正(式の pf。D-142)。"""
+    values = dict(baselines.values) if baselines else None
+    if values is not None and park_factor is not None:
+        values["pf"] = park_factor
+    metrics = compute(config, role, counts, values)
     out = {}
     for key in config["counts"][role]:
         v = counts.get(key, 0)
@@ -193,6 +203,8 @@ class _StatsCache:
         self.decisions: list[Decisions] = []
         self.total = Records()
         self.tally = RunTally()  # 基準値(RE24 など)の元の整数の集計
+        self.park_tallies: dict[str, ParkTally] = {}  # 球場 × 今シーズンの集計(本拠地・アウェイ。D-146)
+        self.player_park_pa: dict[str, Counter] = {}  # 選手 → 球場(ホームチームの ID)→ 立った打席数(D-142)
         self._baselines: tuple[int, Baselines, object] | None = None
 
     def update(self, season: Season) -> "_StatsCache":
@@ -203,6 +215,10 @@ class _StatsCache:
             self.decisions.append(d)
             self.total.add(rec)
             self.tally.add(tally_game(played.result))
+            add_game(self.park_tallies, played.result)
+            park = played.result.home_team_id
+            for x in played.result.log:
+                self.player_park_pa.setdefault(x.batter_id, Counter())[park] += 1
         return self
 
 
@@ -220,6 +236,7 @@ class Game:
         self.state = state
         self.dirty = dirty  # 未保存の変更があるか
         self._cache = _StatsCache()
+        self._park_estimates: tuple[int, dict[str, ParkEstimate] | None] | None = None
 
     @property
     def records(self) -> _StatsCache:
@@ -246,17 +263,53 @@ class Game:
         return cache._baselines[1], cache._baselines[2]
 
     def baseline_info(self) -> dict:
-        """画面に出す、基準値の混ぜ方の説明(D-126)。"""
+        """画面に出す、基準値の混ぜ方と球場補正の説明(D-126、D-143)。"""
         _, w = self.baselines()
         source = SOURCE_LABELS.get(self.state.baselines.source, "出発点の値")
         pct = math.floor(w * 100 + Fraction(1, 2))
+        n = self.season_number()
+        park_text = (
+            "球場補正は、1シーズン目のため 1.0(補正なし)です。"
+            if n == 1
+            else f"球場補正は、前のシーズンまで({n - 1}シーズン分)の結果から推定した値を使っています。"
+        )
         return {
             "source": self.state.baselines.source,
             "source_label": source,
             "weight_percent": pct,
             "plate_appearances": _sum(self.records.total.batters)["PA"],
-            "text": f"wOBA などの基準値は、{source}に、今シーズンの値を混ぜて使っています(今シーズンの比重 {pct}%。打席が増えるほど上がり、シーズンの最後で約75%)。",
+            "season_number": n,
+            "text": f"wOBA などの基準値は、{source}に、今シーズンの値を混ぜて使っています(今シーズンの比重 {pct}%。打席が増えるほど上がり、シーズンの最後で約75%)。{park_text}",
         }
+
+    # ---- 球場補正(②b。D-140〜D-143) ----
+
+    def season_number(self) -> int:
+        """今が何シーズン目か(前のシーズンまでの履歴の数 + 1)。"""
+        return len(self.state.park_history) + 1
+
+    def park_estimates(self) -> dict[str, ParkEstimate] | None:
+        """前のシーズンまでの履歴から推定した球場補正。1シーズン目(履歴なし)は None。シーズン中は変わらない(D-143)。"""
+        n = len(self.state.park_history)
+        if n == 0:
+            return None
+        if self._park_estimates is None or self._park_estimates[0] != n:
+            league_of = {t.id: t.league_index for t in self.state.league.teams}
+            self._park_estimates = (n, estimate_parks(self.state.park_history, league_of, load_park_settings()))
+        return self._park_estimates[1]
+
+    def player_park_factor(self, player_id: str) -> Fraction:
+        """選手の球場補正(立った球場ごとの打席数で重みづけ。D-142)。1シーズン目は 1。"""
+        return player_park_factor(self.park_estimates(), self.records.player_park_pa.get(player_id, {}))
+
+    def finish_season(self) -> int:
+        """シーズンを終えて、球場 × シーズンの集計を履歴に足す(F2 の「年度の確定」の最小の形。D-146)。戻り値は履歴の数。"""
+        if not self.state.season.is_over:
+            raise ValueError("シーズンがまだ終わっていません")
+        self.state.park_history.append(season_tallies(p.result for p in self.state.season.played))
+        self._park_estimates = None
+        self.dirty = True
+        return len(self.state.park_history)
 
     # ---- 始める・開く・保存する ----
 
@@ -477,7 +530,7 @@ class Game:
         rows = []
         base, _ = self.baselines()
         for pid in self.select_players(role, qualified, league, team_id):
-            values = _values(config, role, group[pid], base)
+            values = _values(config, role, group[pid], base, self.player_park_factor(pid) if role == "batter" else None)
             row = self._player_row(pid, owner[pid])
             row["values"] = {k: values[k][1] for k in shown_keys}
             row["_sort"] = values[sort][0]
@@ -563,10 +616,12 @@ class Game:
         total = (cache.total.batters if role == "batter" else cache.total.pitchers).get(player_id)
         season_block = None
         if total is not None:
-            values = _values(config, role, total, self.baselines()[0])
+            pf = self.player_park_factor(player_id) if role == "batter" else None
+            values = _values(config, role, total, self.baselines()[0], pf)
             qualified = player_id in (qualified_batters(cache.total) if role == "batter" else qualified_pitchers(cache.total))
             season_block = {
                 "baseline_note": self.baseline_info()["text"],
+                "park_factor": None if pf is None else f"{float(pf):.3f}",
                 "qualified": qualified,
                 "qualify_rule": QUALIFY_RULES[role],
                 "tables": {
@@ -618,12 +673,35 @@ class Game:
             runs += r.home_runs + r.away_runs
             plate_appearances += len(r.log)
             home_runs += sum(1 for x in r.log if x.pa.result == "home_run")
+        tally = self.records.park_tallies.get(team_id, ParkTally())
+
+        def rate(c, key):
+            v = raw_rate(c, key)
+            return "-" if v is None else (f"{100 * float(v):.2f}%" if key == "home_run" else f"{float(v):.3f}")
+
+        this_season = {}
+        for key in FACTOR_KEYS:
+            ratio = raw_ratio(tally, key)
+            this_season[key] = {"label": FACTOR_LABELS[key], "home": rate(tally.home, key), "away": rate(tally.away, key), "ratio": "-" if ratio is None else f"{float(ratio):.3f}"}
+        est = self.park_estimates()
+        estimate = None
+        if est is not None and team_id in est:
+            e = est[team_id]
+            estimate = {"seasons": e.seasons, **{k: f"{float(e.estimate[k]):.3f}" for k in FACTOR_KEYS}}
         return {
             "team_id": team_id,
             "name": team.stadium,
             "team_name": team.name,
             "league_name": self.state.league.league_names[team.league_index],
             "is_mine": team_id == self.state.my_team_id,
+            "season_number": self.season_number(),
+            "this_season": this_season,
+            "estimate": estimate,
+            "estimate_note": (
+                "まだ推定できません。1シーズンだけでは、運のぶれが大きいためです。2シーズン目から、前のシーズンまでの結果で推定します。"
+                if estimate is None
+                else f"前のシーズンまで({estimate['seasons']}シーズン分)の本拠地とアウェイの比から推定し、1.0 に向けて縮めた値(各リーグの平均が 1.0)。「得点」が wRC+・OPS+ の球場補正に使われます。"
+            ),
             "games": games,
             "home_runs": home_runs,
             "runs": runs,

@@ -66,6 +66,35 @@ def assign_parks(league: League, config: GenerationConfig) -> None:
             team.park = ParkFactors(h, b)
 
 
+def expected_run_factors(league: League, model, values: dict) -> dict[str, float]:
+    """真の倍率から求めた「1打席あたりの得点の出やすさ」の目安(開発者向け・テスト用。画面には出さない)。
+
+    平均的な打者と投手の対戦の、打席の結果の確率(球場の倍率入り)に wOBA の重みを掛けて期待 wOBA を求め、
+    (期待 wOBA − 倍率なしの期待 wOBA)÷ wOBA の尺度 で「1打席あたりの得点の増減」に直し、リーグの平均得点(lg_r_pa)に足して比にする。
+    各リーグの平均が 1.0 になるよう割る。推定(parkfactors.py)の「得点」と比べるための真の値。
+    """
+    from .pa_stats import average_defense, average_player
+
+    batter, pitcher, defense = average_player("batter"), average_player("pitcher"), average_defense()
+    weights = {"walk": "w_bb", "hit_by_pitch": "w_hbp", "single": "w_1b", "double": "w_2b", "triple": "w_3b", "home_run": "w_hr"}
+
+    def woba(park):
+        probs = model.probabilities(batter, pitcher, defense, park=park)
+        return sum(float(probs[k]) * float(values[v]) for k, v in weights.items())
+
+    base = woba(ParkFactors())
+    r0 = float(values["lg_r_pa"])
+    out = {t.id: (r0 + (woba(t.park) - base) / float(values["woba_scale"])) / r0 for t in league.teams}
+    groups: dict[int, list[str]] = {}
+    for t in league.teams:
+        groups.setdefault(t.league_index, []).append(t.id)
+    for ids in groups.values():
+        mean = sum(out[i] for i in ids) / len(ids)
+        for i in ids:
+            out[i] /= mean
+    return out
+
+
 def neutralize_parks(league: League) -> None:
     """すべての球場の倍率を 1.0 にする(回帰の確認・旧版のセーブデータ用)。"""
     for t in league.teams:

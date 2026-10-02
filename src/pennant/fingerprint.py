@@ -26,13 +26,14 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 6  # 2:(d)1シーズン(実装④)。3:(e)集計結果(実装⑤)。4:(f)保存と読み込み(実装⑥)。5:(g)基準値・(h)第2弾の指標(第2弾①)。6:球場の倍率を試合に入れ、(i)を足した(第2弾②a)
+FINGERPRINT_VERSION = 7  # 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
 DAYS = 30  # (c)の日数(1日=各リーグ3試合)
 SEASON_SEED = 13  # (d)1シーズンのシード(日程と、各試合の乱数のもと)
 SAVE_DAYS = (1, 62, 125)  # (f)保存・読み込みする日(1日目・中盤・最後)
+PARK_SEASONS = 3  # (j)球場補正の推定に回すシーズン数
 GAMES_PER_DAY = 6
 
 
@@ -237,6 +238,15 @@ def baseline_fingerprint(season: SeasonResult, parks: bool = True) -> tuple[str,
     return g, h, info
 
 
+def park_estimate_fingerprint(parks: bool = True) -> tuple[str, dict]:
+    """(j)固定のシードで3シーズンを回した、球場補正の推定値(分数を文字にして)。"""
+    from .parkfactors import load_park_settings, run_seasons
+
+    _, est, _ = run_seasons(LEAGUE_SEED, PARK_SEASONS, load_park_settings(), parks=parks)
+    record = {tid: est[tid].to_dict() for tid in sorted(est)}
+    return _digest(record), {"seasons": PARK_SEASONS, "teams": len(est)}
+
+
 def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み、
     (g)基準値、(h)第2弾の指標、(i)球場の倍率 の指紋。parks=False は、球場の倍率をすべて 1.0 にする(回帰の確認用)。"""
@@ -265,6 +275,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     rec = season_records([p.result for p in season.games])
     e = _digest(records_record(rec))
     g, h, binfo = baseline_fingerprint(season, parks)
+    j, jinfo = park_estimate_fingerprint(parks)
     by_league: dict[int, list] = {}
     for t in league.teams:
         by_league.setdefault(t.league_index, []).append(t)
@@ -290,6 +301,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
         "baselines": g,
         "metrics2": h,
         "parks": i,
+        "park_estimates": j,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -306,6 +318,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
             "save_same_as_season": same_as_season,
             "baselines": binfo,
             "parks": park_info,
+            "park_estimates": jinfo,
         },
     }
 
@@ -329,5 +342,6 @@ def format_fingerprints(fp: dict) -> str:
             f"今シーズンの比重 {c['baselines']['weight']}): {fp['metrics2']}",
             f"- (i) 球場の倍率(千分率。{c['parks']['teams']}球場。本塁打 {c['parks']['home_run_min_max'][0]}〜{c['parks']['home_run_min_max'][1]}。"
             f"リーグごとの平均 {'・'.join(str(v) for v in c['parks']['home_run_mean'])}): {fp['parks']}",
+            f"- (j) 球場補正の推定({c['park_estimates']['seasons']}シーズンを回した結果。{c['park_estimates']['teams']}球場): {fp['park_estimates']}",
         ]
     )

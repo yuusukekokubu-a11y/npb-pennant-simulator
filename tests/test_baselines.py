@@ -245,8 +245,8 @@ def test_saber_table_and_notes(game):
     assert t["sort"]["key"] == "wrc_plus" and "前のシーズン" not in t["baseline_note"] and "試運転" in t["baseline_note"]
     assert "75%" in t["baseline_note"]
     cols = {c["key"]: c for c in t["columns"]}
-    assert "球場の違いの補正は、まだ行っていない" in cols["wrc_plus"]["description"]
-    assert "球場の違いの補正は、まだ行っていない" in cols["ops_plus"]["description"]
+    assert "1シーズン目は 1.0" in cols["wrc_plus"]["description"]
+    assert "1シーズン目は 1.0" in cols["ops_plus"]["description"]
     assert all(r["values"]["woba"] != "-" for r in t["rows"])
     assert game.stats("batter", "basic")["baseline_note"] is None
 

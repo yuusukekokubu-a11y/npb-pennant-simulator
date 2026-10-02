@@ -21,12 +21,13 @@ import json
 import math
 import zipfile
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable
 
 from .abilities import BATTER, PITCHER, items_for
 from .baselines import STATES, VALUE_NAMES, Baselines, BaselineSettings, load_baseline_settings, validate_baseline_settings
+from .parkfactors import COUNT_KEYS, ParkTally, history_from_dict, history_to_dict
 from .baserunning import RunnerMove
 from .config import (
     ConfigError,
@@ -48,7 +49,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 4  # 2:自球団(最小のブラウザ画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(第2弾②a)
+SAVE_FORMAT_VERSION = 5  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -82,7 +83,13 @@ def _v3_to_v4(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4}
+def _v4_to_v5(bundle: dict) -> dict:
+    """版4には球場 × シーズンの集計の履歴がない。履歴なし(球場補正 1.0)として足す(D-146)。"""
+    bundle["state"].setdefault("park_history", [])
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -107,6 +114,7 @@ class GameState:
     my_team_id: str | None = None  # 自球団(画面で選ぶ。指紋の元には入れない)
     baselines: Baselines | None = None  # シーズンの出発点の基準値(初年度は試運転。D-121)。None は既定値
     baseline_settings: BaselineSettings | None = None  # 基準値の設定(None は設定ファイル)
+    park_history: list = field(default_factory=list)  # 前のシーズンまでの、球場 × シーズンの集計(球場補正の推定用。D-146)
 
     def __post_init__(self) -> None:
         if self.baseline_settings is None:
@@ -175,6 +183,7 @@ def build_state(state: GameState) -> dict:
         },
         "user": {"my_team_id": state.my_team_id},
         "baselines": state.baselines.to_dict(),
+        "park_history": history_to_dict(state.park_history),
         "season": {
             "day": s.day,
             "rotation": dict(s.rotation),
@@ -484,6 +493,7 @@ def load_game(data: bytes) -> GameState:
         except ConfigError as exc:
             p.items.extend(f"state.json.configs.baselines: {x}" for x in exc.problems)
     baselines = _check_baselines(state.get("baselines"), baseline_settings, p)
+    park_history = _check_park_history(state.get("park_history"), team_ids, p)
     season_d = _need(state, "season", dict, "state.json", p) or {}
     day = _need(season_d, "day", int, "state.json.season", p)
     rotation = _need(season_d, "rotation", dict, "state.json.season", p)
@@ -567,7 +577,38 @@ def load_game(data: bytes) -> GameState:
         season._record(pg.result)
     season.played = played
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings)
+    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history)
+
+
+def _check_park_history(d, team_ids: set, p) -> list:
+    """球場 × シーズンの集計の履歴の検証(D-146)。"""
+    where = "state.json.park_history"
+    if d is None:
+        p.add(where, "値がありません(必須項目です)")
+        return []
+    if not isinstance(d, list):
+        p.add(where, "リスト([ ])が必要です")
+        return []
+    for i, season in enumerate(d):
+        sw = f"{where}[{i}]"
+        if not isinstance(season, dict) or not isinstance(season.get("parks"), dict):
+            p.add(sw, "シーズンの集計のまとまり({ season, parks })が必要です")
+            continue
+        for tid, t in season["parks"].items():
+            if tid not in team_ids:
+                p.add(f"{sw}.parks.{tid}", "球団の一覧にない ID です")
+            for side in ("home", "away"):
+                counts = t.get(side) if isinstance(t, dict) else None
+                if not isinstance(counts, dict):
+                    p.add(f"{sw}.parks.{tid}.{side}", "まとまり({ })が必要です")
+                    continue
+                for key in COUNT_KEYS:
+                    v = counts.get(key)
+                    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+                        p.add(f"{sw}.parks.{tid}.{side}.{key}", f"0 以上の整数が必要です(値: {v!r})")
+    if p.items:
+        return []
+    return history_from_dict(d)
 
 
 def _check_baselines(d, settings: BaselineSettings | None, p) -> Baselines | None:

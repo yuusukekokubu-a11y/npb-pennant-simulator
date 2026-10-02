@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "assumed_sd": {
+    "runs": 0.03,
+    "home_run": 0.08,
+    "babip": 0.015
+  },
+  "shrink_pa": {
+    "runs": 28600,
+    "home_run": 9100,
+    "babip": 26300
+  }
+}
