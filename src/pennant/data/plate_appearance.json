@@ -23,6 +23,7 @@
     "same_side": {"strikeout": 1.08, "walk": 0.95, "home_run": 0.92, "in_play_hit": 0.97},
     "opposite_side": {"strikeout": 0.95, "walk": 1.04, "home_run": 1.06, "in_play_hit": 1.02}
   },
+  "home_advantage": {"strikeout": 0.94, "walk": 1.06, "home_run": 1.06, "in_play_hit": 1.06},
   "batted_ball": {
     "league_shares": {"ground": 0.44, "line": 0.20, "fly": 0.36},
     "batter_effects": {

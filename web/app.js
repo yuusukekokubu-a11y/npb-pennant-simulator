@@ -1,8 +1,7 @@
 // 画面の動き。計算は worker.js(裏の Python)に任せ、ここは表示だけを行う。
 // ブラウザの保存領域(localStorage・sessionStorage・IndexedDB・Cookie)には何も書かない。
 
-const SEASON_GAMES = 858; // 1シーズン相当(12球団 × 143試合 ÷ 2)
-const DAY_GAMES = 12; // 「1日分」として測る試合数
+const DAY_GAMES = 12; // 「1日分」として測る試合数(本物の日程の2日分。1日は6試合)
 const SEED = 1;
 const LOCAL_PYODIDE = new URLSearchParams(location.search).get("pyodide") === "local"; // 試験用(このページに置いた Pyodide を使う)
 
@@ -152,42 +151,44 @@ async function measure() {
     const fp = await call(worker, "fingerprint");
     out.push("", fp.text, `- 指紋の計算にかかった時間: ${sec(fp.seconds)}`);
 
-    // リーグの生成と最初の1試合
-    status("架空のリーグを作っています…");
+    // リーグの生成と日程の作成
+    status("架空のリーグと日程を作っています…");
     const setup = await call(worker, "setup", { seed: SEED });
-    const one = await call(worker, "games", { n: 1 });
+    const seasonGames = setup.totalGames;
     out.push("", "## 計算");
-    out.push(`- 架空のリーグの生成(12球団・840人): ${sec(setup.seconds)}`);
-    out.push(`- 最初の1日(6試合。1試合目の準備を含む): ${sec(one.seconds)}`);
+    out.push(`- 架空のリーグの生成(12球団・840人)と日程の作成: ${sec(setup.seconds)}`);
 
-    // 1日分(12試合)
-    status("1日分(12試合)を測っています…");
-    const day = await call(worker, "games", { n: DAY_GAMES });
-    out.push(`- 1日分(12試合): ${sec(day.seconds)}(1試合あたり ${(day.seconds / DAY_GAMES * 1000).toFixed(0)} ミリ秒)`);
-
-    // 1シーズン相当(1日ずつ進め、合間に画面を更新する)
+    // 1シーズン(本物の日程。1日ずつ進め、合間に画面を更新する)
+    progress.max = seasonGames;
+    progress.value = 0;
     progress.hidden = false;
     let total = 0;
     const daySeconds = [];
     const t0 = performance.now();
-    while (total < SEASON_GAMES) {
+    let over = false;
+    while (!over) {
       const r = await call(worker, "day");
-      total += r.played;
+      total = r.totalGames;
+      over = r.isOver;
       daySeconds.push(r.seconds);
-      progress.value = Math.min(total, SEASON_GAMES);
-      status(`1シーズン相当を進めています… ${Math.min(total, SEASON_GAMES)} / ${SEASON_GAMES} 試合`);
+      progress.value = total;
+      status(`1シーズンを進めています… ${total} / ${seasonGames} 試合(${daySeconds.length}日目)`);
       await yieldToScreen();
     }
     const seasonSeconds = (performance.now() - t0) / 1000;
     const avgDay = daySeconds.reduce((a, b) => a + b, 0) / daySeconds.length;
     const maxDay = Math.max(...daySeconds);
-    out.push(`- 1シーズン相当(${total}試合・${daySeconds.length}日): ${sec(seasonSeconds)}(1日=6試合あたり 平均 ${sec(avgDay)}、最大 ${sec(maxDay)})`);
+    const twoDays = daySeconds[1] + daySeconds[2]; // 2日目と3日目(12試合)。1日目は準備の時間を含むので外す
+    out.push(`- 最初の1日(6試合。準備の時間を含む): ${sec(daySeconds[0])}`);
+    out.push(`- 1日分(12試合。本物の日程の2日分): ${sec(twoDays)}(1試合あたり ${(twoDays / DAY_GAMES * 1000).toFixed(0)} ミリ秒)`);
+    out.push(`- 1シーズン(本物の日程。${total}試合・${daySeconds.length}日): ${sec(seasonSeconds)}(1日=6試合あたり 平均 ${sec(avgDay)}、最大 ${sec(maxDay)})`);
+    const day = { seconds: twoDays };
 
     // 打席ログの大きさ
     status("打席ログの大きさを測っています…");
     const stats = await call(worker, "stats");
     out.push("", "## メモリ");
-    out.push(`- 打席の数: ${stats.plateAppearances.toLocaleString()}(${total + 1 + DAY_GAMES}試合分を保持)`);
+    out.push(`- 打席の数: ${stats.plateAppearances.toLocaleString()}(${total}試合分を保持)`);
     out.push(`- 打席ログのメモリ上の大きさ(Python の見積もり): ${mb(stats.logMemoryBytes)}(測る時間 ${sec(stats.measureSeconds)})`);
     out.push(`- Python 全体が使っているメモリ(WebAssembly のメモリ): ${mb(stats.wasmHeapBytes)}`);
     if (performance.memory) out.push(`- 画面側の JavaScript のメモリ: ${mb(performance.memory.usedJSHeapSize)}`);
@@ -200,7 +201,7 @@ async function measure() {
     // 判定(目安:1日分が約1秒以内、1シーズンが数分以内、メモリ不足で止まらない)
     out.push("", "## 判定(目安)");
     out.push(`- 1日分(12試合)が約1秒以内: ${day.seconds <= 1 ? "○" : "×"}(${sec(day.seconds)})`);
-    out.push(`- 1シーズン相当が数分(5分)以内: ${seasonSeconds <= 300 ? "○" : "×"}(${sec(seasonSeconds)})`);
+    out.push(`- 1シーズンが数分(5分)以内: ${seasonSeconds <= 300 ? "○" : "×"}(${sec(seasonSeconds)})`);
     out.push("- メモリ不足で止まらない: ○(最後まで完了)");
 
     out.push("", "## 端末", ...deviceInfo());

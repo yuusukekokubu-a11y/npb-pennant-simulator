@@ -55,7 +55,7 @@ const handlers = {
   setup({ seed }) {
     if (bench) bench.destroy();
     bench = benchModule.Bench(seed);
-    return { seconds: bench.setup_seconds };
+    return { seconds: bench.setup_seconds, totalGames: bench.total_games() };
   },
 
   games({ n }) {
@@ -65,7 +65,7 @@ const handlers = {
   day() {
     const t0 = performance.now();
     const played = bench.play_day();
-    return { played, seconds: (performance.now() - t0) / 1000, totalGames: bench.games_played() };
+    return { played, seconds: (performance.now() - t0) / 1000, totalGames: bench.games_played(), isOver: bench.is_over() };
   },
 
   stats() {

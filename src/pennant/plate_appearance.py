@@ -146,7 +146,7 @@ def batter_side(batter: Player, pitcher: Player) -> str:
 class PlateAppearanceModel(Protocol):
     """打席の計算の形(差し替え用)。この形を満たすクラスなら、別の計算方法に替えられる。"""
 
-    def probabilities(self, batter: Player, pitcher: Player, defense: Defense) -> dict[str, float]: ...
+    def probabilities(self, batter: Player, pitcher: Player, defense: Defense, home: bool = False) -> dict[str, float]: ...
 
     def rating(self, player: Player, item: str) -> float:
         """計算に使う能力値(好調・不調を含む)。走者の進塁など、試合の計算でも使う。"""
@@ -157,8 +157,16 @@ class PlateAppearanceModel(Protocol):
         ...
 
     def resolve(
-        self, batter: Player, pitcher: Player, defense: Defense, base_out: BaseOutState, rng: random.Random
-    ) -> PlateAppearance: ...
+        self,
+        batter: Player,
+        pitcher: Player,
+        defense: Defense,
+        base_out: BaseOutState,
+        rng: random.Random,
+        home: bool = False,
+    ) -> PlateAppearance:
+        """home は、打者がホームチームかどうか(ホームの有利に使う。D-073)。"""
+        ...
 
 
 def check_participants(batter: Player, pitcher: Player, defense: Defense) -> None:
@@ -203,18 +211,24 @@ class OddsRatioModel:
         side = "same_side" if batter_side(batter, pitcher) == pitcher.throws else "opposite_side"
         return self.config["platoon"][side]
 
+    def _home(self, home: bool) -> Mapping[str, float]:
+        """ホームチームの打者に掛ける倍率(D-073)。アウェイの打者や、設定がないときは倍率なし。"""
+        return self.config.data.get("home_advantage", {}) if home else {}
+
     # ---- 第1段階 ----
 
-    def stage1(self, batter: Player, pitcher: Player) -> dict[str, float]:
+    def stage1(self, batter: Player, pitcher: Player, home: bool = False) -> dict[str, float]:
         s1 = self.config["stage1"]
         base = dict(s1["league_rates"])
         base[IN_PLAY] = 1.0 - sum(base.values())
         platoon = self._platoon(batter, pitcher)
+        home_adv = self._home(home)
         mult = {}
         for event in STAGE1_EVENTS:
             m = self._multiplier(batter, s1["batter_effects"].get(event, {}))
             m *= self._multiplier(pitcher, s1["pitcher_effects"].get(event, {}))
             m *= platoon.get(event, 1.0)
+            m *= home_adv.get(event, 1.0)
             mult[event] = m
         return combine(base, mult)
 
@@ -244,6 +258,7 @@ class OddsRatioModel:
         batted_ball: str,
         fielding: Mapping[str, float],
         fielder: str | None = None,
+        home: bool = False,
     ) -> dict[str, float]:
         """担当野手が決まったあとの結果の確率。fielder は担当ポジション(安打の内訳に使う)。
 
@@ -259,6 +274,7 @@ class OddsRatioModel:
         hit_m *= self._multiplier(pitcher, he.get("pitcher", {}))
         hit_m *= self._multiplier(None, he.get("fielder", {}), fielding)
         hit_m *= self._platoon(batter, pitcher).get("in_play_hit", 1.0)
+        hit_m *= self._home(home).get("in_play_hit", 1.0)
         err_m = self._multiplier(None, cfg["error_effects"].get("fielder", {}), fielding)
         fieldable = combine(base, {"hit": hit_m, "error": err_m})
 
@@ -277,10 +293,10 @@ class OddsRatioModel:
 
     # ---- まとめ ----
 
-    def probabilities(self, batter: Player, pitcher: Player, defense: Defense) -> dict[str, float]:
+    def probabilities(self, batter: Player, pitcher: Player, defense: Defense, home: bool = False) -> dict[str, float]:
         """打席の結果の確率(すべての場合を足し合わせた正確な値)。合計は 1。"""
         check_participants(batter, pitcher, defense)
-        s1 = self.stage1(batter, pitcher)
+        s1 = self.stage1(batter, pitcher, home)
         probs = {r: 0.0 for r in RESULTS}
         for event in STAGE1_EVENTS:
             probs[event] += s1[event]
@@ -289,7 +305,7 @@ class OddsRatioModel:
                 w = s1[IN_PLAY] * pt * pf
                 if w == 0:
                     continue
-                ip = self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense), pos)
+                ip = self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense), pos, home)
                 for h in HIT_TYPES:
                     probs[h] += w * (ip[h] + ip[f"unfieldable_{h}"])
                 probs["error"] += w * ip["error"]
@@ -297,9 +313,15 @@ class OddsRatioModel:
         return probs
 
     def resolve(
-        self, batter: Player, pitcher: Player, defense: Defense, base_out: BaseOutState, rng: random.Random
+        self,
+        batter: Player,
+        pitcher: Player,
+        defense: Defense,
+        base_out: BaseOutState,
+        rng: random.Random,
+        home: bool = False,
     ) -> PlateAppearance:
-        """乱数で1回の打席の結果を決め、記録を返す。"""
+        """乱数で1回の打席の結果を決め、記録を返す。home は、打者がホームチームかどうか(D-073)。"""
         check_participants(batter, pitcher, defense)
         common = {
             "batter_id": batter.id,
@@ -307,12 +329,12 @@ class OddsRatioModel:
             "batter_side": batter_side(batter, pitcher),
             "base_out": base_out,
         }
-        event = _choose(rng, self.stage1(batter, pitcher))
+        event = _choose(rng, self.stage1(batter, pitcher, home))
         if event != IN_PLAY:
             return PlateAppearance(result=event, **common)
         t = _choose(rng, self.batted_ball(batter, pitcher))
         pos = _choose(rng, self.fielder_shares(t))
-        outcome = _choose(rng, self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense), pos))
+        outcome = _choose(rng, self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense), pos, home))
         unfieldable = outcome.startswith("unfieldable_")
         result = outcome.removeprefix("unfieldable_")
         if result == "out":
