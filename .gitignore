@@ -42,3 +42,6 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# ===== ブラウザ用のテストページのまとめ(scripts/build_web.py が作る) =====
+_site/
