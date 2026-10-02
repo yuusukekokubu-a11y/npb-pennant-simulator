@@ -54,6 +54,9 @@ src/pennant/
   metrics.py          指標の定義データの読み込み・検証と、指標の計算
   stats_report.py     成績の確認用の集計(整合チェック・ランキング)
   fingerprint.py      結果の指紋(再現性の確認用。D-089)
+  storage.py          保存の差し替え口(ファイルの読み書きはここだけ。D-101)
+  newgame.py          新規リーグの作成・球団名の入力の検証・画面用の選手情報
+  savegame.py         セーブデータ(.sav)の書き出しと、検証つきの読み込み・旧版の変換
   data/generation.json        生成に使う数値(仮置き値。9 章)
   data/names.json             名前の部品
   data/plate_appearance.json  打席の計算に使う数値(仮置き値。9 章)
@@ -66,6 +69,8 @@ scripts/inspect_game.py              試合を多数回まわした集計表と�
 scripts/inspect_season.py            1シーズンの順位表と集計表を出す確認用スクリプト(--seeds で複数シーズンの要約)
 scripts/fingerprint.py               結果の指紋を表示し、正しい値と比べる確認用スクリプト
 scripts/inspect_stats.py             1シーズンの成績のランキングと整合チェックを出す確認用スクリプト
+scripts/inspect_save.py              保存・読み込みの時間と大きさ、壊れたデータのエラー文の例を出す確認用スクリプト
+scripts/make_sample_save.py          再現性の確認用の見本のセーブデータ(tests/data/sample-save.sav)を作る
 scripts/build_web.py                 ブラウザ用のテストページ(web/)と計算本体を _site/ にまとめる(D-082)
 web/                                 ブラウザでの実行の技術検証のテスト用ページ(index.html・app.js・worker.js・bench.py。web/README.md)
 .github/workflows/pages.yml          _site/ を GitHub Pages に公開する自動処理
@@ -241,7 +246,7 @@ web/                                 ブラウザでの実行の技術検証の�
 - テストには pytest を使う。
 - シミュレーション本体は、画面なしで単体テストできるようにする。
 - 乱数のシードを固定して、結果を再現できるテストを書く。
-- **版をまたいだ再現性**(D-088、D-089):`src/pennant/fingerprint.py` が、決まったシードで (a) リーグの生成、(b) 1試合、(c) 30日分の試合、(d) 1シーズン(実装④で追加)を行い、(e) (d)の集計結果の元の数(実装⑤で追加)とあわせて、結果の指紋(SHA-256)を作る。
+- **版をまたいだ再現性**(D-088、D-089):`src/pennant/fingerprint.py` が、決まったシードで (a) リーグの生成、(b) 1試合、(c) 30日分の試合、(d) 1シーズン(実装④で追加)を行い、(e) (d)の集計結果の元の数(実装⑤で追加)、(f) (d)を途中(1・62・125日目)で保存・読み込みして最後まで進めた結果(実装⑥で追加)とあわせて、結果の指紋(SHA-256)を作る。
   - 元にするのは、離散的な結果と、整数・文字列の情報だけ(小数は入れない。入れようとするとエラーにする)。
   - 期待値は `tests/data/fingerprints.json` に固定し、CI の Python 3.10・3.12・3.14 で一致を確かめる。
   - ブラウザのテスト用ページ(`web/`)も、同じ関数で指紋を表示する。

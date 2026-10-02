@@ -12,10 +12,10 @@ import copy
 import json
 import math
 from dataclasses import dataclass
-from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from .storage import read_package_text, read_text_file
 from .abilities import (
     ALL_ITEMS,
     BATTER_ITEMS,
@@ -122,12 +122,12 @@ class NameParts:
 
 def _read_json(path: str | Path | None, default_name: str) -> tuple[Any, str]:
     if path is None:
-        text = resources.files("pennant").joinpath("data", default_name).read_text(encoding="utf-8")
+        text = read_package_text("data", default_name)
         source = f"(既定) data/{default_name}"
     else:
         source = str(path)
         try:
-            text = Path(path).read_text(encoding="utf-8")
+            text = read_text_file(path)
         except OSError as exc:
             raise ConfigError(source, [f"ファイルを読めません({exc})"]) from exc
     try:

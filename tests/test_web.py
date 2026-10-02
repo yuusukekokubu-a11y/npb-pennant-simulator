@@ -86,7 +86,7 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
     build = _load("build_web", ROOT / "scripts" / "build_web.py")
     info = build.build(tmp_path / "site")
     site = tmp_path / "site"
-    for name in ("index.html", "app.js", "worker.js", "bench.py", "pennant.zip"):
+    for name in ("index.html", "app.js", "worker.js", "bench.py", "pennant.zip", "sample-save.sav", "sample-save.json", "expected-fingerprints.json"):
         assert (site / name).exists()
     with zipfile.ZipFile(site / "pennant.zip") as zf:
         names = set(zf.namelist())
@@ -151,3 +151,22 @@ def test_no_favicon_request():
 def test_compute_stats(bench):
     info = bench.compute_stats()
     assert info["batters"] > 100 and info["pitchers"] > 50 and info["seconds"] >= 0  # 2日分の試合に出た選手
+
+
+def test_save_check_flow(bench_module):
+    """テスト用ページの保存・読み込みの確認:60日目まで進めて保存 → 読み込んで最後まで → 指紋 (d) と一致。"""
+    import json
+
+    r = bench_module.save_check_start("テスト用ZQ球団", days=5)
+    assert r["name_in"] == ["state.json"] and r["file_name"].startswith("save-") and "ZQ" not in r["file_name"]
+    done = bench_module.continue_to_end(r["data"])
+    expected = json.loads((ROOT / "tests" / "data" / "fingerprints.json").read_text(encoding="utf-8"))
+    assert done["loaded_day"] == 5 and done["digest"] == expected["season"]
+
+
+def test_sample_check(bench_module):
+    import json
+
+    info = json.loads((ROOT / "tests" / "data" / "sample-save.json").read_text(encoding="utf-8"))
+    data = (ROOT / "tests" / "data" / "sample-save.sav").read_bytes()
+    assert bench_module.continue_sample(data, info["continue_to_day"]) == info["continuation_digest"]

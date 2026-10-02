@@ -25,12 +25,13 @@ from .models import League
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 3  # 2:(d)1シーズン と打ち切りの印(実装④)。3:(e)集計結果 と担当野手の選手 ID(実装⑤)
+FINGERPRINT_VERSION = 4  # 2:(d)1シーズン と打ち切りの印(実装④)。3:(e)集計結果 と担当野手の選手 ID(実装⑤)。4:(f)保存と読み込み(実装⑥)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
 DAYS = 30  # (c)の日数(1日=各リーグ3試合)
 SEASON_SEED = 13  # (d)1シーズンのシード(日程と、各試合の乱数のもと)
+SAVE_DAYS = (1, 62, 125)  # (f)保存・読み込みする日(1日目・中盤・最後)
 GAMES_PER_DAY = 6
 
 
@@ -175,8 +176,28 @@ def season_fingerprint() -> tuple[str, SeasonResult]:
     return _digest(season_record(result)), result
 
 
-def fingerprints() -> dict:
-    """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン の指紋と、確認用の数を返す。"""
+def save_fingerprint(reference: dict | None = None) -> tuple[str, list[bool]]:
+    """(f)シーズンの途中で保存・読み込みしてから最後まで進めた結果の指紋。
+
+    1日目・中盤・最後のそれぞれで保存・読み込みし、最後まで進めた結果を並べて指紋にする。
+    どれも、保存せずに進めた (d) と同じ結果になるはず(2つ目の戻り値は、その一致の確認)。
+    """
+    from .savegame import GameState, load_game, save_game
+
+    if reference is None:
+        reference = season_record(Season(_new_league(), SEASON_SEED).play_to_end())
+    records = []
+    for day in SAVE_DAYS:
+        season = Season(_new_league(), SEASON_SEED)
+        season.play_days(day)
+        state = GameState(season, load_generation_config(), load_name_parts())
+        loaded = load_game(save_game(state))
+        records.append(season_record(loaded.season.play_to_end()))
+    return _digest(records), [r == reference for r in records]
+
+
+def fingerprints(quick: bool = False) -> dict:
+    """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み の指紋。"""
     config = load_game_config()
     manager = SimpleManager(config)
 
@@ -188,6 +209,8 @@ def fingerprints() -> dict:
     away, _ = manager.prepare(league.teams[1], rng, 0)
     game = simulate_game(home, away, rng, config=config, manager=manager)
     b = _digest(game_record(game))
+    if quick:  # テスト用:(a)と(b)だけ
+        return {"fingerprint_version": FINGERPRINT_VERSION, "league": a, "game": b}
 
     days_league = _new_league()  # 疲労が書き換わるので、別のリーグで行う
     results = play_games(days_league, DAYS * GAMES_PER_DAY, DAYS_SEED, config, manager=manager)
@@ -195,6 +218,7 @@ def fingerprints() -> dict:
 
     d, season = season_fingerprint()
     champions = [r.team_id for rows in season.standings.values() for r in rows if r.rank == 1]
+    f, same_as_season = save_fingerprint(season_record(season))
     rec = season_records([p.result for p in season.games])
     e = _digest(records_record(rec))
     totals = {"R": 0, "RBI": 0, "W": 0, "SV": 0, "HLD": 0, "ER": 0}
@@ -209,6 +233,7 @@ def fingerprints() -> dict:
         "days": c,
         "season": d,
         "records": e,
+        "save": f,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -221,6 +246,8 @@ def fingerprints() -> dict:
             "season_plate_appearances": sum(len(p.result.log) for p in season.games),
             "season_champions": champions,
             "records_totals": totals,
+            "save_days": list(SAVE_DAYS),
+            "save_same_as_season": same_as_season,
         },
     }
 
@@ -237,5 +264,7 @@ def format_fingerprints(fp: dict) -> str:
             f"- (d) 1シーズン({c['season_games']}試合、{c['season_plate_appearances']}打席、優勝 {'・'.join(c['season_champions'])}): {fp['season']}",
             f"- (e) (d)の集計結果(得点 {c['records_totals']['R']}、打点 {c['records_totals']['RBI']}、自責点 {c['records_totals']['ER']}、"
             f"勝利 {c['records_totals']['W']}、セーブ {c['records_totals']['SV']}、ホールド {c['records_totals']['HLD']}): {fp['records']}",
+            f"- (f) (d)を {'・'.join(str(d) for d in c['save_days'])} 日目で保存・読み込みして最後まで進めた結果"
+            f"({'(d)と一致' if all(c['save_same_as_season']) else '(d)と不一致'}): {fp['save']}",
         ]
     )

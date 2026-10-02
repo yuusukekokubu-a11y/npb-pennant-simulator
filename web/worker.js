@@ -114,6 +114,46 @@ const handlers = {
     return toJs(benchModule.fingerprint_report());
   },
 
+  saveMeasure() {
+    return toJs(benchModule.save_measure(bench));
+  },
+
+  saveCheckStart({ name }) {
+    const r = benchModule.save_check_start(name || "");
+    const data = r.get("data");
+    const out = {
+      bytes: data.toJs(),
+      fileName: r.get("file_name"),
+      size: r.get("bytes"),
+      seconds: r.get("seconds"),
+      day: r.get("day"),
+      nameIn: r.get("name_in").toJs(),
+    };
+    data.destroy();
+    r.destroy();
+    return out;
+  },
+
+  continueToEnd({ bytes }) {
+    const py = pyodide.toPy(bytes);
+    const r = toJs(benchModule.continue_to_end(py));
+    py.destroy();
+    return r;
+  },
+
+  async checkSample() {
+    const data = new Uint8Array(await (await fetch(new URL("sample-save.sav", import.meta.url))).arrayBuffer());
+    const info = await (await fetch(new URL("sample-save.json", import.meta.url))).json();
+    const py = pyodide.toPy(data);
+    const digest = benchModule.continue_sample(py, info.continue_to_day);
+    py.destroy();
+    return { digest, expected: info.continuation_digest, madeWith: info.made_with, size: data.length };
+  },
+
+  async expected() {
+    return await (await fetch(new URL("expected-fingerprints.json", import.meta.url))).json();
+  },
+
   resources() {
     return performance.getEntriesByType("resource").map((e) => ({
       url: e.name.split("?")[0],

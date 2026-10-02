@@ -26,6 +26,10 @@ from pennant.game_stats import narrate
 from pennant.metrics import compute, load_metrics_config
 from pennant.records import qualified_batters, qualified_pitchers, season_records
 from pennant.season import Season
+from pennant.savegame import GameState, default_file_name, load_game, save_game
+from pennant.fingerprint import LEAGUE_SEED, SEASON_SEED, _digest, season_record
+from pennant.config import load_generation_config as _gen_config, load_name_parts as _name_parts
+from pennant.newgame import new_league
 
 LOG_FORMAT_VERSION = 1
 
@@ -210,6 +214,63 @@ def deep_size(obj) -> int:
             if hasattr(x, "__dict__"):
                 total += sys.getsizeof(x.__dict__)
     return total
+
+
+# ---- 保存と読み込み(実装⑥) ----
+
+def _state_of(season: Season) -> GameState:
+    return GameState(season, _gen_config(), _name_parts())
+
+
+def save_measure(bench: "Bench") -> dict:
+    """測定で進めたシーズンを保存・読み込みし、時間と大きさを返す。"""
+    t0 = time.perf_counter()
+    data = save_game(_state_of(bench.season))
+    t1 = time.perf_counter()
+    load_game(data)
+    t2 = time.perf_counter()
+    return {"bytes": len(data), "save_seconds": t1 - t0, "load_seconds": t2 - t1}
+
+
+def save_check_start(team_name: str = "", days: int = 60) -> dict:
+    """(d)と同じシーズンを days 日まで進めて保存する。球団名を入れると、1番目の球団の名前にする。
+
+    戻り値:ファイルの中身、既定のファイル名、大きさ・時間、球団名が ZIP のどのファイルに入ったか。
+    """
+    names = [team_name.strip() or None] + [None] * 11 if team_name and team_name.strip() else None
+    league = new_league(LEAGUE_SEED, names)
+    season = Season(league, SEASON_SEED)
+    season.play_days(days)
+    t0 = time.perf_counter()
+    data = save_game(_state_of(season))
+    seconds = time.perf_counter() - t0
+    where = []
+    if names:
+        import io
+        import zipfile
+
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            where = [n for n in zf.namelist() if team_name.strip().encode("utf-8") in zf.read(n)]
+    from datetime import date
+
+    return {"data": data, "file_name": default_file_name(date.today()), "bytes": len(data), "seconds": seconds, "day": season.day, "name_in": where}
+
+
+def continue_to_end(data) -> dict:
+    """保存したファイルを読み込み、最後まで進めて、シーズンの指紋((d)と同じ作り方)を返す。"""
+    t0 = time.perf_counter()
+    state = load_game(bytes(data))
+    load_seconds = time.perf_counter() - t0
+    day = state.season.day
+    state.season.play_to_end()
+    return {"loaded_day": day, "load_seconds": load_seconds, "digest": _digest(season_record(state.season.result()))}
+
+
+def continue_sample(data, continue_to_day: int) -> str:
+    """見本のセーブデータを読み込み、指定の日まで進めた結果の指紋。"""
+    state = load_game(bytes(data))
+    state.season.play_days(continue_to_day - state.season.day)
+    return _digest(season_record(state.season.result()))
 
 
 def fingerprint_report() -> dict:
