@@ -43,7 +43,8 @@ class GamePlateAppearance:
     double_play: bool = False
     sac_fly: bool = False
     walkoff: bool = False
-    walkoff_truncated: bool = False  # サヨナラで、勝ち越しに必要な分を超えた得点を打ち切った打席(D-087。公式記録の数え直しは実装⑤)
+    walkoff_truncated: bool = False
+    fielder_id: str | None = None  # 打球を担当した野手の選手 ID(投手が担当なら投手。第3弾の守備の計算用)  # サヨナラで、勝ち越しに必要な分を超えた得点を打ち切った打席(D-087。公式記録の数え直しは実装⑤)
 
 
 @dataclass
@@ -240,6 +241,7 @@ class _Game:
                     sac_fly=play.sac_fly,
                     walkoff=walkoff,
                     walkoff_truncated=truncated,
+                    fielder_id=None if not pa.fielder else pitcher.id if pa.fielder == "P" else defense[pa.fielder].id,
                 )
             )
             if walkoff:

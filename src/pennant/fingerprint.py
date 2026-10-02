@@ -22,9 +22,10 @@ from .game_stats import play_games
 from .generate import generate_league
 from .manager import SimpleManager
 from .models import League
+from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 2  # 2:(d)1シーズン と、打席の「打ち切り」の印を足した(実装④)
+FINGERPRINT_VERSION = 3  # 2:(d)1シーズン と打ち切りの印(実装④)。3:(e)集計結果 と担当野手の選手 ID(実装⑤)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -104,6 +105,7 @@ def game_record(result: GameResult) -> dict:
                 pa.result,
                 pa.batted_ball,
                 pa.fielder,
+                x.fielder_id,
                 pa.unfieldable,
                 pa.batter_side,
                 [[m.player_id, m.start, m.end, m.responsible_pitcher_id, m.reached_on_error, m.advanced_on_error] for m in x.moves],
@@ -153,6 +155,14 @@ def season_record(result: SeasonResult) -> dict:
     }
 
 
+def records_record(rec: Records) -> dict:
+    """集計結果の元の数(すべて整数)。"""
+    def plain(group):
+        return {key: {k: v for k, v in sorted(c.items()) if v} for key, c in sorted(group.items())}
+
+    return {"batters": plain(rec.batters), "pitchers": plain(rec.pitchers), "teams": plain(rec.teams)}
+
+
 # ---- 指紋 ----
 
 def _new_league() -> League:
@@ -185,6 +195,12 @@ def fingerprints() -> dict:
 
     d, season = season_fingerprint()
     champions = [r.team_id for rows in season.standings.values() for r in rows if r.rank == 1]
+    rec = season_records([p.result for p in season.games])
+    e = _digest(records_record(rec))
+    totals = {"R": 0, "RBI": 0, "W": 0, "SV": 0, "HLD": 0, "ER": 0}
+    for key in totals:
+        group = rec.batters if key in ("R", "RBI") else rec.pitchers
+        totals[key] = sum(counts[key] for counts in group.values())
 
     return {
         "fingerprint_version": FINGERPRINT_VERSION,
@@ -192,6 +208,7 @@ def fingerprints() -> dict:
         "game": b,
         "days": c,
         "season": d,
+        "records": e,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -203,6 +220,7 @@ def fingerprints() -> dict:
             "season_games": len(season.games),
             "season_plate_appearances": sum(len(p.result.log) for p in season.games),
             "season_champions": champions,
+            "records_totals": totals,
         },
     }
 
@@ -217,5 +235,7 @@ def format_fingerprints(fp: dict) -> str:
             f"- (b) 1試合({c['game_plate_appearances']}打席、{c['game_score']}): {fp['game']}",
             f"- (c) {c['days']}日分の試合({c['days_games']}試合、{c['days_plate_appearances']}打席、得点の合計 {c['days_runs']}): {fp['days']}",
             f"- (d) 1シーズン({c['season_games']}試合、{c['season_plate_appearances']}打席、優勝 {'・'.join(c['season_champions'])}): {fp['season']}",
+            f"- (e) (d)の集計結果(得点 {c['records_totals']['R']}、打点 {c['records_totals']['RBI']}、自責点 {c['records_totals']['ER']}、"
+            f"勝利 {c['records_totals']['W']}、セーブ {c['records_totals']['SV']}、ホールド {c['records_totals']['HLD']}): {fp['records']}",
         ]
     )

@@ -23,6 +23,8 @@ from pennant import generate_league, load_generation_config, load_name_parts
 from pennant.fingerprint import fingerprints, format_fingerprints
 from pennant.game import simulate_game
 from pennant.game_stats import narrate
+from pennant.metrics import compute, load_metrics_config
+from pennant.records import qualified_batters, qualified_pitchers, season_records
 from pennant.season import Season
 
 LOG_FORMAT_VERSION = 1
@@ -71,6 +73,24 @@ class Bench:
 
     def games_played(self) -> int:
         return len(self.season.played)
+
+    def compute_stats(self) -> dict:
+        """打席ログから、全選手の元の数と指標を計算する(実装⑤)。かかった秒数と人数を返す。"""
+        t0 = time.perf_counter()
+        rec = season_records(self.results)
+        config = load_metrics_config()
+        for pid, c in rec.batters.items():
+            compute(config, "batter", c)
+        for pid, c in rec.pitchers.items():
+            compute(config, "pitcher", c)
+        seconds = time.perf_counter() - t0
+        return {
+            "seconds": seconds,
+            "batters": len(rec.batters),
+            "pitchers": len(rec.pitchers),
+            "qualified_batters": len(qualified_batters(rec)),
+            "qualified_pitchers": len(qualified_pitchers(rec)),
+        }
 
     # ---- 大きさ ----
 

@@ -146,3 +146,8 @@ def test_page_shows_the_same_fingerprints_as_the_script(bench_module):
 
 def test_no_favicon_request():
     assert '<link rel="icon" href="data:,">' in (WEB / "index.html").read_text(encoding="utf-8")
+
+
+def test_compute_stats(bench):
+    info = bench.compute_stats()
+    assert info["batters"] > 100 and info["pitchers"] > 50 and info["seconds"] >= 0  # 2日分の試合に出た選手
