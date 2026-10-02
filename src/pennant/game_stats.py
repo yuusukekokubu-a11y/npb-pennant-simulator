@@ -17,7 +17,7 @@ from .game import BOTTOM, GameResult, simulate_game
 from .game_config import GameConfig
 from .manager import DH, RELIEF_ROLE_LABELS, SimpleManager
 from .models import League, Player
-from .pa_stats import fmt_rate, rates_from
+from .pa_stats import count_hits_by_position, fmt_rate, hits_by_position_table, rates_from
 from .plate_appearance import PlateAppearanceModel
 
 # 校正の目標(一般的な水準の目安。依頼「実装③:1試合の進行」で示された範囲)
@@ -142,6 +142,11 @@ def build_game_report(results: list[GameResult], league: League) -> str:
         "## 打席の結果の割合(試合を通して)\n" + _table(["項目", "値"], [[k, fmt_rate(k, rates[k])] for k in keys])
     )
 
+    out.append(
+        "## 担当ポジション別の安打の内訳(試合を通して。D-072)\n"
+        + hits_by_position_table(count_hits_by_position(x.pa for r in results for x in r.log))
+    )
+
     runs = Counter(min(n, 10) for r in results for n in (r.home_runs, r.away_runs))
     total = sum(runs.values())
     out.append(
@@ -175,6 +180,7 @@ RESULT_TEXT = {
     "error": "失策",
 }
 BASE_TEXT = {1: "一塁", 2: "二塁", 3: "三塁"}
+LINE_TEXT = {"1B": "一塁線", "3B": "三塁線"}
 
 
 def describe(x) -> str:
@@ -186,6 +192,8 @@ def describe(x) -> str:
     if r in ("ground_out", "line_out", "fly_out", "single", "error"):
         return f"{POS_SHORT[x.pa.fielder]}{RESULT_TEXT[r]}"
     if r in ("double", "triple"):
+        if x.pa.fielder in LINE_TEXT:  # 一塁手・三塁手の担当の二塁打は、線を抜けた打球(D-072)
+            return f"{LINE_TEXT[x.pa.fielder]}{RESULT_TEXT[r]}"
         return f"{POS_SHORT[x.pa.fielder]}{RESULT_TEXT[r]}"
     return RESULT_TEXT[r]
 

@@ -74,7 +74,7 @@ def _load_script():
 def test_script_runs(capsys):
     assert _load_script().main(["--games", "20"]) == 0
     out = capsys.readouterr().out
-    for heading in ("1回表", "スコア", "投手", "試合単位の集計", "打席の結果の割合", "得点の分布"):
+    for heading in ("1回表", "スコア", "投手", "試合単位の集計", "打席の結果の割合", "得点の分布", "担当ポジション別の安打の内訳"):
         assert heading in out
 
 

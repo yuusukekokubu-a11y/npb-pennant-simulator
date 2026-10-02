@@ -321,3 +321,64 @@ def test_base_out_state_has_24_states():
         BaseOutState(outs=3)
     with pytest.raises(ValueError):
         BaseOutState.from_index(24)
+
+
+# ---- 担当ポジション別の安打の内訳(D-072) ----
+
+INFIELD_SINGLES_ONLY = ("P", "C", "2B", "SS")
+OUTFIELD = ("LF", "CF", "RF")
+FIELDING_50 = {"range": 50, "arm": 50, "fielding": 50}
+
+
+def _hits(ip):
+    return {h: ip[h] + ip[f"unfieldable_{h}"] for h in ("single", "double", "triple")}
+
+
+@pytest.mark.parametrize("t", ["ground", "line", "fly"])
+def test_infield_hits_split_by_position(model, t):
+    for pos in model.fielder_shares(t):
+        hits = _hits(model.in_play(avg_batter(power=70, speed=70), avg_pitcher(), t, FIELDING_50, pos))
+        if pos in INFIELD_SINGLES_ONLY:
+            assert hits["double"] == 0 and hits["triple"] == 0, pos
+        elif pos in ("1B", "3B"):
+            assert hits["triple"] == 0, pos
+            assert 0 < hits["double"] < 0.3 * sum(hits.values()), pos  # 二塁打は少しだけ
+
+
+@pytest.mark.parametrize("t", ["line", "fly"])
+def test_outfield_split_unchanged(model, t):
+    """外野手は、打球の種類ごとの内訳(変更前と同じ設定)を使う。"""
+    for pos in OUTFIELD:
+        assert model.extra_base(t, pos) is model.config["in_play"][t]["extra_base"]
+        b = avg_batter(power=65, speed=35)
+        assert model.in_play(b, avg_pitcher(), t, FIELDING_50, pos) == model.in_play(b, avg_pitcher(), t, FIELDING_50)
+
+
+def test_outfield_split_values_kept():
+    """外野手の内訳の値と能力の効きは、D-072 の前と同じ。"""
+    ip = default_pa_data()["in_play"]
+    assert ip["line"]["extra_base"]["shares"] == {"single": 0.70, "double": 0.26, "triple": 0.04}
+    assert ip["fly"]["extra_base"]["shares"] == {"single": 0.40, "double": 0.48, "triple": 0.12}
+    for t in ("ground", "line", "fly"):
+        assert ip[t]["extra_base"]["effects"] == {"double": {"power": 1.12}, "triple": {"speed": 1.30}}
+        assert not set(OUTFIELD) & set(ip[t].get("extra_base_by_fielder", {}))
+
+
+def test_power_raises_doubles_down_the_line(model):
+    weak = _hits(model.in_play(avg_batter(power=35), avg_pitcher(), "ground", FIELDING_50, "3B"))
+    strong = _hits(model.in_play(avg_batter(power=65), avg_pitcher(), "ground", FIELDING_50, "3B"))
+    assert strong["double"] / sum(strong.values()) > weak["double"] / sum(weak.values())
+
+
+def test_sampled_infield_hits_are_singles(model, all_players):
+    batter = next(p for p in all_players if p.role == BATTER)
+    pitcher = next(p for p in all_players if p.role == PITCHER)
+    rng = random.Random(4)
+    seen = Counter()
+    for _ in range(20_000):
+        pa = model.resolve(batter, pitcher, average_defense(), BaseOutState(), rng)
+        if pa.result in ("double", "triple"):
+            seen[(pa.fielder, pa.result)] += 1
+    assert not any(pos in INFIELD_SINGLES_ONLY for pos, _ in seen)
+    assert not any(pos in ("1B", "3B") and r == "triple" for pos, r in seen)
+    assert seen[("1B", "double")] + seen[("3B", "double")] > 0

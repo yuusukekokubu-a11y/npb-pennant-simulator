@@ -232,8 +232,20 @@ class OddsRatioModel:
     def fielder_shares(self, batted_ball: str) -> dict[str, float]:
         return dict(self.config["fielder_shares"][batted_ball])
 
-    def in_play(self, batter: Player, pitcher: Player, batted_ball: str, fielding: Mapping[str, float]) -> dict[str, float]:
-        """担当野手が決まったあとの結果の確率。
+    def extra_base(self, batted_ball: str, fielder: str | None) -> dict:
+        """安打の内訳の設定。担当ポジションごとの設定があればそちらを使う(D-072)。"""
+        cfg = self.config["in_play"][batted_ball]
+        return cfg.get("extra_base_by_fielder", {}).get(fielder, cfg["extra_base"])
+
+    def in_play(
+        self,
+        batter: Player,
+        pitcher: Player,
+        batted_ball: str,
+        fielding: Mapping[str, float],
+        fielder: str | None = None,
+    ) -> dict[str, float]:
+        """担当野手が決まったあとの結果の確率。fielder は担当ポジション(安打の内訳に使う)。
 
         返す辞書:unfieldable_<単打など>(野手が処理できない安打)、single/double/triple(処理できた打球の安打)、error、out
         """
@@ -250,7 +262,7 @@ class OddsRatioModel:
         err_m = self._multiplier(None, cfg["error_effects"].get("fielder", {}), fielding)
         fieldable = combine(base, {"hit": hit_m, "error": err_m})
 
-        xb = cfg["extra_base"]
+        xb = self.extra_base(batted_ball, fielder)
         split = combine(
             xb["shares"],
             {h: self._multiplier(batter, xb["effects"].get(h, {})) for h in HIT_TYPES},
@@ -277,7 +289,7 @@ class OddsRatioModel:
                 w = s1[IN_PLAY] * pt * pf
                 if w == 0:
                     continue
-                ip = self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense))
+                ip = self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense), pos)
                 for h in HIT_TYPES:
                     probs[h] += w * (ip[h] + ip[f"unfieldable_{h}"])
                 probs["error"] += w * ip["error"]
@@ -300,7 +312,7 @@ class OddsRatioModel:
             return PlateAppearance(result=event, **common)
         t = _choose(rng, self.batted_ball(batter, pitcher))
         pos = _choose(rng, self.fielder_shares(t))
-        outcome = _choose(rng, self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense)))
+        outcome = _choose(rng, self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense), pos))
         unfieldable = outcome.startswith("unfieldable_")
         result = outcome.removeprefix("unfieldable_")
         if result == "out":

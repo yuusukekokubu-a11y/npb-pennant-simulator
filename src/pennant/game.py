@@ -14,7 +14,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field, replace
 
-from .baserunning import Baserunning, RunnerMove
+from .baserunning import HOME, Baserunning, RunnerMove
 from .game_config import GameConfig, load_game_config
 from .manager import Manager, PitchingSituation, SimpleManager, TeamSetup
 from .models import Player
@@ -206,16 +206,7 @@ class _Game:
             walkoff = half == BOTTOM and inning >= rules["innings"] and diff_before + play.runs > 0
             moves = play.moves
             if walkoff and pa.result != "home_run":
-                needed = -diff_before + 1
-                kept, adjusted = 0, []
-                for m in moves:
-                    if m.scored:
-                        if kept < needed:
-                            kept += 1
-                        else:
-                            m = replace(m, end=m.start)
-                    adjusted.append(m)
-                moves = adjusted
+                moves = _truncate_walkoff(moves, needed=-diff_before + 1)
             runs = sum(1 for m in moves if m.scored)
 
             line = fielding.pitcher_line
@@ -266,6 +257,32 @@ class _Game:
                 fielding.needs_new_pitcher = True
         else:
             fielding.needs_new_pitcher = True
+
+
+def _truncate_walkoff(moves: list[RunnerMove], needed: int) -> list[RunnerMove]:
+    """サヨナラで、勝ち越しに必要な分を超えた生還を取り消す(本塁打以外)。
+
+    取り消した走者は3塁で止まったものとし、後ろの走者は前の走者を追い越さない位置で止める
+    (同じ塁に2人いないように)。試合はこの打席で終わるので、止まった位置は記録のためだけに使う。
+    """
+    kept = 0
+    wanted: dict[int, int] = {}  # 動きの位置 → 止まる塁(取り消しを反映した希望の塁)
+    for i, m in enumerate(moves):
+        if m.scored:
+            if kept < needed:
+                kept += 1
+                continue
+            wanted[i] = 3
+        elif not m.out:
+            wanted[i] = m.end
+    adjusted = list(moves)
+    limit = HOME  # 前の走者がいる塁(後ろの走者はここより手前で止まる)
+    for i in sorted(wanted, key=lambda i: -moves[i].start):  # 前の走者から順に
+        end = min(wanted[i], limit - 1)
+        if end != moves[i].end:
+            adjusted[i] = replace(moves[i], end=end)
+        limit = end
+    return adjusted
 
 
 def simulate_game(
