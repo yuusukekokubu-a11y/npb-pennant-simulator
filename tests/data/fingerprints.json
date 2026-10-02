@@ -1,0 +1,15 @@
+{
+  "fingerprint_version": 1,
+  "league": "9c1508e6cbbe9854ab1f7806aa886c231d12c0b04b08e262c5f0bb55798b29e0",
+  "game": "7aef1a01bc4ffa224baa057169f000bcf03d75a4fdaa83d84c07cb17ca81a62d",
+  "days": "f6f2672b28b44b8c7dee777efcf598bc2578ac42fdd3e52a9b4b798a5a176739",
+  "counts": {
+    "players": 840,
+    "game_plate_appearances": 81,
+    "game_score": "4-1",
+    "days": 30,
+    "days_games": 180,
+    "days_plate_appearances": 14069,
+    "days_runs": 1542
+  }
+}

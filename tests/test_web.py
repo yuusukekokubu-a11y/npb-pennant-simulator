@@ -129,3 +129,20 @@ def test_test_name_field_is_not_autosaved():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     field = re.search(r'<input id="team-name"[^>]*>', html).group(0)
     assert 'autocomplete="off"' in field
+
+
+def test_page_shows_the_same_fingerprints_as_the_script(bench_module):
+    """ブラウザのページは、PC のスクリプトと同じ関数・同じ文章で指紋を出す(D-089)。"""
+    import json
+
+    from pennant.fingerprint import fingerprints, format_fingerprints
+
+    report = bench_module.fingerprint_report()
+    assert report["text"] == format_fingerprints(fingerprints())
+    expected = json.loads((ROOT / "tests" / "data" / "fingerprints.json").read_text(encoding="utf-8"))
+    for key in ("league", "game", "days"):
+        assert expected[key] in report["text"]
+
+
+def test_no_favicon_request():
+    assert '<link rel="icon" href="data:,">' in (WEB / "index.html").read_text(encoding="utf-8")

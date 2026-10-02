@@ -21,6 +21,7 @@ import time
 
 from pennant import generate_league, load_generation_config, load_name_parts
 from pennant.fatigue import advance_day, apply_game_fatigue
+from pennant.fingerprint import fingerprints, format_fingerprints
 from pennant.game import simulate_game
 from pennant.game_config import load_game_config
 from pennant.game_stats import narrate
@@ -204,6 +205,13 @@ def deep_size(obj) -> int:
             if hasattr(x, "__dict__"):
                 total += sys.getsizeof(x.__dict__)
     return total
+
+
+def fingerprint_report() -> dict:
+    """結果の指紋(D-089)。PC の `python scripts/fingerprint.py` と同じ関数・同じ文章。"""
+    t0 = time.perf_counter()
+    fp = fingerprints()
+    return {"text": format_fingerprints(fp), "seconds": time.perf_counter() - t0}
 
 
 def python_version() -> str:

@@ -6,6 +6,8 @@
 <!-- 通信先の制限:このページ自身と、Pyodide の配布元(cdn.jsdelivr.net)だけ。それ以外には通信できない -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
+<!-- ブラウザがタブの小さな絵(favicon.ico)を取りに行かないようにする -->
+<link rel="icon" href="data:,">
 <title>ブラウザでの実行の技術検証</title>
 <style>
   :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --accent: #0969da; --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; }
@@ -37,7 +39,7 @@
   <p class="muted">計算本体(選手の生成・1回の打席・1試合)を、このブラウザの中の Python(Pyodide)で動かし、速さとメモリを測ります。サーバーには何も送りません。データは架空のリーグだけです。</p>
 
   <h2>1. 測定</h2>
-  <p>「測定」を押すと、Python の起動(2回)、1日分(12試合)、1シーズン相当(858試合)、打席ログの大きさ、圧縮した書き出しの大きさを順に測ります。PC で約1分、スマホでは数分かかることがあります。</p>
+  <p>「測定」を押すと、Python の起動(2回)、結果の指紋(同じシードなら、どの端末でも同じになるはずの値)、1日分(12試合)、1シーズン相当(858試合)、打席ログの大きさ、圧縮した書き出しの大きさを順に測ります。PC で約1分、スマホでは数分かかることがあります。</p>
   <button id="measure">測定</button>
   <progress id="progress" max="858" value="0" hidden></progress>
   <div id="status" class="status" role="status" aria-live="polite"></div>
