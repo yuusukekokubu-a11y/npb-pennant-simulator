@@ -32,6 +32,8 @@ pip install -e ".[dev]"   # 開発用の道具(pytest)を入れる
 pytest                    # テストを実行する
 ```
 
+GitHub 上では、PR を出したときと main に取り込んだときに、CI(自動でテストを走らせる仕組み)が Python 3.10 と 3.12 で `pytest` を実行します。
+
 ## ライセンス
 
 [MIT License](LICENSE)
