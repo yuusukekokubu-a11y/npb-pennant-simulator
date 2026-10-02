@@ -52,6 +52,9 @@ src/pennant/
 scripts/inspect_league.py            生成したリーグの分布を表で出す確認用スクリプト(操作画面ではない)
 scripts/inspect_plate_appearance.py  打席を多数回まわして結果の割合を表で出す確認用スクリプト
 scripts/inspect_game.py              試合を多数回まわした集計表と、1試合の流れを出す確認用スクリプト
+scripts/build_web.py                 ブラウザ用のテストページ(web/)と計算本体を _site/ にまとめる(D-082)
+web/                                 ブラウザでの実行の技術検証のテスト用ページ(index.html・app.js・worker.js・bench.py。web/README.md)
+.github/workflows/pages.yml          _site/ を GitHub Pages に公開する自動処理
 ```
 
 - 今後の実装で、シーズン(日程・順位)、指標の集計、セーブ・ロード、画面から呼ぶ操作の関数などのモジュールを足す(名前は実装時に決める)。
