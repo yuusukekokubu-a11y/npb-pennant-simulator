@@ -47,7 +47,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 1
+SAVE_FORMAT_VERSION = 2  # 2:自球団(user.my_team_id)を足した(最小のブラウザ画面①)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -57,7 +57,15 @@ MAX_ROSTER = 70  # 支配下の上限(D-029)
 MIN_ROSTER = 29  # 一軍の人数(D-029 補足)
 
 # 古い版の変換:版 n の内容(manifest と state の組)を、版 n+1 の形に直す関数。版を1つずつ上げる
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {}
+
+
+def _v1_to_v2(bundle: dict) -> dict:
+    """版1には自球団の情報がない。「自球団なし」として足す。"""
+    bundle["state"].setdefault("user", {"my_team_id": None})
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2}
 
 
 class SaveDataError(ValueError):
@@ -78,6 +86,7 @@ class GameState:
     gen_config: GenerationConfig
     name_parts: NameParts
     name: str = ""
+    my_team_id: str | None = None  # 自球団(画面で選ぶ。指紋の元には入れない)
 
     @property
     def league(self) -> League:
@@ -137,6 +146,7 @@ def build_state(state: GameState) -> dict:
             "league_names": list(s.league.league_names),
             "teams": [_plain(t) for t in s.league.teams],
         },
+        "user": {"my_team_id": state.my_team_id},
         "season": {
             "day": s.day,
             "rotation": dict(s.rotation),
@@ -427,6 +437,12 @@ def load_game(data: bytes) -> GameState:
             player_ids.add(pid)
     if len(teams_d) < 2:
         p.add("state.json.league.teams", "球団が2つ以上必要です")
+    user = state.get("user", {"my_team_id": None})
+    my_team_id = user.get("my_team_id") if isinstance(user, dict) else None
+    if not isinstance(user, dict):
+        p.add("state.json.user", "まとまり({ })が必要です")
+    elif my_team_id is not None and my_team_id not in team_ids:
+        p.add("state.json.user.my_team_id", f"自球団 {my_team_id!r} が、球団の一覧にありません")
     season_d = _need(state, "season", dict, "state.json", p) or {}
     day = _need(season_d, "day", int, "state.json.season", p)
     rotation = _need(season_d, "rotation", dict, "state.json.season", p)
@@ -507,4 +523,4 @@ def load_game(data: bytes) -> GameState:
         season._record(pg.result)
     season.played = played
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "")
+    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id)

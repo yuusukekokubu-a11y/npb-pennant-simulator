@@ -1,4 +1,4 @@
-// 画面の動き。計算は worker.js(裏の Python)に任せ、ここは表示だけを行う。
+// 開発者向けの測定ページ(/dev/。D-111)の動き。計算は worker.js(裏の Python)に任せ、ここは表示だけを行う。
 // ブラウザの保存領域(localStorage・sessionStorage・IndexedDB・Cookie)には何も書かない。
 
 const DAY_GAMES = 12; // 「1日分」として測る試合数(本物の日程の2日分。1日は6試合)
@@ -146,11 +146,6 @@ async function measure() {
     out.push(`- 1回目: ${sec(first.info.seconds)}(Pyodide ${sec(first.info.pyodideSeconds)} + 計算本体の読み込み ${sec(first.info.codeSeconds)})${cold ? "。配布元からダウンロードした" : "。ブラウザのキャッシュから読んだ"}`);
     out.push(`- 2回目: ${sec(second.info.seconds)}(Pyodide ${sec(second.info.pyodideSeconds)} + 計算本体の読み込み ${sec(second.info.codeSeconds)})`);
 
-    // 結果の指紋(PC の python scripts/fingerprint.py と見比べる。D-089)
-    status("結果の指紋を計算しています…");
-    const fp = await call(worker, "fingerprint");
-    out.push("", fp.text, `- 指紋の計算にかかった時間: ${sec(fp.seconds)}`);
-
     // リーグの生成と日程の作成
     status("架空のリーグと日程を作っています…");
     const setup = await call(worker, "setup", { seed: SEED });
@@ -240,6 +235,23 @@ async function copyResult() {
   }
   $("copied").textContent = "コピーしました";
   setTimeout(() => ($("copied").textContent = ""), 2000);
+}
+
+// ---- 結果の指紋(別のボタン。D-111) ----
+
+async function fingerprint() {
+  const el = $("fp-result");
+  $("fp").disabled = true;
+  try {
+    const w = await ensureWorker();
+    el.textContent = "結果の指紋を計算しています(1シーズン分を2回進めるので、少し時間がかかります)…";
+    const fp = await call(w, "fingerprint");
+    el.textContent = `${fp.text}\n- 指紋の計算にかかった時間: ${sec(fp.seconds)}`;
+  } catch (err) {
+    el.textContent = `計算できませんでした:${err.message}`;
+  } finally {
+    $("fp").disabled = false;
+  }
 }
 
 // ---- 2. ファイルの往復 ----
@@ -351,6 +363,7 @@ async function check() {
 }
 
 $("measure").addEventListener("click", measure);
+$("fp").addEventListener("click", fingerprint);
 $("copy").addEventListener("click", copyResult);
 $("export").addEventListener("click", exportGame);
 $("file").addEventListener("change", importFile);

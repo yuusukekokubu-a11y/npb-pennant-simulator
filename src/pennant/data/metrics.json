@@ -20,7 +20,8 @@
       "better": {"batter": "high"},
       "format": "rate3",
       "inputs": ["H", "AB"],
-      "stage": 1
+      "stage": 1,
+      "category": "basic"
     },
     "obp": {
       "name": "出塁率",
@@ -29,7 +30,8 @@
       "better": {"batter": "high"},
       "format": "rate3",
       "inputs": ["H", "BB", "HBP", "AB", "SF"],
-      "stage": 1
+      "stage": 1,
+      "category": "basic"
     },
     "slg": {
       "name": "長打率",
@@ -39,6 +41,7 @@
       "format": "rate3",
       "inputs": ["TB", "AB"],
       "stage": 1,
+      "category": "basic",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
     },
     "ops": {
@@ -49,6 +52,7 @@
       "format": "rate3",
       "inputs": ["H", "BB", "HBP", "AB", "SF", "TB"],
       "stage": 1,
+      "category": "saber",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
     },
     "iso": {
@@ -59,6 +63,7 @@
       "format": "rate3",
       "inputs": ["TB", "H", "AB"],
       "stage": 1,
+      "category": "saber",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
     },
     "babip": {
@@ -69,7 +74,8 @@
       "better_note": "運の影響が大きいので、高い・低いだけで実力を判断しない",
       "format": "rate3",
       "inputs": ["H", "HR", "AB", "SO", "SF"],
-      "stage": 1
+      "stage": 1,
+      "category": "saber"
     },
     "k_pct": {
       "name": "K%",
@@ -78,7 +84,8 @@
       "better": {"batter": "low", "pitcher": "high"},
       "format": "percent1",
       "inputs": ["SO", "PA", "BF"],
-      "stage": 1
+      "stage": 1,
+      "category": "saber"
     },
     "bb_pct": {
       "name": "BB%",
@@ -87,7 +94,8 @@
       "better": {"batter": "high", "pitcher": "low"},
       "format": "percent1",
       "inputs": ["BB", "PA", "BF"],
-      "stage": 1
+      "stage": 1,
+      "category": "saber"
     },
     "era": {
       "name": "防御率",
@@ -97,6 +105,7 @@
       "format": "decimal2",
       "inputs": ["ER", "OUTS"],
       "stage": 1,
+      "category": "basic",
       "note": "自責点は簡易な定義で数えている(得点した走者の出塁・進塁に失策が関わっていれば、自責点にしない)"
     }
   }

@@ -1,6 +1,7 @@
 // 裏で Python(Pyodide)を動かす部分(Web Worker)。画面(app.js)からの依頼を受けて計算し、結果を返す。
 // 計算を裏で行うので、計算中も画面は固まらない。
-// 通信するのは、このページ自身(pennant.zip・bench.py)と、Pyodide の配布元だけ。
+// 通信するのは、このページ自身(../pennant.zip・bench.py)と、Pyodide の配布元だけ。
+// このページは開発者向けの測定ページ(/dev/。D-111)。計算本体や見本のファイルは、一つ上のフォルダにある。
 // ブラウザの保存領域(localStorage・IndexedDB など)は使わない。
 
 const PYODIDE_VERSION = "314.0.7";
@@ -30,12 +31,12 @@ function wasmHeapBytes() {
 
 const handlers = {
   async boot({ local }) {
-    const base = local ? new URL("pyodide/", import.meta.url).href : PYODIDE_CDN;
+    const base = local ? new URL("../pyodide/", import.meta.url).href : PYODIDE_CDN;
     const t0 = performance.now();
     const { loadPyodide } = await import(base + "pyodide.mjs");
     pyodide = await loadPyodide({ indexURL: base, stdout: () => {}, stderr: () => {} });
     const t1 = performance.now();
-    const zip = await (await fetch(new URL("pennant.zip", import.meta.url))).arrayBuffer();
+    const zip = await (await fetch(new URL("../pennant.zip", import.meta.url))).arrayBuffer();
     pyodide.unpackArchive(zip, "zip", { extractDir: "/home/pyodide" });
     const src = await (await fetch(new URL("bench.py", import.meta.url))).text();
     pyodide.FS.writeFile("/home/pyodide/bench.py", src);
@@ -142,8 +143,8 @@ const handlers = {
   },
 
   async checkSample() {
-    const data = new Uint8Array(await (await fetch(new URL("sample-save.sav", import.meta.url))).arrayBuffer());
-    const info = await (await fetch(new URL("sample-save.json", import.meta.url))).json();
+    const data = new Uint8Array(await (await fetch(new URL("../sample-save.sav", import.meta.url))).arrayBuffer());
+    const info = await (await fetch(new URL("../sample-save.json", import.meta.url))).json();
     const py = pyodide.toPy(data);
     const digest = benchModule.continue_sample(py, info.continue_to_day);
     py.destroy();
@@ -151,7 +152,7 @@ const handlers = {
   },
 
   async expected() {
-    return await (await fetch(new URL("expected-fingerprints.json", import.meta.url))).json();
+    return await (await fetch(new URL("../expected-fingerprints.json", import.meta.url))).json();
   },
 
   resources() {

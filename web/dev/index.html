@@ -8,7 +8,7 @@
 <meta name="referrer" content="no-referrer">
 <!-- ブラウザがタブの小さな絵(favicon.ico)を取りに行かないようにする -->
 <link rel="icon" href="data:,">
-<title>ブラウザでの実行の技術検証</title>
+<title>測定ページ(開発者向け)</title>
 <style>
   :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --accent: #0969da; --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; }
   @media (prefers-color-scheme: dark) {
@@ -16,6 +16,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height: 1.6; }
+  a { color: var(--accent); }
   main { max-width: 760px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 1.3rem; margin: 8px 0 4px; }
   h2 { font-size: 1.05rem; margin: 28px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
@@ -35,17 +36,23 @@
 </head>
 <body>
 <main>
-  <h1>ブラウザでの実行の技術検証</h1>
+  <h1>測定ページ(開発者向け)</h1>
+  <p class="muted">ここは開発者向けの測定ページです。遊ぶための画面は <a href="../">こちら</a> です。</p>
   <p class="muted">計算本体(選手の生成・1回の打席・1試合)を、このブラウザの中の Python(Pyodide)で動かし、速さとメモリを測ります。サーバーには何も送りません。データは架空のリーグだけです。</p>
 
   <h2>1. 測定</h2>
-  <p>「測定」を押すと、Python の起動(2回)、結果の指紋(同じシードなら、どの端末でも同じになるはずの値)、1日分(12試合)、1シーズン(本物の日程。750試合)、成績の集計、打席ログの大きさ、圧縮した書き出しの大きさを順に測ります。PC で約1分、スマホでは数分かかることがあります。</p>
+  <p>「測定」を押すと、Python の起動(2回)、1日分(12試合)、1シーズン(本物の日程。750試合)、成績の集計、打席ログの大きさ、圧縮した書き出しの大きさを順に測ります。PC で約1分、スマホでは数分かかることがあります。</p>
   <button id="measure">測定</button>
   <progress id="progress" max="858" value="0" hidden></progress>
   <div id="status" class="status" role="status" aria-live="polite"></div>
   <textarea id="result" readonly placeholder="ここに測定の結果が出ます"></textarea>
   <button id="copy" class="secondary" disabled>結果をコピー</button>
   <span id="copied" class="muted"></span>
+
+  <h2>結果の指紋</h2>
+  <p>結果の指紋(同じシードなら、どの端末でも同じになるはずの値)を計算します。PC の <code>python scripts/fingerprint.py</code> の結果と見比べます。</p>
+  <button id="fp" class="secondary">指紋を確かめる</button>
+  <pre id="fp-result" class="out"></pre>
 
   <h2>2. ファイルの書き出しと読み込み</h2>
   <p>1試合分の打席ログを、ファイル(圧縮した JSON Lines)として書き出します。書き出したファイルを選んで読み込み、Python 側で読めるかを確かめます。</p>

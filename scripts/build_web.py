@@ -1,12 +1,14 @@
-"""ブラウザ用のテストページ(web/)を、公開できる形(_site/)にまとめる開発者向けスクリプト。
+"""ブラウザの画面(web/)を、公開できる形(_site/)にまとめる開発者向けスクリプト。
 
 使い方:
     python scripts/build_web.py                      # _site/ を作る(GitHub Pages の公開でも同じものを使う)
     python scripts/build_web.py --pyodide DIR        # 手元の Pyodide を _site/pyodide/ に入れる(通信なしの試験用)
 
 _site/ の中身:
-    index.html・app.js・worker.js・bench.py   web/ のファイルをそのまま写す
-    pennant.zip                              計算本体(src/pennant の .py と data/*.json)。ページが読み込んで使う
+    index.html・app.js・worker.js・bridge.py      遊ぶための画面(web/ のファイルをそのまま写す)
+    dev/                                         開発者向けの測定ページ(web/dev/ をそのまま写す。D-111)
+    pennant.zip                                  計算本体(src/pennant の .py と data/*.json)。両方の画面が読み込んで使う
+    sample-save.*・expected-fingerprints.json    測定ページの確認用(架空のデータだけ)
     build.json                               作った日時と、入れたファイルの一覧
 
 計算本体は書き換えない。実名のデータ・セーブデータは入れない(架空のデータだけ)。
@@ -24,7 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 PACKAGE = ROOT / "src" / "pennant"
-WEB_FILES = ("index.html", "app.js", "worker.js", "bench.py")
+WEB_FILES = ("index.html", "app.js", "worker.js", "bridge.py")
+DEV_FILES = ("index.html", "app.js", "worker.js", "bench.py")
 FIXED_TIME = (2020, 1, 1, 0, 0, 0)  # zip の中の日時を固定する(同じ中身なら同じファイルになる)
 
 
@@ -52,12 +55,15 @@ def build(out: Path, pyodide_dir: Path | None = None) -> dict:
     out.mkdir(parents=True)
     for name in WEB_FILES:
         shutil.copy2(WEB / name, out / name)
+    (out / "dev").mkdir()
+    for name in DEV_FILES:
+        shutil.copy2(WEB / "dev" / name, out / "dev" / name)
     names = build_zip(out / "pennant.zip")
     # 保存・読み込みの確認用(架空のデータだけ。D-103)
     shutil.copy2(ROOT / "tests" / "data" / "sample-save.sav", out / "sample-save.sav")
     shutil.copy2(ROOT / "tests" / "data" / "sample-save.json", out / "sample-save.json")
     shutil.copy2(ROOT / "tests" / "data" / "fingerprints.json", out / "expected-fingerprints.json")
-    info = {"web_files": list(WEB_FILES), "package_files": names, "local_pyodide": pyodide_dir is not None}
+    info = {"web_files": list(WEB_FILES), "dev_files": ["dev/" + n for n in DEV_FILES], "package_files": names, "local_pyodide": pyodide_dir is not None}
     if pyodide_dir is not None:
         shutil.copytree(pyodide_dir, out / "pyodide")
     (out / "build.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -67,7 +73,7 @@ def build(out: Path, pyodide_dir: Path | None = None) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="ブラウザ用のテストページを _site/ にまとめる")
+    parser = argparse.ArgumentParser(description="ブラウザの画面を _site/ にまとめる")
     parser.add_argument("--out", default=str(ROOT / "_site"), help="出力先のフォルダ(既定: _site)")
     parser.add_argument("--pyodide", help="手元の Pyodide のフォルダ(試験用。公開では使わない)")
     args = parser.parse_args(argv)

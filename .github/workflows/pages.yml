@@ -1,4 +1,4 @@
-# ブラウザ用のテストページを GitHub Pages(リポジトリの内容を Web ページとして公開する機能)に公開する。
+# ブラウザの画面(遊ぶための画面と、/dev/ の測定ページ)を GitHub Pages(リポジトリの内容を Web ページとして公開する機能)に公開する。
 # 公開するのは scripts/build_web.py が作る _site/ だけ(ページのコードと、計算本体と、架空のデータ)。
 # 実名のデータ・セーブデータは含まない。秘密情報は使わない。
 # 使う前に、リポジトリの Settings → Pages で、Source を「GitHub Actions」にしておく(web/README.md)。
