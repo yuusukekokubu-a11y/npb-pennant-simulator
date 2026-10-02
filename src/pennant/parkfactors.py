@@ -4,10 +4,13 @@
   - 集計:球場 × シーズンごとに、本拠地の試合とアウェイの試合(同じチームが相手の球場で行った試合)の、
     両チーム合計の 打席(PA)・本塁打(HR)・インプレーの打球(BIP)・インプレーの安打(HIT)・得点(R)。整数。
   - 生の比:本拠地の率 ÷ アウェイの率(得点は 1打席あたりの得点、本塁打は 1打席あたり、BABIP は HIT ÷ BIP)。
-  - 縮める:複数シーズンを合算し、比重 = 本拠地の打席数 ÷(本拠地の打席数 + 定数)で 1.0 に向けて縮める。
+  - 縮める(本塁打・BABIP):複数シーズンを合算し、比重 = 本拠地の打席数 ÷(本拠地の打席数 + 定数)で 1.0 に向けて縮める。
     推定 = 1 +(生の比 − 1)× 比重。定数は設定ファイル(data/park_factors.json)。
   - そろえる:各リーグの6球場の推定の平均が 1.0 になるよう割る。
-計算はすべて分数(Fraction)で行う(指紋 (j) に使える)。
+  - 得点(D-147):縮めてそろえた本塁打と BABIP の推定値を千分率の倍率にして、「1打席あたりの得点の出やすさ」に
+    換算する(parks.RunConverter。真の値側と同じ式)。千分率に丸めて分数に戻し、各リーグの平均を 1.0 にそろえる。
+    直接推定した得点(生の比)は検証用に残すだけで、補正には使わない。
+縮める計算は分数(Fraction)。換算は小数だが、千分率の整数に丸めるので、指紋 (j) に使える。
 
 今シーズンの指標(wRC+・OPS+)に使う球場補正は、前のシーズンまでの履歴から推定した「得点」の値。
 1シーズン目(履歴なし)は 1.0。選手ごとの球場補正は、その選手が球場ごとに立った打席数で重みづけした平均。
@@ -16,6 +19,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -28,6 +32,7 @@ from .game import GameResult
 SUPPORTED_FORMAT_VERSION = 1
 COUNT_KEYS = ("PA", "HR", "BIP", "HIT", "R")
 FACTOR_KEYS = ("runs", "home_run", "babip")
+SHRINK_KEYS = ("home_run", "babip")  # 縮める定数を持つ項目(得点は組み立てる。D-148)
 FACTOR_LABELS = {"runs": "得点", "home_run": "本塁打", "babip": "BABIP"}
 _HITS = ("single", "double", "triple", "home_run")
 
@@ -98,8 +103,8 @@ def history_from_dict(data: list) -> list[dict[str, ParkTally]]:
 
 @dataclass
 class ParkEstimate:
-    raw: dict[str, Fraction | None]  # 生の比(求められないときは None)
-    estimate: dict[str, Fraction]  # 縮めて、リーグでそろえた推定値
+    raw: dict[str, Fraction | None]  # 生の比(求められないときは None。得点の生の比は検証用)
+    estimate: dict[str, Fraction]  # 本塁打・BABIP:縮めてリーグでそろえた推定値。得点:本塁打と BABIP から組み立てた値
     home_pa: int  # 合算した本拠地の打席数
     seasons: int  # 合算したシーズン数
 
@@ -130,12 +135,32 @@ def shrink_weight(home_pa: int, constant: int) -> Fraction:
     return Fraction(home_pa, home_pa + constant) if home_pa + constant else Fraction(0)
 
 
+def thousandths(value: Fraction) -> int:
+    """分数を千分率の整数に丸める(四捨五入)。"""
+    return int(math.floor(value * 1000 + Fraction(1, 2)))
+
+
+def _normalize(out: dict[str, ParkEstimate], groups: dict[int, list[str]], key: str) -> None:
+    for ids in groups.values():
+        mean = sum((out[tid].estimate[key] for tid in ids), Fraction(0)) / len(ids)
+        if mean:
+            for tid in ids:
+                out[tid].estimate[key] /= mean
+
+
 def estimate_parks(
     history: Iterable[dict[str, ParkTally]],
     league_of: Mapping[str, int],
     settings: "ParkSettings",
+    converter=None,
 ) -> dict[str, ParkEstimate]:
-    """履歴(シーズンごとの集計)から、球場ごとの推定値を求める。各リーグの平均を 1.0 にそろえる。"""
+    """履歴(シーズンごとの集計)から、球場ごとの推定値を求める。各リーグの平均を 1.0 にそろえる。
+
+    converter は本塁打と BABIP の倍率を得点の出やすさに換算するもの(parks.RunConverter)。None なら既定の設定で作る。
+    """
+    from .models import ParkFactors
+    from .parks import RunConverter
+
     total: dict[str, ParkTally] = {tid: ParkTally() for tid in league_of}
     seasons = 0
     for season in history:
@@ -146,19 +171,22 @@ def estimate_parks(
     for tid, t in total.items():
         raw = {k: raw_ratio(t, k) for k in FACTOR_KEYS}
         est = {}
-        for k in FACTOR_KEYS:
+        for k in SHRINK_KEYS:
             w = shrink_weight(t.home["PA"], settings.shrink_pa(k))
             est[k] = Fraction(1) if raw[k] is None else 1 + (raw[k] - 1) * w
         out[tid] = ParkEstimate(raw, est, t.home["PA"], seasons)
     groups: dict[int, list[str]] = {}
     for tid in out:
         groups.setdefault(league_of.get(tid, 0), []).append(tid)
-    for ids in groups.values():
-        for k in FACTOR_KEYS:
-            mean = sum((out[tid].estimate[k] for tid in ids), Fraction(0)) / len(ids)
-            if mean:
-                for tid in ids:
-                    out[tid].estimate[k] /= mean
+    for k in SHRINK_KEYS:
+        _normalize(out, groups, k)
+    # 得点:本塁打と BABIP の推定から組み立てる(D-147)
+    if converter is None:
+        converter = RunConverter()
+    for e in out.values():
+        park = ParkFactors(thousandths(e.estimate["home_run"]), thousandths(e.estimate["babip"]))
+        e.estimate["runs"] = Fraction(int(round(converter.run_factor(park) * 1000)), 1000)
+    _normalize(out, groups, "runs")
     return out
 
 
@@ -201,15 +229,15 @@ def validate_park_settings(data, source: str = "(辞書)") -> ParkSettings:
         c.add("format_version", f"対応していない形式のバージョンです(値: {version!r}、対応: {SUPPORTED_FORMAT_VERSION})")
     for section, low, high in (("shrink_pa", 1, 10_000_000), ("assumed_sd", 0.001, 1.0)):
         sec = c.section(c.get(root, section, ""), section)
-        for k in FACTOR_KEYS:
+        for k in SHRINK_KEYS:
             v = c.get(sec, k, section)
             if section == "shrink_pa":
                 c.integer(v, f"{section}.{k}", low, high)
             else:
                 c.number(v, f"{section}.{k}", low, high)
         for k in sec or {}:
-            if k not in FACTOR_KEYS:
-                c.add(f"{section}.{k}", "知らない名前です")
+            if k not in SHRINK_KEYS:
+                c.add(f"{section}.{k}", "知らない名前です(得点用の定数は ②c で廃止。D-148)")
     if c.problems:
         raise ConfigError(source, c.problems)
     return ParkSettings(copy.deepcopy(root), source)
@@ -231,10 +259,11 @@ def run_seasons(
     on_season には、シーズンごとに (シーズン番号, そこまでの推定, リーグ) を知らせる。
     """
     from .newgame import new_league
-    from .parks import neutralize_parks
+    from .parks import RunConverter, neutralize_parks
     from .plate_appearance import OddsRatioModel
     from .season import Season, derive_seed
 
+    converter = RunConverter()
     history: list[dict[str, ParkTally]] = []
     estimates: dict[str, ParkEstimate] = {}
     league = None
@@ -246,7 +275,7 @@ def run_seasons(
         season = Season(league, derive_seed(league_seed, f"season:{k}"), model=model)
         results = [p.result for p in season.play_to_end().games]
         history.append(season_tallies(results))
-        estimates = estimate_parks(history, {t.id: t.league_index for t in league.teams}, settings)
+        estimates = estimate_parks(history, {t.id: t.league_index for t in league.teams}, settings, converter)
         if on_season:
             on_season(k, estimates, league)
     return history, estimates, league

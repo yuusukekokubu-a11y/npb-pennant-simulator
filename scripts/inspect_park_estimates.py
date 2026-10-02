@@ -5,9 +5,12 @@
     python scripts/inspect_park_estimates.py --seasons 5     # シーズン数を変える(速い確認用)
     python scripts/inspect_park_estimates.py --no-home-check # ホームの有利を切った比較を省く
 
-出力は Markdown の表。相関(1 に近いほど、推定が真の値の並び順を言い当てている)と、
-誤差(二乗平均平方根:推定と真の値の差を二乗して平均し、平方根を取ったもの。小さいほど近い)。
-得点ベースの「真の値」は、真の倍率から求めた「1打席あたりの得点の出やすさ」の目安(parks.expected_run_factors)。
+出力は Markdown の表。主な見方は、推定の誤差(二乗平均平方根:推定と真の値の差を二乗して平均し、平方根を
+取ったもの。小さいほど近い)を、「全部 1.0 と推定した場合」の誤差(真の値のばらつきそのもの)と比べること(D-150)。
+推定の誤差が 1.0 の誤差より小さければ、推定を使う意味がある。相関(1 に近いほど並び順を言い当てている)は参考値。
+得点の「真の値」は、真の倍率から求めた「1打席あたりの得点の出やすさ」(parks.expected_run_factors)。
+得点の推定は、本塁打と BABIP の推定から組み立てた値(D-147)。「得点(直接)」は、本拠地 ÷ アウェイの生の比を
+リーグの平均でそろえただけの検証用の値(縮めていない。補正には使わない)。
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ from __future__ import annotations
 import argparse
 import copy
 import sys
-from pennant.baselines import load_baseline_settings
 from pennant.pa_config import load_pa_config, validate_pa_config
 from pennant.parkfactors import FACTOR_KEYS, FACTOR_LABELS, load_park_settings, run_seasons
 from pennant.parks import expected_run_factors
@@ -45,7 +47,7 @@ def rmse(xs, ys):
 
 def true_factors(league, model):
     """真の倍率(本塁打・BABIP)と、得点ベースの真の値の目安(各リーグの平均で割ったもの)。"""
-    runs = expected_run_factors(league, model, load_baseline_settings().default_baselines().values)
+    runs = expected_run_factors(league, model)
     return {t.id: {"home_run": t.park.home_run / 1000, "babip": t.park.babip / 1000, "runs": runs[t.id]} for t in league.teams}
 
 
@@ -55,6 +57,14 @@ def collect(league_seed, n, settings, pa_config=None):
     def on_season(k, est, league):
         if k in CHECKPOINTS:
             snaps[k] = {tid: {key: float(e.estimate[key]) for key in FACTOR_KEYS} for tid, e in est.items()}
+            groups = {}
+            for t in league.teams:
+                groups.setdefault(t.league_index, []).append(t.id)
+            for ids in groups.values():  # 得点(直接):生の比をリーグの平均でそろえる(検証用)
+                raws = {tid: float(est[tid].raw["runs"] or 1) for tid in ids}
+                mean = sum(raws.values()) / len(raws)
+                for tid in ids:
+                    snaps[k][tid]["runs_direct"] = raws[tid] / mean
         print(f"  ... シーズン {k} / {n}", file=sys.stderr)
 
     history, est, league = run_seasons(league_seed, n, settings, on_season, pa_config)
@@ -74,24 +84,31 @@ def main(argv=None):
     snaps, league = collect(args.seed, args.seasons, settings)
     truth = true_factors(league, model)
     ids = [t.id for t in league.teams]
+    keys = list(FACTOR_KEYS) + ["runs_direct"]
+    labels = {**FACTOR_LABELS, "runs_direct": "得点(直接)"}
+    truth_of = lambda key, i: truth[i]["runs" if key == "runs_direct" else key]
+    print("## シーズン数ごとの、推定の誤差と「全部 1.0 と推定した場合」の誤差(D-150)\n")
     rows = []
+    ones = {key: rmse([1.0] * len(ids), [truth_of(key, i) for i in ids]) for key in keys}
     for k in sorted(snaps):
         row = [str(k)]
-        for key in FACTOR_KEYS:
-            xs = [snaps[k][i][key] for i in ids]
-            ys = [truth[i][key] for i in ids]
-            row += [f"{corr(xs, ys):.2f}", f"{rmse(xs, ys):.3f}"]
+        for key in keys:
+            row += [f"{rmse([snaps[k][i][key] for i in ids], [truth_of(key, i) for i in ids]):.3f}", f"{ones[key]:.3f}"]
         rows.append(row)
-    print("## シーズン数ごとの、推定と真の値の関係\n")
-    print(_table(["シーズン数"] + [f"{FACTOR_LABELS[k]}:相関" if j == 0 else f"{FACTOR_LABELS[k]}:誤差" for k in FACTOR_KEYS for j in range(2)], rows))
+    print(_table(["シーズン数"] + [f"{labels[k]}:{'推定の誤差' if j == 0 else '全部 1.0 の誤差'}" for k in keys for j in range(2)], rows))
+    print("\n## シーズン数ごとの、推定と真の値の相関(参考値)\n")
+    rows = []
+    for k in sorted(snaps):
+        rows.append([str(k)] + [f"{corr([snaps[k][i][key] for i in ids], [truth_of(key, i) for i in ids]):.2f}" for key in keys])
+    print(_table(["シーズン数"] + [f"{labels[k]}:相関" for k in keys], rows))
     last = max(snaps)
     print(f"\n## {last} シーズン時点の、球場ごとの推定と真の値\n")
     rows = []
     for t in league.teams:
         s = snaps[last][t.id]
         tr = truth[t.id]
-        rows.append([t.stadium, f"{s['runs']:.3f}", f"{tr['runs']:.3f}", f"{s['home_run']:.3f}", f"{tr['home_run']:.3f}", f"{s['babip']:.3f}", f"{tr['babip']:.3f}"])
-    print(_table(["球場", "得点:推定", "得点:真(目安)", "本塁打:推定", "本塁打:真", "BABIP:推定", "BABIP:真"], rows))
+        rows.append([t.stadium, f"{s['runs']:.3f}", f"{s['runs_direct']:.3f}", f"{tr['runs']:.3f}", f"{s['home_run']:.3f}", f"{tr['home_run']:.3f}", f"{s['babip']:.3f}", f"{tr['babip']:.3f}"])
+    print(_table(["球場", "得点:推定", "得点:直接", "得点:真", "本塁打:推定", "本塁打:真", "BABIP:推定", "BABIP:真"], rows))
 
     if args.no_home_check:
         return 0
