@@ -325,7 +325,7 @@ def test_metrics_config_is_valid_and_complete(mconfig):
 def test_metric_categories(mconfig):
     """区分(基本/セイバー。D-109):成績の画面の切り替えで使う。"""
     assert mconfig.in_category("basic") == ["avg", "obp", "slg", "era"]
-    assert mconfig.in_category("saber") == ["ops", "iso", "babip", "k_pct", "bb_pct"]
+    assert mconfig.in_category("saber") == ["ops", "iso", "babip", "k_pct", "bb_pct", "woba", "wrc_plus", "ops_plus", "fip"]
 
 
 def test_spec_glossary_matches_metric_descriptions(mconfig):

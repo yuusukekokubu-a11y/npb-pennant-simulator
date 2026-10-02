@@ -140,8 +140,16 @@ const placeholder1 = await page.getAttribute("#team-1", "placeholder");
 const placeholder7 = await page.getAttribute("#team-7", "placeholder");
 await page.check("input[name=my-team][value='7']");
 await page.click("#season-seed"); // 欄を移っても(変更の知らせが出ても)、選んだ自球団が変わらないこと
+check(await page.isChecked("input[name=baseline-mode][value=trial]"), "基準値の求め方は、最初は「試運転で求める」");
+const trialStart = Date.now();
 await page.click("#new-start");
-await page.waitForSelector("#screen-progress:not([hidden])");
+// 試運転の進み具合(D-121)
+await page.waitForSelector("#trial-box:not([hidden])");
+await page.waitForFunction(() => /\d+ \/ 125 日/.test(document.querySelector("#trial-text").textContent));
+check((await page.textContent("#trial-box")).includes("リーグの基準値を求めています"), `試運転の進み具合が出る(「${await page.textContent("#trial-text")}」)`);
+await page.waitForSelector("#screen-progress:not([hidden])", { timeout: 120000 });
+const trialSeconds = (Date.now() - trialStart) / 1000;
+results.push(`  試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
 const mineName = await page.textContent("#mine-name");
 check(mineName === placeholder7, `選んだ8番目の球団が自球団になる(${mineName})`);
 check((await page.textContent("#day-text")).startsWith("0日目 / 125日"), `進行の画面:「${await page.textContent("#day-text")}」`);
@@ -270,6 +278,23 @@ await waitStats("K%(高い順)");
 const kDesc = pyGame(`from pennant.api import metrics_config\nprint(json.dumps(metrics_config().metrics["k_pct"]["description"], ensure_ascii=False))`);
 check((await page.textContent("#stats-info")).includes(kDesc), "指標名を押すと出る解説が、指標の定義データの解説と同じ(K%)");
 await grab();
+// 第2弾の指標(打者のセイバー:wRC+ の高い順)と注記
+await page.click("#stats-role button[data-value=batter]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("wRC+")));
+screenRows = await waitStats("wRC+(高い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber" })), `打者のセイバー(wOBA・wRC+・OPS+。wRC+ の高い順)が、計算本体と同じ(${screenRows.length}人)`);
+const baseNote = await page.textContent("#stats-baseline");
+check(await page.isVisible("#stats-baseline") && baseNote.includes("試運転のシーズンの値に、今シーズンの値を混ぜて"), `表の近くに、基準値を混ぜている注記が出る(「${baseNote}」)`);
+await page.click("#stats-table th button.sort >> text=OPS+");
+await waitStats("OPS+(高い順)");
+check((await page.textContent("#stats-info")).includes("球場の違いの補正は、まだ行っていない"), "OPS+ の解説に、球場補正をまだ行っていない注記が出る");
+await page.click("#stats-role button[data-value=pitcher]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("FIP")));
+await page.click("#stats-table th button.sort >> text=FIP");
+screenRows = await waitStats("FIP(低い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "saber", sort: "fip", order: "asc" })), `投手のセイバーに FIP(低い順)が出て、計算本体と同じ(${screenRows.length}人)`);
+await grab();
+
 // 能力:オフのときは「オンにすると見られます」だけ
 await page.click("#stats-kind button[data-value=ability]");
 await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("答え合わせモードをオンにすると見られます"));
@@ -421,6 +446,41 @@ await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody t
 results.push(`  125日目のセーブデータを開いて、個人成績を開くまで: 1回目 ${firstOpen.toFixed(2)} 秒 / 開き直し ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
 const frame2 = await page.evaluate(() => new Promise((r) => { const s = performance.now(); requestAnimationFrame(() => r(performance.now() - s)); }));
 check(frame2 < 500, `成績の表示中も画面が固まらない(次の描画まで ${frame2.toFixed(0)} ミリ秒)`);
+await grab();
+
+// 指標の解説のページ(指標の定義データと同じ)
+await page.click("#menu");
+await page.click("#open-guide");
+await page.waitForSelector("#guide-body .guide-item");
+const guideOnScreen = await page.$$eval("#guide-body .guide-item", (items) => items.map((i) => [i.dataset.key, i.querySelector("h3").textContent, i.querySelector(".description").textContent]));
+const guidePy = JSON.parse(python(`
+import json
+from pennant.api import metrics_config
+c = metrics_config()
+print(json.dumps([[k, c.metrics[k]["name"], c.metrics[k]["description"]] for k in c.in_category("basic") + c.in_category("saber")], ensure_ascii=False))`));
+check(JSON.stringify(guideOnScreen) === JSON.stringify(guidePy), `「指標の解説」ページが、指標の定義データと同じ(${guideOnScreen.length}個の指標)`);
+check((await page.textContent("#guide-body")).includes("式(打者):(四球の重み × 四球"), "指標の解説に、式が日本語で出る");
+await grab();
+await page.click("#screen-guide .back");
+await page.click("#screen-settings .back");
+
+// 速い選択肢(既定値を使う)
+await page.reload();
+await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
+await page.click("#go-new");
+await page.waitForSelector("#screen-new:not([hidden])");
+await page.click("details summary");
+await page.check("input[name=baseline-mode][value=default]");
+const fastStart = Date.now();
+await page.click("#new-start");
+await page.waitForSelector("#screen-progress:not([hidden])");
+const fastSeconds = (Date.now() - fastStart) / 1000;
+await page.click(".adv[data-days='1']");
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1日目"));
+await page.click("#tabs button[data-tab=stats]");
+await page.click("#stats-kind button[data-value=saber]");
+await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("設定ファイルの既定値"));
+check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。試運転ありは ${trialSeconds.toFixed(1)} 秒)。注記も「設定ファイルの既定値」になる`);
 await grab();
 
 // ---- 7. 隠し情報・通信・保存領域 ----

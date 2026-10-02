@@ -1,11 +1,13 @@
 {
-  "fingerprint_version": 4,
+  "fingerprint_version": 5,
   "league": "9c1508e6cbbe9854ab1f7806aa886c231d12c0b04b08e262c5f0bb55798b29e0",
   "game": "da87737c0ffdae88ca1728f3c5e4e4e1d0e98b0459c11908754fc0d83af86631",
   "days": "23a899dcc918bad348ab1f18c4bfbcb5ce49df3b7101087cab36aed31a9e34a0",
   "season": "67d149e13069b6914cab837d4d2acca30713a9babfd3df0f59cd246a4c507924",
   "records": "a56e4986f775056686a5b0118dc941845bf7bf33e28121a93ad630efa38a3123",
   "save": "6991efe00070160d4112c93dde8a5ed33caf0d520b69a054dccf90e100dfeec5",
+  "baselines": "b1f58815c33a6481c49d5c8d3a2c1f7a477957ff1dc3c62745cbc922d4fe47e2",
+  "metrics2": "a6bb50be18458b9269387fbcfb2d353f86a61d283e3ef52fa4939adf4c3b6892",
   "counts": {
     "players": 840,
     "game_plate_appearances": 81,
@@ -37,6 +39,12 @@
       true,
       true,
       true
-    ]
+    ],
+    "baselines": {
+      "trial_plate_appearances": 59104,
+      "batters": 172,
+      "pitchers": 168,
+      "weight": "7403/9903"
+    }
   }
 }

@@ -2,72 +2,233 @@
   "format_version": 1,
   "counts": {
     "batter": {
-      "G": "試合", "PA": "打席", "AB": "打数", "H": "安打", "B1": "単打", "B2": "二塁打", "B3": "三塁打",
-      "HR": "本塁打", "TB": "塁打", "BB": "四球", "HBP": "死球", "SO": "三振", "SF": "犠牲フライ",
-      "GDP": "併殺打", "RBI": "打点", "R": "得点"
+      "G": "試合",
+      "PA": "打席",
+      "AB": "打数",
+      "H": "安打",
+      "B1": "単打",
+      "B2": "二塁打",
+      "B3": "三塁打",
+      "HR": "本塁打",
+      "TB": "塁打",
+      "BB": "四球",
+      "HBP": "死球",
+      "SO": "三振",
+      "SF": "犠牲フライ",
+      "GDP": "併殺打",
+      "RBI": "打点",
+      "R": "得点"
     },
     "pitcher": {
-      "G": "登板", "GS": "先発", "OUTS": "投球回(アウトの数)", "BF": "対戦打者", "H": "被安打", "HR": "被本塁打",
-      "BB": "与四球", "HBP": "与死球", "SO": "奪三振", "R": "失点", "ER": "自責点", "W": "勝利", "L": "敗戦",
-      "SV": "セーブ", "HLD": "ホールド", "CG": "完投"
+      "G": "登板",
+      "GS": "先発",
+      "OUTS": "投球回(アウトの数)",
+      "BF": "対戦打者",
+      "H": "被安打",
+      "HR": "被本塁打",
+      "BB": "与四球",
+      "HBP": "与死球",
+      "SO": "奪三振",
+      "R": "失点",
+      "ER": "自責点",
+      "W": "勝利",
+      "L": "敗戦",
+      "SV": "セーブ",
+      "HLD": "ホールド",
+      "CG": "完投"
     }
   },
   "count_descriptions": {
     "batter": {
-      "G": "出場した試合の数", "PA": "打席に立った回数。四球・死球・犠牲フライも含む", "AB": "打席から、四球・死球・犠牲フライを除いた数。打率の分母になる",
-      "H": "ヒット(単打・二塁打・三塁打・本塁打)の数", "B1": "単打(一塁まで進んだヒット)の数", "B2": "二塁打の数", "B3": "三塁打の数",
-      "HR": "本塁打(ホームラン)の数", "TB": "単打を1、二塁打を2、三塁打を3、本塁打を4として足した数", "BB": "四球(フォアボール)の数",
-      "HBP": "死球(デッドボール)の数", "SO": "三振の数", "SF": "犠牲フライの数。外野フライでアウトになる間に走者が生還したもので、打数に数えない",
-      "GDP": "併殺打(1つの打球で2つのアウトになったもの)の数", "RBI": "打点。自分の打撃で生還させた走者の数", "R": "得点。自分が本塁に生還した回数"
+      "G": "出場した試合の数",
+      "PA": "打席に立った回数。四球・死球・犠牲フライも含む",
+      "AB": "打席から、四球・死球・犠牲フライを除いた数。打率の分母になる",
+      "H": "ヒット(単打・二塁打・三塁打・本塁打)の数",
+      "B1": "単打(一塁まで進んだヒット)の数",
+      "B2": "二塁打の数",
+      "B3": "三塁打の数",
+      "HR": "本塁打(ホームラン)の数",
+      "TB": "単打を1、二塁打を2、三塁打を3、本塁打を4として足した数",
+      "BB": "四球(フォアボール)の数",
+      "HBP": "死球(デッドボール)の数",
+      "SO": "三振の数",
+      "SF": "犠牲フライの数。外野フライでアウトになる間に走者が生還したもので、打数に数えない",
+      "GDP": "併殺打(1つの打球で2つのアウトになったもの)の数",
+      "RBI": "打点。自分の打撃で生還させた走者の数",
+      "R": "得点。自分が本塁に生還した回数"
     },
     "pitcher": {
-      "G": "登板した試合の数", "GS": "先発した試合の数", "OUTS": "投球回。取ったアウトの数 ÷ 3。「6 2/3」は6回と、アウト2つ分",
-      "BF": "対戦した打者の数", "H": "打たれたヒットの数", "HR": "打たれた本塁打の数", "BB": "与えた四球の数", "HBP": "与えた死球の数",
-      "SO": "奪った三振の数", "R": "失点。この投手が出した走者が生還した数", "ER": "自責点。失点のうち、失策が関わらないもの(簡易な定義)",
-      "W": "勝利投手になった回数", "L": "敗戦投手になった回数", "SV": "セーブ。リードを守って試合を締めくくった回数(条件あり)",
-      "HLD": "ホールド。救援で、リードや同点を保ったまま次の投手につないだ回数(条件あり)", "CG": "完投。1人で最後まで投げた試合の数"
+      "G": "登板した試合の数",
+      "GS": "先発した試合の数",
+      "OUTS": "投球回。取ったアウトの数 ÷ 3。「6 2/3」は6回と、アウト2つ分",
+      "BF": "対戦した打者の数",
+      "H": "打たれたヒットの数",
+      "HR": "打たれた本塁打の数",
+      "BB": "与えた四球の数",
+      "HBP": "与えた死球の数",
+      "SO": "奪った三振の数",
+      "R": "失点。この投手が出した走者が生還した数",
+      "ER": "自責点。失点のうち、失策が関わらないもの(簡易な定義)",
+      "W": "勝利投手になった回数",
+      "L": "敗戦投手になった回数",
+      "SV": "セーブ。リードを守って試合を締めくくった回数(条件あり)",
+      "HLD": "ホールド。救援で、リードや同点を保ったまま次の投手につないだ回数(条件あり)",
+      "CG": "完投。1人で最後まで投げた試合の数"
     }
   },
   "tables": {
     "batter": {
-      "basic": {"columns": ["G", "PA", "AB", "H", "HR", "RBI", "R", "avg", "obp", "slg"], "sort": "avg"},
-      "saber": {"columns": ["PA", "ops", "iso", "babip", "k_pct", "bb_pct"], "sort": "ops"},
-      "game": {"columns": ["PA", "AB", "H", "HR", "RBI", "R", "BB", "SO"]}
+      "basic": {
+        "columns": [
+          "G",
+          "PA",
+          "AB",
+          "H",
+          "HR",
+          "RBI",
+          "R",
+          "avg",
+          "obp",
+          "slg"
+        ],
+        "sort": "avg"
+      },
+      "saber": {
+        "columns": [
+          "PA",
+          "woba",
+          "wrc_plus",
+          "ops_plus",
+          "ops",
+          "iso",
+          "babip",
+          "k_pct",
+          "bb_pct"
+        ],
+        "sort": "wrc_plus"
+      },
+      "game": {
+        "columns": [
+          "PA",
+          "AB",
+          "H",
+          "HR",
+          "RBI",
+          "R",
+          "BB",
+          "SO"
+        ]
+      }
     },
     "pitcher": {
-      "basic": {"columns": ["G", "GS", "W", "L", "SV", "HLD", "OUTS", "SO", "era"], "sort": "era"},
-      "saber": {"columns": ["OUTS", "k_pct", "bb_pct"], "sort": "era"},
-      "game": {"columns": ["OUTS", "BF", "H", "HR", "BB", "SO", "R", "ER"]}
+      "basic": {
+        "columns": [
+          "G",
+          "GS",
+          "W",
+          "L",
+          "SV",
+          "HLD",
+          "OUTS",
+          "SO",
+          "era"
+        ],
+        "sort": "era"
+      },
+      "saber": {
+        "columns": [
+          "OUTS",
+          "fip",
+          "k_pct",
+          "bb_pct"
+        ],
+        "sort": "era"
+      },
+      "game": {
+        "columns": [
+          "OUTS",
+          "BF",
+          "H",
+          "HR",
+          "BB",
+          "SO",
+          "R",
+          "ER"
+        ]
+      }
     }
+  },
+  "baseline_names": {
+    "w_bb": "四球の重み",
+    "w_hbp": "死球の重み",
+    "w_1b": "単打の重み",
+    "w_2b": "二塁打の重み",
+    "w_3b": "三塁打の重み",
+    "w_hr": "本塁打の重み",
+    "woba_scale": "wOBA の目盛り",
+    "lg_obp": "リーグの出塁率",
+    "lg_slg": "リーグの長打率",
+    "lg_woba": "リーグの wOBA",
+    "lg_r_pa": "リーグの1打席あたりの得点",
+    "lg_era": "リーグの防御率",
+    "fip_hr": "本塁打の係数",
+    "fip_bb": "四死球の係数",
+    "fip_so": "三振の係数",
+    "fip_constant": "FIP 定数",
+    "pf": "球場補正"
   },
   "metrics": {
     "avg": {
       "name": "打率",
       "description": "安打 ÷ 打数。打数のうち、安打になった割合。高いほどよい。四球や長打の価値は入らない、昔ながらの目安",
-      "formulas": {"batter": "H / AB"},
-      "better": {"batter": "high"},
+      "formulas": {
+        "batter": "H / AB"
+      },
+      "better": {
+        "batter": "high"
+      },
       "format": "rate3",
-      "inputs": ["H", "AB"],
+      "inputs": [
+        "H",
+        "AB"
+      ],
       "stage": 1,
       "category": "basic"
     },
     "obp": {
       "name": "出塁率",
       "description": "(安打 + 四球 + 死球)÷(打数 + 四球 + 死球 + 犠牲フライ)。アウトにならずに塁に出た割合。高いほどよい",
-      "formulas": {"batter": "(H + BB + HBP) / (AB + BB + HBP + SF)"},
-      "better": {"batter": "high"},
+      "formulas": {
+        "batter": "(H + BB + HBP) / (AB + BB + HBP + SF)"
+      },
+      "better": {
+        "batter": "high"
+      },
       "format": "rate3",
-      "inputs": ["H", "BB", "HBP", "AB", "SF"],
+      "inputs": [
+        "H",
+        "BB",
+        "HBP",
+        "AB",
+        "SF"
+      ],
       "stage": 1,
       "category": "basic"
     },
     "slg": {
       "name": "長打率",
       "description": "塁打 ÷ 打数。1打数あたりに進んだ塁の数(単打1、二塁打2、三塁打3、本塁打4)。長打が多いほど高い。高いほどよい",
-      "formulas": {"batter": "TB / AB"},
-      "better": {"batter": "high"},
+      "formulas": {
+        "batter": "TB / AB"
+      },
+      "better": {
+        "batter": "high"
+      },
       "format": "rate3",
-      "inputs": ["TB", "AB"],
+      "inputs": [
+        "TB",
+        "AB"
+      ],
       "stage": 1,
       "category": "basic",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
@@ -75,10 +236,21 @@
     "ops": {
       "name": "OPS",
       "description": "出塁率 + 長打率。塁に出る力と長打の力をまとめた、攻撃力のおおまかな目安。高いほどよい",
-      "formulas": {"batter": "obp + slg"},
-      "better": {"batter": "high"},
+      "formulas": {
+        "batter": "obp + slg"
+      },
+      "better": {
+        "batter": "high"
+      },
       "format": "rate3",
-      "inputs": ["H", "BB", "HBP", "AB", "SF", "TB"],
+      "inputs": [
+        "H",
+        "BB",
+        "HBP",
+        "AB",
+        "SF",
+        "TB"
+      ],
       "stage": 1,
       "category": "saber",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
@@ -86,10 +258,18 @@
     "iso": {
       "name": "ISO",
       "description": "長打率 − 打率。長打の力だけを取り出した指標。単打しか打たない打者は 0 になる。高いほどよい",
-      "formulas": {"batter": "slg - avg"},
-      "better": {"batter": "high"},
+      "formulas": {
+        "batter": "slg - avg"
+      },
+      "better": {
+        "batter": "high"
+      },
       "format": "rate3",
-      "inputs": ["TB", "H", "AB"],
+      "inputs": [
+        "TB",
+        "H",
+        "AB"
+      ],
       "stage": 1,
       "category": "saber",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
@@ -97,44 +277,172 @@
     "babip": {
       "name": "BABIP",
       "description": "(安打 − 本塁打)÷(打数 − 三振 − 本塁打 + 犠牲フライ)。本塁打を除く、グラウンド内に飛んだ打球が安打になった割合。運に左右されやすく、極端な値は翌年に平均へ戻りやすい",
-      "formulas": {"batter": "(H - HR) / (AB - SO - HR + SF)"},
-      "better": {"batter": "high"},
+      "formulas": {
+        "batter": "(H - HR) / (AB - SO - HR + SF)"
+      },
+      "better": {
+        "batter": "high"
+      },
       "better_note": "運の影響が大きいので、高い・低いだけで実力を判断しない",
       "format": "rate3",
-      "inputs": ["H", "HR", "AB", "SO", "SF"],
+      "inputs": [
+        "H",
+        "HR",
+        "AB",
+        "SO",
+        "SF"
+      ],
       "stage": 1,
       "category": "saber"
     },
     "k_pct": {
       "name": "K%",
       "description": "三振 ÷ 打席(投手は 奪三振 ÷ 対戦打者)。打席のうち三振になった割合。打者は低いほど、投手は高いほどよい",
-      "formulas": {"batter": "SO / PA", "pitcher": "SO / BF"},
-      "better": {"batter": "low", "pitcher": "high"},
+      "formulas": {
+        "batter": "SO / PA",
+        "pitcher": "SO / BF"
+      },
+      "better": {
+        "batter": "low",
+        "pitcher": "high"
+      },
       "format": "percent1",
-      "inputs": ["SO", "PA", "BF"],
+      "inputs": [
+        "SO",
+        "PA",
+        "BF"
+      ],
       "stage": 1,
       "category": "saber"
     },
     "bb_pct": {
       "name": "BB%",
       "description": "四球 ÷ 打席(投手は 与四球 ÷ 対戦打者)。打席のうち四球になった割合。打者は高いほど、投手は低いほどよい",
-      "formulas": {"batter": "BB / PA", "pitcher": "BB / BF"},
-      "better": {"batter": "high", "pitcher": "low"},
+      "formulas": {
+        "batter": "BB / PA",
+        "pitcher": "BB / BF"
+      },
+      "better": {
+        "batter": "high",
+        "pitcher": "low"
+      },
       "format": "percent1",
-      "inputs": ["BB", "PA", "BF"],
+      "inputs": [
+        "BB",
+        "PA",
+        "BF"
+      ],
       "stage": 1,
+      "category": "saber"
+    },
+    "woba": {
+      "name": "wOBA",
+      "description": "weighted On-Base Average(重みつき出塁率)の略。四球・死球・単打・二塁打・三塁打・本塁打に、得点への価値に応じた重みを付けて足し、(打数 + 四球 + 死球 + 犠牲フライ)で割った値。出塁率と同じ目盛りに合わせてあり、打者の攻撃力を1つの数で表す。高いほどよい",
+      "note": "基準値(重み・リーグ平均)は、リーグ全体の打席の結果から求める。シーズン序盤は、前のシーズン(初年度は試運転)の値を混ぜている",
+      "formulas": {
+        "batter": "(w_bb * BB + w_hbp * HBP + w_1b * B1 + w_2b * B2 + w_3b * B3 + w_hr * HR) / (AB + BB + HBP + SF)"
+      },
+      "better": {
+        "batter": "high"
+      },
+      "format": "rate3",
+      "inputs": [
+        "BB",
+        "HBP",
+        "B1",
+        "B2",
+        "B3",
+        "HR",
+        "AB",
+        "SF"
+      ],
+      "stage": 2,
+      "category": "saber"
+    },
+    "wrc_plus": {
+      "name": "wRC+",
+      "description": "weighted Runs Created Plus の略。wOBA から求めた、打者が生み出した得点を、リーグ平均を100として表した値。120なら、平均より2割多く点を生み出している。高いほどよい",
+      "note": "球場の違いの補正は、まだ行っていない(第2弾②で足す)。基準値(重み・リーグ平均)は、リーグ全体の打席の結果から求める。シーズン序盤は、前のシーズン(初年度は試運転)の値を混ぜている",
+      "formulas": {
+        "batter": "((woba - lg_woba) / woba_scale + lg_r_pa + (lg_r_pa - pf * lg_r_pa)) / lg_r_pa * 100"
+      },
+      "better": {
+        "batter": "high"
+      },
+      "format": "integer",
+      "inputs": [
+        "BB",
+        "HBP",
+        "B1",
+        "B2",
+        "B3",
+        "HR",
+        "AB",
+        "SF"
+      ],
+      "stage": 2,
+      "category": "saber"
+    },
+    "ops_plus": {
+      "name": "OPS+",
+      "description": "OPS をリーグ平均と比べた値。出塁率と長打率を、それぞれリーグ平均と比べて足し合わせ、リーグ平均を100として表す。高いほどよい",
+      "note": "球場の違いの補正は、まだ行っていない(第2弾②で足す)。基準値(重み・リーグ平均)は、リーグ全体の打席の結果から求める。シーズン序盤は、前のシーズン(初年度は試運転)の値を混ぜている",
+      "formulas": {
+        "batter": "100 * (obp / lg_obp + slg / lg_slg - 1) / pf"
+      },
+      "better": {
+        "batter": "high"
+      },
+      "format": "integer",
+      "inputs": [
+        "H",
+        "BB",
+        "HBP",
+        "AB",
+        "SF",
+        "TB"
+      ],
+      "stage": 2,
       "category": "saber"
     },
     "era": {
       "name": "防御率",
       "description": "自責点 × 9 ÷ 投球回。9回を投げたら何点取られるかの目安。低いほどよい",
-      "formulas": {"pitcher": "ER * 27 / OUTS"},
-      "better": {"pitcher": "low"},
+      "formulas": {
+        "pitcher": "ER * 27 / OUTS"
+      },
+      "better": {
+        "pitcher": "low"
+      },
       "format": "decimal2",
-      "inputs": ["ER", "OUTS"],
+      "inputs": [
+        "ER",
+        "OUTS"
+      ],
       "stage": 1,
       "category": "basic",
       "note": "自責点は簡易な定義で数えている(得点した走者の出塁・進塁に失策が関わっていれば、自責点にしない)"
+    },
+    "fip": {
+      "name": "FIP",
+      "description": "Fielding Independent Pitching の略。本塁打・四死球・三振だけから、投手の失点のしにくさを、防御率と同じ目盛りで表した値。守備や運の影響を受けにくい。低いほどよい",
+      "note": "係数は標準の値(本塁打13・四死球3・三振2)。FIP 定数は、リーグ全体の FIP が防御率と同じになるように求める。シーズン序盤は、前のシーズン(初年度は試運転)の値を混ぜている",
+      "formulas": {
+        "pitcher": "(fip_hr * HR + fip_bb * (BB + HBP) - fip_so * SO) * 3 / OUTS + fip_constant"
+      },
+      "better": {
+        "pitcher": "low"
+      },
+      "format": "decimal2",
+      "inputs": [
+        "HR",
+        "BB",
+        "HBP",
+        "SO",
+        "OUTS"
+      ],
+      "stage": 2,
+      "category": "saber"
     }
   }
 }

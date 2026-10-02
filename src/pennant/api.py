@@ -12,14 +12,18 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter
+from fractions import Fraction
 from datetime import date, datetime
 from typing import Sequence
 
 from .abilities import POSITION_LABELS
+from .baselines import Baselines, RunTally, blend, compute_baselines, load_baseline_settings, tally_game, trial_baselines
 from .config import load_generation_config, load_name_parts
 from .decisions import Decisions, decide
 from .game_stats import game_story
-from .metrics import MetricsConfig, compute, format_value, innings_text, load_metrics_config
+from .metrics import MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
 from .records import (
     Records,
     game_records,
@@ -111,9 +115,44 @@ def column_info(config: MetricsConfig, role: str, key: str) -> dict:
     return {"key": key, "label": label, "description": config["count_descriptions"][role][key], "type": "count", "category": None, "better": "high"}
 
 
-def _values(config: MetricsConfig, role: str, counts) -> dict:
+BASELINE_MODES = ("trial", "default")  # 新規開始の基準値:試運転で求める / 設定ファイルの既定値(D-121、D-122)
+SOURCE_LABELS = {"trial": "試運転のシーズンの値", "default": "設定ファイルの既定値", "season": "前のシーズンの値", "blend": "前のシーズンの値"}
+
+
+_BASELINE_METRICS = {"woba", "wrc_plus", "ops_plus", "fip"}  # 基準値を使う指標(第2弾)
+
+
+def table_cols(config: MetricsConfig, role: str, kind: str) -> list[dict]:
+    return [column_info(config, role, k) for k in config["tables"][role][kind]["columns"]]
+
+
+def metrics_guide() -> dict:
+    """指標の解説のページ:すべての指標を区分別に、式・解説・見るときの注意つきで(指標の定義データから)。"""
+    config = metrics_config()
+    groups = []
+    for cat, label in (("basic", "基本"), ("saber", "セイバー")):
+        items = []
+        for mid in config.in_category(cat):
+            m = config.metrics[mid]
+            items.append(
+                {
+                    "key": mid,
+                    "name": m["name"],
+                    "description": m["description"],
+                    "formulas": [{"role": ROLE_LABELS[r], "text": formula_text(config, r, e)} for r, e in m["formulas"].items()],
+                    "better": [f"{ROLE_LABELS[r]}:{'高いほどよい' if b == 'high' else '低いほどよい'}" for r, b in m["better"].items()],
+                    "notes": [m[k] for k in ("note", "better_note") if m.get(k)],
+                    "stage": m["stage"],
+                }
+            )
+        groups.append({"category": cat, "label": label, "metrics": items})
+    names = config.data.get("baseline_names", {})
+    return {"groups": groups, "baseline_names": [{"key": k, "label": v} for k, v in names.items()]}
+
+
+def _values(config: MetricsConfig, role: str, counts, baselines: Baselines | None = None) -> dict:
     """元の数と指標の値(並べ替え用の数と、表示用の文字)。"""
-    metrics = compute(config, role, counts)
+    metrics = compute(config, role, counts, baselines.values if baselines else None)
     out = {}
     for key in config["counts"][role]:
         v = counts.get(key, 0)
@@ -133,6 +172,8 @@ class _StatsCache:
         self.per_game: list[Records] = []
         self.decisions: list[Decisions] = []
         self.total = Records()
+        self.tally = RunTally()  # 基準値(RE24 など)の元の整数の集計
+        self._baselines: tuple[int, Baselines, object] | None = None
 
     def update(self, season: Season) -> "_StatsCache":
         for played in season.played[len(self.per_game) :]:
@@ -141,7 +182,15 @@ class _StatsCache:
             self.per_game.append(rec)
             self.decisions.append(d)
             self.total.add(rec)
+            self.tally.add(tally_game(played.result))
         return self
+
+
+def _sum(group) -> Counter:
+    total = Counter()
+    for c in group.values():
+        total.update(c)
+    return total
 
 
 class Game:
@@ -157,20 +206,67 @@ class Game:
         """集計(試合ごとの元の数と合計)。前に計算した分は使い回す。"""
         return self._cache.update(self.state.season)
 
+    def baselines(self) -> tuple[Baselines, object]:
+        """今使う基準値(出発点と今シーズンの値を、累積打席数で混ぜたもの。D-126)と、今シーズンの比重。
+
+        日が進むまで使い回す。
+        """
+        cache = self.records
+        n = len(cache.per_game)
+        if cache._baselines is None or cache._baselines[0] != n:
+            prior = self.state.baselines
+            settings = self.state.baseline_settings
+            batting = _sum(cache.total.batters)
+            pa = batting["PA"]  # 比重は今シーズンの全打席数で(D-126)
+            current = None
+            if cache.tally.plate_appearances:
+                current = compute_baselines(cache.tally, batting, _sum(cache.total.pitchers), settings, prior)
+            blended, w = blend(prior, current, pa, settings.blend_constant)
+            cache._baselines = (n, blended, w)
+        return cache._baselines[1], cache._baselines[2]
+
+    def baseline_info(self) -> dict:
+        """画面に出す、基準値の混ぜ方の説明(D-126)。"""
+        _, w = self.baselines()
+        source = SOURCE_LABELS.get(self.state.baselines.source, "出発点の値")
+        pct = math.floor(w * 100 + Fraction(1, 2))
+        return {
+            "source": self.state.baselines.source,
+            "source_label": source,
+            "weight_percent": pct,
+            "plate_appearances": _sum(self.records.total.batters)["PA"],
+            "text": f"wOBA などの基準値は、{source}に、今シーズンの値を混ぜて使っています(今シーズンの比重 {pct}%。打席が増えるほど上がり、シーズンの最後で約75%)。",
+        }
+
     # ---- 始める・開く・保存する ----
 
     @classmethod
     def new(
-        cls, seed: int, team_names: Sequence[str | None], my_team_index: int, season_seed: int | None = None
+        cls,
+        seed: int,
+        team_names: Sequence[str | None],
+        my_team_index: int,
+        season_seed: int | None = None,
+        baselines: str = "trial",
+        progress=None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
-        (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。"""
+        (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
+
+        baselines は初年度の指標の基準値の求め方:"trial"(見えない試運転のシーズンで求める。既定)か
+        "default"(設定ファイルの既定値。速い)。progress には試運転の (終わった日数, 全日数) を知らせる(D-121、D-122)。
+        """
+        if baselines not in BASELINE_MODES:
+            raise ValueError(f"基準値の求め方は trial か default です(値: {baselines!r})")
         gen, parts = load_generation_config(), load_name_parts()
         league = new_league(seed, team_names, gen, parts)
         if isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
+        settings = load_baseline_settings()
+        prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
         season = Season(league, seed if season_seed is None else season_seed)
-        return cls(GameState(season, gen, parts, "", league.teams[my_team_index].id), dirty=True)
+        state = GameState(season, gen, parts, "", league.teams[my_team_index].id, prior, settings)
+        return cls(state, dirty=True)
 
     @classmethod
     def load(cls, data: bytes) -> "Game":
@@ -354,8 +450,9 @@ class Game:
         rec = self.records.total
         group, owner = (rec.batters, rec.batter_team) if role == "batter" else (rec.pitchers, rec.pitcher_team)
         rows = []
+        base, _ = self.baselines()
         for pid in self.select_players(role, qualified, league, team_id):
-            values = _values(config, role, group[pid])
+            values = _values(config, role, group[pid], base)
             row = self._player_row(pid, owner[pid])
             row["values"] = {k: values[k][1] for k in table["columns"]}
             row["_sort"] = values[sort][0]
@@ -381,6 +478,7 @@ class Game:
             "qualify_rule": QUALIFY_RULES[role],
             "rows": rows,
             "day": self.state.season.day,
+            "baseline_note": self.baseline_info()["text"] if any(c["key"] in _BASELINE_METRICS for c in table_cols(config, role, kind)) else None,
         }
 
     def _game_summary(self, n: int) -> dict:
@@ -438,9 +536,10 @@ class Game:
         total = (cache.total.batters if role == "batter" else cache.total.pitchers).get(player_id)
         season_block = None
         if total is not None:
-            values = _values(config, role, total)
+            values = _values(config, role, total, self.baselines()[0])
             qualified = player_id in (qualified_batters(cache.total) if role == "batter" else qualified_pitchers(cache.total))
             season_block = {
+                "baseline_note": self.baseline_info()["text"],
                 "qualified": qualified,
                 "qualify_rule": QUALIFY_RULES[role],
                 "tables": {
@@ -455,7 +554,7 @@ class Game:
             group = cache.per_game[n].batters if role == "batter" else cache.per_game[n].pitchers
             if player_id not in group:
                 continue
-            values = _values(config, role, group[player_id])
+            values = _values(config, role, group[player_id])  # 試合ごとは元の数だけを出す
             s = self._game_summary(n)
             mine_home = s["home"]["team_id"] == team.id
             us, them = (s["home"], s["away"]) if mine_home else (s["away"], s["home"])

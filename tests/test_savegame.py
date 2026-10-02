@@ -82,7 +82,8 @@ def test_file_layout(saved):
     assert manifest["format_version"] == savegame.SAVE_FORMAT_VERSION and manifest["saved_at"].startswith("2026-10-02")
     state = json.loads(files["state.json"])
     assert {"seed", "rng", "configs", "league", "season"} <= set(state)
-    assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season"}
+    assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season", "baselines"}
+    assert state["baselines"]["source"] == "default" and len(state["baselines"]["re24"]) == 24  # 第2弾①の基準値(版 3)
     assert "potential" in state["league"]["teams"][0]["players"][0]["hidden"]
 
 
@@ -217,7 +218,7 @@ def test_my_team_is_saved():
 
 
 def test_old_version_is_converted(monkeypatch, saved):
-    # ダミーの「版2」:season.day の名前が today だった、という古い形を作る(今の版を3とみなす)
+    # ダミーの「版3」:season.day の名前が today だった、という古い形を作る(今の版を4とみなす)
     def old_v2(state):
         state["season"]["today"] = state["season"].pop("day")
 
@@ -229,16 +230,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 3)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {1: savegame.MIGRATIONS[1], 2: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 4)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 3: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 4)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {1: savegame.MIGRATIONS[1], 2: lambda b: b})
-    _assert_error(saved[1], "バージョン 3 から 4 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 5)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 3: lambda b: b})
+    _assert_error(saved[1], "バージョン 4 から 5 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----

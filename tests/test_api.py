@@ -23,7 +23,7 @@ def _keys(value) -> set[str]:
 
 @pytest.fixture(scope="module")
 def game():
-    g = api.Game.new(5, ["テスト球団A"] + [None] * 11, 3)
+    g = api.Game.new(5, ["テスト球団A"] + [None] * 11, 3, baselines="default")
     g.advance(7)
     return g
 
@@ -51,10 +51,10 @@ def test_check_team_names_gives_reason_per_field():
 
 def test_new_game_rejects_bad_input():
     with pytest.raises(api.TeamNameError):
-        api.Game.new(5, ["  "] + [None] * 11, 0)
+        api.Game.new(5, ["  "] + [None] * 11, 0, baselines="default")
     for bad in (12, -1, True, "0"):
         with pytest.raises(api.TeamNameError, match="自球団"):
-            api.Game.new(5, [None] * 12, bad)
+            api.Game.new(5, [None] * 12, bad, baselines="default")
 
 
 def test_status_and_my_team(game):
@@ -117,7 +117,7 @@ def test_advance_stops_at_end_and_matches_fingerprint_d():
     """画面と同じ流れ(新規開始 → 進める → 保存 → 読み込み → 最後まで)で、指紋 (d) と同じ結果になる。
     自球団は指紋の元に入らない。"""
     expected = json.loads((__import__("pathlib").Path(__file__).parent / "data" / "fingerprints.json").read_text(encoding="utf-8"))
-    g = api.Game.new(LEAGUE_SEED, [None] * 12, 7, season_seed=SEASON_SEED)
+    g = api.Game.new(LEAGUE_SEED, [None] * 12, 7, season_seed=SEASON_SEED, baselines="default")
     g.advance(30)
     g = api.Game.load(g.save(today="2026-10-02")["data"])
     st = g.advance(1000)

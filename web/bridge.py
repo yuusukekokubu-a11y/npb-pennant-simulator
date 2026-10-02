@@ -36,12 +36,18 @@ def check(seed: int, names_json: str) -> str:
     return _ok(api.check_team_names(int(seed), json.loads(names_json)))
 
 
-def new_game(seed: int, season_seed: int, names_json: str, my_team_index: int) -> str:
+def new_game(seed: int, season_seed: int, names_json: str, my_team_index: int, baselines: str = "trial", progress=None) -> str:
+    """新規開始。baselines は基準値の求め方(trial:試運転で求める / default:既定値)。
+    progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。"""
     global _game
     try:
-        game = api.Game.new(int(seed), json.loads(names_json), int(my_team_index), season_seed=int(season_seed))
+        game = api.Game.new(
+            int(seed), json.loads(names_json), int(my_team_index), season_seed=int(season_seed), baselines=str(baselines), progress=progress
+        )
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)
+    except ValueError as exc:
+        return _ng(f"始められませんでした({exc})")
     _game = game
     return _ok(_view())
 
@@ -88,6 +94,7 @@ _QUERIES = {
     "game": lambda a: _game.game(int(a["game_no"])),
     "team": lambda a: _game.team(a["team_id"]),
     "teams": lambda a: _game.teams(),
+    "baseline_info": lambda a: _game.baseline_info(),
 }
 
 # ---- 答え合わせ(答え合わせモードがオンのときだけ、画面が呼ぶ。D-108、D-114) ----
@@ -109,6 +116,8 @@ def _run(table: dict, name: str, args_json: str) -> str:
 
 
 def query(name: str, args_json: str = "{}") -> str:
+    if name == "metrics_guide":  # 指標の解説(ゲームがなくても見られる)
+        return _ok(api.metrics_guide())
     return _run(_QUERIES, name, args_json)
 
 
