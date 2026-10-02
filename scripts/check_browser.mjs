@@ -328,7 +328,7 @@ const baseNote = await page.textContent("#stats-baseline");
 check(await page.isVisible("#stats-baseline") && baseNote.includes("試運転のシーズンの値に、今シーズンの値を混ぜて"), `表の近くに、基準値を混ぜている注記が出る(「${baseNote}」)`);
 await page.click("#stats-table th button.sort >> text=OPS+");
 await waitStats("OPS+(高い順)");
-check((await page.textContent("#stats-info")).includes("球場の違いの補正は、まだ行っていない"), "OPS+ の解説に、球場補正をまだ行っていない注記が出る");
+check((await page.textContent("#stats-info")).includes("1シーズン目は 1.0") && baseNote.includes("1シーズン目のため 1.0"), "OPS+ の解説と表の注記に、球場補正が1シーズン目は 1.0 であることが出る");
 await page.click("#stats-role button[data-value=pitcher]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("FIP")));
 await page.click("#stats-table th button.sort >> text=FIP");
@@ -403,6 +403,11 @@ const stadiumPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([d["name"], s
 const stadiumOnScreen = [await page.textContent("#stadium-name"), ...(await page.$$eval("#stadium-record td", (tds) => tds.map((td) => td.textContent)))];
 check(JSON.stringify(stadiumOnScreen) === JSON.stringify(stadiumPy), `球場のページの実際の結果(試合・本塁打・本塁打/試合・得点/試合)が、計算本体と同じ(${stadiumPy[0]})`);
 check((await page.textContent("#stadium-answers")).includes("答え合わせモードをオンにすると見られます") && !/\d\.\d{3}/.test(await page.textContent("#stadium-answers")), "オフのとき、球場のページに真の倍率が出ない");
+// 本拠地とアウェイの比較の表と、推定(1シーズン目は「まだ推定できません」)(②b)
+const cmpOnScreen = await page.$$eval("#stadium-compare tbody tr", (trs) => trs.map((tr) => [...tr.children].slice(1).map((td) => td.textContent)));
+const cmpPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([[d["this_season"][k][c] for c in ("home", "away", "ratio")] for k in ("home_run", "babip", "runs")], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
+check(JSON.stringify(cmpOnScreen) === JSON.stringify(cmpPy), `本拠地とアウェイの比較の表(本塁打/打席・BABIP・得点/打席)が、計算本体と同じ(本塁打の比 ${cmpPy[0][2]})`);
+check((await page.textContent("#stadium-estimate")).includes("まだ推定できません"), "1シーズン目は、推定した球場補正の代わりに「まだ推定できません」と出る");
 await page.click("#screen-stadium .back");
 await page.click("#screen-game .back");
 

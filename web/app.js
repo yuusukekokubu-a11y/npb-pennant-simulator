@@ -707,6 +707,31 @@ async function renderStadium(args, token) {
     ]),
   );
   $("stadium-note").textContent = d.note;
+  const cmpCols = [
+    { key: "home", label: "本拠地" },
+    { key: "away", label: "アウェイ" },
+    { key: "ratio", label: "比" },
+  ];
+  $("stadium-compare").replaceChildren(
+    table({
+      firstLabel: "項目",
+      columns: cmpCols,
+      rows: ["home_run", "babip", "runs"].map((k) => ({ key: k, label: k === "home_run" ? "本塁打/打席" : k === "runs" ? "得点/打席" : "BABIP", values: d.this_season[k] })),
+      first: (r) => [r.label],
+    }),
+  );
+  if (d.estimate) {
+    $("stadium-estimate").replaceChildren(
+      kvTable([
+        { label: "得点", description: "1打席あたりの得点の出やすさ(wRC+・OPS+ の球場補正に使う)", values: [d.estimate.runs] },
+        { label: "本塁打", description: "本塁打の出やすさ(表示用)", values: [d.estimate.home_run] },
+        { label: "BABIP", description: "インプレーの打球が安打になりやすさ(表示用)", values: [d.estimate.babip] },
+      ]),
+    );
+  } else {
+    $("stadium-estimate").replaceChildren(el("p", { className: "info" }, d.estimate_note));
+  }
+  $("stadium-estimate-note").textContent = d.estimate ? d.estimate_note : "";
   const box = $("stadium-answers");
   if (state.answerLevel === 0) {
     box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると見られます(上の「メニュー」から)。"));
