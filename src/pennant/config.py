@@ -372,7 +372,7 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
         c.add("draft.origins", "出身区分が1つもありません")
     c.shares(shares, "draft.origins")
 
-    # 打席・投球の左右(D-037)
+    # 打席の左右(打者のみ)・投球の左右(投手のみ)(D-037、D-046、D-048)
     hand = c.section(c.get(root, "handedness", ""), "handedness")
     bats = c.section(c.get(hand, "bats", "handedness"), "handedness.bats")
     shares = {}
@@ -386,11 +386,6 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
                 shares[key] = v
         c.shares(shares, "handedness.bats")
     c.number(c.get(hand, "pitcher_throws_left", "handedness"), "handedness.pitcher_throws_left", 0, 1)
-    c.number(c.get(hand, "fielder_throws_left", "handedness"), "handedness.fielder_throws_left", 0, 1)
-    rto = c.get(hand, "right_throw_only_positions", "handedness")
-    if rto is not None:
-        if not isinstance(rto, list) or any(p not in FIELDER_POSITIONS for p in rto):
-            c.add("handedness.right_throw_only_positions", f"野手のポジション({', '.join(FIELDER_POSITIONS)})のリストにしてください")
 
     # 一軍相当の人数(確認用。一軍登録人数は未確認の仮置き)
     first = c.section(c.get(root, "first_team", ""), "first_team")

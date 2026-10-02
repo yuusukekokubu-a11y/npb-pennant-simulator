@@ -34,8 +34,8 @@ class Player:
     age: int
     role: str  # "pitcher" / "batter"
     position: str  # SP, RP, C, 1B, ...(abilities.POSITION_LABELS)
-    bats: str  # R / L / S(両打ち)
-    throws: str  # R / L
+    bats: str | None  # 打者のみ:R / L / S(両打ち)。投手は打席に立たないので None(D-046)
+    throws: str | None  # 投手のみ:R / L。野手の投げ手は持たないので None(D-048)
     ratings: dict[str, float]  # 現在の能力(内部は小数。20〜80 の外も許す。D-024)
     hidden: HiddenInfo
     state: PlayerState = field(default_factory=PlayerState)

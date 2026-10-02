@@ -1,0 +1,92 @@
+{
+  "format_version": 1,
+  "stage1": {
+    "league_rates": {
+      "strikeout": 0.185,
+      "walk": 0.080,
+      "hit_by_pitch": 0.0075,
+      "home_run": 0.024
+    },
+    "batter_effects": {
+      "strikeout": {"contact": 0.80},
+      "walk": {"eye": 1.20},
+      "home_run": {"power": 1.35}
+    },
+    "pitcher_effects": {
+      "strikeout": {"strikeout": 1.25},
+      "walk": {"control": 0.82},
+      "hit_by_pitch": {"control": 0.95},
+      "home_run": {"stuff": 0.82}
+    }
+  },
+  "platoon": {
+    "same_side": {"strikeout": 1.08, "walk": 0.95, "home_run": 0.92, "in_play_hit": 0.97},
+    "opposite_side": {"strikeout": 0.95, "walk": 1.04, "home_run": 1.06, "in_play_hit": 1.02}
+  },
+  "batted_ball": {
+    "league_shares": {"ground": 0.44, "line": 0.20, "fly": 0.36},
+    "batter_effects": {
+      "ground": {"gb_fb": 1.15},
+      "line": {"batted_ball_quality": 1.08},
+      "fly": {"gb_fb": 0.87}
+    },
+    "pitcher_effects": {
+      "ground": {"gb_fb": 1.15},
+      "fly": {"gb_fb": 0.87}
+    }
+  },
+  "fielder_shares": {
+    "ground": {"P": 0.06, "C": 0.02, "1B": 0.15, "2B": 0.24, "3B": 0.22, "SS": 0.31},
+    "line": {"P": 0.02, "1B": 0.05, "2B": 0.07, "3B": 0.06, "SS": 0.08, "LF": 0.22, "CF": 0.26, "RF": 0.24},
+    "fly": {"C": 0.03, "1B": 0.04, "2B": 0.05, "3B": 0.05, "SS": 0.06, "LF": 0.24, "CF": 0.29, "RF": 0.24}
+  },
+  "in_play": {
+    "ground": {
+      "hit_rate": 0.25,
+      "unfieldable_share": 0.08,
+      "error_rate": 0.028,
+      "hit_effects": {
+        "batter": {"batted_ball_quality": 1.10, "speed": 1.12},
+        "pitcher": {"contact_suppression": 0.97},
+        "fielder": {"range": 0.88, "arm": 0.92}
+      },
+      "error_effects": {"fielder": {"fielding": 0.75}},
+      "extra_base": {
+        "shares": {"single": 0.93, "double": 0.065, "triple": 0.005},
+        "effects": {"double": {"power": 1.12}, "triple": {"speed": 1.30}}
+      }
+    },
+    "line": {
+      "hit_rate": 0.70,
+      "unfieldable_share": 0.45,
+      "error_rate": 0.004,
+      "hit_effects": {
+        "batter": {"batted_ball_quality": 1.10},
+        "pitcher": {"contact_suppression": 0.97},
+        "fielder": {"range": 0.92}
+      },
+      "error_effects": {"fielder": {"fielding": 0.75}},
+      "extra_base": {
+        "shares": {"single": 0.70, "double": 0.26, "triple": 0.04},
+        "effects": {"double": {"power": 1.12}, "triple": {"speed": 1.30}}
+      }
+    },
+    "fly": {
+      "hit_rate": 0.14,
+      "unfieldable_share": 0.06,
+      "error_rate": 0.009,
+      "hit_effects": {
+        "batter": {"batted_ball_quality": 1.10},
+        "pitcher": {"contact_suppression": 0.97},
+        "fielder": {"range": 0.88}
+      },
+      "error_effects": {"fielder": {"fielding": 0.75}},
+      "extra_base": {
+        "shares": {"single": 0.40, "double": 0.48, "triple": 0.12},
+        "effects": {"double": {"power": 1.12}, "triple": {"speed": 1.30}}
+      }
+    }
+  },
+  "pitcher_fielding": {"range": 50, "arm": 50, "fielding": 50},
+  "form_weight": 1.0
+}

@@ -57,7 +57,15 @@ ITEM_LABELS = {
 PITCHER_POSITIONS = ("SP", "RP")
 FIELDER_POSITIONS = ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
 
+# 守備につくポジション(担当ポジションの対象)。投手(P)+野手8人。
+# 指名打者は守備につかないので含まない(D-046)
+DEFENSIVE_POSITIONS = ("P",) + FIELDER_POSITIONS
+
+# 守備の能力(D-022)
+FIELDING_ITEMS = ("range", "arm", "fielding")
+
 POSITION_LABELS = {
+    "P": "投手",
     "SP": "先発",
     "RP": "救援",
     "C": "捕手",
