@@ -116,7 +116,7 @@ async function networkState() {
   const hosts = [...new Set([...seen.keys()].map((u) => new URL(u).host))];
   const lines = [`通信した先(ホスト): ${hosts.join(", ")}`];
   for (const r of seen.values()) {
-    const cached = r.transferSize === 0 ? "(キャッシュから)" : "";
+    const cached = r.transferSize === 0 ? " (キャッシュから)" : ""; // URL のあとに空白を入れる(GitHub で URL の一部と見なされないように)
     lines.push(`  - ${r.url}${cached}`);
   }
   return lines;
@@ -146,6 +146,11 @@ async function measure() {
     out.push(`- Python ${second.info.pythonVersion}(Pyodide ${second.info.pyodideVersion}。配布元: ${second.info.pyodideSource})`);
     out.push(`- 1回目: ${sec(first.info.seconds)}(Pyodide ${sec(first.info.pyodideSeconds)} + 計算本体の読み込み ${sec(first.info.codeSeconds)})${cold ? "。配布元からダウンロードした" : "。ブラウザのキャッシュから読んだ"}`);
     out.push(`- 2回目: ${sec(second.info.seconds)}(Pyodide ${sec(second.info.pyodideSeconds)} + 計算本体の読み込み ${sec(second.info.codeSeconds)})`);
+
+    // 結果の指紋(PC の python scripts/fingerprint.py と見比べる。D-089)
+    status("結果の指紋を計算しています…");
+    const fp = await call(worker, "fingerprint");
+    out.push("", fp.text, `- 指紋の計算にかかった時間: ${sec(fp.seconds)}`);
 
     // リーグの生成と最初の1試合
     status("架空のリーグを作っています…");

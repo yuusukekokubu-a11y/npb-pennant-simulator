@@ -106,6 +106,10 @@ const handlers = {
     return bench.sample_header(name);
   },
 
+  fingerprint() {
+    return toJs(benchModule.fingerprint_report());
+  },
+
   resources() {
     return performance.getEntriesByType("resource").map((e) => ({
       url: e.name.split("?")[0],
