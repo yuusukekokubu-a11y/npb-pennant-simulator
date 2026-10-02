@@ -184,6 +184,11 @@ async function measure() {
     out.push(`- 1シーズン(本物の日程。${total}試合・${daySeconds.length}日): ${sec(seasonSeconds)}(1日=6試合あたり 平均 ${sec(avgDay)}、最大 ${sec(maxDay)})`);
     const day = { seconds: twoDays };
 
+    // 成績の集計(実装⑤)
+    status("成績を集計しています…");
+    const agg = await call(worker, "computeStats");
+    out.push(`- 成績の集計(全選手の元の数と指標): ${sec(agg.seconds)}(打者 ${agg.batters} 人・投手 ${agg.pitchers} 人。規定到達 打者 ${agg.qualified_batters} 人・投手 ${agg.qualified_pitchers} 人)`);
+
     // 打席ログの大きさ
     status("打席ログの大きさを測っています…");
     const stats = await call(worker, "stats");

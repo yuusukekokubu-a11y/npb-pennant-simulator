@@ -68,6 +68,10 @@ const handlers = {
     return { played, seconds: (performance.now() - t0) / 1000, totalGames: bench.games_played(), isOver: bench.is_over() };
   },
 
+  computeStats() {
+    return toJs(bench.compute_stats());
+  },
+
   stats() {
     const t0 = performance.now();
     const logBytes = bench.log_memory_bytes();
