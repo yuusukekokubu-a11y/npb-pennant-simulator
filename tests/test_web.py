@@ -1,8 +1,9 @@
-"""ブラウザでの実行の技術検証(D-082)のテスト用ページ(web/)の確認。
+"""ブラウザの画面(web/。D-107)と、開発者向けの測定ページ(web/dev/。D-082、D-111)の確認。
 
-ブラウザそのものは CI では動かさない。ここでは、ページが使う Python 側(web/bench.py)が
+ブラウザそのものは CI では動かさない。ここでは、ページが使う Python 側(web/bridge.py・web/dev/bench.py)が
 標準ライブラリだけで動くこと、公開用のまとめ(scripts/build_web.py)が正しいこと、
 ページが外部に通信したり、ブラウザの保存領域に書いたりしないことを、ファイルの中身から確かめる。
+ブラウザでの通しの確認(新規開始 → 進行 → 順位表 → 保存 → 読み込み → 最後まで)は、開発者が手元で行う(web/README.md)。
 """
 
 import importlib.util
@@ -27,7 +28,7 @@ def _load(name: str, path: Path):
 
 @pytest.fixture(scope="module")
 def bench_module():
-    return _load("bench", WEB / "bench.py")
+    return _load("bench", WEB / "dev" / "bench.py")
 
 
 @pytest.fixture(scope="module")
@@ -86,7 +87,8 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
     build = _load("build_web", ROOT / "scripts" / "build_web.py")
     info = build.build(tmp_path / "site")
     site = tmp_path / "site"
-    for name in ("index.html", "app.js", "worker.js", "bench.py", "pennant.zip", "sample-save.sav", "sample-save.json", "expected-fingerprints.json"):
+    for name in ("index.html", "app.js", "worker.js", "bridge.py", "pennant.zip", "sample-save.sav", "sample-save.json", "expected-fingerprints.json",
+                 "dev/index.html", "dev/app.js", "dev/worker.js", "dev/bench.py"):
         assert (site / name).exists()
     with zipfile.ZipFile(site / "pennant.zip") as zf:
         names = set(zf.namelist())
@@ -99,8 +101,11 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
 
 # ---- 通信と保存(ファイルの中身から確かめる) ----
 
+PAGES = (WEB, WEB / "dev")  # 遊ぶための画面と、測定ページ
+
+
 def _web_text() -> str:
-    return "\n".join((WEB / n).read_text(encoding="utf-8") for n in ("index.html", "app.js", "worker.js"))
+    return "\n".join((d / n).read_text(encoding="utf-8") for d in PAGES for n in ("index.html", "app.js", "worker.js"))
 
 
 def test_no_browser_storage_writes():
@@ -116,8 +121,9 @@ def test_only_pyodide_cdn_is_contacted():
         assert word not in _web_text()
 
 
-def test_content_security_policy_limits_connections():
-    html = (WEB / "index.html").read_text(encoding="utf-8")
+@pytest.mark.parametrize("page", PAGES, ids=["main", "dev"])
+def test_content_security_policy_limits_connections(page):
+    html = (page / "index.html").read_text(encoding="utf-8")
     csp = re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', html).group(1)
     rules = dict((part.split()[0], part.split()[1:]) for part in csp.split(";") if part.strip())
     assert rules["default-src"] == ["'none'"]
@@ -126,7 +132,7 @@ def test_content_security_policy_limits_connections():
 
 
 def test_test_name_field_is_not_autosaved():
-    html = (WEB / "index.html").read_text(encoding="utf-8")
+    html = (WEB / "dev" / "index.html").read_text(encoding="utf-8")
     field = re.search(r'<input id="team-name"[^>]*>', html).group(0)
     assert 'autocomplete="off"' in field
 
@@ -144,8 +150,9 @@ def test_page_shows_the_same_fingerprints_as_the_script(bench_module):
         assert expected[key] in report["text"]
 
 
-def test_no_favicon_request():
-    assert '<link rel="icon" href="data:,">' in (WEB / "index.html").read_text(encoding="utf-8")
+@pytest.mark.parametrize("page", PAGES, ids=["main", "dev"])
+def test_no_favicon_request(page):
+    assert '<link rel="icon" href="data:,">' in (page / "index.html").read_text(encoding="utf-8")
 
 
 def test_compute_stats(bench):
@@ -170,3 +177,63 @@ def test_sample_check(bench_module):
     info = json.loads((ROOT / "tests" / "data" / "sample-save.json").read_text(encoding="utf-8"))
     data = (ROOT / "tests" / "data" / "sample-save.sav").read_bytes()
     assert bench_module.continue_sample(data, info["continue_to_day"]) == info["continuation_digest"]
+
+
+# ---- 遊ぶための画面(web/。D-107、D-108) ----
+
+# 画面に出してはいけない、能力値・隠し情報を表す言葉(D-108)
+HIDDEN_WORDS = ("能力", "潜在", "成長", "隠し", "ミート", "パワー", "選球眼", "走力", "スタミナ", "制球", "球威", "奪三振力", "rating", "potential", "archetype", "growth")
+
+
+@pytest.fixture()
+def bridge():
+    module = _load("bridge", WEB / "bridge.py")
+    module._game = None
+    return module
+
+
+def _ok(text):
+    import json
+
+    data = json.loads(text)
+    assert data["ok"] is True, data
+    return data["value"]
+
+
+def test_bridge_flow(bridge):
+    """新規開始 → 進める → 保存 → 読み込み。読み込みに失敗しても、今のゲームは残る。"""
+    import json
+
+    pv = _ok(bridge.preview(3))
+    assert len(pv["order"]) == 12
+    assert _ok(bridge.check(3, json.dumps(["  "] + [""] * 11)))[0]
+    bad = json.loads(bridge.new_game(3, 4, json.dumps(["  "] + [""] * 11), 0))
+    assert bad["ok"] is False and "空白" in bad["problems"][0] and bridge._game is None
+    view = _ok(bridge.new_game(3, 4, json.dumps(["テスト球団"] + [""] * 11), 2))
+    assert view["status"]["day"] == 0 and view["status"]["dirty"] is True
+    view = _ok(bridge.advance(3))
+    assert view["status"]["day"] == 3 and len(view["recent"]) == 3
+    data = bridge.save("2026-10-02")
+    info = _ok(bridge.save_info())
+    assert info["file_name"] == "save-20261002.sav" and info["bytes"] == len(data) and info["status"]["dirty"] is False
+    broken = json.loads(bridge.load(b"broken"))
+    assert broken["ok"] is False and broken["problems"] and "今のゲームは、そのまま" in broken["message"]
+    assert _ok(bridge.view())["status"]["day"] == 3  # 今のゲームはそのまま
+    loaded = _ok(bridge.load(data))
+    assert loaded["standings"] == view["standings"] and loaded["status"]["dirty"] is False
+
+
+def test_main_page_has_no_hidden_words():
+    """遊ぶための画面の文章とスクリプトに、能力値・隠し情報を表す言葉がない(D-108)。"""
+    for name in ("index.html", "app.js", "worker.js", "bridge.py"):
+        text = (WEB / name).read_text(encoding="utf-8")
+        for word in HIDDEN_WORDS:
+            assert word not in text, f"{name}: {word}"
+
+
+def test_main_page_basics():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert "初回は約12MB" in html and 'id="real-name-notice"' in html
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "beforeunload" in app and "state.dirty" in app
+    assert re.search(r'a\.download = r\.value\.file_name', app)  # ファイル名は Python が作る日付だけの名前

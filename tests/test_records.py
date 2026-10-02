@@ -322,6 +322,12 @@ def test_metrics_config_is_valid_and_complete(mconfig):
     assert set(mconfig.for_role("pitcher", stage=1)) == {"k_pct", "bb_pct", "era"}
 
 
+def test_metric_categories(mconfig):
+    """区分(基本/セイバー。D-109):成績の画面の切り替えで使う。"""
+    assert mconfig.in_category("basic") == ["avg", "obp", "slg", "era"]
+    assert mconfig.in_category("saber") == ["ops", "iso", "babip", "k_pct", "bb_pct"]
+
+
 def test_spec_glossary_matches_metric_descriptions(mconfig):
     """SPEC.md の用語集の文章が、指標の定義データの解説と同じであること(D-097)。"""
     spec = (ROOT / "docs" / "SPEC.md").read_text(encoding="utf-8")
@@ -347,6 +353,8 @@ def test_walkoff_note_on_extra_base_metrics(mconfig):
         (lambda d: d["metrics"]["era"]["better"].update(pitcher="good"), "metrics.era.better.pitcher"),
         (lambda d: d["metrics"]["avg"].update(inputs=["H"]), "AB"),
         (lambda d: d["metrics"]["avg"].update(format="pct"), "metrics.avg.format"),
+        (lambda d: d["metrics"]["avg"].update(category="other"), "metrics.avg.category"),
+        (lambda d: d["metrics"]["avg"].pop("category"), "metrics.avg.category"),
     ],
 )
 def test_metrics_config_validation(change, message):

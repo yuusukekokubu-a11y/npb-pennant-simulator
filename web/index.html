@@ -2,77 +2,234 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- 通信先の制限:このページ自身と、Pyodide の配布元(cdn.jsdelivr.net)だけ。それ以外には通信できない -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <!-- ブラウザがタブの小さな絵(favicon.ico)を取りに行かないようにする -->
 <link rel="icon" href="data:,">
-<title>ブラウザでの実行の技術検証</title>
+<title>ペナントレース シミュレーター</title>
 <style>
-  :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --accent: #0969da; --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; }
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --accent: #0969da; --accent-fg: #ffffff;
+    --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; --mine: #fff8c5; --mine-line: #d4a72c; --warn-bg: #fff1e5; --warn-line: #e16f24;
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8; --ok: #3fb950; --ng: #f85149; --box: #151b23; }
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8; --accent-fg: #0d1117;
+      --ok: #3fb950; --ng: #ff7b72; --box: #161b22; --mine: #3b2e00; --mine-line: #bb8009; --warn-bg: #2d1a0a; --warn-line: #db6d28;
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height: 1.6; }
-  main { max-width: 760px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 1.3rem; margin: 8px 0 4px; }
-  h2 { font-size: 1.05rem; margin: 28px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-  p, li { font-size: 0.95rem; }
-  .muted { color: var(--muted); font-size: 0.85rem; }
-  button, .file-label { font: inherit; font-size: 1rem; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; display: inline-block; margin: 4px 8px 4px 0; }
-  button.secondary, .file-label { background: transparent; color: var(--accent); }
-  button:disabled { opacity: 0.5; cursor: default; }
-  input[type=text] { font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; max-width: 360px; background: var(--bg); color: var(--fg); }
-  input[type=file] { position: absolute; left: -9999px; }
-  progress { width: 100%; height: 14px; }
-  textarea { width: 100%; min-height: 260px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--box); color: var(--fg); }
-  .status { font-size: 0.9rem; margin: 6px 0; min-height: 1.6em; }
-  .ok { color: var(--ok); } .ng { color: var(--ng); }
-  pre.out { white-space: pre-wrap; background: var(--box); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 0.85rem; min-height: 2.4em; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 16px; line-height: 1.6; }
+  [hidden] { display: none !important; }
+  .screen { max-width: 640px; margin: 0 auto; padding: 12px 16px 96px; }
+  h1 { font-size: 1.35rem; margin: 8px 0; }
+  h2 { font-size: 1.1rem; margin: 20px 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .small { font-size: 0.85rem; }
+  button, .button { font: inherit; font-size: 1rem; min-height: 44px; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  button.secondary, .button.secondary { background: transparent; color: var(--accent); }
+  button.danger { background: var(--ng); border-color: var(--ng); color: #fff; }
+  button:disabled, label[aria-disabled=true] { opacity: 0.45; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 auto; }
+  .stack > * { display: flex; width: 100%; margin: 8px 0; }
+  input[type=text], input[type=number] { font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; background: var(--bg); color: var(--fg); }
+  input[aria-invalid=true] { border-color: var(--ng); }
+  input[type=file] { position: absolute; left: -9999px; width: 1px; height: 1px; }
+  progress { width: 100%; height: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 12px 0; background: var(--box); }
+  .notice { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 12px; padding: 10px 12px; margin: 12px 0; font-size: 0.92rem; }
+  .error { color: var(--ng); font-size: 0.9rem; margin: 4px 0 0; white-space: pre-wrap; }
+  .message { margin: 8px 0; white-space: pre-wrap; }
+  .message.ng { color: var(--ng); }
+  .message.ok { color: var(--ok); }
+
+  /* 上の帯:保存・読み込みと、未保存の印 */
+  .topbar { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .topbar-inner { max-width: 640px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 8px; }
+  .topbar-title { flex: 1 1 auto; font-weight: bold; font-size: 0.95rem; line-height: 1.3; }
+  .topbar button, .topbar .button { min-height: 40px; padding: 6px 12px; font-size: 0.95rem; }
+  .dirty { color: var(--warn-line); font-size: 0.8rem; font-weight: bold; display: block; }
+
+  /* 下のタブ */
+  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--bg); border-top: 1px solid var(--line); display: flex; padding-bottom: env(safe-area-inset-bottom); }
+  .tabs button { flex: 1 1 0; border: none; border-radius: 0; background: transparent; color: var(--muted); min-height: 56px; font-size: 1rem; }
+  .tabs button[aria-selected=true] { color: var(--accent); font-weight: bold; box-shadow: inset 0 3px 0 var(--accent); }
+
+  /* 進行 */
+  .day { font-size: 1.6rem; font-weight: bold; margin: 4px 0; }
+  .advance { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .stop { width: 100%; margin: 4px 0 8px; }
+  .mine-line { font-size: 1.05rem; }
+  ul.games { list-style: none; padding: 0; margin: 0; }
+  ul.games li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; }
+  ul.games li:last-child { border-bottom: none; }
+  .mark { font-weight: bold; min-width: 1.5em; }
+  .mark.win { color: var(--ok); } .mark.loss { color: var(--ng); }
+
+  /* 順位表 */
+  .seg { display: flex; border: 1px solid var(--accent); border-radius: 10px; overflow: hidden; margin: 8px 0; }
+  .seg button { flex: 1 1 0; border: none; border-radius: 0; background: transparent; color: var(--accent); }
+  .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-fg); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.92rem; }
+  th, td { padding: 8px 5px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); background: var(--bg); }
+  th:last-child, td:last-child { padding-right: 8px; }
+  th { font-size: 0.8rem; color: var(--muted); font-weight: normal; line-height: 1.2; }
+  tr:last-child td { border-bottom: none; }
+  /* 左端(順位とチーム名)は、横に動かしても見えたままにする */
+  th.sticky, td.sticky { position: sticky; left: 0; z-index: 1; text-align: left; padding-left: 8px; }
+  td.sticky { font-weight: bold; }
+  .rank { display: inline-block; min-width: 1.6em; color: var(--muted); font-weight: normal; }
+  tr.mine td { background: var(--mine); }
+  tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
+  .you { color: var(--mine-line); margin-left: 2px; }
+  dl.terms { font-size: 0.9rem; margin: 12px 0; }
+  dl.terms dt { font-weight: bold; margin-top: 8px; }
+  dl.terms dd { margin: 0; color: var(--muted); }
+
+  /* 新規開始 */
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 12px; margin: 12px 0; }
+  legend { font-weight: bold; padding: 0 4px; }
+  .team { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .team:last-child { border-bottom: none; }
+  .team label.name-label { display: block; font-size: 0.9rem; color: var(--muted); }
+  .team .pick { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.95rem; }
+  .team .pick input { width: 20px; height: 20px; }
+  details { margin: 12px 0; }
+  summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
+  .boot { margin: 16px 0; }
 </style>
 </head>
 <body>
-<main>
-  <h1>ブラウザでの実行の技術検証</h1>
-  <p class="muted">計算本体(選手の生成・1回の打席・1試合)を、このブラウザの中の Python(Pyodide)で動かし、速さとメモリを測ります。サーバーには何も送りません。データは架空のリーグだけです。</p>
 
-  <h2>1. 測定</h2>
-  <p>「測定」を押すと、Python の起動(2回)、結果の指紋(同じシードなら、どの端末でも同じになるはずの値)、1日分(12試合)、1シーズン(本物の日程。750試合)、成績の集計、打席ログの大きさ、圧縮した書き出しの大きさを順に測ります。PC で約1分、スマホでは数分かかることがあります。</p>
-  <button id="measure">測定</button>
-  <progress id="progress" max="858" value="0" hidden></progress>
-  <div id="status" class="status" role="status" aria-live="polite"></div>
-  <textarea id="result" readonly placeholder="ここに測定の結果が出ます"></textarea>
-  <button id="copy" class="secondary" disabled>結果をコピー</button>
-  <span id="copied" class="muted"></span>
+<!-- 上の帯(ゲーム中だけ表示) -->
+<header class="topbar" id="topbar" hidden>
+  <div class="topbar-inner">
+    <div class="topbar-title">
+      <span id="topbar-day"></span>
+      <span class="dirty" id="dirty" hidden>● 未保存の変更があります</span>
+    </div>
+    <button id="save">保存</button>
+    <label class="button secondary" for="open-file-top">開く</label>
+  </div>
+</header>
 
-  <h2>2. ファイルの書き出しと読み込み</h2>
-  <p>1試合分の打席ログを、ファイル(圧縮した JSON Lines)として書き出します。書き出したファイルを選んで読み込み、Python 側で読めるかを確かめます。</p>
-  <button id="export" class="secondary">1試合のログを書き出す</button>
-  <label class="file-label" for="file">ファイルを選んで読み込む</label>
-  <input id="file" type="file" accept=".gz,application/gzip">
-  <pre id="file-result" class="out"></pre>
+<!-- スタート -->
+<main class="screen" id="screen-start">
+  <h1>ペナントレース シミュレーター</h1>
+  <p>架空の12球団で、プロ野球のペナントレース(1シーズンの順位争い)を、試合ごとに計算して進めます。好きな球団を「自球団」に選んで、応援しながら見守ってください。</p>
 
-  <h2>3. テスト用の球団名</h2>
-  <p>試しに球団名を入れて、1試合の見出しに使います。<strong>この欄の文字は、外部に送られず、ブラウザにも保存されません。</strong>測定の結果の文章にも入りません。</p>
-  <input id="team-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" placeholder="例:テスト球団">
-  <button id="header" class="secondary">1試合の見出しに使う</button>
-  <pre id="header-result" class="out"></pre>
+  <div class="boot" id="boot">
+    <p class="small"><strong>初回は約12MBをダウンロードします</strong>(ブラウザの中で計算を動かすための、Python 一式です)。2回目からは、ブラウザに残った分を使うので速くなります。Wi-Fi でのご利用をおすすめします。</p>
+    <progress id="boot-progress" max="3" value="0"></progress>
+    <p class="muted" id="boot-text" role="status" aria-live="polite">準備を始めています…</p>
+  </div>
 
-  <h2>4. 通信と保存の確認</h2>
-  <p>このページが通信した先と、ブラウザの保存領域の状態を表示します(測定の結果にも入ります)。</p>
-  <button id="check" class="secondary">確認する</button>
-  <pre id="check-result" class="out"></pre>
+  <div class="stack">
+    <button id="go-new" disabled>新しく始める</button>
+    <label class="button secondary" for="open-file-start" id="open-start-label" aria-disabled="true">セーブデータを開く</label>
+  </div>
+  <p class="message" id="start-message" role="alert"></p>
 
-  <h2>5. 保存と読み込みの確認</h2>
-  <p>シーズンを60日目まで進めてセーブデータ(.sav)をダウンロードし、ページを再読み込みしたあとに読み込んで、最後まで進めます。結果が、保存せずに進めた場合と同じになるかを確かめます。上の「テスト用の球団名」に名前を入れておくと、その名前がファイルのどこに入るかも表示します(画面にだけ表示し、測定の結果には入りません)。</p>
-  <button id="save-check" class="secondary">60日目まで進めて保存</button>
-  <label class="file-label" for="load-file">読み込んで最後まで進める</label>
-  <input id="load-file" type="file" accept=".sav">
-  <button id="sample-check" class="secondary">見本のファイルで確認</button>
-  <pre id="save-result" class="out"></pre>
+  <div class="card small">
+    <p><strong>セーブデータ</strong>:ゲームの途中の状態を保存したファイル(名前の終わりが <code>.sav</code>)です。自動では保存しません。「保存」を押すと、端末にダウンロードされます。続きから遊ぶときは「セーブデータを開く」で選びます。</p>
+    <p>入力した球団名や進み具合は、このブラウザに記録されることも、外部に送られることもありません。保存したファイルの中にだけ入ります。</p>
+  </div>
 </main>
+
+<!-- 新規開始 -->
+<main class="screen" id="screen-new" hidden>
+  <h1>新しく始める</h1>
+  <div class="notice" id="real-name-notice">
+    <strong>ご注意</strong>:実在の球団名や選手名を入れたセーブデータは、ほかの人と共有しないでください(SNS への投稿や、共有リンクで渡すことも含みます)。名前を入れたファイルは、自分で遊ぶためだけに使ってください。
+  </div>
+  <p>12球団の名前を決めます。<strong>空欄のままにすると、薄く表示されている架空の名前</strong>になります。名前は24文字まで、同じ名前は使えません。</p>
+  <p>「自球団にする」で、応援する球団を1つ選んでください。順位表で目立つように表示します。</p>
+
+  <div id="league-fields"></div>
+
+  <details>
+    <summary>詳しい設定(同じ結果を再現したいとき)</summary>
+    <p class="small">シードは、乱数(サイコロのような、でたらめな数)の出方を決める初期値です。同じシードなら、同じ選手・同じ試合結果になります。空欄なら、毎回ちがう値を使います。0 〜 4294967295 の整数を入れてください。</p>
+    <label class="small" for="league-seed">リーグのシード(選手の顔ぶれが決まります)</label>
+    <input id="league-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
+    <p class="error" id="league-seed-error"></p>
+    <label class="small" for="season-seed">シーズンのシード(日程と試合の結果が決まります)</label>
+    <input id="season-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
+    <p class="error" id="season-seed-error"></p>
+  </details>
+
+  <p class="message ng" id="new-message" role="alert"></p>
+  <div class="row">
+    <button id="new-back" class="secondary">戻る</button>
+    <button id="new-start">この内容で始める</button>
+  </div>
+</main>
+
+<!-- 進行 -->
+<main class="screen" id="screen-progress" hidden>
+  <p class="day" id="day-text"></p>
+  <progress id="day-progress" max="125" value="0" aria-label="シーズンの進み具合"></progress>
+  <p class="muted small" id="games-text"></p>
+
+  <div class="advance">
+    <button class="adv" data-days="1">1日</button>
+    <button class="adv" data-days="7">1週間</button>
+    <button class="adv" data-days="0">最後まで</button>
+  </div>
+  <button id="stop" class="danger stop" hidden>止める</button>
+  <p class="message" id="progress-message" role="status" aria-live="polite"></p>
+
+  <div class="card" id="mine-card">
+    <div class="muted small">自球団</div>
+    <div class="mine-line"><strong id="mine-name"></strong></div>
+    <div id="mine-record"></div>
+  </div>
+
+  <h2>自球団の直近の試合</h2>
+  <ul class="games" id="recent"></ul>
+  <p class="muted small" id="recent-empty">まだ試合がありません。「1日」を押すと、1日分(6試合)を進めます。</p>
+</main>
+
+<!-- 順位表 -->
+<main class="screen" id="screen-standings" hidden>
+  <h1>順位表</h1>
+  <div class="seg" id="league-switch" role="group" aria-label="リーグの切り替え"></div>
+  <p class="muted small" id="standings-day"></p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="sticky" scope="col">順位・チーム</th>
+          <th scope="col">試合</th>
+          <th scope="col">勝</th>
+          <th scope="col">敗</th>
+          <th scope="col">分</th>
+          <th scope="col">勝率</th>
+          <th scope="col">ゲーム<br>差</th>
+        </tr>
+      </thead>
+      <tbody id="standings-body"></tbody>
+    </table>
+  </div>
+  <p class="muted small"><span class="you">★</span> と色の付いた行が自球団です。表は横にずらせます。左端のチーム名は、ずらしても見えたままです。</p>
+  <dl class="terms">
+    <dt>勝率</dt><dd>勝 ÷(勝 + 敗)。引き分けは数えません。試合がまだないときは「-」です。</dd>
+    <dt>ゲーム差</dt><dd>首位(1位)のチームとの差。(首位の勝 − 勝 + 敗 − 首位の敗)÷ 2。1ゲーム差は、直接対決1試合で追いつける差です。首位は「-」です。</dd>
+    <dt>順位の決め方</dt><dd>勝率の高い順。同じときは、勝の多い順、直接対決の成績、の順で決め、それでも同じなら抽選です。</dd>
+  </dl>
+</main>
+
+<!-- 下のタブ(ゲーム中だけ表示。タブは app.js の TABS で増やせる) -->
+<nav class="tabs" id="tabs" role="tablist" hidden></nav>
+
+<input id="open-file-start" type="file" accept=".sav">
+<input id="open-file-top" type="file" accept=".sav">
 <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@ from .config import SUPPORTED_FORMAT_VERSION, ConfigError, _Checker, _read_json
 ROLES = ("batter", "pitcher")
 FORMATS = ("rate3", "percent1", "decimal2")
 BETTER = ("high", "low")
+CATEGORIES = ("basic", "saber")  # 区分:基本/セイバー(D-109。成績の画面の切り替えで使う)
 _OPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b}
 
 
@@ -37,6 +38,10 @@ class MetricsConfig:
     def for_role(self, role: str, stage: int | None = None) -> list[str]:
         """その役割(打者・投手)で表示する指標の ID(定義データの順)。"""
         return [k for k, m in self.metrics.items() if role in m["formulas"] and (stage is None or m["stage"] <= stage)]
+
+    def in_category(self, category: str) -> list[str]:
+        """その区分(basic:基本、saber:セイバー)の指標の ID(定義データの順)。"""
+        return [k for k, m in self.metrics.items() if m["category"] == category]
 
 
 def default_metrics_data() -> dict:
@@ -93,6 +98,9 @@ def validate_metrics_config(data: Any, source: str = "(辞書)") -> MetricsConfi
             if text is not None and (not isinstance(text, str) or not text.strip()):
                 c.add(f"{path}.{key}", "文章を書いてください(空にはできません)")
         c.integer(c.get(sec, "stage", path), f"{path}.stage", 1, 3)
+        category = c.get(sec, "category", path)
+        if category is not None and category not in CATEGORIES:
+            c.add(f"{path}.category", "basic(基本)か saber(セイバー)を書いてください")
         fmt = c.get(sec, "format", path)
         if fmt is not None and fmt not in FORMATS:
             c.add(f"{path}.format", f"知らない表示の形です(使えるもの: {', '.join(FORMATS)})")

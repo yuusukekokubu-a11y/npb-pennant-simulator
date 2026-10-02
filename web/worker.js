@@ -1,164 +1,76 @@
-// 裏で Python(Pyodide)を動かす部分(Web Worker)。画面(app.js)からの依頼を受けて計算し、結果を返す。
-// 計算を裏で行うので、計算中も画面は固まらない。
-// 通信するのは、このページ自身(pennant.zip・bench.py)と、Pyodide の配布元だけ。
+// 裏で Python(Pyodide)を動かす部分(Web Worker)。画面(app.js)からの依頼を受けて、
+// 操作の関数(pennant.api)を bridge.py 経由で呼び、結果を返す。計算を裏で行うので、計算中も画面は固まらない。
+// 通信するのは、このページ自身(pennant.zip・bridge.py)と、Pyodide の配布元だけ。
 // ブラウザの保存領域(localStorage・IndexedDB など)は使わない。
 
 const PYODIDE_VERSION = "314.0.7";
 const PYODIDE_CDN = `https://cdn.jsdelivr.net/npm/pyodide@${PYODIDE_VERSION}/`;
 
 let pyodide = null;
-let benchModule = null;
-let bench = null;
+let bridge = null;
 
-function toJs(value) {
-  // Python の値を JavaScript の値にする(使い終わった Python 側の参照は解放する)
-  if (value && typeof value.toJs === "function") {
-    const js = value.toJs({ dict_converter: Object.fromEntries });
-    value.destroy();
-    return js;
-  }
-  return value;
+function progress(step, text) {
+  self.postMessage({ progress: { step, total: 3, text } });
 }
 
-function wasmHeapBytes() {
-  try {
-    return pyodide._module.HEAP8.buffer.byteLength;
-  } catch (e) {
-    return null;
-  }
+function parse(text) {
+  // bridge.py は {"ok": true, "value": …} か {"ok": false, "message": …, "problems": […]} の文字を返す
+  return JSON.parse(text);
 }
 
 const handlers = {
   async boot({ local }) {
     const base = local ? new URL("pyodide/", import.meta.url).href : PYODIDE_CDN;
-    const t0 = performance.now();
+    progress(1, "Python 一式をダウンロードしています(初回は約12MB)…");
     const { loadPyodide } = await import(base + "pyodide.mjs");
     pyodide = await loadPyodide({ indexURL: base, stdout: () => {}, stderr: () => {} });
-    const t1 = performance.now();
+    progress(2, "シミュレーションの本体を読み込んでいます…");
     const zip = await (await fetch(new URL("pennant.zip", import.meta.url))).arrayBuffer();
     pyodide.unpackArchive(zip, "zip", { extractDir: "/home/pyodide" });
-    const src = await (await fetch(new URL("bench.py", import.meta.url))).text();
-    pyodide.FS.writeFile("/home/pyodide/bench.py", src);
+    const src = await (await fetch(new URL("bridge.py", import.meta.url))).text();
+    pyodide.FS.writeFile("/home/pyodide/bridge.py", src);
+    progress(3, "準備しています…");
     pyodide.runPython("import sys\nif '/home/pyodide' not in sys.path: sys.path.insert(0, '/home/pyodide')");
-    benchModule = pyodide.pyimport("bench");
-    const t2 = performance.now();
-    return {
-      seconds: (t2 - t0) / 1000,
-      pyodideSeconds: (t1 - t0) / 1000,
-      codeSeconds: (t2 - t1) / 1000,
-      pythonVersion: benchModule.python_version(),
-      pyodideVersion: pyodide.version,
-      pyodideSource: local ? "このページ(試験用)" : "cdn.jsdelivr.net",
-    };
+    bridge = pyodide.pyimport("bridge");
+    return { ok: true, value: null };
   },
 
-  setup({ seed }) {
-    if (bench) bench.destroy();
-    bench = benchModule.Bench(seed);
-    return { seconds: bench.setup_seconds, totalGames: bench.total_games() };
+  preview({ seed }) {
+    return parse(bridge.preview(seed));
   },
 
-  games({ n }) {
-    return { seconds: bench.play_games(n), totalGames: bench.games_played() };
+  check({ seed, names }) {
+    return parse(bridge.check(seed, JSON.stringify(names)));
   },
 
-  day() {
-    const t0 = performance.now();
-    const played = bench.play_day();
-    return { played, seconds: (performance.now() - t0) / 1000, totalGames: bench.games_played(), isOver: bench.is_over() };
+  newGame({ seed, seasonSeed, names, myTeamIndex }) {
+    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex));
   },
 
-  computeStats() {
-    return toJs(bench.compute_stats());
-  },
-
-  stats() {
-    const t0 = performance.now();
-    const logBytes = bench.log_memory_bytes();
-    return {
-      plateAppearances: bench.plate_appearances(),
-      logMemoryBytes: logBytes,
-      measureSeconds: (performance.now() - t0) / 1000,
-      wasmHeapBytes: wasmHeapBytes(),
-    };
-  },
-
-  exportSeason() {
-    const t0 = performance.now();
-    const data = bench.export_log();
-    const size = data.length;
-    data.destroy();
-    return { bytes: size, seconds: (performance.now() - t0) / 1000 };
-  },
-
-  exportGame() {
-    // 1試合目の打席ログを、ファイルの中身(gzip 圧縮の JSON Lines)にする
-    const data = bench.export_first_game();
-    const bytes = data.toJs();
-    const digest = benchModule.log_digest(data);
-    data.destroy();
-    return { bytes, digest };
-  },
-
-  importFile({ bytes }) {
-    const info = benchModule.decode_log(pyodide.toPy(bytes));
-    return toJs(info);
-  },
-
-  header({ name }) {
-    // テスト用の球団名は、この呼び出しの中だけで使う(Python 側にも残さない)
-    return bench.sample_header(name);
-  },
-
-  fingerprint() {
-    return toJs(benchModule.fingerprint_report());
-  },
-
-  saveMeasure() {
-    return toJs(benchModule.save_measure(bench));
-  },
-
-  saveCheckStart({ name }) {
-    const r = benchModule.save_check_start(name || "");
-    const data = r.get("data");
-    const out = {
-      bytes: data.toJs(),
-      fileName: r.get("file_name"),
-      size: r.get("bytes"),
-      seconds: r.get("seconds"),
-      day: r.get("day"),
-      nameIn: r.get("name_in").toJs(),
-    };
-    data.destroy();
-    r.destroy();
-    return out;
-  },
-
-  continueToEnd({ bytes }) {
+  load({ bytes }) {
     const py = pyodide.toPy(bytes);
-    const r = toJs(benchModule.continue_to_end(py));
-    py.destroy();
-    return r;
+    try {
+      return parse(bridge.load(py));
+    } finally {
+      py.destroy();
+    }
   },
 
-  async checkSample() {
-    const data = new Uint8Array(await (await fetch(new URL("sample-save.sav", import.meta.url))).arrayBuffer());
-    const info = await (await fetch(new URL("sample-save.json", import.meta.url))).json();
-    const py = pyodide.toPy(data);
-    const digest = benchModule.continue_sample(py, info.continue_to_day);
-    py.destroy();
-    return { digest, expected: info.continuation_digest, madeWith: info.made_with, size: data.length };
+  save({ today }) {
+    const data = bridge.save(today);
+    const bytes = data.toJs();
+    data.destroy();
+    const info = parse(bridge.save_info());
+    info.value.bytes = bytes;
+    return info;
   },
 
-  async expected() {
-    return await (await fetch(new URL("expected-fingerprints.json", import.meta.url))).json();
+  advance({ days }) {
+    return parse(bridge.advance(days));
   },
 
-  resources() {
-    return performance.getEntriesByType("resource").map((e) => ({
-      url: e.name.split("?")[0],
-      transferSize: e.transferSize,
-    }));
+  view() {
+    return parse(bridge.view());
   },
 };
 

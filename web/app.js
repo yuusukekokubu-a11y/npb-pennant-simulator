@@ -1,16 +1,30 @@
-// 画面の動き。計算は worker.js(裏の Python)に任せ、ここは表示だけを行う。
-// ブラウザの保存領域(localStorage・sessionStorage・IndexedDB・Cookie)には何も書かない。
+// 画面の動き(最小のブラウザ画面①。D-107)。計算は worker.js(裏の Python)に任せ、ここは表示と操作だけを行う。
+// ブラウザの保存領域(localStorage・sessionStorage・IndexedDB・Cookie)には何も書かない。自動保存もしない。
+// 選手の非公開の情報は扱わない(公開用の情報だけを使う。D-108)。
 
-const DAY_GAMES = 12; // 「1日分」として測る試合数(本物の日程の2日分。1日は6試合)
-const SEED = 1;
 const LOCAL_PYODIDE = new URLSearchParams(location.search).get("pyodide") === "local"; // 試験用(このページに置いた Pyodide を使う)
+const MAX_SEED = 4294967295;
+// 下のタブ。増やすときは、ここに足して、同じ名前の画面(screen-…)を index.html に作る
+const TABS = [
+  { id: "progress", label: "進行" },
+  { id: "standings", label: "順位表" },
+];
 
 const $ = (id) => document.getElementById(id);
 let worker = null;
+let ready = false;
 let nextId = 1;
 const pending = new Map();
-let workerResources = [];
-let exportedDigest = null;
+
+const state = {
+  view: null, // 今のゲームの表示用の情報(status・standings・recent)
+  dirty: false, // 未保存の変更があるか
+  running: false, // 進めている途中か
+  stopRequested: false,
+  league: 0, // 順位表で見ているリーグ
+  tab: "progress",
+  newGame: null, // 新規開始の画面の情報(シードと初期名)
+};
 
 // ---- 裏の Python とのやり取り ----
 
@@ -28,334 +42,477 @@ function createWorker() {
         resolve(w);
         return;
       }
+      if (msg.progress) {
+        bootProgress(msg.progress);
+        return;
+      }
       const p = pending.get(msg.id);
       if (!p) return;
       pending.delete(msg.id);
       msg.ok ? p.resolve(msg.value) : p.reject(new Error(msg.error));
     };
-    w.onerror = (e) => reject(new Error(e.message || "Worker を起動できませんでした"));
+    w.onerror = (e) => reject(new Error(e.message || "裏の計算を起動できませんでした"));
   });
 }
 
-function call(w, cmd, args) {
+function call(cmd, args) {
   const id = nextId++;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    w.postMessage({ id, cmd, args });
+    worker.postMessage({ id, cmd, args });
   });
 }
 
-async function bootWorker() {
-  const w = await createWorker();
-  const info = await call(w, "boot", { local: LOCAL_PYODIDE });
-  return { w, info };
+function bootProgress({ step, total, text }) {
+  $("boot-progress").max = total;
+  $("boot-progress").value = step - 1;
+  $("boot-text").textContent = `${step} / ${total}:${text}`;
 }
 
-async function ensureWorker() {
-  if (worker) return worker;
-  status("Python を起動しています…");
-  const { w } = await bootWorker();
-  worker = w;
-  await call(worker, "setup", { seed: SEED });
-  await call(worker, "games", { n: 1 });
-  status("");
-  return worker;
+async function boot() {
+  try {
+    worker = await createWorker();
+    await call("boot", { local: LOCAL_PYODIDE });
+    ready = true;
+    $("boot-progress").value = $("boot-progress").max;
+    $("boot").hidden = true;
+    $("go-new").disabled = false;
+    $("open-file-start").disabled = false;
+    $("open-file-top").disabled = false;
+    $("open-start-label").removeAttribute("aria-disabled");
+  } catch (err) {
+    $("boot-text").textContent = `準備できませんでした:${err.message}\n通信できる場所で、ページを読み込み直してください。`;
+    $("boot-text").className = "message ng";
+  }
+}
+
+// ---- 画面の切り替え ----
+
+function showScreen(name) {
+  for (const id of ["start", "new", "progress", "standings"]) $(`screen-${id}`).hidden = id !== name;
+  const inGame = name === "progress" || name === "standings";
+  $("topbar").hidden = !inGame;
+  $("tabs").hidden = !inGame;
+  if (inGame) {
+    state.tab = name;
+    for (const b of $("tabs").children) b.setAttribute("aria-selected", String(b.dataset.tab === name));
+  }
+  window.scrollTo(0, 0);
+}
+
+function buildTabs() {
+  for (const t of TABS) {
+    const b = document.createElement("button");
+    b.textContent = t.label;
+    b.dataset.tab = t.id;
+    b.setAttribute("role", "tab");
+    b.addEventListener("click", () => {
+      showScreen(t.id);
+      render();
+    });
+    $("tabs").appendChild(b);
+  }
 }
 
 // ---- 表示 ----
 
-function status(text, cls = "") {
-  const el = $("status");
-  el.textContent = text;
-  el.className = "status " + cls;
+function setDirty(value) {
+  state.dirty = value;
+  $("dirty").hidden = !value;
 }
-const sec = (s) => `${s.toFixed(2)} 秒`;
-const mb = (b) => (b == null ? "測れません" : `${(b / 1024 / 1024).toFixed(1)} MB`);
-const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
-const yieldToScreen = () => new Promise((r) => setTimeout(r, 0));
 
-function deviceInfo() {
-  const n = navigator;
-  const lines = [`ブラウザの情報: ${n.userAgent}`];
-  if (n.userAgentData) {
-    const brands = n.userAgentData.brands.map((b) => `${b.brand} ${b.version}`).join(", ");
-    lines.push(`ブラウザ: ${brands} / OS: ${n.userAgentData.platform} / モバイル: ${n.userAgentData.mobile ? "はい" : "いいえ"}`);
+function recordText(m) {
+  const gb = m.games_behind === "-" ? (m.rank === 1 ? "首位" : "首位と同率") : `首位と ${m.games_behind} ゲーム差`;
+  return `${m.league_name} ${m.rank}位 / ${m.wins}勝 ${m.losses}敗 ${m.ties}分 / 勝率 ${m.pct} / ${gb}`;
+}
+
+function renderProgress() {
+  const s = state.view.status;
+  $("day-text").textContent = s.is_over ? `全${s.total_days}日 終了` : `${s.day}日目 / ${s.total_days}日`;
+  $("topbar-day").textContent = s.is_over ? "シーズン終了" : `${s.day}日目 / ${s.total_days}日`;
+  $("day-progress").max = s.total_days;
+  $("day-progress").value = s.day;
+  $("games-text").textContent = `${s.games_played} / ${s.total_games} 試合`;
+  const m = s.my_team;
+  $("mine-card").hidden = !m;
+  if (m) {
+    $("mine-name").textContent = m.name;
+    $("mine-record").textContent = recordText(m);
   }
-  lines.push(`CPU の数(論理): ${n.hardwareConcurrency ?? "不明"} / 端末のメモリ(目安): ${n.deviceMemory ? n.deviceMemory + " GB" : "不明"}`);
-  lines.push(`画面: ${screen.width}×${screen.height}(拡大率 ${devicePixelRatio})`);
-  return lines;
+  const ul = $("recent");
+  ul.replaceChildren();
+  for (const g of state.view.recent) {
+    const li = document.createElement("li");
+    const mark = document.createElement("span");
+    mark.className = "mark " + (g.outcome === "勝" ? "win" : g.outcome === "負" ? "loss" : "");
+    mark.textContent = g.outcome === "勝" ? "○" : g.outcome === "負" ? "●" : "△";
+    const text = document.createElement("span");
+    const extra = [g.innings > 9 ? `延長${g.innings}回` : "", g.walkoff ? (g.outcome === "勝" ? "サヨナラ勝ち" : "サヨナラ負け") : ""].filter(Boolean).join("・");
+    text.textContent = `${g.day}日目 ${g.home ? "(ホーム)" : "(ビジター)"} 対 ${g.opponent} ${g.score}${extra ? `(${extra})` : ""}`;
+    li.append(mark, text);
+    ul.appendChild(li);
+  }
+  $("recent-empty").hidden = state.view.recent.length > 0;
+  for (const b of document.querySelectorAll(".adv")) b.disabled = state.running || s.is_over;
+  $("stop").hidden = !state.running;
+  $("save").disabled = state.running;
+  $("open-file-top").disabled = state.running || !ready;
 }
 
-async function storageState() {
-  let idb = "確認できません";
-  if (indexedDB && indexedDB.databases) {
-    try {
-      idb = `${(await indexedDB.databases()).length} 個`;
-    } catch (e) {
-      idb = "確認できません";
+function renderStandings() {
+  const table = state.view.standings;
+  const sw = $("league-switch");
+  if (sw.children.length !== table.leagues.length) {
+    sw.replaceChildren();
+    for (const lg of table.leagues) {
+      const b = document.createElement("button");
+      b.textContent = lg.name;
+      b.addEventListener("click", () => {
+        state.league = lg.index;
+        renderStandings();
+      });
+      sw.appendChild(b);
     }
   }
-  let local = "確認できません";
-  let session = "確認できません";
-  try { local = `${localStorage.length} 件`; } catch (e) { /* 使えない環境 */ }
-  try { session = `${sessionStorage.length} 件`; } catch (e) { /* 使えない環境 */ }
-  return [
-    `localStorage: ${local} / sessionStorage: ${session} / IndexedDB: ${idb} / Cookie: ${document.cookie ? "あり" : "なし"}`,
-  ];
+  [...sw.children].forEach((b, i) => {
+    b.textContent = table.leagues[i].name;
+    b.setAttribute("aria-pressed", String(i === state.league));
+  });
+  const lg = table.leagues[state.league];
+  $("standings-day").textContent = `${table.day}日目まで(全${state.view.status.total_days}日)`;
+  const body = $("standings-body");
+  body.replaceChildren();
+  for (const r of lg.rows) {
+    const tr = document.createElement("tr");
+    if (r.is_mine) tr.className = "mine";
+    const name = document.createElement("td");
+    name.className = "sticky";
+    const rank = document.createElement("span");
+    rank.className = "rank";
+    rank.textContent = r.rank;
+    name.append(rank, r.name);
+    if (r.is_mine) {
+      const you = document.createElement("span");
+      you.className = "you";
+      you.textContent = "★";
+      you.setAttribute("aria-label", "自球団");
+      name.append(you);
+    }
+    tr.appendChild(name);
+    for (const v of [r.games, r.wins, r.losses, r.ties, r.pct, r.games_behind]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
 }
 
-async function networkState() {
-  if (worker) {
-    try { workerResources = await call(worker, "resources"); } catch (e) { /* 起動前 */ }
-  }
-  const main = performance.getEntriesByType("resource").map((e) => ({ url: e.name.split("?")[0], transferSize: e.transferSize }));
-  const all = [{ url: location.origin + location.pathname, transferSize: null }, ...main, ...workerResources];
-  const seen = new Map();
-  for (const r of all) if (!seen.has(r.url)) seen.set(r.url, r);
-  const hosts = [...new Set([...seen.keys()].map((u) => new URL(u).host))];
-  const lines = [`通信した先(ホスト): ${hosts.join(", ")}`];
-  for (const r of seen.values()) {
-    const cached = r.transferSize === 0 ? " (キャッシュから)" : ""; // URL のあとに空白を入れる(GitHub で URL の一部と見なされないように)
-    lines.push(`  - ${r.url}${cached}`);
-  }
-  return lines;
+function render() {
+  if (!state.view) return;
+  renderProgress();
+  renderStandings();
 }
 
-// ---- 1. 測定 ----
+function enterGame(view, dirty) {
+  state.view = view;
+  setDirty(dirty);
+  const mine = view.status.my_team;
+  if (mine) state.league = view.standings.leagues.findIndex((lg) => lg.rows.some((r) => r.is_mine));
+  if (state.league < 0) state.league = 0;
+  $("progress-message").textContent = "";
+  showScreen("progress");
+  render();
+}
 
-async function measure() {
-  $("measure").disabled = true;
-  $("copy").disabled = true;
-  $("result").value = "";
-  const out = ["# ブラウザでの実行の技術検証:測定の結果", `測定した日時: ${new Date().toISOString()}`, ""];
-  const progress = $("progress");
+// ---- 新規開始 ----
+
+function randomSeed() {
+  return crypto.getRandomValues(new Uint32Array(1))[0];
+}
+
+function parseSeed(id) {
+  // 空欄なら null(毎回ちがう値)。正しくない値なら理由の文字
+  const text = $(id).value.trim();
+  if (text === "") return { value: null };
+  if (!/^\d+$/.test(text)) return { error: "0 以上の整数を入れてください" };
+  const n = Number(text);
+  if (n > MAX_SEED) return { error: `${MAX_SEED} 以下にしてください` };
+  return { value: n };
+}
+
+function teamInputs() {
+  return [...document.querySelectorAll("#league-fields input[type=text]")];
+}
+
+function names() {
+  return teamInputs().map((i) => i.value);
+}
+
+async function showNewGame() {
+  $("new-message").textContent = "";
+  $("league-seed").value = "";
+  $("season-seed").value = "";
+  $("league-seed-error").textContent = "";
+  $("season-seed-error").textContent = "";
+  await preparePreview(randomSeed(), true);
+  showScreen("new");
+}
+
+async function preparePreview(seed, reset) {
+  const r = await call("preview", { seed });
+  const pv = r.value;
+  // 入力済みの名前と自球団の選択は、作り直す直前の状態を引き継ぐ
+  const prev = reset ? null : { names: names(), mine: myTeamIndex() };
+  state.newGame = { seed, preview: pv };
+  const box = $("league-fields");
+  box.dataset.seed = String(seed);
+  box.replaceChildren();
+  let i = 0;
+  for (const lg of pv.leagues) {
+    const fs = document.createElement("fieldset");
+    const legend = document.createElement("legend");
+    legend.textContent = lg.name;
+    fs.appendChild(legend);
+    for (const t of lg.teams) {
+      const index = i++;
+      const div = document.createElement("div");
+      div.className = "team";
+      const label = document.createElement("label");
+      label.className = "name-label";
+      label.htmlFor = `team-${index}`;
+      label.textContent = `${index + 1}番目の球団(本拠地:${t.stadium})`;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = `team-${index}`;
+      input.placeholder = t.default_name;
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.setAttribute("autocapitalize", "off");
+      input.setAttribute("aria-describedby", `team-${index}-error`);
+      input.value = prev ? prev.names[index] || "" : "";
+      input.addEventListener("input", scheduleCheck);
+      const err = document.createElement("p");
+      err.className = "error";
+      err.id = `team-${index}-error`;
+      const pick = document.createElement("label");
+      pick.className = "pick";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "my-team";
+      radio.value = String(index);
+      radio.checked = prev ? prev.mine === index : index === 0;
+      pick.append(radio, "自球団にする");
+      div.append(label, input, err, pick);
+      fs.appendChild(div);
+    }
+    box.appendChild(fs);
+  }
+}
+
+function myTeamIndex() {
+  const r = document.querySelector("input[name=my-team]:checked");
+  return r ? Number(r.value) : -1;
+}
+
+let checkTimer = null;
+function scheduleCheck() {
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(checkNames, 250);
+}
+
+function showProblems(problems) {
+  teamInputs().forEach((input, i) => {
+    const p = problems[i];
+    $(`team-${i}-error`).textContent = p || "";
+    input.setAttribute("aria-invalid", String(Boolean(p)));
+  });
+}
+
+async function checkNames() {
+  if (!state.newGame) return [];
+  const r = await call("check", { seed: state.newGame.seed, names: names() });
+  showProblems(r.value);
+  return r.value;
+}
+
+async function leagueSeedChanged() {
+  const s = parseSeed("league-seed");
+  $("league-seed-error").textContent = s.error || "";
+  if (s.error) return;
+  if (s.value !== null && state.newGame && state.newGame.seed === s.value) return; // 同じシードなら作り直さない
+  const seed = s.value === null ? randomSeed() : s.value;
+  await preparePreview(seed, false);
+  await checkNames();
+}
+
+async function startNewGame() {
+  $("new-message").textContent = "";
+  const ls = parseSeed("league-seed");
+  const ss = parseSeed("season-seed");
+  $("league-seed-error").textContent = ls.error || "";
+  $("season-seed-error").textContent = ss.error || "";
+  const problems = await checkNames();
+  const bad = problems.findIndex(Boolean);
+  if (ls.error || ss.error || bad >= 0) {
+    $("new-message").textContent = "入力に問題があります。赤い字の説明を見て、直してください。";
+    if (bad >= 0) teamInputs()[bad].focus();
+    return;
+  }
+  const mine = myTeamIndex();
+  if (mine < 0) {
+    $("new-message").textContent = "「自球団にする」で、球団を1つ選んでください。";
+    return;
+  }
+  if (state.dirty && !confirm("今のゲームに、未保存の変更があります。新しく始めると失われます。始めますか?")) return;
+  $("new-start").disabled = true;
   try {
-    // Python の起動(1回目と2回目)
-    status("Python を起動しています(1回目)…");
-    if (worker) { worker.terminate(); worker = null; }
-    const first = await bootWorker();
-    const firstRes = await call(first.w, "resources");
-    first.w.terminate();
-    status("Python を起動しています(2回目)…");
-    const second = await bootWorker();
-    worker = second.w;
-    const wasm = firstRes.find((r) => r.url.endsWith("pyodide.asm.wasm"));
-    const cold = wasm && wasm.transferSize > 0;
-    out.push("## Python の起動");
-    out.push(`- Python ${second.info.pythonVersion}(Pyodide ${second.info.pyodideVersion}。配布元: ${second.info.pyodideSource})`);
-    out.push(`- 1回目: ${sec(first.info.seconds)}(Pyodide ${sec(first.info.pyodideSeconds)} + 計算本体の読み込み ${sec(first.info.codeSeconds)})${cold ? "。配布元からダウンロードした" : "。ブラウザのキャッシュから読んだ"}`);
-    out.push(`- 2回目: ${sec(second.info.seconds)}(Pyodide ${sec(second.info.pyodideSeconds)} + 計算本体の読み込み ${sec(second.info.codeSeconds)})`);
-
-    // 結果の指紋(PC の python scripts/fingerprint.py と見比べる。D-089)
-    status("結果の指紋を計算しています…");
-    const fp = await call(worker, "fingerprint");
-    out.push("", fp.text, `- 指紋の計算にかかった時間: ${sec(fp.seconds)}`);
-
-    // リーグの生成と日程の作成
-    status("架空のリーグと日程を作っています…");
-    const setup = await call(worker, "setup", { seed: SEED });
-    const seasonGames = setup.totalGames;
-    out.push("", "## 計算");
-    out.push(`- 架空のリーグの生成(12球団・840人)と日程の作成: ${sec(setup.seconds)}`);
-
-    // 1シーズン(本物の日程。1日ずつ進め、合間に画面を更新する)
-    progress.max = seasonGames;
-    progress.value = 0;
-    progress.hidden = false;
-    let total = 0;
-    const daySeconds = [];
-    const t0 = performance.now();
-    let over = false;
-    while (!over) {
-      const r = await call(worker, "day");
-      total = r.totalGames;
-      over = r.isOver;
-      daySeconds.push(r.seconds);
-      progress.value = total;
-      status(`1シーズンを進めています… ${total} / ${seasonGames} 試合(${daySeconds.length}日目)`);
-      await yieldToScreen();
+    const seed = state.newGame.seed;
+    const seasonSeed = ss.value === null ? randomSeed() : ss.value;
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine });
+    if (!r.ok) {
+      $("new-message").textContent = [r.message, ...r.problems].join("\n");
+      return;
     }
-    const seasonSeconds = (performance.now() - t0) / 1000;
-    const avgDay = daySeconds.reduce((a, b) => a + b, 0) / daySeconds.length;
-    const maxDay = Math.max(...daySeconds);
-    const twoDays = daySeconds[1] + daySeconds[2]; // 2日目と3日目(12試合)。1日目は準備の時間を含むので外す
-    out.push(`- 最初の1日(6試合。準備の時間を含む): ${sec(daySeconds[0])}`);
-    out.push(`- 1日分(12試合。本物の日程の2日分): ${sec(twoDays)}(1試合あたり ${(twoDays / DAY_GAMES * 1000).toFixed(0)} ミリ秒)`);
-    out.push(`- 1シーズン(本物の日程。${total}試合・${daySeconds.length}日): ${sec(seasonSeconds)}(1日=6試合あたり 平均 ${sec(avgDay)}、最大 ${sec(maxDay)})`);
-    const day = { seconds: twoDays };
-
-    // 成績の集計(実装⑤)
-    status("成績を集計しています…");
-    const agg = await call(worker, "computeStats");
-    out.push(`- 成績の集計(全選手の元の数と指標): ${sec(agg.seconds)}(打者 ${agg.batters} 人・投手 ${agg.pitchers} 人。規定到達 打者 ${agg.qualified_batters} 人・投手 ${agg.qualified_pitchers} 人)`);
-
-    // 打席ログの大きさ
-    status("打席ログの大きさを測っています…");
-    const stats = await call(worker, "stats");
-    out.push("", "## メモリ");
-    out.push(`- 打席の数: ${stats.plateAppearances.toLocaleString()}(${total}試合分を保持)`);
-    out.push(`- 打席ログのメモリ上の大きさ(Python の見積もり): ${mb(stats.logMemoryBytes)}(測る時間 ${sec(stats.measureSeconds)})`);
-    out.push(`- Python 全体が使っているメモリ(WebAssembly のメモリ): ${mb(stats.wasmHeapBytes)}`);
-    if (performance.memory) out.push(`- 画面側の JavaScript のメモリ: ${mb(performance.memory.usedJSHeapSize)}`);
-
-    status("シーズンを保存・読み込みしています…");
-    const sv = await call(worker, "saveMeasure");
-    out.push("", "## 保存と読み込み(1シーズン分)");
-    out.push(`- セーブデータ(.sav)の大きさ: ${mb(sv.bytes)}`);
-    out.push(`- 保存の時間: ${sec(sv.save_seconds)} / 読み込みの時間(検証を含む): ${sec(sv.load_seconds)}`);
-
-    status("打席ログを圧縮しています…");
-    const exp = await call(worker, "exportSeason");
-    out.push("", "## 書き出し");
-    out.push(`- 打席ログを圧縮したファイル(gzip の JSON Lines): ${mb(exp.bytes)}(${kb(exp.bytes)}。作る時間 ${sec(exp.seconds)})`);
-
-    // 判定(目安:1日分が約1秒以内、1シーズンが数分以内、メモリ不足で止まらない)
-    out.push("", "## 判定(目安)");
-    out.push(`- 1日分(12試合)が約1秒以内: ${day.seconds <= 1 ? "○" : "×"}(${sec(day.seconds)})`);
-    out.push(`- 1シーズンが数分(5分)以内: ${seasonSeconds <= 300 ? "○" : "×"}(${sec(seasonSeconds)})`);
-    out.push("- メモリ不足で止まらない: ○(最後まで完了)");
-
-    out.push("", "## 端末", ...deviceInfo());
-    out.push("", "## 通信と保存", ...(await networkState()), ...(await storageState()));
-    status("測定が終わりました。", "ok");
-  } catch (err) {
-    out.push("", `## エラーで止まりました`, String(err && err.message ? err.message : err));
-    out.push("", "## 端末", ...deviceInfo());
-    status("エラーで止まりました。結果の欄を見てください。", "ng");
+    // 入力欄は空にしておく(画面に名前を残さない)
+    for (const input of teamInputs()) input.value = "";
+    state.newGame = null;
+    enterGame(r.value, true);
   } finally {
-    progress.hidden = true;
-    $("result").value = out.join("\n");
-    $("measure").disabled = false;
-    $("copy").disabled = false;
+    $("new-start").disabled = false;
   }
 }
 
-async function copyResult() {
-  const text = $("result").value;
+// ---- 進める ----
+
+async function advance(days) {
+  if (state.running || !state.view || state.view.status.is_over) return;
+  state.running = true;
+  state.stopRequested = false;
+  $("stop").disabled = false;
+  $("progress-message").className = "message";
+  $("progress-message").textContent = "";
+  render();
+  let left = days === 0 ? Infinity : days;
   try {
-    await navigator.clipboard.writeText(text);
-  } catch (e) {
-    $("result").select();
-    document.execCommand("copy");
+    // 1日ずつ裏に頼む。日の区切りごとに、止める指示を確かめる
+    while (left > 0 && !state.view.status.is_over && !state.stopRequested) {
+      const r = await call("advance", { days: 1 });
+      state.view = r.value;
+      setDirty(true);
+      left -= 1;
+      renderProgress();
+    }
+    const s = state.view.status;
+    if (s.is_over) {
+      const m = s.my_team;
+      $("progress-message").textContent = m
+        ? `シーズンが終わりました。${m.name} は ${m.league_name} ${m.rank}位でした。`
+        : "シーズンが終わりました。";
+    } else if (state.stopRequested) {
+      $("progress-message").textContent = `${s.day}日目の終わりで止めました。`;
+    }
+  } catch (err) {
+    $("progress-message").className = "message ng";
+    $("progress-message").textContent = `進められませんでした:${err.message}`;
+  } finally {
+    state.running = false;
+    render();
   }
-  $("copied").textContent = "コピーしました";
-  setTimeout(() => ($("copied").textContent = ""), 2000);
 }
 
-// ---- 2. ファイルの往復 ----
+// ---- 保存と読み込み ----
 
-async function exportGame() {
+function todayText() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+async function save() {
+  if (!state.view || state.running) return;
+  $("save").disabled = true;
   try {
-    const w = await ensureWorker();
-    const { bytes, digest } = await call(w, "exportGame");
-    exportedDigest = digest;
-    const blob = new Blob([bytes], { type: "application/gzip" });
+    const r = await call("save", { today: todayText() });
+    const blob = new Blob([r.value.bytes], { type: "application/octet-stream" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "pennant-game-log.jsonl.gz";
+    a.download = r.value.file_name; // 日付だけのファイル名(球団名は入れない)
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    $("file-result").textContent = `書き出しました(${kb(bytes.length)})。次に「ファイルを選んで読み込む」で、このファイルを選んでください。`;
+    state.view.status = r.value.status;
+    setDirty(false);
+    $("progress-message").className = "message ok";
+    $("progress-message").textContent = `保存しました(${r.value.file_name}、${(r.value.bytes.length / 1024 / 1024).toFixed(1)}MB)。ダウンロードのフォルダに入ります。`;
+    if (state.tab !== "progress") showScreen("progress");
   } catch (err) {
-    $("file-result").textContent = `書き出せませんでした:${err.message}`;
+    $("progress-message").className = "message ng";
+    $("progress-message").textContent = `保存できませんでした:${err.message}`;
+  } finally {
+    render();
   }
 }
 
-async function importFile(event) {
+async function openFile(event, messageId) {
   const file = event.target.files[0];
   event.target.value = "";
-  if (!file) return;
+  if (!file || !ready || state.running) return;
+  const el = $(messageId);
+  el.className = "message";
+  if (state.dirty && !confirm("今のゲームに、未保存の変更があります。開くと失われます。開きますか?")) return;
+  el.textContent = "読み込んでいます…";
   try {
-    const w = await ensureWorker();
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const info = await call(w, "importFile", { bytes });
-    const same = exportedDigest ? (info.sha256 === exportedDigest ? "○ 書き出した中身と一致" : "× 書き出した中身と違う") : "(このページで書き出したファイルではないため、比べていません)";
-    $("file-result").textContent = `読み込めました:${info.games} 試合、${info.plate_appearances} 打席、得点の合計 ${info.runs}\n一致の確認:${same}`;
+    const r = await call("load", { bytes });
+    if (!r.ok) {
+      el.className = "message ng";
+      el.textContent = [r.message, ...r.problems.slice(0, 10).map((p) => `・${p}`), r.problems.length > 10 ? `…ほか ${r.problems.length - 10} 件` : ""]
+        .filter(Boolean)
+        .join("\n");
+      if (state.view) showScreen("progress"); // 上の「開く」から開いたときは、進行の画面に説明を出す
+      return;
+    }
+    el.textContent = "";
+    enterGame(r.value, false);
+    $("progress-message").className = "message ok";
+    $("progress-message").textContent = `開きました(${r.value.status.day}日目から)。`;
   } catch (err) {
-    $("file-result").textContent = `読み込めませんでした:${err.message}`;
-  }
-}
-
-// ---- 3. テスト用の球団名 ----
-
-async function header() {
-  try {
-    const w = await ensureWorker();
-    $("header-result").textContent = await call(w, "header", { name: $("team-name").value });
-  } catch (err) {
-    $("header-result").textContent = `表示できませんでした:${err.message}`;
-  }
-}
-
-// ---- 5. 保存と読み込みの確認 ----
-
-async function saveCheck() {
-  const el = $("save-result");
-  try {
-    const w = await ensureWorker();
-    el.textContent = "60日目まで進めて保存しています…";
-    const r = await call(w, "saveCheckStart", { name: $("team-name").value });
-    const blob = new Blob([r.bytes], { type: "application/octet-stream" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = r.fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    const where = $("team-name").value.trim()
-      ? `入力した球団名が入っている場所: ${r.nameIn.length ? r.nameIn.join("、") : "(どこにもない)"}(state.json だけなら正しい)`
-      : "(球団名の欄が空なので、架空の初期名のまま保存しました)";
-    el.textContent = `${r.day}日目まで進めて保存しました(${r.fileName}、${kb(r.size)}、保存の時間 ${sec(r.seconds)})。\n${where}\n次に、ページを再読み込みしてから「読み込んで最後まで進める」で、このファイルを選んでください。`;
-  } catch (err) {
-    el.textContent = `保存できませんでした:${err.message}`;
-  }
-}
-
-async function loadAndContinue(event) {
-  const file = event.target.files[0];
-  event.target.value = "";
-  if (!file) return;
-  const el = $("save-result");
-  try {
-    const w = await ensureWorker();
-    el.textContent = "読み込んで、最後まで進めています…";
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const r = await call(w, "continueToEnd", { bytes });
-    const expected = (await call(w, "expected")).season;
-    const same = r.digest === expected ? "○ 保存せずに最後まで進めた場合(指紋 d)と一致" : "× 指紋 d と違う";
-    el.textContent = `読み込めました(${r.loaded_day}日目から再開。読み込みの時間 ${sec(r.load_seconds)})。最後まで進めた結果の指紋:${r.digest.slice(0, 16)}…\n${same}`;
-  } catch (err) {
+    el.className = "message ng";
     el.textContent = `読み込めませんでした:${err.message}`;
   }
 }
 
-async function sampleCheck() {
-  const el = $("save-result");
-  try {
-    const w = await ensureWorker();
-    el.textContent = "見本のファイルを読み込んでいます…";
-    const r = await call(w, "checkSample");
-    el.textContent = `見本のファイル(${r.madeWith} で保存、${kb(r.size)})を読み込み、続きを進めました。\n${r.digest === r.expected ? "○ 保存した版と同じ結果" : "× 保存した版と違う結果"}(指紋 ${r.digest.slice(0, 16)}…)`;
-  } catch (err) {
-    el.textContent = `確認できませんでした:${err.message}`;
-  }
-}
+// ---- 閉じる前の警告(未保存の変更があるときだけ) ----
 
-// ---- 4. 通信と保存 ----
+window.addEventListener("beforeunload", (event) => {
+  if (!state.dirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
-async function check() {
-  $("check-result").textContent = [...(await networkState()), ...(await storageState())].join("\n");
-}
+// ---- ボタン ----
 
-$("measure").addEventListener("click", measure);
-$("copy").addEventListener("click", copyResult);
-$("export").addEventListener("click", exportGame);
-$("file").addEventListener("change", importFile);
-$("header").addEventListener("click", header);
-$("check").addEventListener("click", check);
-$("save-check").addEventListener("click", saveCheck);
-$("load-file").addEventListener("change", loadAndContinue);
-$("sample-check").addEventListener("click", sampleCheck);
+buildTabs();
+$("go-new").addEventListener("click", () => showNewGame().catch((err) => ($("start-message").textContent = err.message)));
+$("new-back").addEventListener("click", () => {
+  for (const input of teamInputs()) input.value = "";
+  state.newGame = null;
+  showScreen(state.view ? state.tab : "start");
+});
+$("new-start").addEventListener("click", startNewGame);
+$("league-seed").addEventListener("change", leagueSeedChanged);
+$("season-seed").addEventListener("change", () => ($("season-seed-error").textContent = parseSeed("season-seed").error || ""));
+for (const b of document.querySelectorAll(".adv")) b.addEventListener("click", () => advance(Number(b.dataset.days)));
+$("stop").addEventListener("click", () => {
+  state.stopRequested = true;
+  $("stop").disabled = true;
+  $("progress-message").textContent = "この日の試合が終わったら止めます…";
+});
+$("save").addEventListener("click", save);
+$("open-file-start").addEventListener("change", (e) => openFile(e, "start-message"));
+$("open-file-top").addEventListener("change", (e) => openFile(e, "progress-message"));
+$("open-file-start").disabled = true;
+$("open-file-top").disabled = true;
+boot();

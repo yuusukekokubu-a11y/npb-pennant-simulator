@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 通信先の制限:このページ自身と、Pyodide の配布元(cdn.jsdelivr.net)だけ。それ以外には通信できない -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<!-- ブラウザがタブの小さな絵(favicon.ico)を取りに行かないようにする -->
+<link rel="icon" href="data:,">
+<title>測定ページ(開発者向け)</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --accent: #0969da; --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8; --ok: #3fb950; --ng: #f85149; --box: #151b23; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height: 1.6; }
+  a { color: var(--accent); }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.3rem; margin: 8px 0 4px; }
+  h2 { font-size: 1.05rem; margin: 28px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  p, li { font-size: 0.95rem; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  button, .file-label { font: inherit; font-size: 1rem; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; display: inline-block; margin: 4px 8px 4px 0; }
+  button.secondary, .file-label { background: transparent; color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input[type=text] { font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; max-width: 360px; background: var(--bg); color: var(--fg); }
+  input[type=file] { position: absolute; left: -9999px; }
+  progress { width: 100%; height: 14px; }
+  textarea { width: 100%; min-height: 260px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--box); color: var(--fg); }
+  .status { font-size: 0.9rem; margin: 6px 0; min-height: 1.6em; }
+  .ok { color: var(--ok); } .ng { color: var(--ng); }
+  pre.out { white-space: pre-wrap; background: var(--box); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 0.85rem; min-height: 2.4em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>測定ページ(開発者向け)</h1>
+  <p class="muted">ここは開発者向けの測定ページです。遊ぶための画面は <a href="../">こちら</a> です。</p>
+  <p class="muted">計算本体(選手の生成・1回の打席・1試合)を、このブラウザの中の Python(Pyodide)で動かし、速さとメモリを測ります。サーバーには何も送りません。データは架空のリーグだけです。</p>
+
+  <h2>1. 測定</h2>
+  <p>「測定」を押すと、Python の起動(2回)、1日分(12試合)、1シーズン(本物の日程。750試合)、成績の集計、打席ログの大きさ、圧縮した書き出しの大きさを順に測ります。PC で約1分、スマホでは数分かかることがあります。</p>
+  <button id="measure">測定</button>
+  <progress id="progress" max="858" value="0" hidden></progress>
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+  <textarea id="result" readonly placeholder="ここに測定の結果が出ます"></textarea>
+  <button id="copy" class="secondary" disabled>結果をコピー</button>
+  <span id="copied" class="muted"></span>
+
+  <h2>結果の指紋</h2>
+  <p>結果の指紋(同じシードなら、どの端末でも同じになるはずの値)を計算します。PC の <code>python scripts/fingerprint.py</code> の結果と見比べます。</p>
+  <button id="fp" class="secondary">指紋を確かめる</button>
+  <pre id="fp-result" class="out"></pre>
+
+  <h2>2. ファイルの書き出しと読み込み</h2>
+  <p>1試合分の打席ログを、ファイル(圧縮した JSON Lines)として書き出します。書き出したファイルを選んで読み込み、Python 側で読めるかを確かめます。</p>
+  <button id="export" class="secondary">1試合のログを書き出す</button>
+  <label class="file-label" for="file">ファイルを選んで読み込む</label>
+  <input id="file" type="file" accept=".gz,application/gzip">
+  <pre id="file-result" class="out"></pre>
+
+  <h2>3. テスト用の球団名</h2>
+  <p>試しに球団名を入れて、1試合の見出しに使います。<strong>この欄の文字は、外部に送られず、ブラウザにも保存されません。</strong>測定の結果の文章にも入りません。</p>
+  <input id="team-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" placeholder="例:テスト球団">
+  <button id="header" class="secondary">1試合の見出しに使う</button>
+  <pre id="header-result" class="out"></pre>
+
+  <h2>4. 通信と保存の確認</h2>
+  <p>このページが通信した先と、ブラウザの保存領域の状態を表示します(測定の結果にも入ります)。</p>
+  <button id="check" class="secondary">確認する</button>
+  <pre id="check-result" class="out"></pre>
+
+  <h2>5. 保存と読み込みの確認</h2>
+  <p>シーズンを60日目まで進めてセーブデータ(.sav)をダウンロードし、ページを再読み込みしたあとに読み込んで、最後まで進めます。結果が、保存せずに進めた場合と同じになるかを確かめます。上の「テスト用の球団名」に名前を入れておくと、その名前がファイルのどこに入るかも表示します(画面にだけ表示し、測定の結果には入りません)。</p>
+  <button id="save-check" class="secondary">60日目まで進めて保存</button>
+  <label class="file-label" for="load-file">読み込んで最後まで進める</label>
+  <input id="load-file" type="file" accept=".sav">
+  <button id="sample-check" class="secondary">見本のファイルで確認</button>
+  <pre id="save-result" class="out"></pre>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
