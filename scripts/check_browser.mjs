@@ -218,7 +218,14 @@ ${code}
 async function statsOnScreen() {
   // 「もっと見る」をすべて押して、表の全部の行を読む
   await page.waitForSelector("#stats-loading", { state: "hidden" });
-  while (await page.locator("#stats-table .more").count()) await page.click("#stats-table .more");
+  for (;;) {
+    const more = page.locator("#stats-table .more");
+    if (!(await more.count())) break;
+    const before = await more.textContent();
+    await more.click();
+    // 押したあとの作り直し(裏の計算を待つことがある)が終わるまで待つ
+    await page.waitForFunction((b) => { const m = document.querySelector("#stats-table .more"); return !m || m.textContent !== b; }, before);
+  }
   return page.$$eval("#stats-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
 }
 
@@ -227,12 +234,46 @@ async function waitStats(text) {
   return statsOnScreen();
 }
 
-const pyStats = (args) => pyGame(`t = g.stats(**a)\nprint(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
+// 画面の表と同じ形(名前、固定の列があればその値、各列の値)
+const pyStats = (args) => pyGame(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
+const headsOnScreen = () => page.$$eval("#stats-table th", (ths) => ths.map((th) => th.textContent.replace(/ [▲▼]$/, "")));
 
 await page.click("#tabs button[data-tab=stats]");
 let screenRows = await waitStats("打率(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic" })), `個人成績(打者・基本・打率の高い順・規定到達者)が、計算本体の集計と同じ(${screenRows.length}人)`);
+let heads = await headsOnScreen();
+check(heads.indexOf("OPS") === heads.indexOf("長打率") + 1, `基本の打者の表に、長打率の隣に OPS がある(列: ${heads.slice(1).join("・")})`);
 await grab();
+// 並び順の保持(D-131)と、固定の列・並び順の欄(D-132)
+const topByAvg = screenRows[0][0];
+await page.click("#stats-kind button[data-value=saber]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("wRC+")));
+screenRows = await waitStats("打率(高い順)");
+check(screenRows[0][0] === topByAvg, `「セイバー」に切り替えても並び順(打率の高い順)が保たれ、先頭の選手が同じ(${topByAvg})`);
+heads = await headsOnScreen();
+check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 && heads.includes("BABIP") && !heads.includes("OPS"), `名前の隣に打率の固定列が出て(重複なし)、BABIP の列が見える。OPS はセイバーにない(列: ${heads.slice(1).join("・")})`);
+check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
+const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
+check(sortOptions.length === 18 && ["OPS", "wOBA", "本塁打", "BABIP"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標がある(${sortOptions.length}個)`);
+await page.selectOption("#stats-sort", "babip");
+screenRows = await waitStats("BABIP(高い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
+await page.click("#stats-order button[data-value=asc]");
+screenRows = await waitStats("BABIP(低い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "asc" })), "「低い順」を押すと逆の順になる");
+await page.selectOption("#stats-league", "1");
+await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
+await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("BABIP")));
+await waitStats("BABIP(低い順)");
+check((await page.inputValue("#stats-league")) === "1" && (await page.$$eval("#stats-table tbody tr", (trs) => trs.length)) < 60, "「基本」に戻しても、並び順(BABIP の低い順。固定列)とリーグの絞り込みが保たれる");
+await page.click("#stats-role button[data-value=pitcher]");
+screenRows = await waitStats("防御率(低い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "basic", league: 1 })) && (await page.inputValue("#stats-league")) === "1", "打者から投手に切り替えると、投手の既定の並び順(防御率の低い順)に戻る(絞り込みは保つ)");
+await page.selectOption("#stats-league", "");
+await page.click("#stats-role button[data-value=batter]");
+await waitStats("打率(高い順)");
 // 本塁打の列で並べ替え → もう一度で逆順
 await page.click("#stats-table th button.sort >> text=本塁打");
 screenRows = await waitStats("本塁打(多い順)");
@@ -272,7 +313,7 @@ await page.click("#stats-role button[data-value=pitcher]");
 await page.click("#stats-kind button[data-value=saber]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent === "K%"));
 screenRows = await waitStats("防御率(低い順)");
-check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "saber" })), `投手のセイバー(防御率の低い順)が、計算本体と同じ(${screenRows.length}人)`);
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "saber" })), `投手のセイバー(防御率の低い順。防御率は固定列)が、計算本体と同じ(${screenRows.length}人)`);
 await page.click("#stats-table th button.sort >> text=K%");
 await waitStats("K%(高い順)");
 const kDesc = pyGame(`from pennant.api import metrics_config\nprint(json.dumps(metrics_config().metrics["k_pct"]["description"], ensure_ascii=False))`);
@@ -299,17 +340,19 @@ await grab();
 await page.click("#stats-kind button[data-value=ability]");
 await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("答え合わせモードをオンにすると見られます"));
 check((await page.locator("#stats-table table").count()) === 0, "答え合わせモードがオフのとき、「能力」は表を出さない");
+const offOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
+check(!offOptions.some((o) => HIDDEN.words.includes(o)) && !(await page.$$eval("#stats-sort optgroup", (gs) => gs.some((g) => g.label.includes("能力")))), "オフのとき、並び順の欄に能力の項目が出ない");
 await grab();
 
 // 選手のページ
 await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("登板")));
-await waitStats("防御率(低い順)");
+await waitStats("FIP(低い順)"); // 能力 → 基本 と切り替えても、FIP の低い順(固定列)が保たれる
 const pitcherName = (await statsOnScreen())[0][0];
 await page.click("#stats-table tbody tr:first-child .link");
 await page.waitForFunction((n) => document.querySelector("#player-name").textContent === n, pitcherName);
 await page.waitForSelector("#player-games table");
-const pid = pyGame(`print(json.dumps(g.stats("pitcher")["rows"][0]["player_id"]))`);
+const pid = pyGame(`print(json.dumps(g.stats("pitcher", sort="fip", order="asc")["rows"][0]["player_id"]))`);
 const pyPlayer = pyGame(`d = g.player(a["id"])\nprint(json.dumps({"season": [d["season"]["tables"]["basic"]["values"][c["key"]] for c in d["season"]["tables"]["basic"]["columns"]], "games": [x["day"] for x in d["games"]]}, ensure_ascii=False))`, JSON.stringify({ id: pid }));
 const seasonOnScreen = await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent));
 check(JSON.stringify(seasonOnScreen) === JSON.stringify(pyPlayer.season), `選手のページのシーズン通算が、計算本体と同じ(${pitcherName})`);
@@ -367,15 +410,21 @@ check(await page.isVisible("#answer-badge"), "オンの間は、上の帯に「�
 await page.click("#screen-settings .back");
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=ability]");
-await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("高い順") && !document.querySelector("#stats-info").textContent.includes("K%"));
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("「+」は 80 より上") && document.querySelectorAll("#stats-table tbody tr").length > 0);
 const pyAbility = pyGame(`
 from pennant import answers
-t = answers.ability_table(g, "pitcher", 2)
-print(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]], ensure_ascii=False))`);
+t = answers.ability_table(g, "pitcher", 2, sort="fip", order="asc")
+keys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]
+print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`);
 screenRows = await statsOnScreen();
 const abilityText = await page.textContent("#stats-table");
-check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `オンのとき、「能力」の表が出る(答え合わせ用の関数と同じ。${screenRows.length}人)`);
-check(screenRows.every((r) => r.slice(1, 9).every((v) => /^(20|25|30|35|40|45|50|55|60|65|70|75|80)[+-]?$/.test(v))), "能力は 20〜80・5刻みで表示");
+check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `オンのとき、「能力」の表が、並び順(FIP の低い順。固定列)を保ったまま出る(答え合わせ用の関数と同じ。${screenRows.length}人)`);
+check(screenRows.every((r) => r.slice(2, 10).every((v) => /^(20|25|30|35|40|45|50|55|60|65|70|75|80)[+-]?$/.test(v))), "能力は 20〜80・5刻みで表示");
+const onOptions = await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label));
+check(onOptions.some((g) => g.includes("能力")), "オンのとき、並び順の欄に能力の項目も出る");
+await page.selectOption("#stats-sort", "stamina");
+await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("(高い順)") && !document.querySelector("#stats-info").textContent.includes("FIP"));
+check((await headsOnScreen())[1] !== "FIP", "並び順の欄で能力の項目を選ぶと、その項目で並び替わり、固定列は消える");
 check(HIDDEN.words.some((w) => abilityText.includes(w)), "オンのときは、能力の項目名・成長タイプなどが表示される");
 await page.click("#menu");
 await page.check("input[name=answer-level][value='0']");

@@ -126,6 +126,26 @@ def table_cols(config: MetricsConfig, role: str, kind: str) -> list[dict]:
     return [column_info(config, role, k) for k in config["tables"][role][kind]["columns"]]
 
 
+def sortable_keys(role: str) -> list[dict]:
+    """並び順に使える列(D-132):基本・セイバーの表の列(元の数を含む)と、その役割の全指標。表の順に並べ、残りの指標を後ろに足す。"""
+    if role not in ROLE_LABELS:
+        raise ValueError(f"打者か投手を選んでください(値: {role!r})")
+    config = metrics_config()
+    keys: list[str] = []
+    for kind in KIND_LABELS:
+        for k in config["tables"][role][kind]["columns"]:
+            if k not in keys:
+                keys.append(k)
+    for k in config.for_role(role):
+        if k not in keys:
+            keys.append(k)
+    return [column_info(config, role, k) for k in keys]
+
+
+def is_sortable(config: MetricsConfig, role: str, key: str) -> bool:
+    return key in config["counts"][role] or (key in config.metrics and role in config.metrics[key]["formulas"])
+
+
 def metrics_guide() -> dict:
     """指標の解説のページ:すべての指標を区分別に、式・解説・見るときの注意つきで(指標の定義データから)。"""
     config = metrics_config()
@@ -433,8 +453,9 @@ class Game:
     ) -> dict:
         """個人成績の表(D-116)。列・既定の並び順は指標の定義データの tables から(D-119)。
 
-        sort は列(元の数か指標)の名前、order は "desc"(大きい順)か "asc"(小さい順)。
-        省略時は、その指標の「よい」向き(打率なら高い順、防御率なら低い順)。
+        sort は列(元の数か指標)の名前。表の列に限らず、その役割の元の数・全指標を使える(D-132)。
+        表にない指標で並べたときは、extra_column にその列を返し、各行の values にも値を入れる(画面は名前の隣に出す)。
+        order は "desc"(大きい順)か "asc"(小さい順)。省略時は、その指標の「よい」向き(打率なら高い順、防御率なら低い順)。
         値なし(分母が 0)の選手は、向きによらず最後に並べる。
         """
         if role not in ROLE_LABELS:
@@ -444,7 +465,11 @@ class Game:
         config = metrics_config()
         table = config["tables"][role][kind]
         sort = sort or table["sort"]
+        if not is_sortable(config, role, sort):
+            raise ValueError(f"並び順に使えない列です(値: {sort!r})")
         info = column_info(config, role, sort)
+        extra = None if sort in table["columns"] else info
+        shown_keys = list(table["columns"]) + ([sort] if extra else [])
         if order not in ("asc", "desc"):
             order = "desc" if info["better"] == "high" else "asc"
         rec = self.records.total
@@ -454,7 +479,7 @@ class Game:
         for pid in self.select_players(role, qualified, league, team_id):
             values = _values(config, role, group[pid], base)
             row = self._player_row(pid, owner[pid])
-            row["values"] = {k: values[k][1] for k in table["columns"]}
+            row["values"] = {k: values[k][1] for k in shown_keys}
             row["_sort"] = values[sort][0]
             rows.append(row)
         present = [r for r in rows if r["_sort"] is not None]
@@ -474,6 +499,7 @@ class Game:
             "columns": [column_info(config, role, k) for k in table["columns"]],
             "sort": info,
             "order": order,
+            "extra_column": extra,
             "qualified": qualified,
             "qualify_rule": QUALIFY_RULES[role],
             "rows": rows,
