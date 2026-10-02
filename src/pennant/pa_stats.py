@@ -13,7 +13,7 @@ from typing import Iterable, Mapping
 from .abilities import BATTER, FIELDER_POSITIONS, ITEM_LABELS, PITCHER, POSITION_LABELS, items_for
 from .config import GenerationConfig
 from .models import HiddenInfo, League, Player, PlayerState
-from .plate_appearance import RESULT_LABELS, RESULTS, BaseOutState, OddsRatioModel
+from .plate_appearance import RESULT_LABELS, RESULTS, BaseOutState, OddsRatioModel, PlateAppearance
 from .stats import first_team, overall
 
 # ---- 平均的な選手(確認・テスト用) ----
@@ -83,6 +83,7 @@ TARGETS = {
     "BABIP": (0.290, 0.310),
     "打率": (0.240, 0.265),
     "出塁率": (0.310, 0.335),
+    "長打率": (0.370, 0.420),
     "失策率(インプレーあたり)": (0.010, 0.025),
 }
 
@@ -130,16 +131,42 @@ def expected_rates(model: OddsRatioModel, pool: FirstTeamPool, n: int, seed: int
     return rates_from(totals)
 
 
-def simulate(model: OddsRatioModel, pool: FirstTeamPool, n: int, seed: int) -> tuple[Counter, Counter]:
-    """n 打席を実際に乱数で回し、結果の回数と、担当ポジションの回数を数える。"""
+def simulate(model: OddsRatioModel, pool: FirstTeamPool, n: int, seed: int) -> tuple[Counter, Counter, Counter]:
+    """n 打席を実際に乱数で回し、結果の回数、担当ポジションの回数、担当ポジション別の安打の回数を数える。"""
     rng = random.Random(seed)
-    counts, by_pos = Counter(), Counter()
+    counts, by_pos, hits = Counter(), Counter(), Counter()
     for batter, pitcher, defense in pool.matchups(rng, n):
         pa = model.resolve(batter, pitcher, defense, BaseOutState(), rng)
         counts[pa.result] += 1
         if pa.fielder:
             by_pos[pa.fielder] += 1
-    return counts, by_pos
+        hits.update(count_hits_by_position([pa]))
+    return counts, by_pos, hits
+
+
+# ---- 担当ポジション別の安打の内訳(D-072) ----
+
+HIT_RESULTS = ("single", "double", "triple")
+INFIELD_POSITIONS = ("P", "C", "1B", "2B", "3B", "SS")
+OUTFIELD_POSITIONS = ("LF", "CF", "RF")
+
+
+def count_hits_by_position(pas: Iterable[PlateAppearance]) -> Counter:
+    """(担当ポジション, 単打・二塁打・三塁打) ごとの回数。"""
+    return Counter((pa.fielder, pa.result) for pa in pas if pa.fielder and pa.result in HIT_RESULTS)
+
+
+def hits_by_position_table(hits: Counter) -> str:
+    """担当ポジション別の安打の内訳の表(Markdown)。野手が処理できない打球の安打も含む。"""
+    groups = [(POSITION_LABELS[p], (p,)) for p in INFIELD_POSITIONS + OUTFIELD_POSITIONS]
+    groups += [("内野手の計", INFIELD_POSITIONS), ("外野手の計", OUTFIELD_POSITIONS)]
+    rows = []
+    for label, positions in groups:
+        n = {h: sum(hits[(p, h)] for p in positions) for h in HIT_RESULTS}
+        total = sum(n.values())
+        share = (lambda h: f"{100 * n[h] / total:.1f}%") if total else (lambda h: "-")
+        rows.append([label, f"{total:,}", f"{n['single']:,}", f"{n['double']:,}", f"{n['triple']:,}", share("double"), share("triple")])
+    return _table(["担当", "安打", "単打", "二塁打", "三塁打", "二塁打の割合", "三塁打の割合"], rows)
 
 
 # ---- 感度表など ----
@@ -185,7 +212,7 @@ def build_pa_report(model: OddsRatioModel, pool: FirstTeamPool, n: int, seed: in
 
     expected_n = min(n, 20_000)  # 期待値は組み合わせの平均なので、2万組あれば十分に安定する
     expected = expected_rates(model, pool, expected_n, seed)
-    counts, by_pos = simulate(model, pool, n, seed)
+    counts, by_pos, hits = simulate(model, pool, n, seed)
     actual = rates_from(counts)
     rows = []
     for key in RATE_KEYS:
@@ -245,4 +272,9 @@ def build_pa_report(model: OddsRatioModel, pool: FirstTeamPool, n: int, seed: in
     total_bip = sum(by_pos.values())
     rows = [[POSITION_LABELS[p], f"{100 * by_pos[p] / total_bip:.1f}%"] for p in ("P",) + FIELDER_POSITIONS]
     out.append("## 担当ポジションの割合(インプレーの打球)\n" + _table(["ポジション", "割合"], rows))
+    out.append(
+        "## 担当ポジション別の安打の内訳(D-072)\n"
+        "- 野手が処理できない打球の安打も含む。投手・捕手・二塁手・遊撃手は単打だけ、一塁手・三塁手は二塁打が少しだけになる\n\n"
+        + hits_by_position_table(hits)
+    )
     return "\n\n".join(out) + "\n"

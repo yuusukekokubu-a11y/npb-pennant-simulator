@@ -80,6 +80,13 @@ def _shares(c: _Checker, data: Any, path: str, keys: tuple[str, ...], require_al
     return result
 
 
+def _extra_base(c: _Checker, data: Any, path: str) -> None:
+    """安打の内訳 {shares: {単打・二塁打・三塁打の割合}, effects: {二塁打・三塁打: {能力: 倍率}}} を確かめる。"""
+    xb = c.section(data, path)
+    _shares(c, c.get(xb, "shares", path), f"{path}.shares", HIT_TYPES, True)
+    _effects(c, c.get(xb, "effects", path), f"{path}.effects", ("double", "triple"), BATTER_ITEMS)
+
+
 def validate_pa_config(data: Any, source: str = "(辞書)") -> PlateAppearanceConfig:
     c = _Checker()
     root = c.section(data, "(全体)")
@@ -153,9 +160,16 @@ def validate_pa_config(data: Any, source: str = "(辞書)") -> PlateAppearanceCo
                 if k not in ("batter", "pitcher", "fielder"):
                     c.add(f"{path}.hit_effects.{k}", "batter / pitcher / fielder のどれかにしてください")
         _effects(c, c.get(sec, "error_effects", path), f"{path}.error_effects", ("fielder",), FIELDING_ITEMS)
-        xb = c.section(c.get(sec, "extra_base", path), f"{path}.extra_base")
-        _shares(c, c.get(xb, "shares", f"{path}.extra_base"), f"{path}.extra_base.shares", HIT_TYPES, True)
-        _effects(c, c.get(xb, "effects", f"{path}.extra_base"), f"{path}.extra_base.effects", ("double", "triple"), BATTER_ITEMS)
+        _extra_base(c, c.get(sec, "extra_base", path), f"{path}.extra_base")
+        # 担当ポジションごとの安打の内訳(任意。書かれていないポジションは extra_base を使う。D-072)
+        by_fielder = sec.get("extra_base_by_fielder")
+        if by_fielder is not None:
+            bf = c.section(by_fielder, f"{path}.extra_base_by_fielder")
+            for pos, table in (bf or {}).items():
+                if pos not in DEFENSIVE_POSITIONS:
+                    c.add(f"{path}.extra_base_by_fielder.{pos}", f"知らないポジションです(使えるもの: {', '.join(DEFENSIVE_POSITIONS)})")
+                    continue
+                _extra_base(c, table, f"{path}.extra_base_by_fielder.{pos}")
 
     # 投手の守備(能力を持たないので固定値)
     pf = c.section(c.get(root, "pitcher_fielding", ""), "pitcher_fielding")

@@ -6,6 +6,7 @@
 
 import copy
 import random
+from collections import Counter
 from itertools import chain, repeat
 
 import pytest
@@ -152,6 +153,16 @@ def test_walkoff_counts_only_needed_runs(league2, game_config):
     assert r.log[-1].runs == 2
 
 
+def test_walkoff_truncation_keeps_one_runner_per_base(league2, game_config):
+    """生還を取り消した走者がいても、同じ塁に2人いない(取り消した走者は3塁、後ろの走者はその手前で止まる)。"""
+    script = _until_bottom_ninth() + ["home_run", "triple", "walk", "walk", "double"]  # 同点・満塁から二塁打
+    r = scripted_game(league2, game_config, script)
+    last = r.log[-1]
+    assert r.walkoff and r.home_runs == 2 and r.away_runs == 1 and last.runs == 1
+    ends = [m.end for m in last.moves if m.end is not None and m.end != HOME]
+    assert sorted(ends) == [1, 2, 3]
+
+
 def test_extra_innings_walkoff(league2, game_config):
     script = ["strikeout"] * (9 * 6) + ["strikeout"] * 3 + ["home_run"]  # 10回裏に本塁打
     r = scripted_game(league2, game_config, script)
@@ -269,6 +280,16 @@ def test_invariants(many_games):
             assert outs == 3 or pas[-1].walkoff
         assert score[r.home_team_id] == r.home_runs and score[r.away_team_id] == r.away_runs
         assert sum(v for v in r.line[r.home_team_id] if v is not None) == r.home_runs
+
+
+def test_infield_hits_have_no_unnatural_extra_bases(many_games):
+    """投手・捕手・二塁手・遊撃手の安打は単打だけ。一塁手・三塁手は三塁打なし(D-072)。"""
+    results, _ = many_games
+    seen = Counter((x.pa.fielder, x.pa.result) for r in results for x in r.log if x.pa.result in ("single", "double", "triple"))
+    for pos in ("P", "C", "2B", "SS"):
+        assert seen[(pos, "double")] == 0 and seen[(pos, "triple")] == 0
+    for pos in ("1B", "3B"):
+        assert seen[(pos, "triple")] == 0
 
 
 def test_log_has_required_fields(many_games):
@@ -441,3 +462,18 @@ def test_calibration_targets(league2, game_config):
     s = summarize(play_games(lg, 1000, 11, game_config))
     for key, (low, high) in GAME_TARGETS.items():
         assert low <= s[key] <= high, f"{key}: {s[key]:.3f}"
+
+
+def test_narration_of_extra_base_hits():
+    """一塁手・三塁手の担当の二塁打は「三塁線二塁打」のように書く(D-072)。外野手は今まで通り。"""
+    from pennant.game_stats import describe
+
+    class X:
+        double_play = sac_fly = False
+
+        def __init__(self, result, fielder):
+            self.pa = PlateAppearance(result, "B", "P", "R", BaseOutState(), batted_ball="ground", fielder=fielder)
+
+    assert describe(X("double", "3B")) == "三塁線二塁打"
+    assert describe(X("double", "1B")) == "一塁線二塁打"
+    assert describe(X("double", "LF")) == "左二塁打"

@@ -51,6 +51,25 @@ def test_unknown_position_in_fielder_shares():
     assert "DH" in _errors(data)
 
 
+def test_unknown_position_in_extra_base_by_fielder():
+    data = default_pa_data()
+    data["in_play"]["ground"]["extra_base_by_fielder"]["DH"] = {"shares": {"single": 1.0, "double": 0.0, "triple": 0.0}, "effects": {}}
+    assert "extra_base_by_fielder.DH" in _errors(data)
+
+
+def test_extra_base_by_fielder_shares_must_sum_to_one():
+    data = default_pa_data()
+    data["in_play"]["line"]["extra_base_by_fielder"]["3B"]["shares"]["double"] = 0.5
+    assert "in_play.line.extra_base_by_fielder.3B.shares" in _errors(data)
+
+
+def test_extra_base_by_fielder_is_optional():
+    data = default_pa_data()
+    for t in ("ground", "line", "fly"):
+        del data["in_play"][t]["extra_base_by_fielder"]
+    validate_pa_config(data, "テスト用")
+
+
 def test_unfieldable_share_must_be_below_hit_rate():
     data = default_pa_data()
     data["in_play"]["line"]["unfieldable_share"] = 0.9
@@ -74,7 +93,7 @@ def _load_script():
 def test_script_runs(capsys):
     assert _load_script().main(["--pa", "2000", "--leagues", "1"]) == 0
     out = capsys.readouterr().out
-    for heading in ("結果の割合", "感度表", "左右の相性", "守備の効果", "担当ポジション"):
+    for heading in ("結果の割合", "感度表", "左右の相性", "守備の効果", "担当ポジション", "担当ポジション別の安打の内訳"):
         assert heading in out
 
 
