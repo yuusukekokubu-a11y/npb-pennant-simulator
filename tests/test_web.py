@@ -182,7 +182,21 @@ def test_sample_check(bench_module):
 # ---- 遊ぶための画面(web/。D-107、D-108) ----
 
 # 画面に出してはいけない、能力値・隠し情報を表す言葉(D-108)
-HIDDEN_WORDS = ("能力", "潜在", "成長", "隠し", "ミート", "パワー", "選球眼", "走力", "スタミナ", "制球", "球威", "奪三振力", "rating", "potential", "archetype", "growth")
+def hidden_words() -> set[str]:
+    """答え合わせモードがオフのとき、画面に出てはいけない言葉:能力の項目名・成長タイプ・生成時の型の名前(D-108)。
+
+    「能力」「潜在能力」のような区分の名前(切り替えのボタンや設定の説明)は出てよい。値と項目名を出さない。
+    """
+    from pennant.abilities import ITEM_LABELS
+    from pennant.config import load_generation_config
+
+    c = load_generation_config()
+    words = set(ITEM_LABELS.values()) | {v["label"] for v in c["aging"]["growth_types"].values()}
+    words |= {v["label"] for k in ("batter_archetypes", "pitcher_qualities", "pitcher_roles") for v in c[k].values()}
+    return words - {"標準", "肩", "捕球"}  # ふつうの文章にも出る短い言葉は除く
+
+
+HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "ability_drift")
 
 
 @pytest.fixture()
@@ -224,11 +238,35 @@ def test_bridge_flow(bridge):
 
 
 def test_main_page_has_no_hidden_words():
-    """遊ぶための画面の文章とスクリプトに、能力値・隠し情報を表す言葉がない(D-108)。"""
+    """遊ぶための画面のファイルに、能力の項目名・成長タイプ・生成時の型の名前を書かない(Python の答え合わせ用の関数からだけ届く。D-108)。"""
+    words = hidden_words()
     for name in ("index.html", "app.js", "worker.js", "bridge.py"):
         text = (WEB / name).read_text(encoding="utf-8")
-        for word in HIDDEN_WORDS:
+        for word in words:
             assert word not in text, f"{name}: {word}"
+
+
+def test_bridge_queries_and_answers_are_separate(bridge):
+    """見る画面(query)は公開用の関数だけ。答え合わせ(answer)は別の入口(D-114)。"""
+    import json
+
+    _ok(bridge.new_game(3, 4, json.dumps([""] * 12), 0))
+    _ok(bridge.advance(3))
+    words = hidden_words()
+    for name, args in (("stats", {}), ("stats", {"role": "pitcher", "kind": "saber", "qualified": False}), ("games_on", {"day": 2}), ("game", {"game_no": 0}), ("team", {"team_id": "T01"}), ("teams", {})):
+        text = bridge.query(name, json.dumps(args))
+        assert json.loads(text)["ok"], text
+        assert not any(w in text for w in words) and not any(f'"{k}"' in text for k in HIDDEN_KEYS), name
+    pid = json.loads(bridge.query("stats", json.dumps({"qualified": False})))["value"]["rows"][0]["player_id"]
+    text = bridge.query("player", json.dumps({"player_id": pid}))
+    assert not any(w in text for w in words)
+    # 答え合わせ用の関数は、query からは呼べない
+    assert json.loads(bridge.query("ability_table", "{}"))["ok"] is False
+    table = _ok(bridge.answer("ability_table", json.dumps({"level": 2, "qualified": False})))
+    assert table["rows"] and "growth_type" in table["rows"][0]["values"]
+    assert _ok(bridge.answer("player_answers", json.dumps({"player_id": pid, "level": 1})))["items"]
+    assert json.loads(bridge.answer("player_answers", json.dumps({"player_id": pid, "level": 3})))["ok"] is False
+    assert json.loads(bridge.query("player", json.dumps({"player_id": "nobody"})))["ok"] is False
 
 
 def test_main_page_basics():

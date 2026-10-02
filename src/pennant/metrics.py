@@ -19,6 +19,7 @@ from .config import SUPPORTED_FORMAT_VERSION, ConfigError, _Checker, _read_json
 ROLES = ("batter", "pitcher")
 FORMATS = ("rate3", "percent1", "decimal2")
 BETTER = ("high", "low")
+TABLE_KINDS = ("basic", "saber", "game")  # 表の種類:基本・セイバー・試合ごと(D-119)
 CATEGORIES = ("basic", "saber")  # 区分:基本/セイバー(D-109。成績の画面の切り替えで使う)
 _OPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b}
 
@@ -139,9 +140,56 @@ def validate_metrics_config(data: Any, source: str = "(辞書)") -> MetricsConfi
             if not any(name in counts[r] for r in ROLES):
                 c.add(f"{path}.inputs", f"{name} は、元の数にありません")
         seen.add(mid)
+    _check_count_descriptions(c, root, counts)
+    _check_tables(c, root, counts, metrics or {})
     if c.problems:
         raise ConfigError(source, c.problems)
     return MetricsConfig(data=copy.deepcopy(root), source=source)
+
+
+def _check_count_descriptions(c: _Checker, root: dict, counts: dict[str, set[str]]) -> None:
+    """元の数の解説(D-119):すべての元の数に、短い解説があること。"""
+    sec = c.section(c.get(root, "count_descriptions", ""), "count_descriptions")
+    if sec is None:
+        return
+    for role in ROLES:
+        path = f"count_descriptions.{role}"
+        texts = c.section(c.get(sec, role, "count_descriptions"), path) or {}
+        for name in sorted(counts[role] - set(texts)):
+            c.add(f"{path}.{name}", "解説がありません(元の数のすべてに、短い解説を書いてください)")
+        for name, text in texts.items():
+            if name not in counts[role]:
+                c.add(f"{path}.{name}", f"{name} は、{role} の元の数にありません")
+            elif not isinstance(text, str) or not text.strip():
+                c.add(f"{path}.{name}", "文章を書いてください(空にはできません)")
+
+
+def _check_tables(c: _Checker, root: dict, counts: dict[str, set[str]], metrics: dict) -> None:
+    """表の定義(D-119):列と並び順に使う名前が、その役割の元の数か指標であること。"""
+    sec = c.section(c.get(root, "tables", ""), "tables")
+    if sec is None:
+        return
+    for role in ROLES:
+        rsec = c.section(c.get(sec, role, "tables"), f"tables.{role}")
+        if rsec is None:
+            continue
+        usable = counts[role] | {mid for mid, m in metrics.items() if isinstance(m, dict) and role in (m.get("formulas") or {})}
+        for kind in TABLE_KINDS:
+            path = f"tables.{role}.{kind}"
+            tsec = c.section(c.get(rsec, kind, f"tables.{role}"), path)
+            if tsec is None:
+                continue
+            cols = c.get(tsec, "columns", path)
+            if cols is not None and (not isinstance(cols, list) or not cols):
+                c.add(f"{path}.columns", "列の名前を、1つ以上のリストで書いてください")
+                cols = []
+            for name in cols or []:
+                if name not in usable:
+                    c.add(f"{path}.columns", f"{name} は、{role} の元の数でも指標でもありません")
+            if kind != "game":
+                sort = c.get(tsec, "sort", path)
+                if sort is not None and sort not in usable:
+                    c.add(f"{path}.sort", f"{sort} は、{role} の元の数でも指標でもありません")
 
 
 # ---- 計算 ----

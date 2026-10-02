@@ -21,7 +21,6 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright")
 const URL0 = process.argv[2] || "http://127.0.0.1:8765/?pyodide=local";
 const ROOT = new URL("..", import.meta.url).pathname;
 const NAME = "ZZテスト球団QX"; // 入力する球団名(通信やファイル名に出ないことを確かめる)
-const HIDDEN_WORDS = ["能力", "潜在", "成長", "隠し", "ミート", "パワー", "選球眼", "走力", "スタミナ", "制球", "球威", "奪三振力", "rating", "potential", "archetype", "growth"];
 const expected = JSON.parse(readFileSync(join(ROOT, "tests/data/fingerprints.json"), "utf8"));
 const work = mkdtempSync(join(tmpdir(), "pennant-check-"));
 const results = [];
@@ -36,8 +35,37 @@ function python(code, ...args) {
   return execFileSync("python3", ["-c", code, ...args], { env: { ...process.env, PYTHONPATH: join(ROOT, "src") }, encoding: "utf8" });
 }
 
+// 答え合わせモードがオフのとき、画面にも通信にも出てはいけないもの(D-108):能力の項目名・成長タイプ・生成時の型の名前と、その項目名
+const HIDDEN = JSON.parse(python(`
+import json
+from pennant.abilities import ITEM_LABELS
+from pennant.config import load_generation_config
+c = load_generation_config()
+words = set(ITEM_LABELS.values()) | {v["label"] for v in c["aging"]["growth_types"].values()} | {v["label"] for v in c["batter_archetypes"].values()}
+words |= {v["label"] for v in c["pitcher_qualities"].values()} | {v["label"] for v in c["pitcher_roles"].values()}
+words -= {"標準", "肩", "捕球"}  # ふつうの文章にも出る短い言葉は除く(項目の解説の文字で確かめる)
+print(json.dumps({"words": sorted(words), "keys": ["ratings", "potential", "growth_type", "archetype", "ability_drift", "hidden"]}, ensure_ascii=False))
+`));
+
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 412, height: 924 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, acceptDownloads: true });
+// 裏の計算から画面に届いたメッセージを、すべて記録する(答え合わせモードがオフのときに、隠し情報が届いていないかを見る)
+await context.addInitScript(() => {
+  window.__messages = [];
+  window.__runLog = [];
+  const Original = window.Worker;
+  window.Worker = class extends Original {
+    constructor(...args) {
+      super(...args);
+      this.addEventListener("message", (e) => window.__messages.push(JSON.stringify(e.data, (k, v) => (v instanceof Uint8Array ? "(bytes)" : v))));
+    }
+  };
+  // 「止める」の箱の表示・非表示の時刻を記録する(D-118)
+  document.addEventListener("DOMContentLoaded", () => {
+    const box = document.getElementById("run-box");
+    new MutationObserver(() => window.__runLog.push({ hidden: box.hidden, t: performance.now() })).observe(box, { attributes: true, attributeFilter: ["hidden"] });
+  });
+});
 const page = await context.newPage();
 const requests = [];
 context.on("request", (r) => requests.push({ url: r.url(), body: r.postData() || "" }));
@@ -121,22 +149,34 @@ check(await isDirty(), "新規開始のあとは「未保存」(閉じる前に�
 check(await page.isVisible("#dirty"), "「未保存の変更があります」が表示される");
 
 // ---- 3. 進行 ----
+await page.evaluate(() => (window.__runLog = []));
 await page.click(".adv[data-days='1']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1日目"));
+await page.waitForFunction(() => !document.querySelector(".adv[data-days='1']").disabled);
+check((await page.evaluate(() => window.__runLog.length)) === 0, "「1日」では「止める」と進み具合のバーが出ない");
 await page.click(".adv[data-days='7']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("8日目"));
 check(true, "「1日」「1週間」で、1日目・8日目に進む");
 await grab();
 // 最後まで → 少し待って止める。止めている間も画面が動くかを確かめる
+await page.evaluate(() => (window.__runLog = []));
+const runStart = await page.evaluate(() => performance.now());
 await page.click(".adv[data-days='0']");
-await page.waitForFunction(() => /^(1[2-9]|[2-9]\d)日目/.test(document.querySelector("#day-text").textContent));
+check(await page.isDisabled(".adv[data-days='1']"), "進めている間は、ほかの進行ボタンを押せない");
+await page.waitForSelector("#run-box:not([hidden])", { timeout: 60000 });
+const shownAfter = (await page.evaluate(() => window.__runLog[0].t)) - runStart;
+check(shownAfter >= 550, `「止める」と進み具合のバーは、0.6 秒を超えてから出る(${(shownAfter / 1000).toFixed(2)} 秒後)`);
 const frame = await page.evaluate(() => new Promise((r) => { const s = performance.now(); requestAnimationFrame(() => r(performance.now() - s)); }));
 check(frame < 500, `進めている途中も画面が固まらない(次の描画まで ${frame.toFixed(0)} ミリ秒)`);
 await page.click("#stop");
 await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("止めました"), null, { timeout: 30000 });
 const stoppedDay = await day();
 check(stoppedDay > 8 && stoppedDay < 125, `「止める」で、日の区切りで止まる(${stoppedDay}日目。「${await page.textContent("#progress-message")}」)`);
+await page.waitForFunction(() => !document.querySelector(".adv[data-days='1']").disabled);
 check(!(await page.isDisabled(".adv[data-days='1']")), "止めたあと、また進められる");
+const runLog = await page.evaluate(() => window.__runLog);
+const shownFor = runLog.length >= 2 ? runLog[1].t - runLog[0].t : 0;
+check(runLog.length === 2 && runLog[1].hidden && shownFor >= 590, `出したあとは、最低 0.6 秒は表示を続ける(${(shownFor / 1000).toFixed(2)} 秒表示)`);
 
 // ---- 4. 順位表(Python の順位と同じか) ----
 const shown = await standingsOnScreen();
@@ -154,6 +194,174 @@ const flat = (t) => JSON.stringify(t.map((lg) => lg.map((r) => ({ mine: r.mine, 
 check(flat(shown) === flat(pyTable), "順位表が、計算本体の順位(season.standings)と同じ");
 check(shown.flat().filter((r) => r.mine).length === 1, "自球団の行が1つだけ目立つ表示になっている");
 results.push(`  画面の順位表(${stoppedDay}日目。1つ目のリーグ): ${shown[0].map((r) => r.cells.join(" ")).join(" / ")}`);
+
+// ---- 4b. 成績の画面(個人成績・選手・試合・答え合わせ。②) ----
+function pyGame(code, ...args) {
+  return JSON.parse(python(`
+import json, sys
+from pennant import api
+from pennant.game_stats import narrate
+g = api.Game.load(open(sys.argv[1], "rb").read())
+a = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+${code}
+`, first.path, ...args));
+}
+
+async function statsOnScreen() {
+  // 「もっと見る」をすべて押して、表の全部の行を読む
+  await page.waitForSelector("#stats-loading", { state: "hidden" });
+  while (await page.locator("#stats-table .more").count()) await page.click("#stats-table .more");
+  return page.$$eval("#stats-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
+}
+
+async function waitStats(text) {
+  await page.waitForFunction((t) => document.querySelector("#stats-info").textContent.includes(t), text);
+  return statsOnScreen();
+}
+
+const pyStats = (args) => pyGame(`t = g.stats(**a)\nprint(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
+
+await page.click("#tabs button[data-tab=stats]");
+let screenRows = await waitStats("打率(高い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic" })), `個人成績(打者・基本・打率の高い順・規定到達者)が、計算本体の集計と同じ(${screenRows.length}人)`);
+await grab();
+// 本塁打の列で並べ替え → もう一度で逆順
+await page.click("#stats-table th button.sort >> text=本塁打");
+screenRows = await waitStats("本塁打(多い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "desc" })), "見出しを押すと並べ替わる(本塁打の多い順)");
+const countDesc = pyGame(`from pennant.api import metrics_config\nprint(json.dumps(metrics_config()["count_descriptions"]["batter"]["HR"], ensure_ascii=False))`);
+check((await page.textContent("#stats-info")).includes(countDesc), "見出しを押すと、その列の解説が出る(元の数の解説)");
+await page.click("#stats-table th button.sort >> text=本塁打");
+screenRows = await waitStats("本塁打(少ない順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc" })), "もう一度押すと逆の順になる");
+// 規定到達者の絞り込みを外す・リーグとチームで絞り込む
+await page.uncheck("#stats-qualified");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("試合に出た全員"));
+screenRows = await statsOnScreen();
+const all = pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false });
+check(JSON.stringify(screenRows) === JSON.stringify(all), `規定到達者の絞り込みを外すと、試合に出た全員(${all.length}人)`);
+await page.selectOption("#stats-league", "1");
+await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
+const teamId = await page.$eval("#stats-team", (s) => s.options[2].value);
+await page.selectOption("#stats-team", teamId);
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length < 40);
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false, league: 1, team_id: teamId })), `リーグ・チームで絞り込める(${screenRows.length}人)`);
+await page.selectOption("#stats-team", "");
+await page.selectOption("#stats-league", "");
+await page.check("#stats-qualified");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("規定に届いた選手だけ"));
+// 規定到達の判定が、実装⑤の定義(試合数 × 3.1、× 1.0)どおりか
+const qual = pyGame(`
+from pennant.records import qualifying_plate_appearances, qualifying_outs
+rec = g.records.total
+b = sorted(p for p, c in rec.batters.items() if c["PA"] >= (rec.teams[rec.batter_team[p]]["G"] * 31 + 5) // 10)
+p = sorted(p for p, c in rec.pitchers.items() if c["OUTS"] >= rec.teams[rec.pitcher_team[p]]["G"] * 3)
+print(json.dumps([b == sorted(g.select_players("batter")), p == sorted(g.select_players("pitcher")), len(b), len(p)]))`);
+check(qual[0] && qual[1], `規定到達の判定が、規定打席(試合数×3.1)・規定投球回(試合数×1.0)どおり(打者 ${qual[2]}人・投手 ${qual[3]}人)`);
+// 投手・セイバー。指標名の解説が、定義データと同じ
+await page.click("#stats-role button[data-value=pitcher]");
+await page.click("#stats-kind button[data-value=saber]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent === "K%"));
+screenRows = await waitStats("防御率(低い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "saber" })), `投手のセイバー(防御率の低い順)が、計算本体と同じ(${screenRows.length}人)`);
+await page.click("#stats-table th button.sort >> text=K%");
+await waitStats("K%(高い順)");
+const kDesc = pyGame(`from pennant.api import metrics_config\nprint(json.dumps(metrics_config().metrics["k_pct"]["description"], ensure_ascii=False))`);
+check((await page.textContent("#stats-info")).includes(kDesc), "指標名を押すと出る解説が、指標の定義データの解説と同じ(K%)");
+await grab();
+// 能力:オフのときは「オンにすると見られます」だけ
+await page.click("#stats-kind button[data-value=ability]");
+await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("答え合わせモードをオンにすると見られます"));
+check((await page.locator("#stats-table table").count()) === 0, "答え合わせモードがオフのとき、「能力」は表を出さない");
+await grab();
+
+// 選手のページ
+await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("登板")));
+await waitStats("防御率(低い順)");
+const pitcherName = (await statsOnScreen())[0][0];
+await page.click("#stats-table tbody tr:first-child .link");
+await page.waitForFunction((n) => document.querySelector("#player-name").textContent === n, pitcherName);
+await page.waitForSelector("#player-games table");
+const pid = pyGame(`print(json.dumps(g.stats("pitcher")["rows"][0]["player_id"]))`);
+const pyPlayer = pyGame(`d = g.player(a["id"])\nprint(json.dumps({"season": [d["season"]["tables"]["basic"]["values"][c["key"]] for c in d["season"]["tables"]["basic"]["columns"]], "games": [x["day"] for x in d["games"]]}, ensure_ascii=False))`, JSON.stringify({ id: pid }));
+const seasonOnScreen = await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent));
+check(JSON.stringify(seasonOnScreen) === JSON.stringify(pyPlayer.season), `選手のページのシーズン通算が、計算本体と同じ(${pitcherName})`);
+const gameDays = await page.$$eval("#player-games tbody td.sticky .link", (ls) => ls.map((l) => Number(l.textContent.replace("日目", ""))));
+check(JSON.stringify(gameDays) === JSON.stringify(pyPlayer.games.slice(0, 20)), `試合ごとの成績が新しい順(${gameDays.length}試合)`);
+await page.click("#player-kind button[data-value=ability]");
+await page.waitForFunction(() => document.querySelector("#player-season").textContent.includes("答え合わせモードをオンにすると見られます"));
+check(true, "選手のページの「能力」は、オフなら「答え合わせモードをオンにすると見られます」だけ");
+await grab();
+await page.click("#player-kind button[data-value=basic]");
+
+// 試合のページ(文章ログが、確認用の形式と同じ内容か)
+await page.click("#player-games tbody tr:first-child td.sticky .link");
+await page.waitForFunction(() => document.querySelectorAll("#game-log li").length > 20);
+const gameNo = pyGame(`print(json.dumps(g.player(a["id"])["games"][0]["game_no"]))`, JSON.stringify({ id: pid }));
+const logOnScreen = await page.$$eval("#game-log li", (lis) => lis.map((li) => li.textContent));
+const pyLog = pyGame(`
+s = g.state.season
+text = narrate(s.played[a["n"]].result, s.players, {t.id: t.name for t in s.league.teams})
+print(json.dumps([l[2:] if l.startswith("- ") else l.strip()[2:] for l in text.splitlines() if l.startswith("- [") or l.startswith("  - 【投手交代】")], ensure_ascii=False))`, JSON.stringify({ n: gameNo }));
+check(JSON.stringify(logOnScreen) === JSON.stringify(pyLog), `試合の文章ログが、確認用の形式(narrate)と同じ内容(${logOnScreen.length}行)`);
+const marks = await page.$$eval("#game-pitchers tbody tr", (trs) => trs.map((tr) => tr.children[1].textContent).filter(Boolean));
+check(marks.includes("勝") && marks.includes("敗"), `投手の成績に勝敗の印が出る(${marks.join("・")})`);
+await grab();
+
+// 試合のタブと、進行の画面の直近の日の試合
+await page.click("#tabs button[data-tab=games]");
+await page.waitForSelector("#games-list .game-card");
+const cards = await page.locator("#games-list .game-card").count();
+check(cards === 6, `試合のタブで、その日の試合の一覧が出る(${stoppedDay}日目・${cards}試合)`);
+await page.click("#games-prev");
+await page.waitForFunction((d) => document.querySelector("#games-day").value === String(d - 1), stoppedDay);
+await page.click("#games-list .game-card");
+await page.waitForFunction((d) => document.querySelector("#game-title").textContent.startsWith(`${d - 1}日目`), stoppedDay);
+check(true, "前の日の試合を開ける");
+await page.click("#tabs button[data-tab=progress]");
+check((await page.locator("#last-day .game-card").count()) === 6, "進行の画面に、直近の日の全試合のスコアが出る");
+await page.click("#last-day .game-card");
+await page.waitForFunction((d) => document.querySelector("#game-title").textContent.startsWith(`${d}日目`), stoppedDay);
+check(true, "直近の日の試合を押すと、試合のページへ移る");
+await page.click("#screen-game .back");
+
+// 答え合わせモードがオフの間に届いたメッセージに、隠し情報がない
+const offMessages = await page.evaluate(() => window.__messages.join("\n"));
+const leaked = [...HIDDEN.words.filter((w) => offMessages.includes(w)), ...HIDDEN.keys.filter((k) => offMessages.includes(`"${k}"`))];
+check(leaked.length === 0, `答え合わせモードがオフの間、裏の計算から届いたメッセージに隠し情報がない${leaked.length ? `(見つかった: ${leaked.join("、")})` : ""}`);
+
+// 答え合わせモードをオンにする(確認が出る)→ 能力が見える → オフに戻すと消える
+let dialogText = "";
+page.once("dialog", (d) => { dialogText = d.message(); d.accept(); });
+await page.click("#menu");
+await page.check("input[name=answer-level][value='2']");
+check(dialogText.includes("見ると、成績から実力を推理する楽しみが減ります"), "オンにするとき、確認が出る");
+check(await page.isVisible("#answer-badge"), "オンの間は、上の帯に「答え合わせモード」と出る");
+await page.click("#screen-settings .back");
+await page.click("#tabs button[data-tab=stats]");
+await page.click("#stats-kind button[data-value=ability]");
+await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("高い順") && !document.querySelector("#stats-info").textContent.includes("K%"));
+const pyAbility = pyGame(`
+from pennant import answers
+t = answers.ability_table(g, "pitcher", 2)
+print(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]], ensure_ascii=False))`);
+screenRows = await statsOnScreen();
+const abilityText = await page.textContent("#stats-table");
+check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `オンのとき、「能力」の表が出る(答え合わせ用の関数と同じ。${screenRows.length}人)`);
+check(screenRows.every((r) => r.slice(1, 9).every((v) => /^(20|25|30|35|40|45|50|55|60|65|70|75|80)[+-]?$/.test(v))), "能力は 20〜80・5刻みで表示");
+check(HIDDEN.words.some((w) => abilityText.includes(w)), "オンのときは、能力の項目名・成長タイプなどが表示される");
+await page.click("#menu");
+await page.check("input[name=answer-level][value='0']");
+await page.click("#screen-settings .back");
+await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("答え合わせモードをオンにすると見られます"));
+const afterOff = await page.evaluate(() => document.documentElement.textContent);
+const left = HIDDEN.words.filter((w) => afterOff.includes(w));
+check(left.length === 0, `オフに戻すと、能力の表示が画面(隠れている画面も含む)から消える${left.length ? `(残っている: ${left.join("、")})` : ""}`);
+await page.click("#stats-kind button[data-value=basic]");
+await page.click("#stats-role button[data-value=batter]");
+await page.click("#tabs button[data-tab=progress]");
 
 // ---- 5. 読み込み直して開く ----
 await page.reload();
@@ -192,11 +400,36 @@ check(digest[0] === "125", "保存したファイルは125日目(最後)");
 check(digest[2] === expected.season, `最後の結果が、指紋 (d) と同じ(${digest[2].slice(0, 16)}…)`);
 results.push(`  自球団(セーブデータの中): ${digest[1]}。指紋には入らない`);
 await standingsOnScreen(0);
+// シーズンの最後で、成績の画面を開く時間(集計は進めた日の分だけ足してあるので、すぐ開く)
+let s0 = Date.now();
+await page.click("#tabs button[data-tab=stats]");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("規定") && document.querySelectorAll("#stats-table tbody tr").length > 0);
+results.push(`  シーズンの最後で、個人成績を開くまで: ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
+// 読み込み直したセーブデータ(125日目)では、最初の1回だけ集計を作る
+await page.reload();
+await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
+await page.setInputFiles("#open-file-start", last.path);
+await page.waitForSelector("#screen-progress:not([hidden])");
+s0 = Date.now();
+await page.click("#tabs button[data-tab=stats]");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("規定") && document.querySelectorAll("#stats-table tbody tr").length > 0);
+const firstOpen = (Date.now() - s0) / 1000;
+s0 = Date.now();
+await page.click("#tabs button[data-tab=progress]");
+await page.click("#tabs button[data-tab=stats]");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
+results.push(`  125日目のセーブデータを開いて、個人成績を開くまで: 1回目 ${firstOpen.toFixed(2)} 秒 / 開き直し ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
+const frame2 = await page.evaluate(() => new Promise((r) => { const s = performance.now(); requestAnimationFrame(() => r(performance.now() - s)); }));
+check(frame2 < 500, `成績の表示中も画面が固まらない(次の描画まで ${frame2.toFixed(0)} ミリ秒)`);
+await grab();
 
 // ---- 7. 隠し情報・通信・保存領域 ----
 const allText = texts.join("\n") + (await page.evaluate(() => document.documentElement.textContent));
-const found = HIDDEN_WORDS.filter((w) => allText.includes(w));
-check(found.length === 0, `画面の文字に、能力値・隠し情報の言葉がない${found.length ? `(見つかった: ${found.join("、")})` : ""}`);
+const found = HIDDEN.words.filter((w) => allText.includes(w));
+check(found.length === 0, `答え合わせモードがオフの画面の文字に、能力の項目名・成長タイプ・生成時の型がない${found.length ? `(見つかった: ${found.join("、")})` : ""}`);
+const laterMessages = await page.evaluate(() => window.__messages.join("\n"));
+const leakedLater = [...HIDDEN.words.filter((w) => laterMessages.includes(w)), ...HIDDEN.keys.filter((k) => laterMessages.includes(`"${k}"`))];
+check(leakedLater.length === 0, "読み込み直したあと(オフのまま)届いたメッセージにも、隠し情報がない");
 check(allText.includes(placeholder1), `空欄の球団は、架空の初期名になる(2番目の球団: ${placeholder1})`);
 // blob: は、ページの中で作った一時的な URL(裏の計算の起動に使う)。通信ではない
 const hosts = [...new Set(requests.filter((r) => !r.url.startsWith("blob:")).map((r) => new URL(r.url).host))];

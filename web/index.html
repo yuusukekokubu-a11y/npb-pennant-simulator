@@ -50,10 +50,10 @@
 
   /* 上の帯:保存・読み込みと、未保存の印 */
   .topbar { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
-  .topbar-inner { max-width: 640px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 8px; }
-  .topbar-title { flex: 1 1 auto; font-weight: bold; font-size: 0.95rem; line-height: 1.3; }
-  .topbar button, .topbar .button { min-height: 40px; padding: 6px 12px; font-size: 0.95rem; }
-  .dirty { color: var(--warn-line); font-size: 0.8rem; font-weight: bold; display: block; }
+  .topbar-inner { max-width: 640px; margin: 0 auto; padding: 8px 12px; display: flex; align-items: center; gap: 6px; }
+  .topbar-title { flex: 1 1 auto; min-width: 0; font-weight: bold; font-size: 0.9rem; line-height: 1.3; }
+  .topbar button, .topbar .button { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 10px; font-size: 0.9rem; }
+  .dirty { color: var(--warn-line); font-size: 0.75rem; font-weight: bold; display: block; }
 
   /* 下のタブ */
   .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--bg); border-top: 1px solid var(--line); display: flex; padding-bottom: env(safe-area-inset-bottom); }
@@ -103,6 +103,44 @@
   details { margin: 12px 0; }
   summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
   .boot { margin: 16px 0; }
+
+  /* 成績の画面(②) */
+  .link { font: inherit; background: none; border: none; color: var(--accent); padding: 0; min-height: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 3px; display: inline; }
+  td.sticky .link { font-weight: bold; }
+  .sub { display: block; font-size: 0.75rem; color: var(--muted); font-weight: normal; max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
+  td.name-cell { min-width: 7.5em; max-width: 10em; white-space: normal; line-height: 1.3; }
+  td.name-cell .link { white-space: nowrap; }
+  th button.sort { font: inherit; background: none; border: none; color: inherit; padding: 4px 0; min-height: 32px; cursor: pointer; }
+  th.sorted { color: var(--accent); font-weight: bold; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-height: 40px; max-width: 100%; }
+  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
+  .check input { width: 20px; height: 20px; }
+  .info { border-left: 4px solid var(--accent); background: var(--box); border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 0.9rem; }
+  .info strong { display: block; }
+  .more { width: 100%; margin: 8px 0; }
+  .page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+  .page-head h1 { flex: 1 1 auto; margin: 0; font-size: 1.2rem; }
+  .back { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 12px; }
+  .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
+  .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
+  .game-card .score { font-weight: bold; font-size: 1.05rem; white-space: nowrap; }
+  .game-card .tags { grid-column: 1 / 3; font-size: 0.8rem; color: var(--muted); }
+  .daynav { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin: 8px 0; }
+  .log h3 { font-size: 1rem; margin: 16px 0 4px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+  .log ul { list-style: none; margin: 0; padding: 0; }
+  .log li { padding: 3px 0; font-size: 0.93rem; }
+  .log li.change { color: var(--muted); font-size: 0.88rem; }
+  .log .runs { color: var(--ng); font-weight: bold; }
+  .kv { width: 100%; }
+  .kv th { text-align: left; color: var(--fg); font-size: 0.95rem; }
+  .kv td { text-align: right; }
+  .desc { display: block; font-size: 0.8rem; color: var(--muted); white-space: normal; font-weight: normal; }
+  .answer-badge { font-size: 0.75rem; color: var(--warn-line); font-weight: bold; display: block; }
+  .run-box { margin: 4px 0 8px; }
+  .loading { color: var(--muted); font-size: 0.9rem; }
+  label.radio { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 0.95rem; }
+  label.radio input { width: 20px; height: 20px; margin-top: 3px; flex: none; }
 </style>
 </head>
 <body>
@@ -113,9 +151,11 @@
     <div class="topbar-title">
       <span id="topbar-day"></span>
       <span class="dirty" id="dirty" hidden>● 未保存の変更があります</span>
+      <span class="answer-badge" id="answer-badge" hidden>答え合わせモード:オン</span>
     </div>
     <button id="save">保存</button>
     <label class="button secondary" for="open-file-top">開く</label>
+    <button id="menu" class="secondary" aria-label="メニュー(設定)">メニュー</button>
   </div>
 </header>
 
@@ -174,7 +214,6 @@
 <!-- 進行 -->
 <main class="screen" id="screen-progress" hidden>
   <p class="day" id="day-text"></p>
-  <progress id="day-progress" max="125" value="0" aria-label="シーズンの進み具合"></progress>
   <p class="muted small" id="games-text"></p>
 
   <div class="advance">
@@ -182,7 +221,12 @@
     <button class="adv" data-days="7">1週間</button>
     <button class="adv" data-days="0">最後まで</button>
   </div>
-  <button id="stop" class="danger stop" hidden>止める</button>
+  <!-- 「止める」と進み具合のバーは、処理が 0.6 秒を超えたときだけ出す(D-118) -->
+  <div class="run-box" id="run-box" hidden>
+    <progress id="run-progress" max="1" value="0" aria-label="進めている途中の進み具合"></progress>
+    <p class="muted small" id="run-text"></p>
+    <button id="stop" class="danger stop">止める</button>
+  </div>
   <p class="message" id="progress-message" role="status" aria-live="polite"></p>
 
   <div class="card" id="mine-card">
@@ -190,6 +234,10 @@
     <div class="mine-line"><strong id="mine-name"></strong></div>
     <div id="mine-record"></div>
   </div>
+
+  <h2 id="last-day-title">直近の日の試合</h2>
+  <div id="last-day"></div>
+  <p class="muted small" id="last-day-empty">まだ試合がありません。</p>
 
   <h2>自球団の直近の試合</h2>
   <ul class="games" id="recent"></ul>
@@ -223,6 +271,92 @@
     <dt>ゲーム差</dt><dd>首位(1位)のチームとの差。(首位の勝 − 勝 + 敗 − 首位の敗)÷ 2。1ゲーム差は、直接対決1試合で追いつける差です。首位は「-」です。</dd>
     <dt>順位の決め方</dt><dd>勝率の高い順。同じときは、勝の多い順、直接対決の成績、の順で決め、それでも同じなら抽選です。</dd>
   </dl>
+</main>
+
+<!-- 成績 -->
+<main class="screen" id="screen-stats" hidden>
+  <h1>個人成績</h1>
+  <div class="seg" id="stats-role" role="group" aria-label="打者・投手の切り替え">
+    <button data-value="batter">打者</button><button data-value="pitcher">投手</button>
+  </div>
+  <div class="seg" id="stats-kind" role="group" aria-label="成績の種類の切り替え">
+    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="ability">能力</button>
+  </div>
+  <div class="filters">
+    <select id="stats-league" aria-label="リーグの絞り込み"></select>
+    <select id="stats-team" aria-label="チームの絞り込み"></select>
+    <label class="check"><input type="checkbox" id="stats-qualified" checked>規定到達者だけ</label>
+  </div>
+  <p class="muted small" id="stats-kind-note"></p>
+  <div class="info" id="stats-info" role="status" aria-live="polite"></div>
+  <p class="loading" id="stats-loading" hidden>集計しています…</p>
+  <div id="stats-table"></div>
+  <p class="muted small" id="stats-rule"></p>
+  <details id="stats-terms"><summary>この表の用語の解説</summary><dl class="terms" id="stats-terms-list"></dl></details>
+</main>
+
+<!-- 試合 -->
+<main class="screen" id="screen-games" hidden>
+  <h1>試合</h1>
+  <div class="daynav">
+    <button class="secondary" id="games-prev" aria-label="前の日">◀ 前の日</button>
+    <select id="games-day" aria-label="日付を選ぶ"></select>
+    <button class="secondary" id="games-next" aria-label="次の日">次の日 ▶</button>
+  </div>
+  <div id="games-list"></div>
+  <p class="muted small" id="games-empty">まだ試合がありません。「進行」のタブで進めてください。</p>
+</main>
+
+<!-- 選手のページ -->
+<main class="screen" id="screen-player" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1 id="player-name"></h1></div>
+  <p id="player-info"></p>
+  <h2>シーズン通算の成績</h2>
+  <div class="seg" id="player-kind" role="group" aria-label="成績の種類の切り替え">
+    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="ability">能力</button>
+  </div>
+  <div id="player-season"></div>
+  <h2>試合ごとの成績(新しい順)</h2>
+  <div id="player-games"></div>
+</main>
+
+<!-- チームのページ -->
+<main class="screen" id="screen-team" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1 id="team-name"></h1></div>
+  <p id="team-info"></p>
+  <div id="team-record"></div>
+  <h2>投手</h2>
+  <div id="team-pitchers"></div>
+  <h2>野手</h2>
+  <div id="team-batters"></div>
+  <p class="muted small">選手名を押すと、その選手のページを開きます。「出場」は、試合に出た数(投手は登板した数)です。</p>
+</main>
+
+<!-- 試合のページ -->
+<main class="screen" id="screen-game" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1 id="game-title"></h1></div>
+  <p class="muted small" id="game-tags"></p>
+  <div id="game-line"></div>
+  <h2>投手の成績</h2>
+  <div id="game-pitchers"></div>
+  <p class="muted small">結果:勝=勝利投手、敗=敗戦投手、S=セーブ、H=ホールド。自責点は、失点のうち失策が関わらないもの(簡易な定義)。</p>
+  <details><summary>先発メンバー</summary><div id="game-lineups"></div></details>
+  <h2>試合の流れ</h2>
+  <p class="muted small">[ ] の中は、打席の前のアウトの数と走者。「中安」は中堅手の前へのヒット、「遊ゴロ」は遊撃手へのゴロのように、守備位置の1文字と結果で書きます。</p>
+  <div class="log" id="game-log"></div>
+</main>
+
+<!-- メニュー(設定) -->
+<main class="screen" id="screen-settings" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>メニュー</h1></div>
+  <h2>答え合わせモード</h2>
+  <p>選手の本当の実力(能力)は、ふだんは隠れています。成績から実力を推理するのが、このゲームの楽しみの一つです。答え合わせモードをオンにすると、「成績」と選手のページの「能力」で見られるようになります。</p>
+  <div id="answer-options">
+    <label class="radio"><input type="radio" name="answer-level" value="0" checked><span><strong>オフ</strong>(おすすめ)<br><span class="muted small">能力は見せません。</span></span></label>
+    <label class="radio"><input type="radio" name="answer-level" value="1"><span><strong>1段階目</strong>:今の能力<br><span class="muted small">20〜80 の数値(50 が一軍の平均)を、5刻みで見せます。</span></span></label>
+    <label class="radio"><input type="radio" name="answer-level" value="2"><span><strong>2段階目</strong>:今の能力 + 潜在能力・成長タイプ・生成時の型<br><span class="muted small">伸びきったときの能力や、伸び方の違いまで見せます。</span></span></label>
+  </div>
+  <p class="muted small">この設定は、どこにも保存しません(セーブデータにも入りません)。ページを開き直すと、オフに戻ります。</p>
 </main>
 
 <!-- 下のタブ(ゲーム中だけ表示。タブは app.js の TABS で増やせる) -->

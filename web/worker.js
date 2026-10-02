@@ -72,6 +72,16 @@ const handlers = {
   view() {
     return parse(bridge.view());
   },
+
+  // 見る画面(公開用の情報だけ)
+  query({ name, args }) {
+    return parse(bridge.query(name, JSON.stringify(args || {})));
+  },
+
+  // 答え合わせ(答え合わせモードがオンのときだけ、画面が呼ぶ)
+  answer({ name, args }) {
+    return parse(bridge.answer(name, JSON.stringify(args || {})));
+  },
 };
 
 self.onmessage = async (event) => {
