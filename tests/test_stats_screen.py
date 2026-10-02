@@ -37,13 +37,13 @@ def game():
 def test_stats_default_tables(game):
     """表の既定(D-116):列と並び順。"""
     b = game.stats("batter", "basic")
-    assert [c["label"] for c in b["columns"]] == ["試合", "打席", "打数", "安打", "本塁打", "打点", "得点", "打率", "出塁率", "長打率"]
+    assert [c["label"] for c in b["columns"]] == ["試合", "打席", "打数", "安打", "本塁打", "打点", "得点", "打率", "出塁率", "長打率", "OPS"]
     assert (b["sort"]["key"], b["order"], b["qualified"]) == ("avg", "desc", True)
     p = game.stats("pitcher", "basic")
     assert [c["label"] for c in p["columns"]] == ["登板", "先発", "勝利", "敗戦", "セーブ", "ホールド", "投球回", "奪三振", "防御率"]
     assert (p["sort"]["key"], p["order"]) == ("era", "asc")
     bs = game.stats("batter", "saber")
-    assert [c["key"] for c in bs["columns"]] == ["PA", "woba", "wrc_plus", "ops_plus", "ops", "iso", "babip", "k_pct", "bb_pct"]
+    assert [c["key"] for c in bs["columns"]] == ["PA", "woba", "wrc_plus", "ops_plus", "iso", "babip", "k_pct", "bb_pct"]  # OPS は基本へ(D-130)
     assert bs["sort"]["key"] == "wrc_plus" and bs["order"] == "desc"  # 第2弾①で wRC+ の高い順に変えた
     ps = game.stats("pitcher", "saber")
     assert [c["key"] for c in ps["columns"]] == ["OUTS", "fip", "k_pct", "bb_pct"] and ps["sort"]["key"] == "era" and ps["order"] == "asc"
@@ -67,6 +67,41 @@ def test_stats_sort_matches_records(game):
             assert values[: len(present)] == present  # 値なしは最後
             assert present == sorted(present, reverse=order == "desc")
             assert [r["rank"] for r in t["rows"]] == list(range(1, len(ids) + 1))
+
+
+def test_sort_by_any_metric_with_extra_column(game):
+    """並び順には、基本・セイバーの全指標を使える。表にない指標なら extra_column(D-132)。"""
+    keys = [c["key"] for c in api.sortable_keys("batter")]
+    assert keys[:11] == ["G", "PA", "AB", "H", "HR", "RBI", "R", "avg", "obp", "slg", "ops"] and "babip" in keys and "woba" in keys
+    assert len(keys) == len(set(keys)) and all(api.is_sortable(api.metrics_config(), "batter", k) for k in keys)
+    assert [c["key"] for c in api.sortable_keys("pitcher")][:9] == ["G", "GS", "W", "L", "SV", "HLD", "OUTS", "SO", "era"]
+    t = game.stats("batter", "saber", sort="avg")
+    assert t["extra_column"]["key"] == "avg" and t["order"] == "desc"
+    by_basic = game.stats("batter", "basic", sort="avg")
+    assert by_basic["extra_column"] is None
+    assert [r["player_id"] for r in t["rows"]] == [r["player_id"] for r in by_basic["rows"]]
+    assert all(r["values"]["avg"] == b["values"]["avg"] for r, b in zip(t["rows"], by_basic["rows"]))
+    assert set(t["rows"][0]["values"]) == {c["key"] for c in t["columns"]} | {"avg"}
+    p = game.stats("pitcher", "saber")  # 投手のセイバーの既定(防御率)は表にないので、固定列になる
+    assert p["extra_column"]["key"] == "era" and p["order"] == "asc"
+    with pytest.raises(ValueError):
+        game.stats("batter", "basic", sort="stamina")  # 能力の項目は、公開用の関数では使えない
+    with pytest.raises(ValueError):
+        api.sortable_keys("coach")
+
+
+def test_ability_table_can_keep_stats_sort(game):
+    """能力の表も、成績の指標で並べられる(並び順を保ったまま切り替えたとき。固定列)。"""
+    t = answers.ability_table(game, "pitcher", 1, sort="era", order="asc", qualified=False)
+    assert t["extra_column"]["key"] == "era" and t["sort"]["key"] == "era"
+    ids = [r["player_id"] for r in t["rows"]]
+    assert ids == [r["player_id"] for r in game.stats("pitcher", "basic", sort="era", order="asc", qualified=False)["rows"]]
+    assert all("era" in r["values"] for r in t["rows"])
+    by_default = answers.ability_table(game, "pitcher", 1, sort="era", order=None, qualified=False)
+    assert by_default["order"] == "asc" and [r["player_id"] for r in by_default["rows"]] == ids  # 向きの省略時は「よい」向き
+    plain = answers.ability_table(game, "pitcher", 1, sort="stamina")
+    assert plain["extra_column"] is None and "era" not in plain["rows"][0]["values"]
+    assert [c["key"] for c in answers.columns("batter", 2)][-2:] == ["growth_type", "archetype"]
 
 
 def test_qualified_follows_definition(game):

@@ -109,6 +109,12 @@
   td.sticky .link { font-weight: bold; }
   .sub { display: block; font-size: 0.75rem; color: var(--muted); font-weight: normal; max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
   td.name-cell { min-width: 7.5em; max-width: 10em; white-space: normal; line-height: 1.3; }
+  /* 並び順の指標が表にないとき、名前の隣に固定の列を出す(D-131)。名前の列の幅を決めて、その右に固定する */
+  th.name-fixed, td.name-fixed { width: 9em; min-width: 9em; max-width: 9em; }
+  th.sticky2, td.sticky2 { position: sticky; left: 9em; z-index: 1; box-shadow: 2px 0 0 var(--line); font-weight: bold; }
+  .seg.small-seg { flex: 0 0 auto; margin: 0; }
+  .seg.small-seg button { padding: 6px 10px; min-height: 40px; font-size: 0.9rem; }
+  #stats-sort { flex: 1 1 8em; }
   td.name-cell .link { white-space: nowrap; }
   th button.sort { font: inherit; background: none; border: none; color: inherit; padding: 4px 0; min-height: 32px; cursor: pointer; }
   th.sorted { color: var(--accent); font-weight: bold; }
@@ -299,6 +305,11 @@
     <select id="stats-league" aria-label="リーグの絞り込み"></select>
     <select id="stats-team" aria-label="チームの絞り込み"></select>
     <label class="check"><input type="checkbox" id="stats-qualified" checked>規定到達者だけ</label>
+  </div>
+  <div class="filters">
+    <label class="small" for="stats-sort">並び順</label>
+    <select id="stats-sort" aria-label="並び順に使う指標"></select>
+    <div class="seg small-seg" id="stats-order" role="group" aria-label="並び順の向き"><button data-value="desc">高い順</button><button data-value="asc">低い順</button></div>
   </div>
   <p class="muted small" id="stats-kind-note"></p>
   <p class="muted small" id="stats-baseline" hidden></p>

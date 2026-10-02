@@ -37,8 +37,11 @@ const state = {
   answerLevel: 0, // 答え合わせモード(0:オフ、1:今の能力、2:潜在能力なども)。保存しない
   cache: new Map(), // 見る画面の結果(日が進むまで使い回す)
   cacheStamp: null,
-  stats: { role: "batter", kind: "basic", sort: null, order: null, qualified: true, league: "", team: "", shown: STATS_PAGE },
-  ability: { sort: null, order: "desc" },
+  stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", shown: STATS_PAGE },
+  // 並び順(打者/投手ごとに保つ。基本・セイバー・能力を切り替えても保つ。D-131)。key が null なら、その表の既定
+  sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } },
+  shownSort: { batter: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
+  abilityKeys: { batter: [], pitcher: [] }, // 答え合わせモードがオンのときだけ入る、能力の項目の名前
   playerKind: "basic",
   gamesDay: null,
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
@@ -255,17 +258,22 @@ function setPressed(groupId, value) {
 
 // 表を作る。columns は { key, label, description }、rows の値は row.values[key]。
 // first は左端(固定)の列の中身を作る関数。onSort があれば、見出しを押して並べ替えられる。
-function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass, limit, more }) {
-  const head = el("tr", {}, el("th", { className: "sticky", scope: "col" }, firstLabel));
-  for (const c of columns) {
+// extra は、名前の隣に固定して出す列(並び順の指標が表にないとき。D-131)
+function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass, limit, more, extra }) {
+  const headCell = (c, className) => {
     const arrow = sort === c.key ? (order === "desc" ? " ▼" : " ▲") : "";
     const label = onSort ? el("button", { className: "sort", type: "button", onclick: () => onSort(c.key) }, c.label + arrow) : c.label;
-    head.append(el("th", { scope: "col", className: sort === c.key ? "sorted" : "", title: c.description || "" }, label));
-  }
+    return el("th", { scope: "col", className: `${className} ${sort === c.key ? "sorted" : ""}`.trim(), title: c.description || "" }, label);
+  };
+  const nameClass = extra ? "sticky name-fixed" : "sticky";
+  const head = el("tr", {}, el("th", { className: nameClass, scope: "col" }, firstLabel));
+  if (extra) head.append(headCell(extra, "sticky2"));
+  for (const c of columns) head.append(headCell(c, ""));
   const body = el("tbody");
   const shown = limit ? rows.slice(0, limit) : rows;
   for (const r of shown) {
-    const tr = el("tr", { className: rowClass ? rowClass(r) : "" }, el("td", { className: "sticky name-cell" }, ...first(r)));
+    const tr = el("tr", { className: rowClass ? rowClass(r) : "" }, el("td", { className: `${nameClass} name-cell` }, ...first(r)));
+    if (extra) tr.append(el("td", { className: "sticky2" }, r.values[extra.key] ?? ""));
     for (const c of columns) tr.append(el("td", {}, r.values[c.key] ?? ""));
     body.append(tr);
   }
@@ -408,6 +416,54 @@ function statsArgs() {
   };
 }
 
+function currentSort() {
+  return state.sortBy[state.stats.role];
+}
+
+function isAbilityKey(key) {
+  return state.abilityKeys[state.stats.role].includes(key);
+}
+
+// 並び順の選択欄(D-132):基本・セイバーの全指標。答え合わせモードがオンなら、能力の項目も
+async function buildSortSelect(sortKey) {
+  const role = state.stats.role;
+  const keys = await query("sortable_keys", { role });
+  const groups = { basic: [], saber: [], count: [] };
+  for (const k of keys) (groups[k.type === "count" ? "count" : k.category] || groups.count).push(k);
+  const options = [
+    el("optgroup", { label: "基本" }, ...groups.basic.map((k) => el("option", { value: k.key }, k.label))),
+    el("optgroup", { label: "セイバー" }, ...groups.saber.map((k) => el("option", { value: k.key }, k.label))),
+    el("optgroup", { label: "元の数" }, ...groups.count.map((k) => el("option", { value: k.key }, k.label))),
+  ];
+  if (state.answerLevel > 0) {
+    const cols = await answer("ability_columns", { role });
+    state.abilityKeys[role] = cols.map((c) => c.key);
+    options.push(el("optgroup", { label: "能力(答え合わせモード)" }, ...cols.map((c) => el("option", { value: c.key }, c.label))));
+  } else {
+    state.abilityKeys[role] = [];
+  }
+  $("stats-sort").replaceChildren(...options);
+  $("stats-sort").value = sortKey;
+}
+
+// 「既定」のままの並び順を、実際に使った指標に固定する(基本・セイバー・能力を切り替えても保つため。D-131)
+function commitSort() {
+  const s = currentSort();
+  const shown = state.shownSort[state.stats.role];
+  if (s.key === null && shown) Object.assign(s, shown);
+}
+
+function showSortState(sortCol, order) {
+  state.shownSort[state.stats.role] = { key: sortCol.key, order };
+  $("stats-sort").value = sortCol.key;
+  const counts = sortCol.type === "count";
+  for (const b of $("stats-order").children) {
+    b.textContent = b.dataset.value === "desc" ? (counts ? "多い順" : "高い順") : counts ? "少ない順" : "低い順";
+    b.setAttribute("aria-pressed", String(b.dataset.value === order));
+  }
+  $("stats-info").replaceChildren(el("strong", {}, `並び順:${sortCol.label}(${sortWord(sortCol, order)})`), sortCol.description);
+}
+
 async function renderStats(token) {
   const s = state.stats;
   setPressed("stats-role", s.role);
@@ -422,65 +478,72 @@ async function renderStats(token) {
     $("stats-baseline").hidden = true;
     return renderAbilityTable(token);
   }
-  const args = { ...statsArgs(), kind: s.kind, sort: s.sort, order: s.order };
+  const sort = currentSort();
+  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(能力の値は、公開用の関数では扱わない)
+  const key = sort.key && !isAbilityKey(sort.key) ? sort.key : null;
+  const args = { ...statsArgs(), kind: s.kind, sort: key, order: key ? sort.order : null };
   const data = await withLoading("stats-loading", query("stats", args));
   if (token !== state.token) return;
-  state.shownSort = { key: data.sort.key, order: data.order };
-  $("stats-info").replaceChildren(
-    el("strong", {}, `並び順:${data.sort.label}(${sortWord(data.sort, data.order)})`),
-    data.sort.description,
-  );
+  await buildSortSelect(data.sort.key);
+  if (token !== state.token) return;
+  showSortState(data.sort, data.order);
+  const first = (r) => [el("span", { className: "rank" }, String(r.rank)), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)];
   $("stats-table").replaceChildren(
     data.rows.length
       ? table({
           firstLabel: "順位・選手",
           columns: data.columns,
           rows: data.rows,
-          first: (r) => [el("span", { className: "rank" }, String(r.rank)), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+          first,
           sort: data.sort.key,
           order: data.order,
           onSort: (key) => sortStats(key),
           rowClass: (r) => (r.is_mine ? "mine" : ""),
           limit: s.shown,
           more: () => { s.shown += STATS_PAGE; renderCurrent(); },
+          extra: data.extra_column,
         })
       : el("p", { className: "muted" }, s.qualified ? "条件に合う選手がいません(規定到達者がまだいないときは、「規定到達者だけ」を外してください)。" : "条件に合う選手がいません。"),
   );
   $("stats-baseline").hidden = !data.baseline_note;
   $("stats-baseline").textContent = data.baseline_note || "";
-  $("stats-rule").textContent = `${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} 表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。`;
-  terms("stats-terms-list", data.columns);
+  const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」はこの表にない指標なので、名前の隣に固定して出しています。` : "";
+  $("stats-rule").textContent = `${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} ${extraNote}表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。上の「並び順」の欄からも選べます。`;
+  terms("stats-terms-list", data.extra_column ? [data.extra_column, ...data.columns] : data.columns);
 }
 
 function sortStats(key) {
-  // 今の並びと同じ列なら逆順に、違う列ならその指標の「よい」向き(能力は高い順)から
-  const s = state.stats;
-  const shown = state.shownSort;
-  const target = s.kind === "ability" ? state.ability : s;
+  // 今の並びと同じ列なら逆順に、違う列ならその指標の「よい」向き(能力の項目は高い順)から
+  const s = currentSort();
+  const shown = state.shownSort[state.stats.role];
   if (shown && shown.key === key) {
-    target.order = shown.order === "desc" ? "asc" : "desc";
+    s.key = key;
+    s.order = shown.order === "desc" ? "asc" : "desc";
   } else {
-    target.order = s.kind === "ability" ? "desc" : null;
+    s.key = key;
+    s.order = null;
   }
-  target.sort = key;
-  s.shown = STATS_PAGE;
+  state.stats.shown = STATS_PAGE;
   renderCurrent();
 }
 
 async function renderAbilityTable(token) {
   const s = state.stats;
   if (state.answerLevel === 0) {
+    await buildSortSelect(currentSort().key);
+    if (token !== state.token) return;
     $("stats-info").replaceChildren(el("strong", {}, "答え合わせモードをオンにすると見られます"), "上の「メニュー」から、答え合わせモードをオンにしてください。");
     $("stats-table").replaceChildren();
     $("stats-rule").textContent = "";
     $("stats-terms-list").replaceChildren();
     return;
   }
-  const a = state.ability;
-  const data = await withLoading("stats-loading", answer("ability_table", { ...statsArgs(), sort: a.sort, order: a.order }));
+  const sort = currentSort();
+  const data = await withLoading("stats-loading", answer("ability_table", { ...statsArgs(), sort: sort.key, order: sort.order }));
   if (token !== state.token || state.answerLevel === 0) return;
-  state.shownSort = { key: data.sort.key, order: data.order };
-  $("stats-info").replaceChildren(el("strong", {}, `並び順:${data.sort.label}(${a.order === "asc" ? "低い順" : "高い順"})`), data.sort.description);
+  await buildSortSelect(data.sort.key);
+  if (token !== state.token || state.answerLevel === 0) return;
+  showSortState(data.sort, data.order);
   $("stats-table").replaceChildren(
     table({
       firstLabel: "順位・選手",
@@ -493,10 +556,12 @@ async function renderAbilityTable(token) {
       rowClass: (r) => (r.is_mine ? "mine" : ""),
       limit: s.shown,
       more: () => { s.shown += STATS_PAGE; renderCurrent(); },
+      extra: data.extra_column,
     }),
   );
-  $("stats-rule").textContent = `${data.note}。「+」は 80 より上、「-」は 20 より下の値を、端にそろえて表示しています。`;
-  terms("stats-terms-list", data.columns);
+  const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」は成績の指標なので、名前の隣に固定して出しています。` : "";
+  $("stats-rule").textContent = `${data.note}。「+」は 80 より上、「-」は 20 より下の値を、端にそろえて表示しています。${extraNote}`;
+  terms("stats-terms-list", data.extra_column ? [data.extra_column, ...data.columns] : data.columns);
 }
 
 // ---- 試合(日付ごとの一覧) ----
@@ -734,8 +799,13 @@ function setAnswerLevel(level) {
   state.answerLevel = level;
   clearAnswers();
   if (level === 0) {
-    // オフにしたら、隠れている画面に残った能力の表示も消す(D-108)
-    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season"]) $(id).replaceChildren();
+    // オフにしたら、隠れている画面に残った能力の表示も消す(D-108)。並び順の欄の選択肢と、能力の項目での並び順も戻す
+    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort"]) $(id).replaceChildren();
+    for (const role of ["batter", "pitcher"]) {
+      if (state.abilityKeys[role].includes(state.sortBy[role].key)) state.sortBy[role] = { key: null, order: null };
+      if (state.shownSort[role] && state.abilityKeys[role].includes(state.shownSort[role].key)) state.shownSort[role] = null;
+      state.abilityKeys[role] = [];
+    }
   }
   $("answer-badge").hidden = level === 0;
   $("answer-badge").textContent = level === 0 ? "" : `答え合わせモード:${level}段階目`;
@@ -1070,15 +1140,32 @@ for (const b of document.querySelectorAll(".back")) b.addEventListener("click", 
 // 成績
 for (const b of $("stats-role").children) {
   b.addEventListener("click", () => {
-    Object.assign(state.stats, { role: b.dataset.value, sort: null, order: null, shown: STATS_PAGE });
-    Object.assign(state.ability, { sort: null, order: "desc" });
+    // 打者と投手を切り替えたときは、その側の既定の並び順に戻す(絞り込みと表示件数は保つ。D-131)
+    state.stats.role = b.dataset.value;
+    state.sortBy[state.stats.role] = { key: null, order: null };
+    state.shownSort[state.stats.role] = null;
     renderCurrent();
   });
 }
 for (const b of $("stats-kind").children) {
   b.addEventListener("click", () => {
-    Object.assign(state.stats, { kind: b.dataset.value, sort: null, order: null, shown: STATS_PAGE });
-    Object.assign(state.ability, { sort: null, order: "desc" });
+    commitSort();
+    state.stats.kind = b.dataset.value; // 並び順・絞り込み・表示件数は保つ(D-131)
+    renderCurrent();
+  });
+}
+$("stats-sort").addEventListener("change", () => {
+  const key = $("stats-sort").value;
+  state.sortBy[state.stats.role] = { key, order: null };
+  if (isAbilityKey(key)) state.stats.kind = "ability"; // 能力の項目を選んだら、能力の表で見せる
+  state.stats.shown = STATS_PAGE;
+  renderCurrent();
+});
+for (const b of $("stats-order").children) {
+  b.addEventListener("click", () => {
+    commitSort();
+    currentSort().order = b.dataset.value;
+    state.stats.shown = STATS_PAGE;
     renderCurrent();
   });
 }

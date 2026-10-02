@@ -89,7 +89,8 @@
           "R",
           "avg",
           "obp",
-          "slg"
+          "slg",
+          "ops"
         ],
         "sort": "avg"
       },
@@ -99,7 +100,6 @@
           "woba",
           "wrc_plus",
           "ops_plus",
-          "ops",
           "iso",
           "babip",
           "k_pct",
@@ -252,7 +252,7 @@
         "TB"
       ],
       "stage": 1,
-      "category": "saber",
+      "category": "basic",
       "note": "公式記録のサヨナラ安打の数え直し(満塁からのサヨナラ二塁打を単打として数えるなど)は行っていない"
     },
     "iso": {

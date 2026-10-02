@@ -83,14 +83,28 @@ def ability_table(
     league: int | None = None,
     team_id: str | None = None,
 ) -> dict:
-    """能力の表(D-115)。選手の選び方は個人成績と同じ。並べ替えは、内部の値(丸める前)で行う。"""
+    """能力の表(D-115)。選手の選び方は個人成績と同じ。並べ替えは、内部の値(丸める前)で行う。
+
+    sort には、成績の列(元の数・指標)も使える(D-132。個人成績から並び順を保ったまま切り替えたとき)。
+    そのときは extra_column にその列を返し、各行の values にも値を入れる。値なしの選手は最後。
+    """
+    from .api import _values, column_info, is_sortable, metrics_config
+
     cols = columns(role, level)
     keys = [c["key"] for c in cols]
-    sort = sort if sort in keys else keys[0]
-    order = order if order in ("asc", "desc") else "desc"
+    config = metrics_config()
+    extra = None
+    if sort not in keys:
+        if sort and is_sortable(config, role, sort):
+            extra = column_info(config, role, sort)
+        else:
+            sort = keys[0]
+    if order not in ("asc", "desc"):  # 向きの省略時:成績の指標なら「よい」向き、能力の項目なら高い順
+        order = ("desc" if extra["better"] == "high" else "asc") if extra else "desc"
     growth, arche = _labels(game)
     rec = game.records.total
-    owner = rec.batter_team if role == "batter" else rec.pitcher_team
+    group, owner = (rec.batters, rec.batter_team) if role == "batter" else (rec.pitchers, rec.pitcher_team)
+    base = game.baselines()[0] if extra else None
     rows = []
     for pid in game.select_players(role, qualified, league, team_id):
         p = game.state.season.players[pid]
@@ -102,15 +116,23 @@ def ability_table(
             row["values"]["archetype"] = arche.get(p.hidden.archetype, p.hidden.archetype)
             if sort in ("growth_type", "archetype"):
                 key = row["values"][sort]
+        if extra:
+            value = _values(config, role, group[pid], base)[sort]
+            row["values"][sort] = value[1]
+            key = value[0]
         row["_sort"] = key
         rows.append(row)
-    rows.sort(key=lambda r: r["player_id"])
-    rows.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+    present = [r for r in rows if r["_sort"] is not None]
+    missing = [r for r in rows if r["_sort"] is None]
+    present.sort(key=lambda r: r["player_id"])
+    present.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+    missing.sort(key=lambda r: r["player_id"])
+    rows = present + missing
     for i, r in enumerate(rows):
         r.pop("_sort")
         r["rank"] = i + 1
-    sort_col = next(c for c in cols if c["key"] == sort)
-    return {"role": role, "level": level, "note": LEVEL_NOTE[level], "columns": cols, "sort": sort_col, "order": order, "qualified": qualified, "rows": rows}
+    sort_col = extra or next(c for c in cols if c["key"] == sort)
+    return {"role": role, "level": level, "note": LEVEL_NOTE[level], "columns": cols, "sort": sort_col, "order": order, "extra_column": extra, "qualified": qualified, "rows": rows}
 
 
 def player_answers(game: Game, player_id: str, level: int = 1) -> dict:
