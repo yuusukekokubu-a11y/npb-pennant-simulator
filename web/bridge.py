@@ -2,14 +2,15 @@
 
 裏の計算(worker.js)が、この関数を呼ぶ。やり取りは JSON の文字(セーブデータの中身だけは bytes)。
 遊んでいるゲームを1つ持つ。読み込みや新規開始に失敗したときは、今のゲームをそのまま残す。
-選手の非公開の情報は扱わない(pennant.api の公開用の関数だけを使う。D-108)。
+見る画面は query(公開用の関数だけ。D-108)、答え合わせは answer(pennant.answers。D-114)で、入口を分ける。
+画面は、答え合わせモードがオンのときだけ answer を呼ぶ。
 """
 
 from __future__ import annotations
 
 import json
 
-from pennant import api
+from pennant import answers, api
 
 _game: api.Game | None = None
 
@@ -24,7 +25,7 @@ def _ng(message: str, problems: list[str] | None = None) -> str:
 
 def _view() -> dict:
     """画面の表示に使うもの一式(今の状況・順位表・自球団の直近の試合)。"""
-    return {"status": _game.status(), "standings": _game.standings(), "recent": _game.recent_games()}
+    return {"status": _game.status(), "standings": _game.standings(), "recent": _game.recent_games(), "last_day": _game.last_day_games()}
 
 
 def preview(seed: int) -> str:
@@ -71,8 +72,45 @@ def save_info() -> str:
 
 def advance(days: int) -> str:
     _game.advance(int(days))
+    _game.records  # 集計も、進めた日の分だけ足しておく(成績の画面をすぐ開けるように)
     return _ok(_view())
 
 
 def view() -> str:
     return _ok(_view())
+
+
+# ---- 見る画面(公開用の関数だけ。D-114) ----
+_QUERIES = {
+    "stats": lambda a: _game.stats(a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
+    "player": lambda a: _game.player(a["player_id"]),
+    "games_on": lambda a: _game.games_on(int(a["day"])),
+    "game": lambda a: _game.game(int(a["game_no"])),
+    "team": lambda a: _game.team(a["team_id"]),
+    "teams": lambda a: _game.teams(),
+}
+
+# ---- 答え合わせ(答え合わせモードがオンのときだけ、画面が呼ぶ。D-108、D-114) ----
+_ANSWERS = {
+    "ability_table": lambda a: answers.ability_table(_game, a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order", "desc"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
+    "player_answers": lambda a: answers.player_answers(_game, a["player_id"], int(a.get("level", 1))),
+}
+
+
+def _run(table: dict, name: str, args_json: str) -> str:
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in table:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(table[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"表示できませんでした({exc})")
+
+
+def query(name: str, args_json: str = "{}") -> str:
+    return _run(_QUERIES, name, args_json)
+
+
+def answer(name: str, args_json: str = "{}") -> str:
+    return _run(_ANSWERS, name, args_json)

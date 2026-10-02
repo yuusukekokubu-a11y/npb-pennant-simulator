@@ -204,39 +204,107 @@ def _runners_text(state) -> str:
     return f"{outs}{'・'.join(on) if on else '走者なし'}"
 
 
-def narrate(result: GameResult, players: dict[str, Player], team_names: dict[str, str]) -> str:
-    """1試合の流れ(各打席の結果とイニングごとの得点)を文章にする。"""
+EXIT_REASON_TEXT = {"batters_limit": "打者数の上限", "run_limit": "失点の上限", "inning_end": "イニング終了", "game_end": "試合終了"}
+
+
+def game_story(result: GameResult, players: dict[str, Player], team_names: dict[str, str], decisions=None) -> dict:
+    """1試合の流れを、画面でも文章でも使える構造のデータにする(最小のブラウザ画面②。D-114)。
+
+    文章(narrate)は、この構造から作る。画面の文章ログと、確認用スクリプトの文章が同じ内容になる。
+    decisions(勝敗・セーブ・ホールド)を渡すと、投手の成績に結果の印を付ける。
+    """
+    from .decisions import decide
+    from .records import earned_flags
+
     home, away = result.home_team_id, result.away_team_id
-    lines = [f"# {team_names[away]}(先攻) 対 {team_names[home]}(後攻)"]
+    d = decisions or decide(result)
+    marks: dict[str, str] = {}
+    if d.win:
+        marks[d.win] = "勝"
+    if d.loss:
+        marks[d.loss] = "敗"
+    if d.save:
+        marks[d.save] = "S"
+    for pid in d.holds:
+        marks[pid] = "H"
+    earned: dict[str, int] = {}
+    for x, row in zip(result.log, earned_flags(result)):
+        for m, is_earned in zip([m for m in x.moves if m.scored], row):
+            if is_earned:
+                earned[m.responsible_pitcher_id] = earned.get(m.responsible_pitcher_id, 0) + 1
+    hits: dict[str, int] = {}
+    for x in result.log:
+        if x.pa.result in ("single", "double", "triple", "home_run"):
+            hits[x.pitcher_id] = hits.get(x.pitcher_id, 0) + 1
+
+    teams = []
     for team in (away, home):
         starter = next(p for p in result.pitchers if p.team_id == team and p.role == "starter")
-        order = "、".join(
-            f"{o}番 {players[pid].name}({'指名打者' if pos == DH else POSITION_LABELS[pos]})" + ("※休養の代わり" if rep else "")
-            for o, pid, pos, rep in result.lineups[team]
+        teams.append(
+            {
+                "team_id": team,
+                "name": team_names[team],
+                "side": "先攻" if team == away else "後攻",
+                "starter": {"id": starter.pitcher_id, "name": players[starter.pitcher_id].name},
+                "lineup": [
+                    {
+                        "order": o,
+                        "id": pid,
+                        "name": players[pid].name,
+                        "position": "指名打者" if pos == DH else POSITION_LABELS[pos],
+                        "rest_sub": rep is not None,
+                    }
+                    for o, pid, pos, rep in result.lineups[team]
+                ],
+            }
         )
-        lines.append(f"- {team_names[team]}:先発 {players[starter.pitcher_id].name}\n  - 打順:{order}")
-    current_half = None
-    pitcher_now = {}
+
+    halves: list[dict] = []
+    pitcher_now: dict[str, str] = {}
     score = {home: 0, away: 0}
     for x in result.log:
         key = (x.inning, x.half)
-        if key != current_half:
-            current_half = key
-            lines.append(f"\n## {x.inning}回{'裏' if x.half == BOTTOM else '表'}({team_names[x.batting_team_id]}の攻撃)")
+        if not halves or (halves[-1]["inning"], halves[-1]["half"]) != key:
+            halves.append(
+                {
+                    "inning": x.inning,
+                    "half": x.half,
+                    "title": f"{x.inning}回{'裏' if x.half == BOTTOM else '表'}",
+                    "batting_team": team_names[x.batting_team_id],
+                    "events": [],
+                }
+            )
+        events = halves[-1]["events"]
         if pitcher_now.get(x.fielding_team_id) not in (None, x.pitcher_id):
-            lines.append(f"  - 【投手交代】{team_names[x.fielding_team_id]}:{players[x.pitcher_id].name}")
+            events.append({"type": "pitching_change", "team": team_names[x.fielding_team_id], "pitcher_id": x.pitcher_id, "pitcher": players[x.pitcher_id].name})
         pitcher_now[x.fielding_team_id] = x.pitcher_id
         score[x.batting_team_id] += x.runs
-        extra = f" → {x.runs}点(スコア {team_names[away]} {score[away]} - {score[home]} {team_names[home]})" if x.runs else ""
-        lines.append(f"- [{_runners_text(x.base_out)}] {x.lineup_slot}番 {players[x.batter_id].name}:{describe(x)}{extra}")
-    lines.append("\n## スコア")
+        events.append(
+            {
+                "type": "plate_appearance",
+                "situation": _runners_text(x.base_out),
+                "order": x.lineup_slot,
+                "batter_id": x.batter_id,
+                "batter": players[x.batter_id].name,
+                "result": describe(x),
+                "runs": x.runs,
+                "score": {"away": score[away], "home": score[home]},
+            }
+        )
+
     n = max(len(result.line[home]), len(result.line[away]))
-    header = ["チーム"] + [str(i + 1) for i in range(n)] + ["計"]
-    rows = []
-    for team in (away, home):
-        cells = [("X" if v is None else str(v)) for v in result.line[team]] + [""] * (n - len(result.line[team]))
-        rows.append([team_names[team]] + cells + [str(result.away_runs if team == away else result.home_runs)])
-    lines.append(_table(header, rows))
+    line = {
+        "innings": [str(i + 1) for i in range(n)],
+        "rows": [
+            {
+                "team_id": team,
+                "name": team_names[team],
+                "cells": [("X" if v is None else str(v)) for v in result.line[team]] + [""] * (n - len(result.line[team])),
+                "total": result.away_runs if team == away else result.home_runs,
+            }
+            for team in (away, home)
+        ],
+    }
     tags = []
     if result.tie:
         tags.append("引き分け")
@@ -244,22 +312,62 @@ def narrate(result: GameResult, players: dict[str, Player], team_names: dict[str
         tags.append("延長")
     if result.walkoff:
         tags.append("サヨナラ")
-    if tags:
-        lines.append(f"\n({'・'.join(tags)})")
-    lines.append("\n## 投手")
-    rows = [
-        [
-            team_names[p.team_id],
-            players[p.pitcher_id].name,
-            "先発" if p.role == "starter" else "救援",
-            f"{p.outs // 3}回{'' if p.outs % 3 == 0 else f' {p.outs % 3}/3'}",
-            str(p.batters_faced),
-            str(p.runs),
-            {"batters_limit": "打者数の上限", "run_limit": "失点の上限", "inning_end": "イニング終了", "game_end": "試合終了"}.get(
-                p.exit_reason, "-"
-            ),
-        ]
+    pitchers = [
+        {
+            "team_id": p.team_id,
+            "team": team_names[p.team_id],
+            "id": p.pitcher_id,
+            "name": players[p.pitcher_id].name,
+            "role": "先発" if p.role == "starter" else "救援",
+            "innings": f"{p.outs // 3}回{'' if p.outs % 3 == 0 else f' {p.outs % 3}/3'}",
+            "batters_faced": p.batters_faced,
+            "hits": hits.get(p.pitcher_id, 0),
+            "runs": p.runs,
+            "earned_runs": earned.get(p.pitcher_id, 0),
+            "exit_reason": EXIT_REASON_TEXT.get(p.exit_reason, "-"),
+            "decision": marks.get(p.pitcher_id, ""),
+        }
         for p in result.pitchers
     ]
+    return {
+        "away": {"team_id": away, "name": team_names[away], "runs": result.away_runs},
+        "home": {"team_id": home, "name": team_names[home], "runs": result.home_runs},
+        "teams": teams,
+        "halves": halves,
+        "line": line,
+        "tags": tags,
+        "pitchers": pitchers,
+    }
+
+
+def story_text(story: dict) -> str:
+    """game_story の構造を、確認用の文章(Markdown)にする。"""
+    away, home = story["away"]["name"], story["home"]["name"]
+    lines = [f"# {away}(先攻) 対 {home}(後攻)"]
+    for team in story["teams"]:
+        order = "、".join(
+            f"{s['order']}番 {s['name']}({s['position']})" + ("※休養の代わり" if s["rest_sub"] else "") for s in team["lineup"]
+        )
+        lines.append(f"- {team['name']}:先発 {team['starter']['name']}\n  - 打順:{order}")
+    for half in story["halves"]:
+        lines.append(f"\n## {half['title']}({half['batting_team']}の攻撃)")
+        for e in half["events"]:
+            if e["type"] == "pitching_change":
+                lines.append(f"  - 【投手交代】{e['team']}:{e['pitcher']}")
+                continue
+            extra = f" → {e['runs']}点(スコア {away} {e['score']['away']} - {e['score']['home']} {home})" if e["runs"] else ""
+            lines.append(f"- [{e['situation']}] {e['order']}番 {e['batter']}:{e['result']}{extra}")
+    lines.append("\n## スコア")
+    header = ["チーム"] + story["line"]["innings"] + ["計"]
+    lines.append(_table(header, [[r["name"]] + r["cells"] + [str(r["total"])] for r in story["line"]["rows"]]))
+    if story["tags"]:
+        lines.append(f"\n({'・'.join(story['tags'])})")
+    lines.append("\n## 投手")
+    rows = [[p["team"], p["name"], p["role"], p["innings"], str(p["batters_faced"]), str(p["runs"]), p["exit_reason"]] for p in story["pitchers"]]
     lines.append(_table(["チーム", "投手", "区分", "投球回", "対戦打者", "失点", "降板の理由"], rows))
     return "\n".join(lines) + "\n"
+
+
+def narrate(result: GameResult, players: dict[str, Player], team_names: dict[str, str]) -> str:
+    """1試合の流れ(各打席の結果とイニングごとの得点)を文章にする。"""
+    return story_text(game_story(result, players, team_names))
