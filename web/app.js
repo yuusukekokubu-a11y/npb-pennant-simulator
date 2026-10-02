@@ -16,7 +16,7 @@ const TABS = [
   { id: "games", label: "試合" },
 ];
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium"];
 const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
 
 const $ = (id) => document.getElementById(id);
@@ -211,6 +211,7 @@ function renderCurrent() {
     game: () => renderGame(args, token),
     settings: () => renderSettings(),
     guide: () => renderGuide(token),
+    stadium: () => renderStadium(args, token),
   }[name];
   Promise.resolve(job && job()).catch((err) => showError(name, err));
 }
@@ -666,7 +667,7 @@ async function renderTeam(args, token) {
   const d = await query("team", { team_id: args.id });
   if (token !== state.token) return;
   $("team-name").textContent = d.name + (d.is_mine ? " ★" : "");
-  $("team-info").textContent = `${d.league_name} ${d.rank}位 / 本拠地:${d.stadium}`;
+  $("team-info").replaceChildren(`${d.league_name} ${d.rank}位 / 本拠地:`, link(d.stadium, () => openPage("stadium", { id: d.team_id })));
   const r = d.record;
   $("team-record").replaceChildren(
     kvTable([
@@ -690,6 +691,38 @@ async function renderTeam(args, token) {
   $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: cols, rows: rows("batter"), first }));
 }
 
+// ---- 球場のページ(公開用の結果と、答え合わせモードでの真の倍率。D-138) ----
+
+async function renderStadium(args, token) {
+  const d = await query("stadium", { team_id: args.id });
+  if (token !== state.token) return;
+  $("stadium-name").textContent = d.name;
+  $("stadium-info").replaceChildren("本拠地のチーム:", teamLink(d.team_name, d.team_id), d.is_mine ? " ★" : "", ` / ${d.league_name}`);
+  $("stadium-record").replaceChildren(
+    kvTable([
+      { label: "試合", description: "この球場で行った試合の数", values: [String(d.games)] },
+      { label: "本塁打", description: "この球場で出た本塁打の数(両チームの合計)", values: [String(d.home_runs)] },
+      { label: "本塁打/試合", description: "1試合あたりの本塁打(両チームの合計)", values: [d.home_runs_per_game] },
+      { label: "得点/試合", description: "1試合あたりの得点(両チームの合計)", values: [d.runs_per_game] },
+    ]),
+  );
+  $("stadium-note").textContent = d.note;
+  const box = $("stadium-answers");
+  if (state.answerLevel === 0) {
+    box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると見られます(上の「メニュー」から)。"));
+    return;
+  }
+  const a = await answer("stadium_answers", { team_id: args.id });
+  if (token !== state.token || state.answerLevel === 0) return;
+  box.replaceChildren(
+    kvTable([
+      { label: "本塁打の倍率", description: "この球場で本塁打が出やすい度合い。1.000 が平均", values: [a.home_run.text] },
+      { label: "BABIP の倍率", description: "この球場でインプレーの打球が安打になりやすい度合い。1.000 が平均", values: [a.babip.text] },
+    ]),
+    el("p", { className: "muted small" }, a.note),
+  );
+}
+
 // ---- 試合のページ(文章ログと投手の成績) ----
 
 async function renderGame(args, token) {
@@ -699,6 +732,7 @@ async function renderGame(args, token) {
   const st = d.story;
   $("game-title").textContent = `${s.day}日目 ${s.away.name} ${s.away.runs} - ${s.home.runs} ${s.home.name}`;
   $("game-tags").textContent = [s.innings > 9 ? `延長${s.innings}回` : "", ...st.tags.filter((t) => t !== "延長")].filter(Boolean).join("・");
+  $("game-stadium").replaceChildren("球場:", link(s.stadium, () => openPage("stadium", { id: s.home.team_id })), `(${s.home.name}の本拠地)`);
   const lineCols = [...st.line.innings.map((i) => ({ key: i, label: i })), { key: "total", label: "計" }];
   $("game-line").replaceChildren(
     table({
@@ -800,7 +834,7 @@ function setAnswerLevel(level) {
   clearAnswers();
   if (level === 0) {
     // オフにしたら、隠れている画面に残った能力の表示も消す(D-108)。並び順の欄の選択肢と、能力の項目での並び順も戻す
-    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort"]) $(id).replaceChildren();
+    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort", "stadium-answers"]) $(id).replaceChildren();
     for (const role of ["batter", "pitcher"]) {
       if (state.abilityKeys[role].includes(state.sortBy[role].key)) state.sortBy[role] = { key: null, order: null };
       if (state.shownSort[role] && state.abilityKeys[role].includes(state.shownSort[role].key)) state.shownSort[role] = null;

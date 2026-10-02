@@ -44,7 +44,7 @@ c = load_generation_config()
 words = set(ITEM_LABELS.values()) | {v["label"] for v in c["aging"]["growth_types"].values()} | {v["label"] for v in c["batter_archetypes"].values()}
 words |= {v["label"] for v in c["pitcher_qualities"].values()} | {v["label"] for v in c["pitcher_roles"].values()}
 words -= {"標準", "肩", "捕球"}  # ふつうの文章にも出る短い言葉は除く(項目の解説の文字で確かめる)
-print(json.dumps({"words": sorted(words), "keys": ["ratings", "potential", "growth_type", "archetype", "ability_drift", "hidden"]}, ensure_ascii=False))
+print(json.dumps({"words": sorted(words), "keys": ["ratings", "potential", "growth_type", "archetype", "ability_drift", "hidden", "park", "home_run_multiplier"]}, ensure_ascii=False))
 `));
 
 const browser = await chromium.launch();
@@ -393,6 +393,17 @@ check((await page.locator("#last-day .game-card").count()) === 6, "進行の画�
 await page.click("#last-day .game-card");
 await page.waitForFunction((d) => document.querySelector("#game-title").textContent.startsWith(`${d}日目`), stoppedDay);
 check(true, "直近の日の試合を押すと、試合のページへ移る");
+// 球場のページ(②a。D-138)
+const gameStadium = await page.textContent("#game-stadium");
+check(gameStadium.startsWith("球場:") && gameStadium.includes("の本拠地"), `試合のページに球場名が出る(「${gameStadium}」)`);
+await page.click("#game-stadium .link");
+await page.waitForFunction(() => document.querySelector("#stadium-name").textContent.length > 0 && document.querySelectorAll("#stadium-record td").length > 0);
+const homeTeamId = pyGame(`print(json.dumps(g.last_day_games()["games"][0]["home"]["team_id"]))`);
+const stadiumPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([d["name"], str(d["games"]), str(d["home_runs"]), d["home_runs_per_game"], d["runs_per_game"]], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
+const stadiumOnScreen = [await page.textContent("#stadium-name"), ...(await page.$$eval("#stadium-record td", (tds) => tds.map((td) => td.textContent)))];
+check(JSON.stringify(stadiumOnScreen) === JSON.stringify(stadiumPy), `球場のページの実際の結果(試合・本塁打・本塁打/試合・得点/試合)が、計算本体と同じ(${stadiumPy[0]})`);
+check((await page.textContent("#stadium-answers")).includes("答え合わせモードをオンにすると見られます") && !/\d\.\d{3}/.test(await page.textContent("#stadium-answers")), "オフのとき、球場のページに真の倍率が出ない");
+await page.click("#screen-stadium .back");
 await page.click("#screen-game .back");
 
 // 答え合わせモードがオフの間に届いたメッセージに、隠し情報がない
@@ -422,6 +433,20 @@ check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `オンのとき
 check(screenRows.every((r) => r.slice(2, 10).every((v) => /^(20|25|30|35|40|45|50|55|60|65|70|75|80)[+-]?$/.test(v))), "能力は 20〜80・5刻みで表示");
 const onOptions = await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label));
 check(onOptions.some((g) => g.includes("能力")), "オンのとき、並び順の欄に能力の項目も出る");
+// 答え合わせモードがオンなら、球場のページに真の倍率が出る(段階1以上)
+await page.click("#tabs button[data-tab=standings]");
+await page.click("#standings-body tr:first-child .link");
+await page.waitForFunction(() => document.querySelector("#team-info .link") !== null);
+const firstTeamId = pyGame(`lg = next(l for l in g.standings()["leagues"] if any(r["is_mine"] for r in l["rows"]))\nprint(json.dumps(lg["rows"][0]["team_id"]))`);
+await page.click("#team-info .link");
+await page.waitForFunction(() => document.querySelectorAll("#stadium-answers td").length === 2);
+const parkPy = pyGame(`from pennant import answers\na2 = answers.stadium_answers(g, a["id"], 2)\nprint(json.dumps([a2["home_run"]["text"], a2["babip"]["text"]]))`, JSON.stringify({ id: firstTeamId }));
+const parkOnScreen = await page.$$eval("#stadium-answers td", (tds) => tds.map((td) => td.textContent));
+check(JSON.stringify(parkOnScreen) === JSON.stringify(parkPy), `オンのとき、球場のページに真の倍率が出る(本塁打 ${parkPy[0]}・BABIP ${parkPy[1]}。答え合わせ用の関数と同じ)`);
+await page.click("#screen-stadium .back");
+await page.click("#screen-team .back");
+await page.click("#tabs button[data-tab=stats]");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
 await page.selectOption("#stats-sort", "stamina");
 await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("(高い順)") && !document.querySelector("#stats-info").textContent.includes("FIP"));
 check((await headsOnScreen())[1] !== "FIP", "並び順の欄で能力の項目を選ぶと、その項目で並び替わり、固定列は消える");
@@ -433,6 +458,7 @@ await page.waitForFunction(() => document.querySelector("#stats-info").textConte
 const afterOff = await page.evaluate(() => document.documentElement.textContent);
 const left = HIDDEN.words.filter((w) => afterOff.includes(w));
 check(left.length === 0, `オフに戻すと、能力の表示が画面(隠れている画面も含む)から消える${left.length ? `(残っている: ${left.join("、")})` : ""}`);
+check((await page.textContent("#stadium-answers")) === "", "オフに戻すと、球場のページの真の倍率も消える");
 await page.click("#stats-kind button[data-value=basic]");
 await page.click("#stats-role button[data-value=batter]");
 await page.click("#tabs button[data-tab=progress]");

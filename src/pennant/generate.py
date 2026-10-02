@@ -25,6 +25,7 @@ from .abilities import (
 from .config import ConfigError, GenerationConfig, NameParts, load_generation_config, load_name_parts
 from .models import HiddenInfo, League, Player, PlayerState, Team
 from .names import NameGenerator, team_identities
+from .parks import assign_parks
 
 MAX_RESAMPLE = 1000
 
@@ -161,7 +162,9 @@ def generate_league(
             player.team_id = team.id
             team.players.append(player)
         teams.append(team)
-    return League(seed=seed, league_names=list(names.league_names[:n_leagues]), teams=teams)
+    league = League(seed=seed, league_names=list(names.league_names[:n_leagues]), teams=teams)
+    assign_parks(league, config)  # 球場の倍率(別の乱数。既存の生成の乱数は変えない。D-137)
+    return league
 
 
 def generate_draft_class(

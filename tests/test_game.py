@@ -69,10 +69,10 @@ class ScriptedModel:
     def fielding(self, position, pitcher, defense):
         return {"range": 50, "arm": 50, "fielding": 50}
 
-    def probabilities(self, batter, pitcher, defense):
+    def probabilities(self, batter, pitcher, defense, home=False, park=None):
         raise NotImplementedError
 
-    def resolve(self, batter, pitcher, defense, base_out, rng, home=False):
+    def resolve(self, batter, pitcher, defense, base_out, rng, home=False, park=None):
         self.batters.append(batter)
         r = next(self.results)
         bb, fielder = SCRIPT_DEFAULTS[r]

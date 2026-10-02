@@ -58,7 +58,8 @@ src/pennant/
   newgame.py          新規リーグの作成・球団名の入力の検証・画面用の選手情報
   savegame.py         セーブデータ(.sav)の書き出しと、検証つきの読み込み・旧版の変換
   api.py              画面から呼ぶ操作の関数(公開用の情報だけを返す。D-107、D-108)
-  answers.py          答え合わせ用の関数(能力の表・1人分。公開用の関数とは別。D-108、D-114)
+  answers.py          答え合わせ用の関数(能力の表・1人分・球場の真の倍率。公開用の関数とは別。D-108、D-114、D-138)
+  parks.py            球場の倍率の割り当て(別の乱数。整数の千分率。D-136、D-137)
   data/generation.json        生成に使う数値(仮置き値。9 章)
   data/names.json             名前の部品
   data/plate_appearance.json  打席の計算に使う数値(仮置き値。9 章)
@@ -75,6 +76,7 @@ scripts/inspect_save.py              保存・読み込みの時間と大きさ�
 scripts/make_sample_save.py          再現性の確認用の見本のセーブデータ(tests/data/sample-save.sav)を作る
 scripts/build_web.py                 ブラウザの画面(web/)と計算本体を _site/ にまとめる(D-082)
 scripts/check_browser.mjs            ブラウザでの通しの確認(開発者が手元で実行。5.1)
+scripts/inspect_parks.py             球場の倍率と、複数シーズンでの本拠地・アウェイの結果を比べる確認用スクリプト(第2弾②a)
 web/                                 遊ぶための画面(index.html・app.js・worker.js・bridge.py。D-107。web/README.md)
 web/dev/                             開発者向けの測定ページ(技術検証。index.html・app.js・worker.js・bench.py。D-111)
 .github/workflows/pages.yml          _site/ を GitHub Pages に公開する自動処理

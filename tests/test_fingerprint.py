@@ -26,7 +26,7 @@ def fp():
 
 
 def test_fingerprints_match_expected(fp):
-    for key in ("fingerprint_version", "league", "game", "days", "season", "records", "save", "baselines", "metrics2"):
+    for key in ("fingerprint_version", "league", "game", "days", "season", "records", "save", "baselines", "metrics2", "parks"):
         assert fp[key] == EXPECTED[key], f"{key} の指紋が、固定した正しい値と違います(Python {sys.version.split()[0]})"
     assert fp["counts"] == EXPECTED["counts"]
 
@@ -37,8 +37,17 @@ def test_same_in_a_fresh_process_with_other_hash_seed():
     env = dict(os.environ, PYTHONHASHSEED="12345", PYTHONPATH=str(ROOT / "src"))
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout
     other = json.loads(out)
-    for key in ("league", "game", "days", "season", "records", "save", "baselines", "metrics2"):
+    for key in ("league", "game", "days", "season", "records", "save", "baselines", "metrics2", "parks"):
         assert other[key] == EXPECTED[key]
+
+
+def test_without_parks_matches_the_values_before_parks():
+    """球場の倍率をすべて 1.0 にすると、倍率を入れる前の指紋 (a)〜(h) と完全に一致する(回帰の確認。D-137)。"""
+    before = json.loads((ROOT / "tests" / "data" / "fingerprints-parks-off.json").read_text(encoding="utf-8"))
+    off = fpmod.fingerprints(parks=False)
+    for key in ("league", "game", "days", "season", "records", "save", "baselines", "metrics2"):
+        assert off[key] == before[key], key
+    assert off["league"] == EXPECTED["league"]  # (a) は倍率があっても変わらない
 
 
 def test_fingerprint_changes_when_seed_changes(monkeypatch, fp):

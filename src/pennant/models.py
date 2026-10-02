@@ -19,6 +19,25 @@ class HiddenInfo:
     ability_drift: dict[str, float]  # 能力の揺れ(翌年以降に残る。D-033)
 
 
+@dataclass(frozen=True)
+class ParkFactors:
+    """球場の真の倍率(整数の千分率。1000 = 1.0。隠し情報。D-136〜D-138)。"""
+
+    home_run: int = 1000  # 本塁打の倍率
+    babip: int = 1000  # インプレーの安打(BABIP)の倍率
+
+    @property
+    def home_run_multiplier(self) -> float:
+        return self.home_run / 1000
+
+    @property
+    def babip_multiplier(self) -> float:
+        return self.babip / 1000
+
+
+NEUTRAL_PARK = ParkFactors()
+
+
 @dataclass
 class PlayerState:
     """試合や年ごとに変わる「状態」(D-024)。"""
@@ -60,6 +79,7 @@ class Team:
     stadium: str
     players: list[Player] = field(default_factory=list)
     display_name: str | None = None  # 利用者が入力した球団名(セーブデータにだけ入る。D-104)。なければ架空の初期名
+    park: ParkFactors = field(default_factory=ParkFactors)  # 本拠地の球場の真の倍率(隠し情報。D-138)
 
     @property
     def name(self) -> str:
