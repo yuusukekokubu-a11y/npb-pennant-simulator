@@ -230,16 +230,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 5)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 4: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 6)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 5: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 6)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 4: lambda b: b})
-    _assert_error(saved[1], "バージョン 5 から 6 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 7)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 5: lambda b: b})
+    _assert_error(saved[1], "バージョン 6 から 7 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----

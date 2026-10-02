@@ -1,5 +1,5 @@
 {
-  "fingerprint_version": 6,
+  "fingerprint_version": 7,
   "league": "9c1508e6cbbe9854ab1f7806aa886c231d12c0b04b08e262c5f0bb55798b29e0",
   "game": "da87737c0ffdae88ca1728f3c5e4e4e1d0e98b0459c11908754fc0d83af86631",
   "days": "51a5f8f66fa20fa9b927eb2e7691a21c3cb64eae19b6cc12aa60d1974d97f47d",
@@ -9,6 +9,7 @@
   "baselines": "46fcf5886c5d63c21d4b19f2e64d1b2c14d376b4b5935bbfd7f25eaa7ab0da66",
   "metrics2": "f43d37b76867728a86c054759d8f987473702c5a3a3b9a62eaef20056af12741",
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
+  "park_estimates": "85ab3ea0ec931f27b2f7c8c4f591aa2ea8eb21a7fb73b26925d9e39835411512",
   "counts": {
     "players": 840,
     "game_plate_appearances": 81,
@@ -61,6 +62,10 @@
         914,
         1130
       ]
+    },
+    "park_estimates": {
+      "seasons": 3,
+      "teams": 12
     }
   }
 }
