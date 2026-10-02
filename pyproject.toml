@@ -18,5 +18,9 @@ dev = ["pytest>=8"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# 生成設定・名前の部品(JSON)を一緒に入れる
+pennant = ["data/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
