@@ -25,7 +25,7 @@ from .models import League
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 4  # 2:(d)1シーズン と打ち切りの印(実装④)。3:(e)集計結果 と担当野手の選手 ID(実装⑤)。4:(f)保存と読み込み(実装⑥)
+FINGERPRINT_VERSION = 5  # 2:(d)1シーズン と打ち切りの印(実装④)。3:(e)集計結果 と担当野手の選手 ID(実装⑤)。4:(f)保存と読み込み(実装⑥)。5:(g)基準値・(h)第2弾の指標(第2弾①)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -196,6 +196,37 @@ def save_fingerprint(reference: dict | None = None) -> tuple[str, list[bool]]:
     return _digest(records), [r == reference for r in records]
 
 
+def baseline_fingerprint(season: SeasonResult) -> tuple[str, str, dict]:
+    """(g)試運転で求めた基準値(分数を文字にして)と、(h)(d)のシーズンの全選手の第2弾の指標(分数)の指標。
+
+    (h)の基準値は、(g)を出発点に、(d)のシーズンの値を混ぜた最終値(画面と同じ。D-126)。
+    """
+    from .api import metrics_config
+    from .baselines import blended_for_results, load_baseline_settings, trial_baselines
+    from .metrics import compute
+
+    settings = load_baseline_settings()
+    prior = trial_baselines(_new_league(), settings)
+    g = _digest(prior.to_dict())
+    results = [p.result for p in season.games]
+    final, weight = blended_for_results(prior, results, settings)
+    rec = season_records(results)
+    config = metrics_config()
+    rows = []
+    for role, group, keys in (("batter", rec.batters, ("woba", "wrc_plus", "ops_plus")), ("pitcher", rec.pitchers, ("fip",))):
+        for pid in sorted(group):
+            values = compute(config, role, group[pid], final.values)
+            rows.append([pid] + [None if values[k] is None else str(values[k]) for k in keys])
+    h = _digest(rows)
+    info = {
+        "trial_plate_appearances": prior.plate_appearances,
+        "batters": len(rec.batters),
+        "pitchers": len(rec.pitchers),
+        "weight": str(weight),
+    }
+    return g, h, info
+
+
 def fingerprints(quick: bool = False) -> dict:
     """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み の指紋。"""
     config = load_game_config()
@@ -221,6 +252,7 @@ def fingerprints(quick: bool = False) -> dict:
     f, same_as_season = save_fingerprint(season_record(season))
     rec = season_records([p.result for p in season.games])
     e = _digest(records_record(rec))
+    g, h, binfo = baseline_fingerprint(season)
     totals = {"R": 0, "RBI": 0, "W": 0, "SV": 0, "HLD": 0, "ER": 0}
     for key in totals:
         group = rec.batters if key in ("R", "RBI") else rec.pitchers
@@ -234,6 +266,8 @@ def fingerprints(quick: bool = False) -> dict:
         "season": d,
         "records": e,
         "save": f,
+        "baselines": g,
+        "metrics2": h,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -248,6 +282,7 @@ def fingerprints(quick: bool = False) -> dict:
             "records_totals": totals,
             "save_days": list(SAVE_DAYS),
             "save_same_as_season": same_as_season,
+            "baselines": binfo,
         },
     }
 
@@ -266,5 +301,8 @@ def format_fingerprints(fp: dict) -> str:
             f"勝利 {c['records_totals']['W']}、セーブ {c['records_totals']['SV']}、ホールド {c['records_totals']['HLD']}): {fp['records']}",
             f"- (f) (d)を {'・'.join(str(d) for d in c['save_days'])} 日目で保存・読み込みして最後まで進めた結果"
             f"({'(d)と一致' if all(c['save_same_as_season']) else '(d)と不一致'}): {fp['save']}",
+            f"- (g) 試運転で求めた基準値(RE24 などに使った打席 {c['baselines']['trial_plate_appearances']}): {fp['baselines']}",
+            f"- (h) (d)の全選手の wOBA・wRC+・OPS+・FIP(打者 {c['baselines']['batters']}人・投手 {c['baselines']['pitchers']}人。"
+            f"今シーズンの比重 {c['baselines']['weight']}): {fp['metrics2']}",
         ]
     )

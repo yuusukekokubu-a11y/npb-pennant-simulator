@@ -221,9 +221,9 @@ def test_bridge_flow(bridge):
     pv = _ok(bridge.preview(3))
     assert len(pv["order"]) == 12
     assert _ok(bridge.check(3, json.dumps(["  "] + [""] * 11)))[0]
-    bad = json.loads(bridge.new_game(3, 4, json.dumps(["  "] + [""] * 11), 0))
+    bad = json.loads(bridge.new_game(3, 4, json.dumps(["  "] + [""] * 11), 0, "default"))
     assert bad["ok"] is False and "空白" in bad["problems"][0] and bridge._game is None
-    view = _ok(bridge.new_game(3, 4, json.dumps(["テスト球団"] + [""] * 11), 2))
+    view = _ok(bridge.new_game(3, 4, json.dumps(["テスト球団"] + [""] * 11), 2, "default"))
     assert view["status"]["day"] == 0 and view["status"]["dirty"] is True
     view = _ok(bridge.advance(3))
     assert view["status"]["day"] == 3 and len(view["recent"]) == 3
@@ -250,7 +250,7 @@ def test_bridge_queries_and_answers_are_separate(bridge):
     """見る画面(query)は公開用の関数だけ。答え合わせ(answer)は別の入口(D-114)。"""
     import json
 
-    _ok(bridge.new_game(3, 4, json.dumps([""] * 12), 0))
+    _ok(bridge.new_game(3, 4, json.dumps([""] * 12), 0, "default"))
     _ok(bridge.advance(3))
     words = hidden_words()
     for name, args in (("stats", {}), ("stats", {"role": "pitcher", "kind": "saber", "qualified": False}), ("games_on", {"day": 2}), ("game", {"game_no": 0}), ("team", {"team_id": "T01"}), ("teams", {})):

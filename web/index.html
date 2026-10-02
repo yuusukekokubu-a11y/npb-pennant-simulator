@@ -121,6 +121,10 @@
   .more { width: 100%; margin: 8px 0; }
   .page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
   .page-head h1 { flex: 1 1 auto; margin: 0; font-size: 1.2rem; }
+  .guide-item { border-bottom: 1px solid var(--line); padding: 10px 0; }
+  .guide-item h3 { font-size: 1.05rem; margin: 0 0 4px; }
+  .guide-item .formula { font-size: 0.88rem; background: var(--box); border-radius: 6px; padding: 6px 8px; margin: 4px 0; }
+  .guide-item ul { margin: 4px 0; padding-left: 1.2em; font-size: 0.88rem; color: var(--muted); }
   .back { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 12px; }
   .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
   .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
@@ -202,7 +206,16 @@
     <label class="small" for="season-seed">シーズンのシード(日程と試合の結果が決まります)</label>
     <input id="season-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
     <p class="error" id="season-seed-error"></p>
+    <p class="small"><strong>指標の基準値の求め方</strong>:wOBA・FIP などの指標は、リーグ全体の結果から求める「基準値」(重み・リーグ平均)を使います。1年目の基準値は、始める前に、画面に出ない練習のシーズン(試運転)を1回回して求めます。</p>
+    <label class="radio"><input type="radio" name="baseline-mode" value="trial" checked><span><strong>試運転で求める</strong>(おすすめ)<br><span class="muted small">このリーグに合った値になります。スマホで数秒かかります。</span></span></label>
+    <label class="radio"><input type="radio" name="baseline-mode" value="default"><span><strong>既定値を使う</strong>(速い)<br><span class="muted small">あらかじめ用意した、一般的な値を使います。シーズンが進むと、今シーズンの値に近づいていきます。</span></span></label>
   </details>
+
+  <div class="card" id="trial-box" hidden>
+    <p><strong>リーグの基準値を求めています…</strong></p>
+    <progress id="trial-progress" max="125" value="0" aria-label="試運転の進み具合"></progress>
+    <p class="muted small" id="trial-text" role="status" aria-live="polite"></p>
+  </div>
 
   <p class="message ng" id="new-message" role="alert"></p>
   <div class="row">
@@ -288,6 +301,7 @@
     <label class="check"><input type="checkbox" id="stats-qualified" checked>規定到達者だけ</label>
   </div>
   <p class="muted small" id="stats-kind-note"></p>
+  <p class="muted small" id="stats-baseline" hidden></p>
   <div class="info" id="stats-info" role="status" aria-live="polite"></div>
   <p class="loading" id="stats-loading" hidden>集計しています…</p>
   <div id="stats-table"></div>
@@ -316,6 +330,7 @@
     <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="ability">能力</button>
   </div>
   <div id="player-season"></div>
+  <p class="muted small" id="player-baseline" hidden></p>
   <h2>試合ごとの成績(新しい順)</h2>
   <div id="player-games"></div>
 </main>
@@ -349,6 +364,7 @@
 <!-- メニュー(設定) -->
 <main class="screen" id="screen-settings" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1>メニュー</h1></div>
+  <button class="secondary" id="open-guide" style="width:100%">指標の解説を見る</button>
   <h2>答え合わせモード</h2>
   <p>選手の本当の実力(能力)は、ふだんは隠れています。成績から実力を推理するのが、このゲームの楽しみの一つです。答え合わせモードをオンにすると、「成績」と選手のページの「能力」で見られるようになります。</p>
   <div id="answer-options">
@@ -357,6 +373,13 @@
     <label class="radio"><input type="radio" name="answer-level" value="2"><span><strong>2段階目</strong>:今の能力 + 潜在能力・成長タイプ・生成時の型<br><span class="muted small">伸びきったときの能力や、伸び方の違いまで見せます。</span></span></label>
   </div>
   <p class="muted small">この設定は、どこにも保存しません(セーブデータにも入りません)。ページを開き直すと、オフに戻ります。</p>
+</main>
+
+<!-- 指標の解説 -->
+<main class="screen" id="screen-guide" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>指標の解説</h1></div>
+  <p class="small">成績の画面に出るすべての指標を、区分(基本・セイバー)別に、式と解説つきで並べています(指標の定義データから作っています)。</p>
+  <div id="guide-body"></div>
 </main>
 
 <!-- 下のタブ(ゲーム中だけ表示。タブは app.js の TABS で増やせる) -->

@@ -16,7 +16,7 @@ const TABS = [
   { id: "games", label: "試合" },
 ];
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings"];
+const PAGES = ["player", "team", "game", "settings", "guide"];
 const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
 
 const $ = (id) => document.getElementById(id);
@@ -62,6 +62,10 @@ function createWorker() {
       }
       if (msg.progress) {
         bootProgress(msg.progress);
+        return;
+      }
+      if (msg.trial) {
+        trialProgress(msg.trial);
         return;
       }
       const p = pending.get(msg.id);
@@ -203,6 +207,7 @@ function renderCurrent() {
     team: () => renderTeam(args, token),
     game: () => renderGame(args, token),
     settings: () => renderSettings(),
+    guide: () => renderGuide(token),
   }[name];
   Promise.resolve(job && job()).catch((err) => showError(name, err));
 }
@@ -413,7 +418,10 @@ async function renderStats(token) {
     ability: "能力:選手の本当の実力の数値です(答え合わせモードのときだけ)。",
   }[s.kind];
   $("stats-kind-note").textContent = note;
-  if (s.kind === "ability") return renderAbilityTable(token);
+  if (s.kind === "ability") {
+    $("stats-baseline").hidden = true;
+    return renderAbilityTable(token);
+  }
   const args = { ...statsArgs(), kind: s.kind, sort: s.sort, order: s.order };
   const data = await withLoading("stats-loading", query("stats", args));
   if (token !== state.token) return;
@@ -438,6 +446,8 @@ async function renderStats(token) {
         })
       : el("p", { className: "muted" }, s.qualified ? "条件に合う選手がいません(規定到達者がまだいないときは、「規定到達者だけ」を外してください)。" : "条件に合う選手がいません。"),
   );
+  $("stats-baseline").hidden = !data.baseline_note;
+  $("stats-baseline").textContent = data.baseline_note || "";
   $("stats-rule").textContent = `${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} 表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。`;
   terms("stats-terms-list", data.columns);
 }
@@ -536,6 +546,7 @@ async function renderPlayer(args, token) {
   );
   setPressed("player-kind", state.playerKind);
   const box = $("player-season");
+  $("player-baseline").hidden = true;
   if (state.playerKind === "ability") {
     if (state.answerLevel === 0) {
       box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると見られます(上の「メニュー」から)。"));
@@ -552,6 +563,8 @@ async function renderPlayer(args, token) {
     box.replaceChildren(el("p", { className: "muted" }, "まだ試合に出ていません。"));
   } else {
     const t = data.season.tables[state.playerKind];
+    $("player-baseline").hidden = !(state.playerKind === "saber" && data.season.baseline_note);
+    $("player-baseline").textContent = data.season.baseline_note || "";
     const rows = t.columns.map((c) => ({ label: c.label, description: c.description, values: [t.values[c.key]] }));
     box.replaceChildren(
       kvTable(rows),
@@ -679,6 +692,31 @@ async function renderGame(args, token) {
         ),
       ),
     ),
+  );
+}
+
+// ---- 指標の解説(指標の定義データから) ----
+
+async function renderGuide(token) {
+  const d = await query("metrics_guide");
+  if (token !== state.token) return;
+  $("guide-body").replaceChildren(
+    ...d.groups.flatMap((g) => [
+      el("h2", {}, g.label),
+      ...g.metrics.map((m) =>
+        el(
+          "div",
+          { className: "guide-item", dataset: { key: m.key } },
+          el("h3", {}, m.name),
+          ...m.formulas.map((f) => el("div", { className: "formula" }, `式(${f.role}):${f.text}`)),
+          el("p", { className: "description" }, m.description),
+          el("ul", {}, ...m.better.map((b) => el("li", {}, b)), ...m.notes.map((n) => el("li", { className: "note" }, `注意:${n}`))),
+        ),
+      ),
+    ]),
+    el("h2", {}, "基準値の名前"),
+    el("p", { className: "small" }, "セイバーの一部の指標は、リーグ全体の結果から求める「基準値」を式に使います。基準値は、シーズン序盤は前のシーズン(1年目は試運転)の値を混ぜて使います。"),
+    el("ul", { className: "small" }, ...d.baseline_names.map((b) => el("li", {}, b.label))),
   );
 }
 
@@ -848,7 +886,13 @@ async function startNewGame() {
   try {
     const seed = state.newGame.seed;
     const seasonSeed = ss.value === null ? randomSeed() : ss.value;
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine });
+    const baselines = document.querySelector("input[name=baseline-mode]:checked").value;
+    $("trial-box").hidden = baselines !== "trial";
+    $("trial-progress").value = 0;
+    $("trial-text").textContent = "試運転のシーズンを始めています…";
+    const t0 = performance.now();
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines }).finally(() => ($("trial-box").hidden = true));
+    state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");
       return;
@@ -860,6 +904,12 @@ async function startNewGame() {
   } finally {
     $("new-start").disabled = false;
   }
+}
+
+function trialProgress({ day, total }) {
+  $("trial-progress").max = total;
+  $("trial-progress").value = day;
+  $("trial-text").textContent = `試運転のシーズン:${day} / ${total} 日(この結果は、画面に出さず保存もしません)`;
 }
 
 // ---- 進める ----
@@ -1011,6 +1061,7 @@ $("open-file-start").addEventListener("change", (e) => openFile(e, "start-messag
 $("open-file-top").addEventListener("change", (e) => openFile(e, "progress-message"));
 $("open-file-start").disabled = true;
 $("open-file-top").disabled = true;
+$("open-guide").addEventListener("click", () => openPage("guide"));
 $("menu").addEventListener("click", () => {
   if (current().name !== "settings") openPage("settings");
 });

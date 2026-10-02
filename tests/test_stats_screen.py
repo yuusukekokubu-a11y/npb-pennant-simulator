@@ -27,7 +27,7 @@ def _keys(value) -> set[str]:
 
 @pytest.fixture(scope="module")
 def game():
-    g = api.Game.new(1, [None] * 12, 2, season_seed=13)
+    g = api.Game.new(1, [None] * 12, 2, season_seed=13, baselines="default")
     g.advance(20)
     return g
 
@@ -43,9 +43,10 @@ def test_stats_default_tables(game):
     assert [c["label"] for c in p["columns"]] == ["登板", "先発", "勝利", "敗戦", "セーブ", "ホールド", "投球回", "奪三振", "防御率"]
     assert (p["sort"]["key"], p["order"]) == ("era", "asc")
     bs = game.stats("batter", "saber")
-    assert [c["key"] for c in bs["columns"]] == ["PA", "ops", "iso", "babip", "k_pct", "bb_pct"] and bs["sort"]["key"] == "ops" and bs["order"] == "desc"
+    assert [c["key"] for c in bs["columns"]] == ["PA", "woba", "wrc_plus", "ops_plus", "ops", "iso", "babip", "k_pct", "bb_pct"]
+    assert bs["sort"]["key"] == "wrc_plus" and bs["order"] == "desc"  # 第2弾①で wRC+ の高い順に変えた
     ps = game.stats("pitcher", "saber")
-    assert [c["key"] for c in ps["columns"]] == ["OUTS", "k_pct", "bb_pct"] and ps["sort"]["key"] == "era" and ps["order"] == "asc"
+    assert [c["key"] for c in ps["columns"]] == ["OUTS", "fip", "k_pct", "bb_pct"] and ps["sort"]["key"] == "era" and ps["order"] == "asc"
 
 
 def test_stats_sort_matches_records(game):
@@ -109,7 +110,7 @@ def test_column_descriptions_come_from_metrics_data(game):
 
 def test_cache_is_reused_until_day_advances(game):
     """集計は、日が進むまで使い回す。進めたら、新しい試合の分だけ足す。"""
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13)
+    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
     g.advance(2)
     cache = g.records
     first = cache.per_game[0]
@@ -168,7 +169,7 @@ def test_game_page_matches_narrate(game):
 
 def test_narrate_text_is_unchanged():
     """文章ログの文字は、②の前と同じ(構造のデータから作るように直しても、内容は変えない)。"""
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13)
+    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
     g.advance(3)
     s = g.state.season
     names = {t.id: t.name for t in s.league.teams}

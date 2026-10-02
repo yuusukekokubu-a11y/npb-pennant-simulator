@@ -1,0 +1,25 @@
+{
+  "format_version": 1,
+  "blend_constant_pa": 20000,
+  "fip_coefficients": "standard",
+  "fip_standard": {
+    "hr": 13,
+    "bb": 3,
+    "so": 2
+  },
+  "defaults": {
+    "w_bb": "0.757",
+    "w_hbp": "0.730",
+    "w_1b": "0.840",
+    "w_2b": "1.310",
+    "w_3b": "1.642",
+    "w_hr": "2.182",
+    "woba_scale": "1.227",
+    "lg_obp": "0.336",
+    "lg_slg": "0.422",
+    "lg_woba": "0.336",
+    "lg_r_pa": "0.114",
+    "lg_era": "4.29",
+    "fip_constant": "3.07"
+  }
+}

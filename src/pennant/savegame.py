@@ -26,6 +26,7 @@ from datetime import date, datetime
 from typing import Any, Callable
 
 from .abilities import BATTER, PITCHER, items_for
+from .baselines import STATES, VALUE_NAMES, Baselines, BaselineSettings, load_baseline_settings, validate_baseline_settings
 from .baserunning import RunnerMove
 from .config import (
     ConfigError,
@@ -47,7 +48,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 2  # 2:自球団(user.my_team_id)を足した(最小のブラウザ画面①)
+SAVE_FORMAT_VERSION = 3  # 2:自球団(user.my_team_id)を足した(最小のブラウザ画面①)。3:指標の基準値を足した(第2弾①)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -65,7 +66,13 @@ def _v1_to_v2(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2}
+def _v2_to_v3(bundle: dict) -> dict:
+    """版2には指標の基準値がない。「設定ファイルの既定値を使う」として足す(D-122)。"""
+    bundle["state"].setdefault("baselines", {"source": "default"})
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3}
 
 
 class SaveDataError(ValueError):
@@ -87,6 +94,14 @@ class GameState:
     name_parts: NameParts
     name: str = ""
     my_team_id: str | None = None  # 自球団(画面で選ぶ。指紋の元には入れない)
+    baselines: Baselines | None = None  # シーズンの出発点の基準値(初年度は試運転。D-121)。None は既定値
+    baseline_settings: BaselineSettings | None = None  # 基準値の設定(None は設定ファイル)
+
+    def __post_init__(self) -> None:
+        if self.baseline_settings is None:
+            self.baseline_settings = load_baseline_settings()
+        if self.baselines is None:
+            self.baselines = self.baseline_settings.default_baselines()
 
     @property
     def league(self) -> League:
@@ -140,6 +155,7 @@ def build_state(state: GameState) -> dict:
             "plate_appearance": copy.deepcopy(s.model.config.data),
             "game": copy.deepcopy(s.game_config.data),
             "season": copy.deepcopy(s.season_config.data),
+            "baselines": copy.deepcopy(state.baseline_settings.data),
         },
         "league": {
             "seed": s.league.seed,
@@ -147,6 +163,7 @@ def build_state(state: GameState) -> dict:
             "teams": [_plain(t) for t in s.league.teams],
         },
         "user": {"my_team_id": state.my_team_id},
+        "baselines": state.baselines.to_dict(),
         "season": {
             "day": s.day,
             "rotation": dict(s.rotation),
@@ -443,6 +460,13 @@ def load_game(data: bytes) -> GameState:
         p.add("state.json.user", "まとまり({ })が必要です")
     elif my_team_id is not None and my_team_id not in team_ids:
         p.add("state.json.user.my_team_id", f"自球団 {my_team_id!r} が、球団の一覧にありません")
+    baseline_settings = None
+    if "baselines" in configs:
+        try:
+            baseline_settings = validate_baseline_settings(configs["baselines"], "セーブデータの設定値 baselines")
+        except ConfigError as exc:
+            p.items.extend(f"state.json.configs.baselines: {x}" for x in exc.problems)
+    baselines = _check_baselines(state.get("baselines"), baseline_settings, p)
     season_d = _need(state, "season", dict, "state.json", p) or {}
     day = _need(season_d, "day", int, "state.json.season", p)
     rotation = _need(season_d, "rotation", dict, "state.json.season", p)
@@ -523,4 +547,33 @@ def load_game(data: bytes) -> GameState:
         season._record(pg.result)
     season.played = played
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id)
+    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings)
+
+
+def _check_baselines(d, settings: BaselineSettings | None, p) -> Baselines | None:
+    """基準値の検証。source が default だけのものは、設定ファイルの既定値を使う(None を返す)。"""
+    where = "state.json.baselines"
+    if d is None:
+        p.add(where, "値がありません(必須項目です)")
+        return None
+    if not isinstance(d, dict):
+        p.add(where, "まとまり({ })が必要です")
+        return None
+    if set(d) == {"source"}:
+        return None
+    values = d.get("values")
+    if not isinstance(values, dict):
+        p.add(f"{where}.values", "まとまり({ })が必要です")
+        return None
+    for k in VALUE_NAMES:
+        if k not in values:
+            p.add(f"{where}.values.{k}", "値がありません(必須項目です)")
+    re24 = d.get("re24")
+    if re24 is not None and (not isinstance(re24, list) or len(re24) != STATES):
+        p.add(f"{where}.re24", f"{STATES}個の値のリストが必要です")
+    try:
+        b = Baselines.from_dict(d)
+    except (TypeError, ValueError, ZeroDivisionError, KeyError, AttributeError) as exc:
+        p.add(where, f"基準値の形が違います({exc})")
+        return None
+    return b

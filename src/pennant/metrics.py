@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import ast
 import copy
+import functools
+import math
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -17,7 +19,7 @@ from typing import Any, Mapping
 from .config import SUPPORTED_FORMAT_VERSION, ConfigError, _Checker, _read_json
 
 ROLES = ("batter", "pitcher")
-FORMATS = ("rate3", "percent1", "decimal2")
+FORMATS = ("rate3", "percent1", "decimal2", "integer")
 BETTER = ("high", "low")
 TABLE_KINDS = ("basic", "saber", "game")  # 表の種類:基本・セイバー・試合ごと(D-119)
 CATEGORIES = ("basic", "saber")  # 区分:基本/セイバー(D-109。成績の画面の切り替えで使う)
@@ -87,6 +89,11 @@ def validate_metrics_config(data: Any, source: str = "(辞書)") -> MetricsConfi
     for role in ROLES:
         sec = c.section(c.get(counts_sec, role, "counts"), f"counts.{role}")
         counts[role] = set(sec or {})
+    baseline_sec = c.section(c.get(root, "baseline_names", ""), "baseline_names") or {}
+    baseline_names = set(baseline_sec)  # 指標の式で使える基準値の名前(第2弾。D-121〜D-125)
+    for name, label in baseline_sec.items():
+        if not isinstance(label, str) or not label.strip():
+            c.add(f"baseline_names.{name}", "表示名を書いてください(空にはできません)")
     metrics = c.section(c.get(root, "metrics", ""), "metrics")
     seen: set[str] = set()
     for mid, m in (metrics or {}).items():
@@ -129,8 +136,8 @@ def validate_metrics_config(data: Any, source: str = "(辞書)") -> MetricsConfi
                 if name in counts[role]:
                     if inputs is not None and name not in inputs:
                         c.add(f"{path}.inputs", f"計算式で使う {name} が、元になる数(inputs)に書かれていません")
-                elif name not in seen:
-                    c.add(fpath, f"{name} は、{role} の元の数でも、前に定義した指標でもありません")
+                elif name not in seen and name not in baseline_names:
+                    c.add(fpath, f"{name} は、{role} の元の数でも、前に定義した指標でも、基準値の名前でもありません")
             if better.get(role) not in BETTER:
                 c.add(f"{path}.better.{role}", f"high(高いほどよい)か low(低いほどよい)を書いてください")
         for role in better:
@@ -212,15 +219,26 @@ def _eval(node: ast.AST, env: Mapping[str, Fraction | None]) -> Fraction | None:
     return _OPS[type(node.op)](a, b)
 
 
-def compute(config: MetricsConfig, role: str, counts: Mapping[str, int]) -> dict[str, Fraction | None]:
-    """元の数から、その役割の指標をすべて計算する(値なしは None)。"""
-    env: dict[str, Fraction | None] = {name: Fraction(counts.get(name, 0)) for name in config["counts"][role]}
+@functools.lru_cache(maxsize=None)
+def _parsed(expr: str) -> ast.Expression:
+    return ast.parse(expr, mode="eval")
+
+
+def compute(
+    config: MetricsConfig, role: str, counts: Mapping[str, int], baselines: Mapping[str, Fraction] | None = None
+) -> dict[str, Fraction | None]:
+    """元の数から、その役割の指標をすべて計算する(値なしは None)。
+
+    baselines は基準値(名前 → 分数。第2弾の指標で使う)。渡さないと、基準値を使う指標は値なし。
+    """
+    env: dict[str, Fraction | None] = {name: (baselines or {}).get(name) for name in config.data.get("baseline_names", {})}
+    env.update({name: Fraction(counts.get(name, 0)) for name in config["counts"][role]})
     out: dict[str, Fraction | None] = {}
     for mid, m in config.metrics.items():
         expr = m["formulas"].get(role)
         if expr is None:
             continue
-        value = _eval(ast.parse(expr, mode="eval"), env)
+        value = _eval(_parsed(expr), env)
         out[mid] = value
         env[mid] = value
     return out
@@ -236,7 +254,43 @@ def format_value(config: MetricsConfig, metric_id: str, value: Fraction | None) 
         return text[1:] if text.startswith("0.") else text.replace("-0.", "-.")
     if fmt == "percent1":
         return f"{100 * float(value):.1f}%"
+    if fmt == "integer":
+        return str(math.floor(value + Fraction(1, 2)))  # 四捨五入(分数のまま)
     return f"{float(value):.2f}"
+
+
+_PREC = {ast.Add: 1, ast.Sub: 1, ast.Mult: 2, ast.Div: 2}
+_SYMBOL = {ast.Add: " + ", ast.Sub: " − ", ast.Mult: " × ", ast.Div: " ÷ "}
+
+
+def formula_text(config: MetricsConfig, role: str, expr: str) -> str:
+    """計算式を、日本語の名前と × ÷ で書いた文字にする(指標の解説のページ用)。"""
+    counts = config["counts"][role]
+    baselines = config.data.get("baseline_names", {})
+
+    def label(name: str) -> str:
+        if name in counts:  # 「投球回(アウトの数)」のような名前は、かっこの中(式で使っている数)を出す
+            text = counts[name]
+            return text.split("(")[1].rstrip(")") if "(" in text else text
+        if name in config.metrics:
+            return config.metrics[name]["name"]
+        return baselines.get(name, name)
+
+    def show(node, parent_prec=0, right=False) -> str:
+        if isinstance(node, ast.Expression):
+            return show(node.body)
+        if isinstance(node, ast.Constant):
+            return str(node.value)
+        if isinstance(node, ast.Name):
+            return label(node.id)
+        if isinstance(node, ast.UnaryOp):
+            return "−" + show(node.operand, 3)
+        prec = _PREC[type(node.op)]
+        text = show(node.left, prec) + _SYMBOL[type(node.op)] + show(node.right, prec, True)
+        need = prec < parent_prec or (right and prec == parent_prec)
+        return f"({text})" if need else text
+
+    return show(_parsed(expr))
 
 
 def innings_text(outs: int) -> str:
