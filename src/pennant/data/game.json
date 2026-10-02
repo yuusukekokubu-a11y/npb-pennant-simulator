@@ -1,0 +1,102 @@
+{
+  "format_version": 1,
+  "rules": {
+    "innings": 9,
+    "max_innings": 12,
+    "allow_tie": true,
+    "max_innings_without_tie": 30
+  },
+  "active_roster": {
+    "starters": 6,
+    "relievers": 8,
+    "catchers": 2,
+    "fielders": 15
+  },
+  "lineup": {
+    "on_base": {"contact": 0.5, "eye": 0.5},
+    "slugging": {"power": 0.7, "batted_ball_quality": 0.3},
+    "offense": {"contact": 0.25, "eye": 0.25, "power": 0.25, "batted_ball_quality": 0.25}
+  },
+  "rest": {
+    "probability": 0.05,
+    "catcher_probability": 0.15,
+    "near_position_penalty": 5,
+    "far_position_penalty": 10,
+    "near_positions": {
+      "C": [],
+      "1B": ["3B", "LF", "RF"],
+      "2B": ["SS", "3B"],
+      "3B": ["SS", "2B", "1B"],
+      "SS": ["2B", "3B"],
+      "LF": ["RF", "CF"],
+      "CF": ["LF", "RF"],
+      "RF": ["LF", "CF"]
+    }
+  },
+  "pitching": {
+    "starter_bf_base": 24,
+    "starter_bf_per_10_stamina": 3,
+    "starter_bf_fatigue_penalty": 0.5,
+    "starter_bf_min": 9,
+    "starter_run_limit": 6,
+    "fatigue_per_batter": 1.0,
+    "recovery_per_day": 5.0,
+    "recovery_ratio_per_10": 1.2,
+    "max_fatigue_to_start": 4.0,
+    "max_fatigue_to_relieve": 8.0,
+    "closer_count": 1,
+    "setup_count": 2,
+    "mopup_count": 2,
+    "close_game_max_lead": 3,
+    "setup_from_inning": 7,
+    "mopup_deficit": 4
+  },
+  "advancement": {
+    "single_runner_from_2b_scores": {
+      "base": 0.62,
+      "runner": {"speed": 1.30, "baserunning": 1.15},
+      "fielder": {"arm": 0.85}
+    },
+    "single_runner_from_1b_to_3b": {
+      "base": 0.28,
+      "runner": {"speed": 1.30, "baserunning": 1.15},
+      "fielder": {"arm": 0.85}
+    },
+    "double_runner_from_1b_scores": {
+      "base": 0.45,
+      "runner": {"speed": 1.30, "baserunning": 1.15},
+      "fielder": {"arm": 0.85}
+    },
+    "ground_out_runner_from_3b_scores": {
+      "base": 0.50,
+      "runner": {"speed": 1.20, "baserunning": 1.15},
+      "fielder": {"arm": 0.90}
+    },
+    "ground_out_runner_from_2b_to_3b": {
+      "base": 0.55,
+      "runner": {"speed": 1.15, "baserunning": 1.15},
+      "fielder": {"arm": 0.90}
+    },
+    "fly_out_runner_from_3b_scores": {
+      "base": 0.55,
+      "runner": {"speed": 1.20, "baserunning": 1.20},
+      "fielder": {"arm": 0.85}
+    },
+    "fly_out_runner_from_2b_to_3b": {
+      "base": 0.25,
+      "runner": {"speed": 1.20, "baserunning": 1.15},
+      "fielder": {"arm": 0.85}
+    },
+    "error_extra_base": {
+      "base": 0.25,
+      "runner": {"speed": 1.20, "baserunning": 1.10},
+      "fielder": {"arm": 0.90}
+    },
+    "double_play": {
+      "base": 0.42,
+      "batter": {"speed": 0.85},
+      "runner": {"speed": 0.92},
+      "fielder": {"fielding": 1.10, "arm": 1.10}
+    }
+  }
+}

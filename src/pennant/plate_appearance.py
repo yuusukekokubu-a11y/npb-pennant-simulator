@@ -148,6 +148,14 @@ class PlateAppearanceModel(Protocol):
 
     def probabilities(self, batter: Player, pitcher: Player, defense: Defense) -> dict[str, float]: ...
 
+    def rating(self, player: Player, item: str) -> float:
+        """計算に使う能力値(好調・不調を含む)。走者の進塁など、試合の計算でも使う。"""
+        ...
+
+    def fielding(self, position: str, pitcher: Player, defense: Defense) -> dict[str, float]:
+        """担当ポジションの守備の能力(range / arm / fielding)。"""
+        ...
+
     def resolve(
         self, batter: Player, pitcher: Player, defense: Defense, base_out: BaseOutState, rng: random.Random
     ) -> PlateAppearance: ...
@@ -174,20 +182,20 @@ class OddsRatioModel:
 
     # ---- 能力の取り出し ----
 
-    def _rating(self, player: Player, item: str) -> float:
+    def rating(self, player: Player, item: str) -> float:
         """能力値に好調・不調を足したもの(D-033)。"""
         return player.ratings[item] + self.config["form_weight"] * player.state.form
 
-    def _fielding(self, position: str, pitcher: Player, defense: Defense) -> dict[str, float]:
+    def fielding(self, position: str, pitcher: Player, defense: Defense) -> dict[str, float]:
         if position == "P":
             return dict(self.config["pitcher_fielding"])  # 投手は守備の能力を持たないので固定値
         fielder = defense[position]
-        return {item: self._rating(fielder, item) for item in ("range", "arm", "fielding")}
+        return {item: self.rating(fielder, item) for item in ("range", "arm", "fielding")}
 
     def _multiplier(self, player: Player | None, effects: Mapping[str, float], ratings: Mapping[str, float] | None = None) -> float:
         m = 1.0
         for item, ratio in effects.items():
-            value = ratings[item] if ratings is not None else self._rating(player, item)
+            value = ratings[item] if ratings is not None else self.rating(player, item)
             m *= ratio_multiplier(value, ratio)
         return m
 
@@ -269,7 +277,7 @@ class OddsRatioModel:
                 w = s1[IN_PLAY] * pt * pf
                 if w == 0:
                     continue
-                ip = self.in_play(batter, pitcher, t, self._fielding(pos, pitcher, defense))
+                ip = self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense))
                 for h in HIT_TYPES:
                     probs[h] += w * (ip[h] + ip[f"unfieldable_{h}"])
                 probs["error"] += w * ip["error"]
@@ -292,7 +300,7 @@ class OddsRatioModel:
             return PlateAppearance(result=event, **common)
         t = _choose(rng, self.batted_ball(batter, pitcher))
         pos = _choose(rng, self.fielder_shares(t))
-        outcome = _choose(rng, self.in_play(batter, pitcher, t, self._fielding(pos, pitcher, defense)))
+        outcome = _choose(rng, self.in_play(batter, pitcher, t, self.fielding(pos, pitcher, defense)))
         unfieldable = outcome.startswith("unfieldable_")
         result = outcome.removeprefix("unfieldable_")
         if result == "out":

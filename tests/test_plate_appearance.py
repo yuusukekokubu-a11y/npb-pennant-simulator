@@ -214,8 +214,8 @@ def test_better_defense_lowers_hits_and_errors(model):
 
 def test_pitcher_fielding_uses_fixed_values(model):
     """投手が担当の打球は、設定の固定値で計算する(投手の能力は使わない)。"""
-    a = model._fielding("P", avg_pitcher(), average_defense())
-    b = model._fielding("P", avg_pitcher(stuff=90, control=10), average_defense())
+    a = model.fielding("P", avg_pitcher(), average_defense())
+    b = model.fielding("P", avg_pitcher(stuff=90, control=10), average_defense())
     assert a == b == model.config["pitcher_fielding"]
 
 

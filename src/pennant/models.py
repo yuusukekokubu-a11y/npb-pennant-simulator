@@ -24,6 +24,7 @@ class PlayerState:
     """試合や年ごとに変わる「状態」(D-024)。"""
 
     form: float = 0.0  # 好調・不調(その年だけの上下。点数。D-033)
+    fatigue: float = 0.0  # 投手の疲労(投げた打者数から増え、日ごとに回復力で減る。D-060)
 
 
 @dataclass
