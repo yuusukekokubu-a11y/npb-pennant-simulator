@@ -63,14 +63,6 @@ class _PlayerFactory:
         q_corr = cfg["pitcher_qualities"][quality]["corrections"]
         return f"{position}/{quality}", {i: role_corr[i] + q_corr[i] for i in role_corr}
 
-    def _throws(self, role: str, position: str) -> str:
-        hand = self.config["handedness"]
-        if role == PITCHER:
-            return "L" if self.rng.random() < hand["pitcher_throws_left"] else "R"
-        if position in hand["right_throw_only_positions"]:
-            return "R"
-        return "L" if self.rng.random() < hand["fielder_throws_left"] else "R"
-
     def make(self, role: str, position: str, age: int, initial: bool, origin: str | None = None) -> Player:
         cfg = self.config
         rng = self.rng
@@ -104,8 +96,13 @@ class _PlayerFactory:
             for item in items_for(role)
         }
         form = rng.gauss(0, var["form_sd"]) if var["form_sd"] > 0 else 0.0
-        throws = self._throws(role, position)
-        bats = _weighted_key(rng, {k: {"share": v} for k, v in cfg["handedness"]["bats"].items()})
+        # 投手は投げ手だけ、打者は打席の左右だけを持つ(D-046、D-048)
+        hand = cfg["handedness"]
+        throws = bats = None
+        if role == PITCHER:
+            throws = "L" if rng.random() < hand["pitcher_throws_left"] else "R"
+        else:
+            bats = _weighted_key(rng, {k: {"share": v} for k, v in hand["bats"].items()})
         family, given = self.names.person()
 
         self.count += 1

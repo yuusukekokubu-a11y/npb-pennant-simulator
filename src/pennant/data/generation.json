@@ -9,8 +9,8 @@
     "fielders": {"C": 9, "1B": 4, "2B": 5, "3B": 4, "SS": 5, "LF": 3, "CF": 4, "RF": 4}
   },
   "potential": {
-    "batter_base_mean": 46.7,
-    "pitcher_base_mean": 47.0,
+    "batter_base_mean": 46.3,
+    "pitcher_base_mean": 46.6,
     "style_mean": 50.0,
     "noise_sd": 10.0,
     "balance_tolerance": 0.5
@@ -122,8 +122,8 @@
     "form_sd": 3.0
   },
   "initial_ages": {
-    "mean": 26.0,
-    "sd": 4.0,
+    "mean": 27.0,
+    "sd": 5.0,
     "min": 18,
     "max": 42
   },
@@ -140,9 +140,7 @@
   },
   "handedness": {
     "bats": {"R": 0.6, "L": 0.33, "S": 0.07},
-    "pitcher_throws_left": 0.3,
-    "fielder_throws_left": 0.15,
-    "right_throw_only_positions": ["C", "2B", "3B", "SS"]
+    "pitcher_throws_left": 0.3
   },
   "first_team": {
     "pitchers": 14,

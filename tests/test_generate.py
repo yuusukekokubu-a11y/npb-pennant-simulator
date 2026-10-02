@@ -228,18 +228,20 @@ def test_draft_names_do_not_clash_with_existing_league(league, config, names):
 # ---- その他:左右 ----
 
 def test_handedness(all_players, config):
+    """投手は投げ手だけ、打者は打席の左右だけを持つ(D-046、D-048)。"""
     hand = config["handedness"]
     for p in all_players:
-        assert p.bats in ("R", "L", "S")
-        assert p.throws in ("R", "L")
-        if p.position in hand["right_throw_only_positions"]:
-            assert p.throws == "R"
+        if p.role == PITCHER:
+            assert p.throws in ("R", "L") and p.bats is None
+        else:
+            assert p.bats in ("R", "L", "S") and p.throws is None
     pitchers = [p for p in all_players if p.role == PITCHER]
     lefty = sum(p.throws == "L" for p in pitchers) / len(pitchers)
     assert lefty == pytest.approx(hand["pitcher_throws_left"], abs=0.03)
-    bats = Counter(p.bats for p in all_players)
+    batters = [p for p in all_players if p.role == BATTER]
+    bats = Counter(p.bats for p in batters)
     for key, share in hand["bats"].items():
-        assert bats[key] / len(all_players) == pytest.approx(share, abs=0.02)
+        assert bats[key] / len(batters) == pytest.approx(share, abs=0.02)
 
 
 def test_strength_items_exclude_style():
