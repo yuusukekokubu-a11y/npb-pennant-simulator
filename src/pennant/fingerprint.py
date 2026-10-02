@@ -22,10 +22,11 @@ from .game_stats import play_games
 from .generate import generate_league
 from .manager import SimpleManager
 from .models import League
+from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 5  # 2:(d)1シーズン と打ち切りの印(実装④)。3:(e)集計結果 と担当野手の選手 ID(実装⑤)。4:(f)保存と読み込み(実装⑥)。5:(g)基準値・(h)第2弾の指標(第2弾①)
+FINGERPRINT_VERSION = 6  # 2:(d)1シーズン(実装④)。3:(e)集計結果(実装⑤)。4:(f)保存と読み込み(実装⑥)。5:(g)基準値・(h)第2弾の指標(第2弾①)。6:球場の倍率を試合に入れ、(i)を足した(第2弾②a)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -166,17 +167,26 @@ def records_record(rec: Records) -> dict:
 
 # ---- 指紋 ----
 
-def _new_league() -> League:
-    return generate_league(LEAGUE_SEED, load_generation_config(), load_name_parts())
+def _new_league(parks: bool = True) -> League:
+    """指紋に使うリーグ。parks=False なら球場の倍率をすべて 1.0 にする(回帰の確認用。D-137)。"""
+    league = generate_league(LEAGUE_SEED, load_generation_config(), load_name_parts())
+    if not parks:
+        neutralize_parks(league)
+    return league
 
 
-def season_fingerprint() -> tuple[str, SeasonResult]:
+def park_record(league: League) -> list:
+    """(i)球場の倍率(千分率の整数)。"""
+    return [[t.id, t.park.home_run, t.park.babip] for t in league.teams]
+
+
+def season_fingerprint(parks: bool = True) -> tuple[str, SeasonResult]:
     """(d)1シーズンの指紋と、その結果。"""
-    result = Season(_new_league(), SEASON_SEED).play_to_end()
+    result = Season(_new_league(parks), SEASON_SEED).play_to_end()
     return _digest(season_record(result)), result
 
 
-def save_fingerprint(reference: dict | None = None) -> tuple[str, list[bool]]:
+def save_fingerprint(reference: dict | None = None, parks: bool = True) -> tuple[str, list[bool]]:
     """(f)シーズンの途中で保存・読み込みしてから最後まで進めた結果の指紋。
 
     1日目・中盤・最後のそれぞれで保存・読み込みし、最後まで進めた結果を並べて指紋にする。
@@ -185,10 +195,10 @@ def save_fingerprint(reference: dict | None = None) -> tuple[str, list[bool]]:
     from .savegame import GameState, load_game, save_game
 
     if reference is None:
-        reference = season_record(Season(_new_league(), SEASON_SEED).play_to_end())
+        reference = season_record(Season(_new_league(parks), SEASON_SEED).play_to_end())
     records = []
     for day in SAVE_DAYS:
-        season = Season(_new_league(), SEASON_SEED)
+        season = Season(_new_league(parks), SEASON_SEED)
         season.play_days(day)
         state = GameState(season, load_generation_config(), load_name_parts())
         loaded = load_game(save_game(state))
@@ -196,7 +206,7 @@ def save_fingerprint(reference: dict | None = None) -> tuple[str, list[bool]]:
     return _digest(records), [r == reference for r in records]
 
 
-def baseline_fingerprint(season: SeasonResult) -> tuple[str, str, dict]:
+def baseline_fingerprint(season: SeasonResult, parks: bool = True) -> tuple[str, str, dict]:
     """(g)試運転で求めた基準値(分数を文字にして)と、(h)(d)のシーズンの全選手の第2弾の指標(分数)の指標。
 
     (h)の基準値は、(g)を出発点に、(d)のシーズンの値を混ぜた最終値(画面と同じ。D-126)。
@@ -206,7 +216,7 @@ def baseline_fingerprint(season: SeasonResult) -> tuple[str, str, dict]:
     from .metrics import compute
 
     settings = load_baseline_settings()
-    prior = trial_baselines(_new_league(), settings)
+    prior = trial_baselines(_new_league(parks), settings)
     g = _digest(prior.to_dict())
     results = [p.result for p in season.games]
     final, weight = blended_for_results(prior, results, settings)
@@ -227,32 +237,43 @@ def baseline_fingerprint(season: SeasonResult) -> tuple[str, str, dict]:
     return g, h, info
 
 
-def fingerprints(quick: bool = False) -> dict:
-    """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み の指紋。"""
+def fingerprints(quick: bool = False, parks: bool = True) -> dict:
+    """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み、
+    (g)基準値、(h)第2弾の指標、(i)球場の倍率 の指紋。parks=False は、球場の倍率をすべて 1.0 にする(回帰の確認用)。"""
     config = load_game_config()
     manager = SimpleManager(config)
 
-    league = _new_league()
+    league = _new_league(parks)
     a = _digest(league_record(league))
+    i = _digest(park_record(league))
 
     rng = random.Random(GAME_SEED)
     home, _ = manager.prepare(league.teams[0], rng, 0)
     away, _ = manager.prepare(league.teams[1], rng, 0)
-    game = simulate_game(home, away, rng, config=config, manager=manager)
+    game = simulate_game(home, away, rng, config=config, manager=manager, park=league.teams[0].park)
     b = _digest(game_record(game))
     if quick:  # テスト用:(a)と(b)だけ
-        return {"fingerprint_version": FINGERPRINT_VERSION, "league": a, "game": b}
+        return {"fingerprint_version": FINGERPRINT_VERSION, "league": a, "game": b, "parks": i}
 
-    days_league = _new_league()  # 疲労が書き換わるので、別のリーグで行う
+    days_league = _new_league(parks)  # 疲労が書き換わるので、別のリーグで行う
     results = play_games(days_league, DAYS * GAMES_PER_DAY, DAYS_SEED, config, manager=manager)
     c = _digest([game_record(r) for r in results])
 
-    d, season = season_fingerprint()
+    d, season = season_fingerprint(parks)
     champions = [r.team_id for rows in season.standings.values() for r in rows if r.rank == 1]
-    f, same_as_season = save_fingerprint(season_record(season))
+    f, same_as_season = save_fingerprint(season_record(season), parks)
     rec = season_records([p.result for p in season.games])
     e = _digest(records_record(rec))
-    g, h, binfo = baseline_fingerprint(season)
+    g, h, binfo = baseline_fingerprint(season, parks)
+    by_league: dict[int, list] = {}
+    for t in league.teams:
+        by_league.setdefault(t.league_index, []).append(t)
+    park_info = {
+        "teams": len(league.teams),
+        "home_run_mean": [sum(t.park.home_run for t in ts) // len(ts) for ts in by_league.values()],
+        "babip_mean": [sum(t.park.babip for t in ts) // len(ts) for ts in by_league.values()],
+        "home_run_min_max": [min(t.park.home_run for t in league.teams), max(t.park.home_run for t in league.teams)],
+    }
     totals = {"R": 0, "RBI": 0, "W": 0, "SV": 0, "HLD": 0, "ER": 0}
     for key in totals:
         group = rec.batters if key in ("R", "RBI") else rec.pitchers
@@ -268,6 +289,7 @@ def fingerprints(quick: bool = False) -> dict:
         "save": f,
         "baselines": g,
         "metrics2": h,
+        "parks": i,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -283,6 +305,7 @@ def fingerprints(quick: bool = False) -> dict:
             "save_days": list(SAVE_DAYS),
             "save_same_as_season": same_as_season,
             "baselines": binfo,
+            "parks": park_info,
         },
     }
 
@@ -304,5 +327,7 @@ def format_fingerprints(fp: dict) -> str:
             f"- (g) 試運転で求めた基準値(RE24 などに使った打席 {c['baselines']['trial_plate_appearances']}): {fp['baselines']}",
             f"- (h) (d)の全選手の wOBA・wRC+・OPS+・FIP(打者 {c['baselines']['batters']}人・投手 {c['baselines']['pitchers']}人。"
             f"今シーズンの比重 {c['baselines']['weight']}): {fp['metrics2']}",
+            f"- (i) 球場の倍率(千分率。{c['parks']['teams']}球場。本塁打 {c['parks']['home_run_min_max'][0]}〜{c['parks']['home_run_min_max'][1]}。"
+            f"リーグごとの平均 {'・'.join(str(v) for v in c['parks']['home_run_mean'])}): {fp['parks']}",
         ]
     )

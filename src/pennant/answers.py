@@ -135,6 +135,20 @@ def ability_table(
     return {"role": role, "level": level, "note": LEVEL_NOTE[level], "columns": cols, "sort": sort_col, "order": order, "extra_column": extra, "qualified": qualified, "rows": rows}
 
 
+def stadium_answers(game: Game, team_id: str, level: int = 1) -> dict:
+    """球場の真の倍率(段階1以上で見せる。D-138)。千分率の整数と、小数3桁の文字。"""
+    _check_level(level)
+    team = game._team(team_id)
+    park = team.park
+    return {
+        "team_id": team_id,
+        "stadium": team.stadium,
+        "home_run": {"value": park.home_run, "text": f"{park.home_run / 1000:.3f}"},
+        "babip": {"value": park.babip, "text": f"{park.babip / 1000:.3f}"},
+        "note": "真の倍率(1.000 が平均。本塁打 1.100 なら、本塁打が平均より約1割出やすい球場)。各リーグの6球場の平均は 1.000。",
+    }
+
+
 def player_answers(game: Game, player_id: str, level: int = 1) -> dict:
     """1人分の答え合わせ:能力の項目ごとに、現在の能力(段階2では潜在能力も)。段階2は成長タイプ・生成時の型も。"""
     _check_level(level)

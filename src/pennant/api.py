@@ -518,6 +518,7 @@ class Game:
             "league_index": played.scheduled.league_index,
             "away": {"team_id": r.away_team_id, "name": names[r.away_team_id], "runs": r.away_runs},
             "home": {"team_id": r.home_team_id, "name": names[r.home_team_id], "runs": r.home_runs},
+            "stadium": self._team(r.home_team_id).stadium,
             "winner": r.winner,
             "innings": r.innings,
             "tags": tags,
@@ -603,6 +604,33 @@ class Game:
             "season": season_block,
             "game_columns": [column_info(config, role, k) for k in game_cols],
             "games": games,
+        }
+
+    def stadium(self, team_id: str) -> dict:
+        """球場のページ(公開用。D-138):球場名、本拠地のチーム、本拠地での実際の結果(両チームの合計)。倍率の値は含めない。"""
+        team = self._team(team_id)
+        games = home_runs = runs = plate_appearances = 0
+        for p in self.state.season.played:
+            r = p.result
+            if r.home_team_id != team_id:
+                continue
+            games += 1
+            runs += r.home_runs + r.away_runs
+            plate_appearances += len(r.log)
+            home_runs += sum(1 for x in r.log if x.pa.result == "home_run")
+        return {
+            "team_id": team_id,
+            "name": team.stadium,
+            "team_name": team.name,
+            "league_name": self.state.league.league_names[team.league_index],
+            "is_mine": team_id == self.state.my_team_id,
+            "games": games,
+            "home_runs": home_runs,
+            "runs": runs,
+            "plate_appearances": plate_appearances,
+            "home_runs_per_game": f"{home_runs / games:.2f}" if games else "-",
+            "runs_per_game": f"{runs / games:.2f}" if games else "-",
+            "note": "本拠地で行った試合の、両チームを合わせた数です。球場の打ちやすさは、結果から推し量ってください(真の倍率は、答え合わせモードで見られます)。",
         }
 
     def team(self, team_id: str) -> dict:

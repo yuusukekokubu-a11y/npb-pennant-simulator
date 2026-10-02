@@ -358,10 +358,22 @@
   <p class="muted small">選手名を押すと、その選手のページを開きます。「出場」は、試合に出た数(投手は登板した数)です。</p>
 </main>
 
+<!-- 球場のページ -->
+<main class="screen" id="screen-stadium" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1 id="stadium-name"></h1></div>
+  <p id="stadium-info"></p>
+  <h2>本拠地での実際の結果</h2>
+  <div id="stadium-record"></div>
+  <p class="muted small" id="stadium-note"></p>
+  <h2>真の倍率</h2>
+  <div id="stadium-answers"></div>
+</main>
+
 <!-- 試合のページ -->
 <main class="screen" id="screen-game" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="game-title"></h1></div>
   <p class="muted small" id="game-tags"></p>
+  <p class="small" id="game-stadium"></p>
   <div id="game-line"></div>
   <h2>投手の成績</h2>
   <div id="game-pitchers"></div>

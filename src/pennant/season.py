@@ -159,7 +159,7 @@ class Season:
             setup, self.rotation[team.id] = self.manager.prepare(team, rng, self.rotation[team.id], active)
             skipped[team.id] = setup.starter is not expected
             setups[team.id] = setup
-        result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager)
+        result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park)
         apply_game_fatigue(result.batters_faced(), self.players, self.game_config)
         self._record(result)
         return PlayedGame(g, result, context, skipped)
@@ -231,7 +231,7 @@ class Season:
         setups = [
             self.manager.prepare(t, rng, played.context.rotation[t.id], a)[0] for t, a in zip(copied_teams, copied_actives)
         ]
-        return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager)
+        return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager, park=copied_teams[0].park)
 
     # ---- 順位表 ----
 

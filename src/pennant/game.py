@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from .baserunning import HOME, Baserunning, RunnerMove
 from .game_config import GameConfig, load_game_config
 from .manager import Manager, PitchingSituation, SimpleManager, TeamSetup
-from .models import Player
+from .models import NEUTRAL_PARK, ParkFactors, Player
 from .plate_appearance import BaseOutState, PlateAppearance, PlateAppearanceModel, default_model
 
 TOP, BOTTOM = "top", "bottom"
@@ -107,7 +107,8 @@ class _Side:
 
 
 class _Game:
-    def __init__(self, home, away, rng, model, config, manager, baserunning):
+    def __init__(self, home, away, rng, model, config, manager, baserunning, park=None):
+        self.park = park or NEUTRAL_PARK  # その試合の球場(ホームチームの本拠地)の倍率(D-136)
         self.home = _Side(home)
         self.away = _Side(away)
         self.rng = rng
@@ -200,7 +201,7 @@ class _Game:
             batter, pitcher = slot.player, fielding.pitcher
             base_out = BaseOutState(outs, bases[0] is not None, bases[1] is not None, bases[2] is not None)
             diff_before = batting.runs - fielding.runs
-            pa = self.model.resolve(batter, pitcher, defense, base_out, self.rng, home=half == BOTTOM)
+            pa = self.model.resolve(batter, pitcher, defense, base_out, self.rng, home=half == BOTTOM, park=self.park)
             fielding_ratings = self.model.fielding(pa.fielder, pitcher, defense) if pa.fielder else None
             play = self.baserunning.advance(pa, batter, pitcher.id, bases, outs, fielding_ratings, self.rng)
 
@@ -297,10 +298,12 @@ def simulate_game(
     model: PlateAppearanceModel | None = None,
     config: GameConfig | None = None,
     manager: Manager | None = None,
+    park: ParkFactors | None = None,
 ) -> GameResult:
-    """1試合を進める。rng は random.Random(シード)。同じシード・同じ入力なら同じ結果になる。"""
+    """1試合を進める。rng は random.Random(シード)。同じシード・同じ入力なら同じ結果になる。
+    park はその試合の球場(ホームチームの本拠地)の倍率(省略時は 1.0。D-136)。"""
     config = config or load_game_config()
     model = model or default_model()
     manager = manager or SimpleManager(config)
     baserunning = Baserunning(config, model.rating)
-    return _Game(home, away, rng, model, config, manager, baserunning).play()
+    return _Game(home, away, rng, model, config, manager, baserunning, park).play()

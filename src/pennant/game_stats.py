@@ -58,7 +58,7 @@ def play_games(
                     break
                 hs, rotation[home.id] = manager.prepare(home, rng, rotation[home.id], actives[home.id])
                 aw, rotation[away.id] = manager.prepare(away, rng, rotation[away.id], actives[away.id])
-                result = simulate_game(hs, aw, rng, model=model, config=config, manager=manager)
+                result = simulate_game(hs, aw, rng, model=model, config=config, manager=manager, park=home.park)
                 apply_game_fatigue(result.batters_faced(), players, config)
                 results.append(result)
         advance_day(pitchers, config)

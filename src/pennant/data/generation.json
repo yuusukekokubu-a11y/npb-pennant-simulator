@@ -5,8 +5,20 @@
     "teams_per_league": 6
   },
   "roster": {
-    "pitchers": {"SP": 14, "RP": 18},
-    "fielders": {"C": 9, "1B": 4, "2B": 5, "3B": 4, "SS": 5, "LF": 3, "CF": 4, "RF": 4}
+    "pitchers": {
+      "SP": 14,
+      "RP": 18
+    },
+    "fielders": {
+      "C": 9,
+      "1B": 4,
+      "2B": 5,
+      "3B": 4,
+      "SS": 5,
+      "LF": 3,
+      "CF": 4,
+      "RF": 4
+    }
   },
   "potential": {
     "batter_base_mean": 46.3,
@@ -19,71 +31,194 @@
     "power_hitter": {
       "label": "長距離砲",
       "share": 0.2,
-      "corrections": {"contact": -3, "eye": 2, "power": 11, "batted_ball_quality": 3, "gb_fb": -7, "speed": -7, "baserunning": -4, "range": -5, "arm": -1, "fielding": -4}
+      "corrections": {
+        "contact": -3,
+        "eye": 2,
+        "power": 11,
+        "batted_ball_quality": 3,
+        "gb_fb": -7,
+        "speed": -7,
+        "baserunning": -4,
+        "range": -5,
+        "arm": -1,
+        "fielding": -4
+      }
     },
     "contact_hitter": {
       "label": "巧打者",
       "share": 0.2,
-      "corrections": {"contact": 7, "eye": 3, "power": -4, "batted_ball_quality": 2, "gb_fb": 2, "speed": -3, "baserunning": -1, "range": -4, "arm": -3, "fielding": -2}
+      "corrections": {
+        "contact": 7,
+        "eye": 3,
+        "power": -4,
+        "batted_ball_quality": 2,
+        "gb_fb": 2,
+        "speed": -3,
+        "baserunning": -1,
+        "range": -4,
+        "arm": -3,
+        "fielding": -2
+      }
     },
     "speedster": {
       "label": "俊足型",
       "share": 0.2,
-      "corrections": {"contact": 0, "eye": -2, "power": -6, "batted_ball_quality": -3, "gb_fb": 5, "speed": 9, "baserunning": 5, "range": 1, "arm": -3, "fielding": -2}
+      "corrections": {
+        "contact": 0,
+        "eye": -2,
+        "power": -6,
+        "batted_ball_quality": -3,
+        "gb_fb": 5,
+        "speed": 9,
+        "baserunning": 5,
+        "range": 1,
+        "arm": -3,
+        "fielding": -2
+      }
     },
     "defensive": {
       "label": "守備型",
       "share": 0.2,
-      "corrections": {"contact": -6, "eye": -5, "power": -3, "batted_ball_quality": -4, "gb_fb": 0, "speed": -1, "baserunning": -2, "range": 6, "arm": 5, "fielding": 6}
+      "corrections": {
+        "contact": -6,
+        "eye": -5,
+        "power": -3,
+        "batted_ball_quality": -4,
+        "gb_fb": 0,
+        "speed": -1,
+        "baserunning": -2,
+        "range": 6,
+        "arm": 5,
+        "fielding": 6
+      }
     },
     "all_round": {
       "label": "万能型",
       "share": 0.2,
-      "corrections": {"contact": 2, "eye": 2, "power": 2, "batted_ball_quality": 2, "gb_fb": 0, "speed": 2, "baserunning": 2, "range": 2, "arm": 2, "fielding": 2}
+      "corrections": {
+        "contact": 2,
+        "eye": 2,
+        "power": 2,
+        "batted_ball_quality": 2,
+        "gb_fb": 0,
+        "speed": 2,
+        "baserunning": 2,
+        "range": 2,
+        "arm": 2,
+        "fielding": 2
+      }
     }
   },
   "pitcher_roles": {
     "SP": {
       "label": "先発型",
-      "corrections": {"strikeout": -1, "control": 0, "stuff": -1, "contact_suppression": 0, "gb_fb": 0, "stamina": 9, "recovery": -3, "holding": 0}
+      "corrections": {
+        "strikeout": -1,
+        "control": 0,
+        "stuff": -1,
+        "contact_suppression": 0,
+        "gb_fb": 0,
+        "stamina": 9,
+        "recovery": -3,
+        "holding": 0
+      }
     },
     "RP": {
       "label": "救援型",
-      "corrections": {"strikeout": 1, "control": 0, "stuff": 1, "contact_suppression": 0, "gb_fb": 0, "stamina": -7, "recovery": 2, "holding": 0}
+      "corrections": {
+        "strikeout": 1,
+        "control": 0,
+        "stuff": 1,
+        "contact_suppression": 0,
+        "gb_fb": 0,
+        "stamina": -7,
+        "recovery": 2,
+        "holding": 0
+      }
     }
   },
   "pitcher_qualities": {
     "power": {
       "label": "本格派",
       "share": 0.25,
-      "corrections": {"strikeout": 5, "control": -2, "stuff": 6, "contact_suppression": 0, "gb_fb": -6, "stamina": 0, "recovery": 0, "holding": -1}
+      "corrections": {
+        "strikeout": 5,
+        "control": -2,
+        "stuff": 6,
+        "contact_suppression": 0,
+        "gb_fb": -6,
+        "stamina": 0,
+        "recovery": 0,
+        "holding": -1
+      }
     },
     "finesse": {
       "label": "技巧派",
       "share": 0.2,
-      "corrections": {"strikeout": -3, "control": 6, "stuff": -5, "contact_suppression": 1, "gb_fb": -2, "stamina": 0, "recovery": 0, "holding": 2}
+      "corrections": {
+        "strikeout": -3,
+        "control": 6,
+        "stuff": -5,
+        "contact_suppression": 1,
+        "gb_fb": -2,
+        "stamina": 0,
+        "recovery": 0,
+        "holding": 2
+      }
     },
     "groundball": {
       "label": "ゴロ打たせ型",
       "share": 0.2,
-      "corrections": {"strikeout": -3, "control": 1, "stuff": 0, "contact_suppression": 1, "gb_fb": 12, "stamina": 0, "recovery": 0, "holding": 0}
+      "corrections": {
+        "strikeout": -3,
+        "control": 1,
+        "stuff": 0,
+        "contact_suppression": 1,
+        "gb_fb": 12,
+        "stamina": 0,
+        "recovery": 0,
+        "holding": 0
+      }
     },
     "unorthodox": {
       "label": "変則派",
       "share": 0.1,
-      "corrections": {"strikeout": 4, "control": -4, "stuff": -1, "contact_suppression": 0, "gb_fb": 0, "stamina": 0, "recovery": 0, "holding": -4}
+      "corrections": {
+        "strikeout": 4,
+        "control": -4,
+        "stuff": -1,
+        "contact_suppression": 0,
+        "gb_fb": 0,
+        "stamina": 0,
+        "recovery": 0,
+        "holding": -4
+      }
     },
     "standard": {
       "label": "標準型",
       "share": 0.25,
-      "corrections": {"strikeout": -2, "control": -2, "stuff": -2, "contact_suppression": -2, "gb_fb": -2, "stamina": 0, "recovery": 0, "holding": 1}
+      "corrections": {
+        "strikeout": -2,
+        "control": -2,
+        "stuff": -2,
+        "contact_suppression": -2,
+        "gb_fb": -2,
+        "stamina": 0,
+        "recovery": 0,
+        "holding": 1
+      }
     }
   },
   "aging": {
     "groups": {
       "physical": {
         "label": "身体系",
-        "items": ["speed", "range", "stamina", "recovery"],
+        "items": [
+          "speed",
+          "range",
+          "stamina",
+          "recovery"
+        ],
         "peak_age": 25,
         "gap_per_year_before_peak": 1.0,
         "decline_per_year": 1.0,
@@ -91,7 +226,11 @@
       },
       "power": {
         "label": "パワー系",
-        "items": ["power", "stuff", "arm"],
+        "items": [
+          "power",
+          "stuff",
+          "arm"
+        ],
         "peak_age": 28,
         "gap_per_year_before_peak": 1.5,
         "decline_per_year": 0.9,
@@ -99,7 +238,17 @@
       },
       "technical": {
         "label": "技術系",
-        "items": ["contact", "eye", "batted_ball_quality", "fielding", "baserunning", "strikeout", "control", "contact_suppression", "holding"],
+        "items": [
+          "contact",
+          "eye",
+          "batted_ball_quality",
+          "fielding",
+          "baserunning",
+          "strikeout",
+          "control",
+          "contact_suppression",
+          "holding"
+        ],
         "peak_age": 30,
         "gap_per_year_before_peak": 1.4,
         "decline_per_year": 0.5,
@@ -107,13 +256,27 @@
       },
       "fixed": {
         "label": "固定",
-        "items": ["gb_fb"]
+        "items": [
+          "gb_fb"
+        ]
       }
     },
     "growth_types": {
-      "early": {"label": "早熟", "share": 0.25, "peak_shift": -2},
-      "normal": {"label": "標準", "share": 0.5, "peak_shift": 0},
-      "late": {"label": "晩成", "share": 0.25, "peak_shift": 2}
+      "early": {
+        "label": "早熟",
+        "share": 0.25,
+        "peak_shift": -2
+      },
+      "normal": {
+        "label": "標準",
+        "share": 0.5,
+        "peak_shift": 0
+      },
+      "late": {
+        "label": "晩成",
+        "share": 0.25,
+        "peak_shift": 2
+      }
     }
   },
   "variation": {
@@ -133,17 +296,52 @@
   },
   "draft": {
     "origins": {
-      "high_school": {"label": "高卒", "share": 0.4, "age_mean": 18, "age_sd": 0, "age_min": 18, "age_max": 18},
-      "college": {"label": "大卒", "share": 0.4, "age_mean": 22, "age_sd": 0, "age_min": 22, "age_max": 22},
-      "corporate": {"label": "社会人・独立リーグ", "share": 0.2, "age_mean": 23, "age_sd": 1.0, "age_min": 22, "age_max": 26}
+      "high_school": {
+        "label": "高卒",
+        "share": 0.4,
+        "age_mean": 18,
+        "age_sd": 0,
+        "age_min": 18,
+        "age_max": 18
+      },
+      "college": {
+        "label": "大卒",
+        "share": 0.4,
+        "age_mean": 22,
+        "age_sd": 0,
+        "age_min": 22,
+        "age_max": 22
+      },
+      "corporate": {
+        "label": "社会人・独立リーグ",
+        "share": 0.2,
+        "age_mean": 23,
+        "age_sd": 1.0,
+        "age_min": 22,
+        "age_max": 26
+      }
     }
   },
   "handedness": {
-    "bats": {"R": 0.6, "L": 0.33, "S": 0.07},
+    "bats": {
+      "R": 0.6,
+      "L": 0.33,
+      "S": 0.07
+    },
     "pitcher_throws_left": 0.3
   },
   "first_team": {
     "pitchers": 14,
     "fielders": 15
+  },
+  "parks": {
+    "home_run_range": [
+      0.85,
+      1.15
+    ],
+    "babip_range": [
+      0.97,
+      1.03
+    ]
   }
 }

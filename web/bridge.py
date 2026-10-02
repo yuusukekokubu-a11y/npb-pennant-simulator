@@ -96,6 +96,7 @@ _QUERIES = {
     "teams": lambda a: _game.teams(),
     "baseline_info": lambda a: _game.baseline_info(),
     "sortable_keys": lambda a: api.sortable_keys(a.get("role", "batter")),
+    "stadium": lambda a: _game.stadium(a["team_id"]),
 }
 
 # ---- 答え合わせ(答え合わせモードがオンのときだけ、画面が呼ぶ。D-108、D-114) ----
@@ -103,6 +104,7 @@ _ANSWERS = {
     "ability_table": lambda a: answers.ability_table(_game, a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order", "desc"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
     "player_answers": lambda a: answers.player_answers(_game, a["player_id"], int(a.get("level", 1))),
     "ability_columns": lambda a: answers.columns(a.get("role", "batter"), int(a.get("level", 1))),
+    "stadium_answers": lambda a: answers.stadium_answers(_game, a["team_id"], int(a.get("level", 1))),
 }
 
 

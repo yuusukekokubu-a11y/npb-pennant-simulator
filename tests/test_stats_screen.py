@@ -204,9 +204,14 @@ def test_game_page_matches_narrate(game):
 
 def test_narrate_text_is_unchanged():
     """文章ログの文字は、②の前と同じ(構造のデータから作るように直しても、内容は変えない)。"""
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(3)
-    s = g.state.season
+    from pennant.newgame import new_league
+    from pennant.parks import neutralize_parks
+    from pennant.season import Season
+
+    league = new_league(1)
+    neutralize_parks(league)  # 球場の倍率を入れる前(第2弾②a より前)と同じ試合にする
+    s = Season(league, 13)
+    s.play_days(3)
     names = {t.id: t.name for t in s.league.teams}
     text = "".join(narrate(p.result, s.players, names) for p in s.played)
     assert hashlib.sha256(text.encode()).hexdigest() == "048102e5aa5c95409b4f74de90b828fc7a10bf785a9a86b892dc69ca026b0468"

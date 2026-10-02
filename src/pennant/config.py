@@ -388,6 +388,23 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
     c.number(c.get(hand, "pitcher_throws_left", "handedness"), "handedness.pitcher_throws_left", 0, 1)
 
     # 一軍相当の人数(確認用。一軍登録人数は未確認の仮置き)
+    if "parks" in root:  # 球場の倍率の範囲(第2弾②a。D-136)。省略時は倍率なし(すべて 1.0)
+        parks = c.section(root["parks"], "parks")
+        for key in ("home_run_range", "babip_range"):
+            rng_ = c.get(parks, key, "parks")
+            if rng_ is None:
+                continue
+            if not isinstance(rng_, list) or len(rng_) != 2:
+                c.add(f"parks.{key}", "[下限, 上限] の2つの数で書いてください")
+                continue
+            low = c.number(rng_[0], f"parks.{key}[0]", 0.5, 1.0)
+            high = c.number(rng_[1], f"parks.{key}[1]", 1.0, 2.0)
+            if low is not None and high is not None and low > high:
+                c.add(f"parks.{key}", "下限が上限より大きくなっています")
+        for key in parks or {}:
+            if key not in ("home_run_range", "babip_range"):
+                c.add(f"parks.{key}", "知らない名前です")
+
     first = c.section(c.get(root, "first_team", ""), "first_team")
     fp = c.integer(c.get(first, "pitchers", "first_team"), "first_team.pitchers", 1, 70)
     ff = c.integer(c.get(first, "fielders", "first_team"), "first_team.fielders", 1, 70)

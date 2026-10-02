@@ -40,7 +40,7 @@ from .config import (
 from .game import GamePlateAppearance, GameResult, PitcherLine
 from .game_config import load_game_config, validate_game_config
 from .manager import SimpleManager
-from .models import HiddenInfo, League, Player, PlayerState, Team
+from .models import HiddenInfo, League, ParkFactors, Player, PlayerState, Team
 from .newgame import check_team_name, new_league
 from .pa_config import load_pa_config, validate_pa_config
 from .plate_appearance import BaseOutState, OddsRatioModel, PlateAppearance
@@ -48,7 +48,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 3  # 2:自球団(user.my_team_id)を足した(最小のブラウザ画面①)。3:指標の基準値を足した(第2弾①)
+SAVE_FORMAT_VERSION = 4  # 2:自球団(最小のブラウザ画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(第2弾②a)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -72,7 +72,18 @@ def _v2_to_v3(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3}
+def _v3_to_v4(bundle: dict) -> dict:
+    """版3には球場の倍率がない。すべて 1.0(1000)として足し、これまでどおりの計算を続ける(D-138)。"""
+    league = bundle["state"].get("league")
+    if isinstance(league, dict) and isinstance(league.get("teams"), list):
+        for td in league["teams"]:
+            if isinstance(td, dict):
+                td.setdefault("park", {"home_run": 1000, "babip": 1000})
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4}
+PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
 class SaveDataError(ValueError):
@@ -437,6 +448,12 @@ def load_game(data: bytes) -> GameState:
         for key in ("place", "nickname", "stadium"):
             _need(td, key, str, where, p)
         _need(td, "league_index", int, where, p)
+        park = _need(td, "park", dict, where, p)
+        if park is not None:
+            for key in ("home_run", "babip"):
+                v = _need(park, key, int, f"{where}.park", p)
+                if v is not None and not PARK_RANGE[0] <= v <= PARK_RANGE[1]:
+                    p.add(f"{where}.park.{key}", f"球場の倍率が範囲外です(値: {v}。{PARK_RANGE[0]}〜{PARK_RANGE[1]})")
         name = td.get("display_name")
         if name is not None:
             problem = "文字列が必要です" if not isinstance(name, str) else check_team_name(name)
@@ -477,7 +494,10 @@ def load_game(data: bytes) -> GameState:
     # ---- リーグを組み立てて、シーズンを作る(日程はシードと設定値から作り直す) ----
     teams = []
     for td in teams_d:
-        team = Team(td["id"], td["league_index"], td["place"], td["nickname"], td["stadium"], display_name=td.get("display_name"))
+        team = Team(
+            td["id"], td["league_index"], td["place"], td["nickname"], td["stadium"],
+            display_name=td.get("display_name"), park=ParkFactors(td["park"]["home_run"], td["park"]["babip"]),
+        )
         team.players = [_player_from(pd) for pd in td["players"]]
         teams.append(team)
     league = League(league_d.get("seed", seed), list(league_d["league_names"]), teams)
