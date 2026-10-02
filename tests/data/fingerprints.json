@@ -1,10 +1,11 @@
 {
-  "fingerprint_version": 3,
+  "fingerprint_version": 4,
   "league": "9c1508e6cbbe9854ab1f7806aa886c231d12c0b04b08e262c5f0bb55798b29e0",
   "game": "da87737c0ffdae88ca1728f3c5e4e4e1d0e98b0459c11908754fc0d83af86631",
   "days": "23a899dcc918bad348ab1f18c4bfbcb5ce49df3b7101087cab36aed31a9e34a0",
   "season": "67d149e13069b6914cab837d4d2acca30713a9babfd3df0f59cd246a4c507924",
   "records": "a56e4986f775056686a5b0118dc941845bf7bf33e28121a93ad630efa38a3123",
+  "save": "6991efe00070160d4112c93dde8a5ed33caf0d520b69a054dccf90e100dfeec5",
   "counts": {
     "players": 840,
     "game_plate_appearances": 81,
@@ -26,6 +27,16 @@
       "SV": 349,
       "HLD": 746,
       "ER": 6369
-    }
+    },
+    "save_days": [
+      1,
+      62,
+      125
+    ],
+    "save_same_as_season": [
+      true,
+      true,
+      true
+    ]
   }
 }

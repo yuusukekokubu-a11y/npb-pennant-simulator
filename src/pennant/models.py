@@ -59,9 +59,15 @@ class Team:
     nickname: str
     stadium: str
     players: list[Player] = field(default_factory=list)
+    display_name: str | None = None  # 利用者が入力した球団名(セーブデータにだけ入る。D-104)。なければ架空の初期名
 
     @property
     def name(self) -> str:
+        return self.display_name or f"{self.place}{self.nickname}"
+
+    @property
+    def default_name(self) -> str:
+        """架空の初期名(地名 + 愛称)。"""
         return f"{self.place}{self.nickname}"
 
     def to_dict(self) -> dict:

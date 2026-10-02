@@ -198,6 +198,12 @@ async function measure() {
     out.push(`- Python 全体が使っているメモリ(WebAssembly のメモリ): ${mb(stats.wasmHeapBytes)}`);
     if (performance.memory) out.push(`- 画面側の JavaScript のメモリ: ${mb(performance.memory.usedJSHeapSize)}`);
 
+    status("シーズンを保存・読み込みしています…");
+    const sv = await call(worker, "saveMeasure");
+    out.push("", "## 保存と読み込み(1シーズン分)");
+    out.push(`- セーブデータ(.sav)の大きさ: ${mb(sv.bytes)}`);
+    out.push(`- 保存の時間: ${sec(sv.save_seconds)} / 読み込みの時間(検証を含む): ${sec(sv.load_seconds)}`);
+
     status("打席ログを圧縮しています…");
     const exp = await call(worker, "exportSeason");
     out.push("", "## 書き出し");
@@ -283,6 +289,61 @@ async function header() {
   }
 }
 
+// ---- 5. 保存と読み込みの確認 ----
+
+async function saveCheck() {
+  const el = $("save-result");
+  try {
+    const w = await ensureWorker();
+    el.textContent = "60日目まで進めて保存しています…";
+    const r = await call(w, "saveCheckStart", { name: $("team-name").value });
+    const blob = new Blob([r.bytes], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = r.fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    const where = $("team-name").value.trim()
+      ? `入力した球団名が入っている場所: ${r.nameIn.length ? r.nameIn.join("、") : "(どこにもない)"}(state.json だけなら正しい)`
+      : "(球団名の欄が空なので、架空の初期名のまま保存しました)";
+    el.textContent = `${r.day}日目まで進めて保存しました(${r.fileName}、${kb(r.size)}、保存の時間 ${sec(r.seconds)})。\n${where}\n次に、ページを再読み込みしてから「読み込んで最後まで進める」で、このファイルを選んでください。`;
+  } catch (err) {
+    el.textContent = `保存できませんでした:${err.message}`;
+  }
+}
+
+async function loadAndContinue(event) {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  const el = $("save-result");
+  try {
+    const w = await ensureWorker();
+    el.textContent = "読み込んで、最後まで進めています…";
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const r = await call(w, "continueToEnd", { bytes });
+    const expected = (await call(w, "expected")).season;
+    const same = r.digest === expected ? "○ 保存せずに最後まで進めた場合(指紋 d)と一致" : "× 指紋 d と違う";
+    el.textContent = `読み込めました(${r.loaded_day}日目から再開。読み込みの時間 ${sec(r.load_seconds)})。最後まで進めた結果の指紋:${r.digest.slice(0, 16)}…\n${same}`;
+  } catch (err) {
+    el.textContent = `読み込めませんでした:${err.message}`;
+  }
+}
+
+async function sampleCheck() {
+  const el = $("save-result");
+  try {
+    const w = await ensureWorker();
+    el.textContent = "見本のファイルを読み込んでいます…";
+    const r = await call(w, "checkSample");
+    el.textContent = `見本のファイル(${r.madeWith} で保存、${kb(r.size)})を読み込み、続きを進めました。\n${r.digest === r.expected ? "○ 保存した版と同じ結果" : "× 保存した版と違う結果"}(指紋 ${r.digest.slice(0, 16)}…)`;
+  } catch (err) {
+    el.textContent = `確認できませんでした:${err.message}`;
+  }
+}
+
 // ---- 4. 通信と保存 ----
 
 async function check() {
@@ -295,3 +356,6 @@ $("export").addEventListener("click", exportGame);
 $("file").addEventListener("change", importFile);
 $("header").addEventListener("click", header);
 $("check").addEventListener("click", check);
+$("save-check").addEventListener("click", saveCheck);
+$("load-file").addEventListener("change", loadAndContinue);
+$("sample-check").addEventListener("click", sampleCheck);

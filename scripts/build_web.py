@@ -53,6 +53,10 @@ def build(out: Path, pyodide_dir: Path | None = None) -> dict:
     for name in WEB_FILES:
         shutil.copy2(WEB / name, out / name)
     names = build_zip(out / "pennant.zip")
+    # 保存・読み込みの確認用(架空のデータだけ。D-103)
+    shutil.copy2(ROOT / "tests" / "data" / "sample-save.sav", out / "sample-save.sav")
+    shutil.copy2(ROOT / "tests" / "data" / "sample-save.json", out / "sample-save.json")
+    shutil.copy2(ROOT / "tests" / "data" / "fingerprints.json", out / "expected-fingerprints.json")
     info = {"web_files": list(WEB_FILES), "package_files": names, "local_pyodide": pyodide_dir is not None}
     if pyodide_dir is not None:
         shutil.copytree(pyodide_dir, out / "pyodide")

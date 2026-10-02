@@ -11,6 +11,7 @@ on:
       - "web/**"
       - "src/pennant/**"
       - "scripts/build_web.py"
+      - "tests/data/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch: # Actions の画面から手で実行できるようにする
 

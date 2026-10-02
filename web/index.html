@@ -64,6 +64,14 @@
   <p>このページが通信した先と、ブラウザの保存領域の状態を表示します(測定の結果にも入ります)。</p>
   <button id="check" class="secondary">確認する</button>
   <pre id="check-result" class="out"></pre>
+
+  <h2>5. 保存と読み込みの確認</h2>
+  <p>シーズンを60日目まで進めてセーブデータ(.sav)をダウンロードし、ページを再読み込みしたあとに読み込んで、最後まで進めます。結果が、保存せずに進めた場合と同じになるかを確かめます。上の「テスト用の球団名」に名前を入れておくと、その名前がファイルのどこに入るかも表示します(画面にだけ表示し、測定の結果には入りません)。</p>
+  <button id="save-check" class="secondary">60日目まで進めて保存</button>
+  <label class="file-label" for="load-file">読み込んで最後まで進める</label>
+  <input id="load-file" type="file" accept=".sav">
+  <button id="sample-check" class="secondary">見本のファイルで確認</button>
+  <pre id="save-result" class="out"></pre>
 </main>
 <script type="module" src="app.js"></script>
 </body>
