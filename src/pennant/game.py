@@ -43,6 +43,7 @@ class GamePlateAppearance:
     double_play: bool = False
     sac_fly: bool = False
     walkoff: bool = False
+    walkoff_truncated: bool = False  # サヨナラで、勝ち越しに必要な分を超えた得点を打ち切った打席(D-087。公式記録の数え直しは実装⑤)
 
 
 @dataclass
@@ -198,7 +199,7 @@ class _Game:
             batter, pitcher = slot.player, fielding.pitcher
             base_out = BaseOutState(outs, bases[0] is not None, bases[1] is not None, bases[2] is not None)
             diff_before = batting.runs - fielding.runs
-            pa = self.model.resolve(batter, pitcher, defense, base_out, self.rng)
+            pa = self.model.resolve(batter, pitcher, defense, base_out, self.rng, home=half == BOTTOM)
             fielding_ratings = self.model.fielding(pa.fielder, pitcher, defense) if pa.fielder else None
             play = self.baserunning.advance(pa, batter, pitcher.id, bases, outs, fielding_ratings, self.rng)
 
@@ -208,6 +209,7 @@ class _Game:
             if walkoff and pa.result != "home_run":
                 moves = _truncate_walkoff(moves, needed=-diff_before + 1)
             runs = sum(1 for m in moves if m.scored)
+            truncated = runs < play.runs
 
             line = fielding.pitcher_line
             line.batters_faced += 1
@@ -237,6 +239,7 @@ class _Game:
                     double_play=play.double_play,
                     sac_fly=play.sac_fly,
                     walkoff=walkoff,
+                    walkoff_truncated=truncated,
                 )
             )
             if walkoff:

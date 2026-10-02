@@ -22,12 +22,14 @@ from .game_stats import play_games
 from .generate import generate_league
 from .manager import SimpleManager
 from .models import League
+from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 1
+FINGERPRINT_VERSION = 2  # 2:(d)1シーズン と、打席の「打ち切り」の印を足した(実装④)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
 DAYS = 30  # (c)の日数(1日=各リーグ3試合)
+SEASON_SEED = 13  # (d)1シーズンのシード(日程と、各試合の乱数のもと)
 GAMES_PER_DAY = 6
 
 
@@ -110,6 +112,7 @@ def game_record(result: GameResult) -> dict:
                 x.double_play,
                 x.sac_fly,
                 x.walkoff,
+                x.walkoff_truncated,
             ]
         )
     pitchers = [
@@ -130,14 +133,40 @@ def game_record(result: GameResult) -> dict:
     }
 
 
+def season_record(result: SeasonResult) -> dict:
+    """1シーズンの結果のうち、離散的な情報(日程・全試合・順位表。勝率などの小数は入れない)。"""
+    return {
+        "games": [
+            {
+                "number": p.scheduled.number,
+                "day": p.scheduled.day,
+                "league": p.scheduled.league_index,
+                "starter_skipped": p.starter_skipped,
+                "game": game_record(p.result),
+            }
+            for p in result.games
+        ],
+        "standings": {
+            str(i): [[r.team_id, r.wins, r.losses, r.ties, r.rank] for r in rows] for i, rows in result.standings.items()
+        },
+        "champions": {str(i): ids for i, ids in result.champions.items()},
+    }
+
+
 # ---- 指紋 ----
 
 def _new_league() -> League:
     return generate_league(LEAGUE_SEED, load_generation_config(), load_name_parts())
 
 
+def season_fingerprint() -> tuple[str, SeasonResult]:
+    """(d)1シーズンの指紋と、その結果。"""
+    result = Season(_new_league(), SEASON_SEED).play_to_end()
+    return _digest(season_record(result)), result
+
+
 def fingerprints() -> dict:
-    """(a)リーグの生成、(b)1試合、(c)数十日分の試合 の指紋と、確認用の数を返す。"""
+    """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン の指紋と、確認用の数を返す。"""
     config = load_game_config()
     manager = SimpleManager(config)
 
@@ -154,11 +183,15 @@ def fingerprints() -> dict:
     results = play_games(days_league, DAYS * GAMES_PER_DAY, DAYS_SEED, config, manager=manager)
     c = _digest([game_record(r) for r in results])
 
+    d, season = season_fingerprint()
+    champions = [r.team_id for rows in season.standings.values() for r in rows if r.rank == 1]
+
     return {
         "fingerprint_version": FINGERPRINT_VERSION,
         "league": a,
         "game": b,
         "days": c,
+        "season": d,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -167,6 +200,9 @@ def fingerprints() -> dict:
             "days_games": len(results),
             "days_plate_appearances": sum(len(r.log) for r in results),
             "days_runs": sum(r.home_runs + r.away_runs for r in results),
+            "season_games": len(season.games),
+            "season_plate_appearances": sum(len(p.result.log) for p in season.games),
+            "season_champions": champions,
         },
     }
 
@@ -180,5 +216,6 @@ def format_fingerprints(fp: dict) -> str:
             f"- (a) リーグの生成({c['players']}人): {fp['league']}",
             f"- (b) 1試合({c['game_plate_appearances']}打席、{c['game_score']}): {fp['game']}",
             f"- (c) {c['days']}日分の試合({c['days_games']}試合、{c['days_plate_appearances']}打席、得点の合計 {c['days_runs']}): {fp['days']}",
+            f"- (d) 1シーズン({c['season_games']}試合、{c['season_plate_appearances']}打席、優勝 {'・'.join(c['season_champions'])}): {fp['season']}",
         ]
     )

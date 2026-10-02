@@ -123,6 +123,15 @@ def validate_pa_config(data: Any, source: str = "(辞書)") -> PlateAppearanceCo
                 continue
             c.number(value, f"platoon.{side}.{key}", RATIO_LOW, RATIO_HIGH)
 
+    # ホームの有利(D-073)。ホームチームの打者に掛ける倍率。1.0 で効果なし。書かなければ効果なし
+    if "home_advantage" in root:
+        ha = c.section(root["home_advantage"], "home_advantage")
+        for key, value in (ha or {}).items():
+            if key not in PLATOON_KEYS:
+                c.add(f"home_advantage.{key}", f"知らない結果です(使えるもの: {', '.join(PLATOON_KEYS)})")
+                continue
+            c.number(value, f"home_advantage.{key}", RATIO_LOW, RATIO_HIGH)
+
     # 打球の種類(D-035)
     bb = c.section(c.get(root, "batted_ball", ""), "batted_ball")
     _shares(c, c.get(bb, "league_shares", "batted_ball"), "batted_ball.league_shares", BATTED_BALL_TYPES, True)

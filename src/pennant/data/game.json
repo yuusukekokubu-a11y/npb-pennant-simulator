@@ -40,7 +40,7 @@
     "starter_bf_min": 9,
     "starter_run_limit": 6,
     "fatigue_per_batter": 1.0,
-    "recovery_per_day": 5.0,
+    "recovery_per_day": 7.0,
     "recovery_ratio_per_10": 1.2,
     "max_fatigue_to_start": 4.0,
     "max_fatigue_to_relieve": 8.0,

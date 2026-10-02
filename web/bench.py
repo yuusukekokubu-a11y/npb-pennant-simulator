@@ -3,7 +3,7 @@
 計算本体(src/pennant)は変更せず、そのまま呼ぶ。画面(index.html・worker.js)からは、
 ここにある関数だけを呼ぶ。PC の Python でも動く(tests/test_web.py で確かめる)。
 
-- 日程は簡単な組み合わせ(各リーグの6球団を毎日3組に分ける。本当の日程は実装④で作る)。
+- 日程は、実装④の本物の日程(ラウンド制。1チーム125試合、全750試合)を使う(season.Season)。
 - 実名のデータは扱わない。テスト用の球団名は、メモリ上の写しに一時的に付けるだけで、
   ログ・ファイル・測定結果には入れない(D-084)。
 """
@@ -20,72 +20,57 @@ import sys
 import time
 
 from pennant import generate_league, load_generation_config, load_name_parts
-from pennant.fatigue import advance_day, apply_game_fatigue
 from pennant.fingerprint import fingerprints, format_fingerprints
 from pennant.game import simulate_game
-from pennant.game_config import load_game_config
 from pennant.game_stats import narrate
-from pennant.manager import SimpleManager
-from pennant.plate_appearance import default_model
+from pennant.season import Season
 
 LOG_FORMAT_VERSION = 1
 
 
 class Bench:
-    """架空のリーグを1つ作り、日ごとに試合を進める(疲労と回復も進める)。"""
+    """架空のリーグを1つ作り、本物の日程で1日ずつ試合を進める(疲労と回復も進める)。"""
 
     def __init__(self, seed: int = 1):
         t0 = time.perf_counter()
         self.seed = seed
         self.league = generate_league(seed, load_generation_config(), load_name_parts())
-        self.config = load_game_config()
-        self.model = default_model()
-        self.manager = SimpleManager(self.config)
-        self.rng = random.Random(seed)
-        self.players = {p.id: p for p in self.league.all_players()}
-        self.actives = {t.id: self.manager.select_active(t) for t in self.league.teams}
-        self.rotation = {t.id: 0 for t in self.league.teams}
-        self.pitchers = [p for a in self.actives.values() for p in a.starters + a.relievers]
-        self.groups: dict[int, list] = {}
-        for t in self.league.teams:
-            self.groups.setdefault(t.league_index, []).append(t)
-        self.results = []
-        self.days = 0
+        self.season = Season(self.league, seed)
+        self.config = self.season.game_config
+        self.model = self.season.model
+        self.manager = self.season.manager
         self.setup_seconds = time.perf_counter() - t0
+
+    @property
+    def results(self):
+        return [p.result for p in self.season.played]
+
+    @property
+    def days(self) -> int:
+        return self.season.day
+
+    def total_games(self) -> int:
+        return len(self.season.schedule)
+
+    def is_over(self) -> bool:
+        return self.season.is_over
 
     # ---- 試合を進める ----
 
-    def _play(self, home, away):
-        hs, self.rotation[home.id] = self.manager.prepare(home, self.rng, self.rotation[home.id], self.actives[home.id])
-        aw, self.rotation[away.id] = self.manager.prepare(away, self.rng, self.rotation[away.id], self.actives[away.id])
-        result = simulate_game(hs, aw, self.rng, model=self.model, config=self.config, manager=self.manager)
-        apply_game_fatigue(result.batters_faced(), self.players, self.config)
-        self.results.append(result)
-        return result
-
     def play_day(self) -> int:
         """1日分(各リーグ3試合、計6試合)を行い、1日を進める。行った試合数を返す。"""
-        played = 0
-        for teams in self.groups.values():
-            order = list(teams)
-            self.rng.shuffle(order)
-            for home, away in zip(order[0::2], order[1::2]):
-                self._play(home, away)
-                played += 1
-        advance_day(self.pitchers, self.config)
-        self.days += 1
-        return played
+        return len(self.season.play_day().games)
 
     def play_games(self, n: int) -> float:
         """n 試合を日ごとに行い、かかった秒数を返す(日の途中では止めない)。"""
         t0 = time.perf_counter()
         target = len(self.results) + n
-        while len(self.results) < target:
+        while len(self.season.played) < target and not self.season.is_over:
             self.play_day()
         return time.perf_counter() - t0
 
     def games_played(self) -> int:
-        return len(self.results)
+        return len(self.season.played)
 
     # ---- 大きさ ----
 

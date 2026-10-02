@@ -72,7 +72,7 @@ class ScriptedModel:
     def probabilities(self, batter, pitcher, defense):
         raise NotImplementedError
 
-    def resolve(self, batter, pitcher, defense, base_out, rng):
+    def resolve(self, batter, pitcher, defense, base_out, rng, home=False):
         self.batters.append(batter)
         r = next(self.results)
         bb, fielder = SCRIPT_DEFAULTS[r]
@@ -477,3 +477,13 @@ def test_narration_of_extra_base_hits():
     assert describe(X("double", "3B")) == "三塁線二塁打"
     assert describe(X("double", "1B")) == "一塁線二塁打"
     assert describe(X("double", "LF")) == "左二塁打"
+
+
+def test_walkoff_truncated_is_marked(league2, game_config):
+    """サヨナラで得点を打ち切った打席には、印が付く(D-087)。本塁打のサヨナラには付かない。"""
+    script = _until_bottom_ninth() + ["home_run", "triple", "walk", "walk", "double"]
+    r = scripted_game(league2, game_config, script)
+    assert r.log[-1].walkoff and r.log[-1].walkoff_truncated
+    assert not any(x.walkoff_truncated for x in r.log[:-1])
+    hr = scripted_game(league2, game_config, _until_bottom_ninth() + ["home_run", "home_run"])
+    assert hr.log[-1].walkoff and not hr.log[-1].walkoff_truncated

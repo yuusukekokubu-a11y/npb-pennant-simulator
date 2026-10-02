@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "schedule": {
+    "games_per_opponent": 25
+  },
+  "standings": {
+    "allow_shared_rank": false
+  }
+}

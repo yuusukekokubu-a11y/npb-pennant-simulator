@@ -1,15 +1,22 @@
 {
-  "fingerprint_version": 1,
+  "fingerprint_version": 2,
   "league": "9c1508e6cbbe9854ab1f7806aa886c231d12c0b04b08e262c5f0bb55798b29e0",
-  "game": "7aef1a01bc4ffa224baa057169f000bcf03d75a4fdaa83d84c07cb17ca81a62d",
-  "days": "f6f2672b28b44b8c7dee777efcf598bc2578ac42fdd3e52a9b4b798a5a176739",
+  "game": "289bc999960808e57b0ef2775178c79e38176d1129ed58d7437f53bdf4eaae8f",
+  "days": "973e8b6b62f1aea573af1ea422247ec288e39f99c613297c00835726d53e0206",
+  "season": "1b97bf150796d9229c4b51befe16134d6c2ad4c2e05d84302e74d1683f255065",
   "counts": {
     "players": 840,
     "game_plate_appearances": 81,
     "game_score": "4-1",
     "days": 30,
     "days_games": 180,
-    "days_plate_appearances": 14069,
-    "days_runs": 1542
+    "days_plate_appearances": 14294,
+    "days_runs": 1693,
+    "season_games": 750,
+    "season_plate_appearances": 59224,
+    "season_champions": [
+      "T06",
+      "T08"
+    ]
   }
 }
