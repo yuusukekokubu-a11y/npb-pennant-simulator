@@ -1,0 +1,44 @@
+# ===== 秘密情報・環境ファイル(絶対にコミットしない) =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials*.json
+
+# ===== セーブデータ(実名を含む可能性があるため除外) =====
+# 本来はリポジトリ外(ホームフォルダ)に保存するが、念のためここでも除外する
+*.sav
+saves/
+savedata/
+
+# ===== Python が自動で作るファイル =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# パッケージ作成時の生成物
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 仮想環境(プロジェクト専用のPython環境)
+.venv/
+venv/
+env/
+
+# テスト・ツールのキャッシュ
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ===== エディタ・OS が作るファイル =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
