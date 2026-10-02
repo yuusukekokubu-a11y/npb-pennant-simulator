@@ -42,7 +42,7 @@
   },
   "in_play": {
     "ground": {
-      "hit_rate": 0.25,
+      "hit_rate": 0.248,
       "unfieldable_share": 0.08,
       "error_rate": 0.028,
       "hit_effects": {
@@ -57,7 +57,7 @@
       }
     },
     "line": {
-      "hit_rate": 0.70,
+      "hit_rate": 0.695,
       "unfieldable_share": 0.45,
       "error_rate": 0.004,
       "hit_effects": {
@@ -72,7 +72,7 @@
       }
     },
     "fly": {
-      "hit_rate": 0.14,
+      "hit_rate": 0.138,
       "unfieldable_share": 0.06,
       "error_rate": 0.009,
       "hit_effects": {
