@@ -10,9 +10,19 @@
     "max_age": 41,
     "cap": 0.95
   },
-  "prerun_years": 30,
+  "prerun_years": 25,
   "calibration": {
-    "batter": 4.48,
-    "pitcher": 4.06
+    "small": {
+      "batter": 2.75,
+      "pitcher": 2.29
+    },
+    "medium": {
+      "batter": 2.66,
+      "pitcher": 2.38
+    },
+    "large": {
+      "batter": 2.76,
+      "pitcher": 2.32
+    }
   }
 }
