@@ -208,7 +208,7 @@ def test_narrate_text_is_unchanged():
     from pennant.parks import neutralize_parks
     from pennant.season import Season
 
-    league = new_league(1)
+    league = new_league(1, prerun=False)  # 事前運転(D-190)の前の選手で、文章の形だけを確かめる
     neutralize_parks(league)  # 球場の倍率を入れる前(第2弾②a より前)と同じ試合にする
     s = Season(league, 13)
     s.play_days(3)
