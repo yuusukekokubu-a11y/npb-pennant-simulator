@@ -602,7 +602,11 @@ await page.click("#tabs button[data-tab=progress]");
 check((await page.textContent("#day-text")).startsWith("1シーズン目 全125日 終了") && (await page.isVisible("#year-end-box")), `シーズンが終わると、進行の画面に「年度を確定する」が出る(「${await page.textContent("#day-text")}」)`);
 await page.click("#year-end");
 await page.waitForFunction(() => !document.querySelector("#screen-yearend").hidden && document.querySelector("#yearend-title").textContent.length > 0);
-const champsPy = pyGame(`print(json.dumps([f"{c['league_name']} 優勝:{'・'.join(c['teams'])}" for c in g.year_end_preview()["champions"]], ensure_ascii=False))`);
+const champsPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+print(json.dumps([f"{c['league_name']} 優勝:{'・'.join(c['teams'])}" for c in g.year_end_preview()["champions"]], ensure_ascii=False))`, last.path));
 const champsOnScreen = await page.$$eval("#yearend-champions p", (ps) => ps.map((p) => p.textContent));
 check(JSON.stringify(champsOnScreen) === JSON.stringify(champsPy) && (await page.textContent("#yearend-note")).includes("この操作は戻せません"), `確認の画面に、優勝チームと「戻せません」の説明が出る(${champsPy.join(" / ")})`);
 check((await page.textContent("#yearend-dirty")).includes("保存済み"), "確認の画面に、保存の状態(保存済み)が出る");
@@ -648,9 +652,12 @@ await page.waitForFunction(() => document.querySelector("#stats-rule").textConte
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "career" })), `通算の WAR(各シーズンの合計)が、計算本体と同じ(${screenRows.length}人)`);
 await page.click("#stats-kind button[data-value=saber]");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("足し合わせ"));
+// 「基本」で使っていた並び順(打率)は、切り替えても保たれる(D-131)ので、名前の隣に打率の固定列が出る
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("足し合わせ") && document.querySelector("#stats-info").textContent.includes("並び順:打率"));
 screenRows = await statsOnScreen();
-check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "saber", season: "career" })), `通算のセイバー(元の数の合計から今の基準値で計算)が、計算本体と同じ(${screenRows.length}人)`);
+const careerSaber = pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" });
+const careerDiff = screenRows.findIndex((r, i) => JSON.stringify(r) !== JSON.stringify(careerSaber[i]));
+check(careerDiff < 0 && screenRows.length === careerSaber.length, `通算のセイバー(元の数の合計から今の基準値で計算。打率の並び順を保ったまま)が、計算本体と同じ(${screenRows.length}人)${careerDiff >= 0 ? `(違い: ${JSON.stringify(screenRows[careerDiff])} / ${JSON.stringify(careerSaber[careerDiff])})` : ""}`);
 await page.selectOption("#stats-season", "current");
 await page.waitForFunction(() => !document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("前のシーズンまで(1シーズン分)"));
 check(true, "2シーズン目の注記に、球場補正が前のシーズンまで(1シーズン分)の推定であることが出る");

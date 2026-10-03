@@ -113,17 +113,26 @@ def main(argv=None):
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--years", type=int, default=30)
     parser.add_argument("--json", help="年ごとの数を書き出す JSON ファイル")
+    parser.add_argument("--load", nargs="*", help="回す代わりに、--json で書き出したファイルを読んで表を出す(別々に回した世界をまとめる)")
     args = parser.parse_args(argv)
     config = load_generation_config()
     war_settings = load_war_settings()
     worlds = {}
-    for seed in range(args.seed_start, args.seed_start + args.worlds):
-        worlds[seed] = run_world(seed, args.years, config, war_settings)
+    if args.load:
+        for path in args.load:
+            with open(path, encoding="utf-8") as f:
+                worlds.update({int(k): v for k, v in json.load(f).items()})
+        args.worlds = len(worlds)
+        args.seed_start = min(worlds)
+        args.years = min(len(v) for v in worlds.values())
+    else:
+        for seed in range(args.seed_start, args.seed_start + args.worlds):
+            worlds[seed] = run_world(seed, args.years, config, war_settings)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(worlds, f, ensure_ascii=False, indent=1)
 
-    print(f"# 複数年の安定の確認({args.worlds} 世界 × {args.years} 年。リーグ {args.seed_start}〜{args.seed_start + args.worlds - 1})\n")
+    print(f"# 複数年の安定の確認({args.worlds} 世界 × {args.years} 年。リーグ {'・'.join(str(s) for s in sorted(worlds))})\n")
     print("## 年ごとの平均(世界をまたいだ平均)\n")
     keys = [k for k, _, _ in COLUMNS]
     rows = []
