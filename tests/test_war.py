@@ -186,10 +186,10 @@ def test_screen_war_matches_the_script_and_survives_save_load():
     team = g.team("T01")
     t = war_totals({pid: v for pid, v in expected.items() if v.team_id == "T01"})
     assert team["war"]["batters"] == f"{float(t['batters']):.2f}" and team["war"]["pitchers_ra"] == f"{float(t['pitchers_ra']):.2f}"
-    # 読み込んだ後も同じ(保存形式は版 5 のまま)
+    # 読み込んだ後も同じ
     from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 
-    assert SAVE_FORMAT_VERSION == 5
+    assert SAVE_FORMAT_VERSION == 6
     again = api.Game(load_game(save_game(g.state)), dirty=False)
     assert war_record(again.war_lines()) == war_record(g.war_lines())
     assert again.stats("batter", "war") == s

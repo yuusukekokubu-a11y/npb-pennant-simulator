@@ -27,6 +27,8 @@ from typing import Any, Callable
 
 from .abilities import BATTER, PITCHER, items_for
 from .baselines import STATES, VALUE_NAMES, Baselines, BaselineSettings, load_baseline_settings, validate_baseline_settings
+from .history import SeasonArchive
+from .offseason import OffseasonResult, OffseasonSettings, load_offseason_settings, validate_offseason_settings
 from .parkfactors import COUNT_KEYS, ParkTally, history_from_dict, history_to_dict
 from .baserunning import RunnerMove
 from .config import (
@@ -49,7 +51,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 5  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)
+SAVE_FORMAT_VERSION = 6  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -89,7 +91,15 @@ def _v4_to_v5(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5}
+def _v5_to_v6(bundle: dict) -> dict:
+    """版5には年とシーズンの履歴がない。1シーズン目・履歴なしとして足す(F2。D-189)。"""
+    bundle["state"].setdefault("year", 1)
+    bundle["state"].setdefault("history", [])
+    bundle["state"].setdefault("offseasons", [])
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -115,12 +125,18 @@ class GameState:
     baselines: Baselines | None = None  # シーズンの出発点の基準値(初年度は試運転。D-121)。None は既定値
     baseline_settings: BaselineSettings | None = None  # 基準値の設定(None は設定ファイル)
     park_history: list = field(default_factory=list)  # 前のシーズンまでの、球場 × シーズンの集計(球場補正の推定用。D-146)
+    year: int = 1  # 何シーズン目か(F2)
+    history: list = field(default_factory=list)  # 過去シーズンの集計(SeasonArchive。古い順。F2。D-182)
+    offseasons: list = field(default_factory=list)  # 年度ごとのオフの結果(OffseasonResult。F2)
+    offseason_settings: OffseasonSettings | None = None  # 年度の確定の設定(None は設定ファイル)
 
     def __post_init__(self) -> None:
         if self.baseline_settings is None:
             self.baseline_settings = load_baseline_settings()
         if self.baselines is None:
             self.baselines = self.baseline_settings.default_baselines()
+        if self.offseason_settings is None:
+            self.offseason_settings = load_offseason_settings()
 
     @property
     def league(self) -> League:
@@ -175,6 +191,7 @@ def build_state(state: GameState) -> dict:
             "game": copy.deepcopy(s.game_config.data),
             "season": copy.deepcopy(s.season_config.data),
             "baselines": copy.deepcopy(state.baseline_settings.data),
+            "offseason": copy.deepcopy(state.offseason_settings.data),
         },
         "league": {
             "seed": s.league.seed,
@@ -184,6 +201,9 @@ def build_state(state: GameState) -> dict:
         "user": {"my_team_id": state.my_team_id},
         "baselines": state.baselines.to_dict(),
         "park_history": history_to_dict(state.park_history),
+        "year": state.year,
+        "history": [a.to_dict() for a in state.history],
+        "offseasons": [o.to_dict() for o in state.offseasons],
         "season": {
             "day": s.day,
             "rotation": dict(s.rotation),
@@ -210,8 +230,12 @@ def save_game(state: GameState, saved_at: datetime | None = None) -> bytes:
     log_lines = [_json_bytes({"number": p.scheduled.number, "result": _plain(p.result)}) for p in state.season.played]
     files = {
         STATE_FILE: _json_bytes(build_state(state)),
-        "logs/season-1.jsonl": b"\n".join(log_lines) + (b"\n" if log_lines else b""),
+        f"logs/season-{state.year}.jsonl": b"\n".join(log_lines) + (b"\n" if log_lines else b""),
     }
+    for a in state.history:  # 打席ログを残している過去シーズン(D-189)
+        if a.games is not None:
+            lines = [_json_bytes({"number": p.scheduled.number, "result": _plain(p.result)}) for p in a.games]
+            files[f"logs/season-{a.year}.jsonl"] = b"\n".join(lines) + (b"\n" if lines else b"")
     manifest = {
         "format": SAVE_FORMAT,
         "format_version": SAVE_FORMAT_VERSION,
@@ -394,14 +418,15 @@ def load_game(data: bytes) -> GameState:
     with zf:
         names = set(zf.namelist())
         raws = {}
-        for name in (MANIFEST_FILE, STATE_FILE, "logs/season-1.jsonl"):
+        for name in sorted(names):
+            if name == MANIFEST_FILE or name == STATE_FILE or name.startswith("logs/"):
+                try:
+                    raws[name] = zf.read(name)
+                except (zipfile.BadZipFile, OSError, EOFError, zlib.error) as exc:
+                    p.add(name, f"取り出せません。ファイルが壊れています({exc})")
+        for name in (MANIFEST_FILE, STATE_FILE):
             if name not in names:
                 p.add(name, "ファイルが入っていません")
-                continue
-            try:
-                raws[name] = zf.read(name)
-            except (zipfile.BadZipFile, OSError, EOFError, zlib.error) as exc:
-                p.add(name, f"取り出せません。ファイルが壊れています({exc})")
     if p.items:
         raise SaveDataError(p.items)
 
@@ -427,7 +452,10 @@ def load_game(data: bytes) -> GameState:
         "plate_appearance": validate_pa_config,
         "game": validate_game_config,
         "season": validate_season_config,
+        "offseason": validate_offseason_settings,
     }
+    if "offseason" not in configs:
+        configs["offseason"] = load_offseason_settings().data  # 版5以前は設定ファイルの値
     cfg = {}
     for key, validate in validators.items():
         if key not in configs:
@@ -494,6 +522,13 @@ def load_game(data: bytes) -> GameState:
             p.items.extend(f"state.json.configs.baselines: {x}" for x in exc.problems)
     baselines = _check_baselines(state.get("baselines"), baseline_settings, p)
     park_history = _check_park_history(state.get("park_history"), team_ids, p)
+    year = _need(state, "year", int, "state.json", p) or 1
+    if year < 1:
+        p.add("state.json.year", f"1 以上の整数が必要です(値: {year!r})")
+    history_d = _need(state, "history", list, "state.json", p) or []
+    offseasons_d = _need(state, "offseasons", list, "state.json", p) or []
+    if f"logs/season-{year}.jsonl" not in raws:
+        p.add(f"logs/season-{year}.jsonl", "ファイルが入っていません")
     season_d = _need(state, "season", dict, "state.json", p) or {}
     day = _need(season_d, "day", int, "state.json.season", p)
     rotation = _need(season_d, "rotation", dict, "state.json.season", p)
@@ -535,16 +570,17 @@ def load_game(data: bytes) -> GameState:
     expected_games = sum(len(d) for d in season.schedule.days[: max(0, min(day, total_days))])
     if len(games_d) != expected_games:
         p.add("state.json.season.games", f"{day}日目までの試合は {expected_games} 試合のはずですが、{len(games_d)} 試合あります(日付と試合が合いません)")
-    lines = [line for line in raws["logs/season-1.jsonl"].split(b"\n") if line.strip()]
+    log_name = f"logs/season-{year}.jsonl"
+    lines = [line for line in raws[log_name].split(b"\n") if line.strip()]
     if len(lines) != len(games_d):
-        p.add("logs/season-1.jsonl", f"試合の数({len(lines)})が、state.json の試合の数({len(games_d)})と合いません")
+        p.add(log_name, f"試合の数({len(lines)})が、state.json の試合の数({len(games_d)})と合いません")
     if p.items:
         raise SaveDataError(p.items)
 
     schedule = season.schedule.games
     played = []
     for i, (gd, raw) in enumerate(zip(games_d, lines)):
-        where = f"logs/season-1.jsonl の {i + 1} 行目"
+        where = f"{log_name} の {i + 1} 行目"
         row = _read_json(raw, where, p)
         if row is None:
             continue
@@ -576,8 +612,68 @@ def load_game(data: bytes) -> GameState:
     for pg in played:
         season._record(pg.result)
     season.played = played
+    history = _check_history(history_d, raws, team_ids, year, p)
+    offseasons = _check_offseasons(offseasons_d, p)
+    if p.items:
+        raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history)
+    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"])
+
+
+def _check_history(history_d: list, raws: dict, team_ids: set, year: int, p: _Problems) -> list:
+    """過去シーズンの集計の検証(F2。D-182)。打席ログが残っているシーズンは、試合の結果も読み込む。"""
+    out = []
+    seen = set()
+    for i, d in enumerate(history_d):
+        where = f"state.json.history[{i}]"
+        if not isinstance(d, dict):
+            p.add(where, "シーズンの集計のまとまり({ })が必要です")
+            continue
+        try:
+            y = int(d["year"])
+            if y in seen or y >= year or y < 1:
+                p.add(where, f"シーズンの番号が正しくありません(値: {y}。1〜{year - 1} で重複なし)")
+                continue
+            seen.add(y)
+            for tid in d["records"]["teams"]:
+                if tid not in team_ids:
+                    p.add(f"{where}.records.teams.{tid}", "球団の一覧にない ID です")
+            games = None
+            if d.get("has_games"):
+                log_name = f"logs/season-{y}.jsonl"
+                if log_name not in raws:
+                    p.add(log_name, "ファイルが入っていません(履歴に打席ログがあることになっています)")
+                else:
+                    games = []
+                    for n, raw in enumerate(line for line in raws[log_name].split(b"\n") if line.strip()):
+                        row = _read_json(raw, f"{log_name} の {n + 1} 行目", p)
+                        if row is None:
+                            continue
+                        games.append(_archived_game(row))
+            out.append(SeasonArchive.from_dict(d, games))
+        except (KeyError, TypeError, ValueError) as exc:
+            p.add(where, f"シーズンの集計の形が違います({type(exc).__name__}: {exc})")
+    out.sort(key=lambda a: a.year)
+    return out
+
+
+def _archived_game(row: dict):
+    """過去シーズンの試合(打席ログつき)。日程は持たないので、試合の番号と結果だけを持つ。"""
+    from .season import PlayedGame, ScheduledGame
+
+    result = _game_from(row["result"])
+    scheduled = ScheduledGame(int(row["number"]), 0, 0, result.home_team_id, result.away_team_id)
+    return PlayedGame(scheduled, result, GameContext({}, {}), {})
+
+
+def _check_offseasons(offseasons_d: list, p: _Problems) -> list:
+    out = []
+    for i, d in enumerate(offseasons_d):
+        try:
+            out.append(OffseasonResult.from_dict(d))
+        except (KeyError, TypeError, ValueError) as exc:
+            p.add(f"state.json.offseasons[{i}]", f"オフの結果の形が違います({type(exc).__name__}: {exc})")
+    return out
 
 
 def _check_park_history(d, team_ids: set, p) -> list:

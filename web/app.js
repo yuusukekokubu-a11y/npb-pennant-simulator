@@ -16,7 +16,7 @@ const TABS = [
   { id: "games", label: "試合" },
 ];
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide", "stadium"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason"];
 const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
 
 const $ = (id) => document.getElementById(id);
@@ -37,7 +37,7 @@ const state = {
   answerLevel: 0, // 答え合わせモード(0:オフ、1:今の能力、2:潜在能力なども)。保存しない
   cache: new Map(), // 見る画面の結果(日が進むまで使い回す)
   cacheStamp: null,
-  stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", shown: STATS_PAGE },
+  stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", season: "current", shown: STATS_PAGE }, // season は "current"・シーズン番号・"career"(F2)
   // 並び順(打者/投手ごとに保つ。基本・セイバー・能力を切り替えても保つ。D-131)。key が null なら、その表の既定
   sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } },
   shownSort: { batter: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
@@ -115,7 +115,7 @@ async function boot() {
 // ---- 見る画面の問い合わせ(結果は、日が進むまで使い回す。D-114) ----
 
 function stamp() {
-  return state.view ? `${state.view.status.games_played}` : "";
+  return state.view ? `${state.view.status.year}:${state.view.status.games_played}` : "";
 }
 
 async function cached(kind, name, args) {
@@ -213,12 +213,14 @@ function renderCurrent() {
     settings: () => renderSettings(),
     guide: () => renderGuide(token),
     stadium: () => renderStadium(args, token),
+    yearend: () => renderYearEnd(token),
+    offseason: () => renderOffseason(args, token),
   }[name];
   Promise.resolve(job && job()).catch((err) => showError(name, err));
 }
 
 function showError(name, err) {
-  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log" }[name];
+  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired" }[name];
   if (box) $(box).replaceChildren(el("p", { className: "message ng" }, `表示できませんでした:${err.message}`));
 }
 
@@ -321,10 +323,16 @@ function recordText(m) {
   return `${m.league_name} ${m.rank}位 / ${m.wins}勝 ${m.losses}敗 ${m.ties}分 / 勝率 ${m.pct} / ${gb}`;
 }
 
+function seasonWord(s) {
+  return `${s.year}シーズン目`;
+}
+
 function renderProgress() {
   const s = state.view.status;
-  $("day-text").textContent = s.is_over ? `全${s.total_days}日 終了` : `${s.day}日目 / ${s.total_days}日`;
-  $("topbar-day").textContent = s.is_over ? "シーズン終了" : `${s.day}日目 / ${s.total_days}日`;
+  $("day-text").textContent = `${seasonWord(s)} ` + (s.is_over ? `全${s.total_days}日 終了` : `${s.day}日目 / ${s.total_days}日`);
+  $("topbar-day").textContent = `${seasonWord(s)} ` + (s.is_over ? "シーズン終了" : `${s.day}日目 / ${s.total_days}日`);
+  $("year-end-box").hidden = !s.can_year_end;
+  $("year-end").disabled = state.running;
   $("games-text").textContent = `${s.games_played} / ${s.total_games} 試合`;
   const m = s.my_team;
   $("mine-card").hidden = !m;
@@ -398,6 +406,11 @@ function enterGame(view, dirty) {
 // ---- 成績(個人成績。D-114〜D-116) ----
 
 function buildStatsFilters() {
+  const seasons = state.view.status.seasons || [{ key: "current", label: "今シーズン" }];
+  $("stats-season").replaceChildren(...seasons.map((x) => el("option", { value: x.key }, x.label)));
+  if (!seasons.some((x) => x.key === state.stats.season)) state.stats.season = "current";
+  $("stats-season").value = state.stats.season;
+  $("stats-season").hidden = seasons.length < 2; // 1シーズン目は選ぶものがないので出さない
   const leagues = state.view.standings.leagues;
   $("stats-league").replaceChildren(el("option", { value: "" }, "両リーグ"), ...leagues.map((lg) => el("option", { value: String(lg.index) }, lg.name)));
   $("stats-league").value = state.stats.league;
@@ -415,6 +428,7 @@ function statsArgs() {
     qualified: s.qualified,
     league: s.league === "" ? null : Number(s.league),
     team_id: s.team || null,
+    season: s.season === "current" ? null : s.season,
   };
 }
 
@@ -521,7 +535,8 @@ async function renderStats(token) {
   $("stats-baseline").hidden = !data.baseline_note;
   $("stats-baseline").textContent = data.baseline_note || "";
   const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」はこの表にない指標なので、名前の隣に固定して出しています。` : "";
-  $("stats-rule").textContent = `${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} ${extraNote}表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。上の「並び順」の欄からも選べます。`;
+  const seasonNote = data.season && data.season !== "current" ? `${data.season_label}の成績です。` : "";
+  $("stats-rule").textContent = `${seasonNote}${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} ${extraNote}表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。上の「並び順」の欄からも選べます。`;
   terms("stats-terms-list", (data.extra_column ? [data.extra_column, ...data.columns] : data.columns).concat(data.terms || []));
   $("stats-terms").open = Boolean(data.terms); // WAR の表は、用語の解説を表の下に開いて出す(D-179)
 }
@@ -621,8 +636,9 @@ async function renderPlayer(args, token) {
   $("player-info").replaceChildren(
     teamLink(p.team_name, p.team_id),
     p.is_mine ? " ★" : "",
-    ` / ${p.position_label} / ${p.age}歳 / ${p.hand || ""}`,
+    ` / ${p.position_label} / ${p.age}歳${p.hand ? ` / ${p.hand}` : ""}${p.retired ? "(引退)" : ""}`,
   );
+  renderPlayerHistory(data);
   setPressed("player-kind", state.playerKind);
   const box = $("player-season");
   $("player-baseline").hidden = true;
@@ -676,6 +692,123 @@ async function renderPlayer(args, token) {
       more: () => { args.gamesShown = limit + GAMES_PAGE; renderCurrent(); },
     }),
     el("p", { className: "muted small" }, "「対」はホーム、「@」はビジター(相手の本拠地)の試合。結果の ○ は勝ち、● は負け、△ は引き分け。勝・敗・S(セーブ)・H(ホールド)は、その試合の投手の記録。日付を押すと、その試合のページを開きます。"),
+  );
+}
+
+// 年度別の成績(過去シーズン・今シーズン・通算。F2。D-182)。種類の切り替え(基本・セイバー・WAR)は上の表と同じ
+function renderPlayerHistory(data) {
+  const h = data.history;
+  const box = $("player-history-box");
+  if (!h || !h.rows.length || state.playerKind === "ability") {
+    box.hidden = true;
+    $("player-history").replaceChildren();
+    return;
+  }
+  box.hidden = false;
+  const kind = state.playerKind;
+  const columns = kind === "war" ? h.war_columns : h.columns[kind];
+  const rows = h.rows.map((r) => ({ ...r, values: kind === "war" ? r.war || {} : r.tables[kind] }));
+  $("player-history").replaceChildren(
+    table({
+      firstLabel: "シーズン",
+      columns,
+      rows,
+      first: (r) => [el("span", {}, r.season === "career" ? "通算" : r.season === "current" ? `${r.year}(進行中)` : String(r.year)), el("span", { className: "sub" }, r.season === "career" ? "" : `${r.age}歳 ${r.team_name} ${r.position}`)],
+      rowClass: (r) => (r.season === "career" ? "career" : ""),
+    }),
+  );
+  $("player-history-note").textContent = h.note;
+}
+
+// ---- 年度の確定(F2。D-185)と、オフの結果 ----
+
+async function renderYearEnd(token) {
+  const r = await call("query", { name: "year_end_preview", args: {} });
+  if (!r.ok) throw new Error(r.message);
+  if (token !== state.token) return;
+  const d = r.value;
+  $("yearend-title").textContent = `${d.year}シーズン目を終えて、${d.year + 1}シーズン目に進みます。`;
+  $("yearend-champions").replaceChildren(...d.champions.map((c) => el("p", {}, `${c.league_name} 優勝:${c.teams.join("・")}`)));
+  $("yearend-note").textContent = d.note;
+  $("yearend-dirty").textContent = d.dirty ? "今のゲームには、未保存の変更があります。確定の前の状態を残しておきたいときは、先に保存してください(確定したあとの保存とは、別のファイルになります)。" : "今のゲームは保存済みです(確定したあとに保存すると、別のファイルになります)。";
+  $("yearend-go").disabled = !d.is_over || state.running;
+  $("yearend-message").textContent = "";
+}
+
+async function yearEnd() {
+  if (state.running || !state.view || !state.view.status.can_year_end) return;
+  state.running = true;
+  $("yearend-go").disabled = true;
+  $("yearend-message").className = "message";
+  $("yearend-message").textContent = "年度を確定しています(集計を履歴に残し、選手の年齢・能力・引退・新人を決めています)…";
+  try {
+    const r = await call("yearEnd", {});
+    if (!r.ok) throw new Error(r.message);
+    state.view = r.value.view;
+    state.cache.clear();
+    state.stats.season = "current";
+    state.gamesDay = null;
+    setDirty(true);
+    buildStatsFilters();
+    const s = r.value.summary;
+    state.pages = [];
+    showScreen("progress");
+    renderProgress();
+    $("progress-message").className = "message ok";
+    $("progress-message").textContent = `${s.year}シーズン目を確定し、${s.next_year}シーズン目が始まりました(引退 ${s.counts.retired}人・新人 ${s.counts.rookies}人)。`;
+    openPage("offseason", { year: s.year });
+  } catch (err) {
+    $("yearend-message").className = "message ng";
+    $("yearend-message").textContent = `年度を確定できませんでした:${err.message}`;
+  } finally {
+    state.running = false;
+    if (current().name === "yearend") $("yearend-go").disabled = !state.view.status.can_year_end;
+  }
+}
+
+function playerTable(rows, withOrigin) {
+  const columns = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }].concat(withOrigin ? [{ key: "origin", label: "出身" }] : []);
+  return table({
+    firstLabel: "選手",
+    columns,
+    rows: rows.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, origin: r.origin || "" } })),
+    first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+    rowClass: (r) => (r.is_mine ? "mine" : ""),
+  });
+}
+
+async function renderOffseason(args, token) {
+  const d = await query("offseason_summary", { year: args.year ?? null });
+  if (token !== state.token) return;
+  if (!d.available) {
+    $("offseason-note").textContent = "まだ年度を確定していません。";
+    for (const id of ["offseason-retired", "offseason-rookies", "offseason-answers"]) $(id).replaceChildren();
+    return;
+  }
+  $("offseason-title").textContent = `オフの結果(${d.year}シーズン目の終わり)`;
+  $("offseason-note").textContent = d.note;
+  $("offseason-counts").textContent = `引退 ${d.counts.retired}人 / 新人 ${d.counts.rookies}人 / 選手の数 ${d.counts.players}人(変わりません)`;
+  $("offseason-retired").replaceChildren(d.retired.length ? playerTable(d.retired, false) : el("p", { className: "muted" }, "引退した選手はいません。"));
+  $("offseason-rookies").replaceChildren(d.rookies.length ? playerTable(d.rookies, true) : el("p", { className: "muted" }, "入団した新人はいません。"));
+  const box = $("offseason-answers");
+  if (state.answerLevel === 0) {
+    box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると、残った選手の能力の増減が見られます(上の「メニュー」から)。"));
+    return;
+  }
+  const a = await answer("offseason_answers", { year: d.year });
+  if (token !== state.token || state.answerLevel === 0) return;
+  const columns = [{ key: "age", label: "年齢" }, { key: "mean_change", label: "平均の増減", description: "能力の項目ごとの増減の平均" }, { key: "items", label: "項目ごと", description: "項目名と増減" }];
+  box.replaceChildren(
+    el("p", { className: "muted small" }, a.note),
+    table({
+      firstLabel: "選手",
+      columns,
+      rows: a.players.map((r) => ({ ...r, values: { age: `${r.age}歳`, mean_change: r.mean_change, items: r.items.map((i) => `${i.label}${i.change}`).join(" ") } })),
+      first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+      rowClass: (r) => (r.is_mine ? "mine" : ""),
+      limit: args.answersShown || STATS_PAGE,
+      more: () => { args.answersShown = (args.answersShown || STATS_PAGE) + STATS_PAGE; renderCurrent(); },
+    }),
   );
 }
 
@@ -888,7 +1021,7 @@ function setAnswerLevel(level) {
   clearAnswers();
   if (level === 0) {
     // オフにしたら、隠れている画面に残った能力の表示も消す(D-108)。並び順の欄の選択肢と、能力の項目での並び順も戻す
-    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort", "stadium-answers"]) $(id).replaceChildren();
+    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort", "stadium-answers", "offseason-answers"]) $(id).replaceChildren();
     for (const role of ["batter", "pitcher"]) {
       if (state.abilityKeys[role].includes(state.sortBy[role].key)) state.sortBy[role] = { key: null, order: null };
       if (state.shownSort[role] && state.abilityKeys[role].includes(state.shownSort[role].key)) state.shownSort[role] = null;
@@ -1145,7 +1278,8 @@ async function save() {
     setDirty(false);
     $("progress-message").className = "message ok";
     $("progress-message").textContent = `保存しました(${r.value.file_name}、${(r.value.bytes.length / 1024 / 1024).toFixed(1)}MB)。ダウンロードのフォルダに入ります。`;
-    if (current().name !== "progress") showTab("progress");
+    if (current().name === "yearend") renderCurrent(); // 確認の画面からの保存は、その画面に留まる(未保存の注意を更新)
+    else if (current().name !== "progress") showTab("progress");
   } catch (err) {
     $("progress-message").className = "message ng";
     $("progress-message").textContent = `保存できませんでした:${err.message}`;
@@ -1215,6 +1349,9 @@ $("stop").addEventListener("click", () => {
   $("progress-message").textContent = "この日の試合が終わったら止めます…";
 });
 $("save").addEventListener("click", save);
+$("year-end").addEventListener("click", () => openPage("yearend"));
+$("yearend-save").addEventListener("click", save);
+$("yearend-go").addEventListener("click", yearEnd);
 $("open-file-start").addEventListener("change", (e) => openFile(e, "start-message"));
 $("open-file-top").addEventListener("change", (e) => openFile(e, "progress-message"));
 $("open-file-start").disabled = true;
@@ -1257,6 +1394,11 @@ for (const b of $("stats-order").children) {
     renderCurrent();
   });
 }
+$("stats-season").addEventListener("change", () => {
+  state.stats.season = $("stats-season").value;
+  state.stats.shown = STATS_PAGE;
+  renderCurrent();
+});
 $("stats-league").addEventListener("change", () => {
   state.stats.league = $("stats-league").value;
   state.stats.shown = STATS_PAGE;

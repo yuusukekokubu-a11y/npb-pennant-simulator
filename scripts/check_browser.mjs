@@ -75,7 +75,7 @@ const grab = async () => texts.push(await page.evaluate(() => document.body.inne
 async function day() {
   const text = await page.textContent("#day-text");
   if (text.includes("終了")) return 125;
-  const m = text.match(/^(\d+)日目/);
+  const m = text.match(/(\d+)日目/);
   return m ? Number(m[1]) : -1;
 }
 const isDirty = () => page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
@@ -152,18 +152,18 @@ const trialSeconds = (Date.now() - trialStart) / 1000;
 results.push(`  試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
 const mineName = await page.textContent("#mine-name");
 check(mineName === placeholder7, `選んだ8番目の球団が自球団になる(${mineName})`);
-check((await page.textContent("#day-text")).startsWith("0日目 / 125日"), `進行の画面:「${await page.textContent("#day-text")}」`);
+check((await page.textContent("#day-text")).startsWith("1シーズン目 0日目 / 125日"), `進行の画面:「${await page.textContent("#day-text")}」`);
 check(await isDirty(), "新規開始のあとは「未保存」(閉じる前に警告が出る)");
 check(await page.isVisible("#dirty"), "「未保存の変更があります」が表示される");
 
 // ---- 3. 進行 ----
 await page.evaluate(() => (window.__runLog = []));
 await page.click(".adv[data-days='1']");
-await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1日目"));
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 1日目"));
 await page.waitForFunction(() => !document.querySelector(".adv[data-days='1']").disabled);
 check((await page.evaluate(() => window.__runLog.length)) === 0, "「1日」では「止める」と進み具合のバーが出ない");
 await page.click(".adv[data-days='7']");
-await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("8日目"));
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 8日目"));
 check(true, "「1日」「1週間」で、1日目・8日目に進む");
 await grab();
 // 最後まで → 少し待って止める。止めている間も画面が動くかを確かめる
@@ -585,6 +585,142 @@ const frame2 = await page.evaluate(() => new Promise((r) => { const s = performa
 check(frame2 < 500, `成績の表示中も画面が固まらない(次の描画まで ${frame2.toFixed(0)} ミリ秒)`);
 await grab();
 
+// ---- 6b. 年度の確定(F2。D-185)→ オフの結果 → 2シーズン目 → 過去シーズン・通算の成績 → 保存と読み込み ----
+// Python 側:125日目のセーブデータを読み、同じように年度を確定して1日進めた状態(同じシードなので同じ結果になるはず)
+function pyYear2(code, ...args) {
+  return JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+a = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+summary = g.year_end()
+g.advance(1)
+${code}
+`, last.path, ...args));
+}
+await page.click("#tabs button[data-tab=progress]");
+check((await page.textContent("#day-text")).startsWith("1シーズン目 全125日 終了") && (await page.isVisible("#year-end-box")), `シーズンが終わると、進行の画面に「年度を確定する」が出る(「${await page.textContent("#day-text")}」)`);
+await page.click("#year-end");
+await page.waitForFunction(() => !document.querySelector("#screen-yearend").hidden && document.querySelector("#yearend-title").textContent.length > 0);
+const champsPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+print(json.dumps([f"{c['league_name']} 優勝:{'・'.join(c['teams'])}" for c in g.year_end_preview()["champions"]], ensure_ascii=False))`, last.path));
+const champsOnScreen = await page.$$eval("#yearend-champions p", (ps) => ps.map((p) => p.textContent));
+check(JSON.stringify(champsOnScreen) === JSON.stringify(champsPy) && (await page.textContent("#yearend-note")).includes("この操作は戻せません"), `確認の画面に、優勝チームと「戻せません」の説明が出る(${champsPy.join(" / ")})`);
+check((await page.textContent("#yearend-dirty")).includes("保存済み"), "確認の画面に、保存の状態(保存済み)が出る");
+const [beforeDl] = await Promise.all([page.waitForEvent("download"), page.click("#yearend-save")]);
+await beforeDl.saveAs(join(work, `before-yearend-${beforeDl.suggestedFilename()}`));
+await page.waitForFunction(() => document.querySelector("#yearend-dirty").textContent.includes("保存済み"));
+check(!(await page.locator("#screen-yearend").isHidden()), "確認の画面の「先に保存する」で保存しても、確認の画面に留まる");
+const ye0 = Date.now();
+await page.click("#yearend-go");
+await page.waitForFunction(() => !document.querySelector("#screen-offseason").hidden && document.querySelectorAll("#offseason-retired tbody tr").length > 0, null, { timeout: 120000 });
+const yeSeconds = (Date.now() - ye0) / 1000;
+const offPy = pyYear2(`print(json.dumps([summary["counts"]["retired"], summary["counts"]["rookies"], summary["counts"]["players"], [r["name"] for r in summary["retired"]], [r["name"] for r in summary["rookies"]]], ensure_ascii=False))`);
+const retiredOnScreen = await page.$$eval("#offseason-retired tbody tr td .link", (as) => as.map((a) => a.textContent));
+const rookiesOnScreen = await page.$$eval("#offseason-rookies tbody tr td .link", (as) => as.map((a) => a.textContent));
+const countsText = await page.textContent("#offseason-counts");
+check(JSON.stringify(retiredOnScreen) === JSON.stringify(offPy[3]) && JSON.stringify(rookiesOnScreen) === JSON.stringify(offPy[4]) && countsText.includes(`引退 ${offPy[0]}人`) && countsText.includes(`新人 ${offPy[1]}人`) && countsText.includes(`${offPy[2]}人`), `年度を確定すると、オフの結果(引退 ${offPy[0]}人・新人 ${offPy[1]}人・選手 ${offPy[2]}人)が出て、計算本体と同じ(${yeSeconds.toFixed(1)} 秒)`);
+check((await page.textContent("#offseason-answers")).includes("答え合わせモードをオンにすると") && !/[+-]\d\.\d/.test(await page.textContent("#offseason-answers")), "オフのとき、オフの結果に能力の増減は出ない");
+check(await isDirty(), "年度を確定したあとは「未保存」になる");
+await grab();
+await page.click("#screen-offseason .back");
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("2シーズン目 0日目"));
+check(await page.isHidden("#year-end-box") && (await page.textContent("#progress-message")).includes("2シーズン目が始まりました"), `確定のあと、進行の画面は2シーズン目の0日目(「${await page.textContent("#progress-message")}」)`);
+await page.click(".adv[data-days='1']");
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("2シーズン目 1日目"));
+check(true, "2シーズン目を1日進められる");
+// 成績:シーズンの選択(今シーズン・1シーズン目・通算)
+await page.click("#tabs button[data-tab=stats]");
+await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 || document.querySelector("#stats-table").textContent.includes("条件に合う選手"));
+const seasonOptions = await page.$$eval("#stats-season option", (os) => os.map((o) => o.textContent));
+check(seasonOptions.length === 3 && seasonOptions[1] === "1シーズン目" && seasonOptions[2] === "通算" && (await page.isVisible("#stats-season")), `成績の画面に、シーズンの選択(${seasonOptions.join("・")})が出る`);
+const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
+await page.selectOption("#stats-season", "1");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("1シーズン目の成績"));
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "basic", season: "1" })), `1シーズン目を選ぶと、確定した1シーズン目の成績が出る(${screenRows.length}人。計算本体と同じ)`);
+await page.click("#stats-kind button[data-value=war]");
+await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("確定した WAR"));
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "1" })), `1シーズン目の WAR も、確定した値(${screenRows.length}人)`);
+await page.selectOption("#stats-season", "career");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("通算"));
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "career" })), `通算の WAR(各シーズンの合計)が、計算本体と同じ(${screenRows.length}人)`);
+await page.click("#stats-kind button[data-value=saber]");
+// 「基本」で使っていた並び順(打率)は、切り替えても保たれる(D-131)ので、名前の隣に打率の固定列が出る
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("足し合わせ") && document.querySelector("#stats-info").textContent.includes("並び順:打率"));
+screenRows = await statsOnScreen();
+const careerSaber = pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" });
+const careerDiff = screenRows.findIndex((r, i) => JSON.stringify(r) !== JSON.stringify(careerSaber[i]));
+check(careerDiff < 0 && screenRows.length === careerSaber.length, `通算のセイバー(元の数の合計から今の基準値で計算。打率の並び順を保ったまま)が、計算本体と同じ(${screenRows.length}人)${careerDiff >= 0 ? `(違い: ${JSON.stringify(screenRows[careerDiff])} / ${JSON.stringify(careerSaber[careerDiff])})` : ""}`);
+await page.selectOption("#stats-season", "current");
+await page.waitForFunction(() => !document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("前のシーズンまで(1シーズン分)"));
+check(true, "2シーズン目の注記に、球場補正が前のシーズンまで(1シーズン分)の推定であることが出る");
+// 選手のページ:年度別の成績
+await page.selectOption("#stats-season", "1");
+await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("1シーズン目の成績") && document.querySelector("#stats-info").textContent.includes("打率"));
+await page.click("#stats-table tbody tr:first-child td .link");
+await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelectorAll("#player-history tbody tr").length > 0);
+const topId = pyYear2(`print(json.dumps(g.stats("batter", "basic", season="1")["rows"][0]["player_id"]))`);
+const histPy = pyYear2(`h = g.player(a["id"])["history"]\nprint(json.dumps([[r["label"] if r["season"] == "career" else str(r["year"])] + [r["tables"]["basic"][c["key"]] for c in h["columns"]["basic"]] for r in h["rows"]], ensure_ascii=False))`, JSON.stringify({ id: topId }));
+const histOnScreen = await page.$$eval("#player-history tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td span").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
+const histSame = histOnScreen.length === histPy.length && histOnScreen.every((r, i) => r.slice(1).join("|") === histPy[i].slice(1).join("|"));
+check(histSame, `選手のページに年度別の成績(${histOnScreen.length}行:1シーズン目・進行中・通算)が出て、計算本体と同じ`);
+await page.click("#screen-player .back");
+// 球場のページ:2シーズン目は、推定した球場補正が出る
+await page.click("#tabs button[data-tab=standings]");
+await page.click("#standings-body tr:first-child .link");
+await page.waitForFunction(() => document.querySelector("#team-info .link") !== null);
+await page.click("#team-info .link");
+await page.waitForFunction(() => document.querySelectorAll("#stadium-estimate td").length > 0);
+check((await page.textContent("#stadium-estimate-note")).includes("前のシーズンまで(1シーズン分)") && /\d\.\d{3}/.test(await page.textContent("#stadium-estimate")), "2シーズン目の球場のページに、1シーズン分の結果から推定した球場補正が出る");
+await page.click("#screen-stadium .back");
+await page.click("#screen-team .back");
+// 保存 → 計算本体で読む:2シーズン目・履歴1つ・打席ログは今シーズンの分だけ(D-189)。1シーズン目の成績は確定した値のまま
+await page.click("#tabs button[data-tab=progress]");
+const year2 = await saveFile("year2");
+const y2 = JSON.parse(python(`
+import io, json, sys, zipfile
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+names = sorted(n for n in zipfile.ZipFile(io.BytesIO(open(sys.argv[1], "rb").read())).namelist() if n.startswith("logs/"))
+from pennant.savegame import SAVE_FORMAT_VERSION
+t = g.stats("batter", "basic", season="1")
+print(json.dumps([g.state.year, len(g.state.history), names, [[r["name"], r["values"]["avg"]] for r in t["rows"][:5]], SAVE_FORMAT_VERSION], ensure_ascii=False))
+`, year2.path));
+const y2Py = pyYear2(`t = g.stats("batter", "basic", season="1")\nprint(json.dumps([[r["name"], r["values"]["avg"]] for r in t["rows"][:5]], ensure_ascii=False))`);
+check(y2[0] === 2 && y2[1] === 1 && JSON.stringify(y2[2]) === JSON.stringify(["logs/season-2.jsonl"]) && JSON.stringify(y2[3]) === JSON.stringify(y2Py), `保存したファイル(版 ${y2[4]})は2シーズン目・履歴1つ・打席ログは今シーズンの分だけ。1シーズン目の成績は確定した値のまま`);
+const y2Messages = await page.evaluate(() => window.__messages.join("\n"));
+const leakedY2 = [...HIDDEN.words.filter((w) => y2Messages.includes(w)), ...HIDDEN.keys.filter((k) => y2Messages.includes(`"${k}"`))];
+check(leakedY2.length === 0, `年度の確定の前後に届いたメッセージにも、隠し情報がない${leakedY2.length ? `(見つかった: ${leakedY2.join("、")})` : ""}`);
+// 答え合わせモードをオンにすると、オフの結果に能力の増減が出る
+page.once("dialog", (d) => d.accept());
+await page.click("#menu");
+await page.check("input[name=answer-level][value='1']");
+await page.click("#screen-settings .back");
+await page.click("#tabs button[data-tab=stats]");
+await page.selectOption("#stats-season", "current");
+await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 || document.querySelector("#stats-table").textContent.includes("条件に合う選手"));
+// オフの結果のページは、進行の画面から開き直せないので、確定の直後に出したページと同じ内容を問い合わせで確かめる
+const ansPy = pyYear2(`from pennant import answers\nx = answers.offseason_answers(g, None, 1)\nprint(json.dumps([len(x["players"]), x["players"][0]["mean_change"]]))`);
+check(ansPy[0] > 700 && /^[+-]\d+\.\d$/.test(ansPy[1]), `答え合わせ用の関数で、残った選手(${ansPy[0]}人)の能力の増減が見られる(先頭 ${ansPy[1]})`);
+page.once("dialog", (d) => d.accept());
+await page.click("#menu");
+await page.check("input[name=answer-level][value='0']");
+await page.click("#screen-settings .back");
+// 1シーズン目の終わりのセーブデータに戻して、以降の確認を続ける
+await page.reload();
+await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
+await page.setInputFiles("#open-file-start", last.path);
+await page.waitForSelector("#screen-progress:not([hidden])");
+
 // 指標の解説のページ(指標の定義データと同じ)
 await page.click("#menu");
 await page.click("#open-guide");
@@ -613,7 +749,7 @@ await page.click("#new-start");
 await page.waitForSelector("#screen-progress:not([hidden])");
 const fastSeconds = (Date.now() - fastStart) / 1000;
 await page.click(".adv[data-days='1']");
-await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1日目"));
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 1日目"));
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=saber]");
 await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("設定ファイルの既定値"));

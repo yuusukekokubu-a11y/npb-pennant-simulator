@@ -134,6 +134,7 @@
   .back { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 12px; }
   .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
   .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
+  tr.career td, tr.career th { font-weight: bold; border-top: 2px solid var(--line); }
   .game-card .score { font-weight: bold; font-size: 1.05rem; white-space: nowrap; }
   .game-card .tags { grid-column: 1 / 3; font-size: 0.8rem; color: var(--muted); }
   .daynav { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin: 8px 0; }
@@ -247,6 +248,10 @@
     <button id="stop" class="danger stop">止める</button>
   </div>
   <p class="message" id="progress-message" role="status" aria-live="polite"></p>
+  <div class="card" id="year-end-box" hidden>
+    <p class="small">シーズンが終わりました。年度を確定すると、今シーズンの集計を履歴に残して、次のシーズンに進みます。</p>
+    <button id="year-end" class="secondary">年度を確定する…</button>
+  </div>
 
   <div class="card" id="mine-card">
     <div class="muted small">自球団</div>
@@ -302,6 +307,7 @@
     <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button><button data-value="ability">能力</button>
   </div>
   <div class="filters">
+    <select id="stats-season" aria-label="シーズンの選択"></select>
     <select id="stats-league" aria-label="リーグの絞り込み"></select>
     <select id="stats-team" aria-label="チームの絞り込み"></select>
     <label class="check"><input type="checkbox" id="stats-qualified" checked>規定到達者だけ</label>
@@ -342,8 +348,40 @@
   </div>
   <div id="player-season"></div>
   <p class="muted small" id="player-baseline" hidden></p>
+  <div id="player-history-box" hidden>
+    <h2>年度別の成績</h2>
+    <div id="player-history"></div>
+    <p class="muted small" id="player-history-note"></p>
+  </div>
   <h2>試合ごとの成績(新しい順)</h2>
   <div id="player-games"></div>
+</main>
+
+<!-- 年度の確定の確認(F2。D-185) -->
+<main class="screen" id="screen-yearend" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>年度の確定</h1></div>
+  <p id="yearend-title"></p>
+  <div id="yearend-champions"></div>
+  <div class="notice" id="yearend-note"></div>
+  <p class="small" id="yearend-dirty"></p>
+  <div class="stack">
+    <button id="yearend-save" class="secondary">先に保存する(別の名前で残す)</button>
+    <button id="yearend-go" class="danger">年度を確定する(戻せません)</button>
+  </div>
+  <p class="message" id="yearend-message" role="status" aria-live="polite"></p>
+</main>
+
+<!-- オフの結果(F2) -->
+<main class="screen" id="screen-offseason" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1 id="offseason-title">オフの結果</h1></div>
+  <p class="small" id="offseason-note"></p>
+  <p id="offseason-counts"></p>
+  <h2>引退した選手</h2>
+  <div id="offseason-retired"></div>
+  <h2>入団した新人</h2>
+  <div id="offseason-rookies"></div>
+  <h2>能力の増減</h2>
+  <div id="offseason-answers"></div>
 </main>
 
 <!-- チームのページ -->

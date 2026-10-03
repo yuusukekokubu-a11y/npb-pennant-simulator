@@ -1,5 +1,5 @@
 {
-  "fingerprint_version": 11,
+  "fingerprint_version": 12,
   "league": "5bdb956ca2b0cd40714baff3bd785763fdae2d1c9bc9226b29aeb2486cda5ba0",
   "game": "7703fc6ed35ddc4fc90b9fdc87acaa5335355e86a6a4a0168b2df256890b2183",
   "days": "33b5b7c0d72392fab24f7c0982d2eacbb29e834ccde5499c66c7f653f3f59a5f",
@@ -11,7 +11,8 @@
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
   "park_estimates": "c1ed912b69122e9ee262304c3a7a6c98334d0a4f64b53bdce3c44d6a58e10b0b",
   "run_values": "dacfddc2e1a2bcb9594777475f160748b4d12812ca495a1642cdb9ec59f086ee",
-  "war": "56d88460272f3878211dd8a6936d0c05c41a9079783b1e4d4b4de4628c9a2d61",
+  "war": "8992e046e52f440659928083288bdd55bd723568e8db4db9b744ccde5ed128f4",
+  "multiyear": "f2b42869ae9192a6d978f3f25d8e799d4e9305264f998410d513575e472a27f7",
   "counts": {
     "players": 840,
     "game_plate_appearances": 77,
@@ -77,7 +78,21 @@
     "war": {
       "seasons": 3,
       "players": 339,
-      "total_war_x100": 30956
+      "total_war_x100": 31012
+    },
+    "multiyear": {
+      "year_ends": 2,
+      "retired": [
+        62,
+        60
+      ],
+      "rookies": [
+        62,
+        60
+      ],
+      "players": 840,
+      "seasons": 3,
+      "history": 2
     }
   }
 }

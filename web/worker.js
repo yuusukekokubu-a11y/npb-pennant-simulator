@@ -75,6 +75,11 @@ const handlers = {
     return parse(bridge.view());
   },
 
+  // 年度の確定(画面で確認したあとに呼ぶ)
+  yearEnd() {
+    return parse(bridge.year_end());
+  },
+
   // 見る画面(公開用の情報だけ)
   query({ name, args }) {
     return parse(bridge.query(name, JSON.stringify(args || {})));

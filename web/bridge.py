@@ -86,9 +86,20 @@ def view() -> str:
     return _ok(_view())
 
 
+def year_end() -> str:
+    """年度の確定(F2。D-185)。画面の確認のあとに呼ぶ。戻り値は新しいシーズンの表示用の情報と、オフの結果の要約。"""
+    try:
+        summary = _game.year_end()
+    except ValueError as exc:
+        return _ng(f"年度を確定できませんでした({exc})")
+    return _ok({"view": _view(), "summary": summary})
+
+
 # ---- 見る画面(公開用の関数だけ。D-114) ----
 _QUERIES = {
-    "stats": lambda a: _game.stats(a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
+    "stats": lambda a: _game.stats(a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id"), a.get("season")),
+    "year_end_preview": lambda a: _game.year_end_preview(),
+    "offseason_summary": lambda a: _game.offseason_summary(a.get("year")),
     "player": lambda a: _game.player(a["player_id"]),
     "games_on": lambda a: _game.games_on(int(a["day"])),
     "game": lambda a: _game.game(int(a["game_no"])),
@@ -105,6 +116,7 @@ _ANSWERS = {
     "player_answers": lambda a: answers.player_answers(_game, a["player_id"], int(a.get("level", 1))),
     "ability_columns": lambda a: answers.columns(a.get("role", "batter"), int(a.get("level", 1))),
     "stadium_answers": lambda a: answers.stadium_answers(_game, a["team_id"], int(a.get("level", 1))),
+    "offseason_answers": lambda a: answers.offseason_answers(_game, a.get("year"), int(a.get("level", 1))),
 }
 
 

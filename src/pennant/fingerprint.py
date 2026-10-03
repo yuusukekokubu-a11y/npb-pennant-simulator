@@ -28,7 +28,7 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 11  # 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
+FINGERPRINT_VERSION = 12  # 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -305,6 +305,42 @@ def war_fingerprint(parks: bool = True) -> tuple[str, dict]:
     return _digest(record), info
 
 
+MULTIYEAR_YEAR_ENDS = 2  # (m)で行う年度の確定の回数(3シーズン分)
+
+
+def multiyear_fingerprint(parks: bool = True) -> tuple[str, dict]:
+    """(m)固定のシードで年度の確定を2回行った(3シーズン)結果(F2):各年の選手(年齢・能力を整数に)、
+    引退・新人、各シーズンの集計、2シーズン目以降の球場補正(千分率)。"""
+    from .api import Game
+
+    record: dict[str, dict] = {}
+    info: dict = {"year_ends": MULTIYEAR_YEAR_ENDS, "retired": [], "rookies": []}
+    g = Game.new(LEAGUE_SEED, [None] * 12, 0, season_seed=SEASON_SEED, baselines="default")
+    if not parks:
+        neutralize_parks(g.state.league)
+    for k in range(MULTIYEAR_YEAR_ENDS + 1):
+        g.advance(g.state.season.total_days)
+        rec = g.records.total
+        year = g.state.year
+        record[f"season-{year}"] = records_record(rec)
+        record[f"park-{year}"] = {pid: int(g.player_park_factor(pid) * 1000) for pid in sorted(rec.batters)} if year > 1 else {}
+        if k == MULTIYEAR_YEAR_ENDS:
+            break
+        g.year_end()
+        o = g.state.offseasons[-1]
+        record[f"offseason-{o.year}"] = {
+            "retired": sorted(n.player_id for n in o.retired),
+            "rookies": sorted((n.player_id, n.team_id, n.role, n.position, n.age) for n in o.rookies),
+            "players": [[p.id, p.age, {item: int(round(v * 10)) for item, v in sorted(p.ratings.items())}] for t in g.state.league.teams for p in t.players],
+        }
+        info["retired"].append(len(o.retired))
+        info["rookies"].append(len(o.rookies))
+    info["players"] = len(g.state.league.all_players())
+    info["seasons"] = g.state.year
+    info["history"] = len(g.state.history)
+    return _digest(record), info
+
+
 def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み、
     (g)基準値、(h)第2弾の指標、(i)球場の倍率 の指紋。parks=False は、球場の倍率をすべて 1.0 にする(回帰の確認用)。"""
@@ -336,6 +372,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     j, jinfo = park_estimate_fingerprint(parks)
     kk, kinfo = run_values_fingerprint(parks)
     ll, linfo = war_fingerprint(parks)
+    mm, minfo = multiyear_fingerprint(parks)
     by_league: dict[int, list] = {}
     for t in league.teams:
         by_league.setdefault(t.league_index, []).append(t)
@@ -364,6 +401,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
         "park_estimates": j,
         "run_values": kk,
         "war": ll,
+        "multiyear": mm,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -383,6 +421,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
             "park_estimates": jinfo,
             "run_values": kinfo,
             "war": linfo,
+            "multiyear": minfo,
         },
     }
 
@@ -409,5 +448,6 @@ def format_fingerprints(fp: dict) -> str:
             f"- (j) 球場補正の推定({c['park_estimates']['seasons']}シーズンを回した結果。{c['park_estimates']['teams']}球場): {fp['park_estimates']}",
             f"- (k) 打撃・走塁・守備の得点({c['run_values']['seasons']}シーズン。{c['run_values']['players']}人。守備の機会 {c['run_values']['fielding_chances']}): {fp['run_values']}",
             f"- (l) WAR({c['war']['seasons']}シーズン。{c['war']['players']}人。3シーズン目の合計 {c['war']['total_war_x100'] / 100:.2f} 勝): {fp['war']}",
+            f"- (m) 複数年(年度の確定 {c['multiyear']['year_ends']} 回・{c['multiyear']['seasons']}シーズン。引退 {'・'.join(str(n) for n in c['multiyear']['retired'])}人、新人 {'・'.join(str(n) for n in c['multiyear']['rookies'])}人。選手 {c['multiyear']['players']}人): {fp['multiyear']}",
         ]
     )
