@@ -225,6 +225,7 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
     c.number(c.get(pot, "style_mean", "potential"), "potential.style_mean", 0, 100)
     c.number(c.get(pot, "noise_sd", "potential"), "potential.noise_sd", 0, 30)
     tolerance = c.number(c.get(pot, "balance_tolerance", "potential"), "potential.balance_tolerance", 0, 5)
+    share_tolerance = c.number(c.get(pot, "share_balance_tolerance", "potential"), "potential.share_balance_tolerance", 0, 0.1)
 
     # 打者の型(D-028)
     batter_types = c.section(c.get(root, "batter_archetypes", ""), "batter_archetypes")
@@ -243,6 +244,42 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
     c.shares(shares, "batter_archetypes")
     if tolerance is not None:
         _check_balance(c, weighted_batter, BATTER_ITEMS, tolerance, "batter_archetypes")
+
+    # ポジション別の型の足す量(第3弾①。D-157)
+    shifts = c.section(root["position_archetype_shifts"], "position_archetype_shifts") if "position_archetype_shifts" in root else None  # 省略可(なければ全体の割合)
+    fielder_counts = {pos: (roster or {}).get("fielders", {}).get(pos) for pos in FIELDER_POSITIONS}
+    if shifts is not None:
+        for pos in shifts:
+            if pos not in FIELDER_POSITIONS:
+                c.add(f"position_archetype_shifts.{pos}", f"知らないポジションです(使えるもの: {', '.join(FIELDER_POSITIONS)})")
+        for pos in FIELDER_POSITIONS:
+            path = f"position_archetype_shifts.{pos}"
+            sec = c.section(c.get(shifts, pos, "position_archetype_shifts"), path)
+            if sec is None:
+                continue
+            for key in sec:
+                if key not in shares:
+                    c.add(f"{path}.{key}", f"知らない型です(使えるもの: {', '.join(shares)})")
+            total = 0.0
+            for key, share in shares.items():
+                v = c.number(c.get(sec, key, path), f"{path}.{key}", -1, 1)
+                if v is None:
+                    continue
+                total += v
+                if not 0 <= share + v <= 1:
+                    c.add(f"{path}.{key}", f"全体の割合 {share} に足すと 0〜1 の外に出ます(足す量: {v})")
+            if abs(total) > 1e-6:
+                c.add(path, f"足す量の合計が 0 になっていません(合計: {total:+.4f})")
+        if share_tolerance is not None and all(isinstance(n, int) for n in fielder_counts.values()):
+            total_n = sum(fielder_counts.values())
+            for key in shares:
+                weighted = sum(fielder_counts[pos] * float((shifts.get(pos) or {}).get(key, 0) or 0) for pos in FIELDER_POSITIONS) / total_n
+                if abs(weighted) > share_tolerance:
+                    c.add(
+                        "position_archetype_shifts",
+                        f"「{key}」の足す量を球団の人数で重みづけした合計が {weighted:+.4f} です。"
+                        f"±{share_tolerance} 以内にしないと、全体の割合(とリーグ平均)が動いてしまいます",
+                    )
 
     # 投手の役割(割合は球団構成の先発・救援の人数から決まる)
     roles = c.section(c.get(root, "pitcher_roles", ""), "pitcher_roles")
@@ -442,3 +479,13 @@ def validate_name_parts(data: Any, source: str = "(辞書)") -> NameParts:
     if c.problems:
         raise ConfigError(source, c.problems)
     return NameParts(source=source, **lists)
+
+
+def archetype_shares(config: GenerationConfig, position: str | None = None) -> dict[str, float]:
+    """打者の型の割合。position(守備位置)を渡すと、ポジション別の足す量(D-157)を足した割合。"""
+    base = {k: float(v["share"]) for k, v in config["batter_archetypes"].items()}
+    shifts = config.data.get("position_archetype_shifts", {}) if hasattr(config, "data") else {}
+    if position is None or position not in shifts:
+        return base
+    return {k: base[k] + float(shifts[position].get(k, 0)) for k in base}
+

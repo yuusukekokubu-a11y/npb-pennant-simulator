@@ -25,7 +25,8 @@
     "pitcher_base_mean": 46.6,
     "style_mean": 50.0,
     "noise_sd": 10.0,
-    "balance_tolerance": 0.5
+    "balance_tolerance": 0.5,
+    "share_balance_tolerance": 0.005
   },
   "batter_archetypes": {
     "power_hitter": {
@@ -107,6 +108,64 @@
         "arm": 2,
         "fielding": 2
       }
+    }
+  },
+  "position_archetype_shifts": {
+    "C": {
+      "power_hitter": -0.09,
+      "contact_hitter": -0.01,
+      "speedster": 0.03,
+      "defensive": 0.09,
+      "all_round": -0.02
+    },
+    "1B": {
+      "power_hitter": 0.138,
+      "contact_hitter": 0.026,
+      "speedster": -0.07,
+      "defensive": -0.13,
+      "all_round": 0.036
+    },
+    "2B": {
+      "power_hitter": -0.09,
+      "contact_hitter": -0.01,
+      "speedster": 0.03,
+      "defensive": 0.09,
+      "all_round": -0.02
+    },
+    "3B": {
+      "power_hitter": 0.138,
+      "contact_hitter": 0.026,
+      "speedster": -0.07,
+      "defensive": -0.13,
+      "all_round": 0.036
+    },
+    "SS": {
+      "power_hitter": -0.09,
+      "contact_hitter": -0.01,
+      "speedster": 0.03,
+      "defensive": 0.09,
+      "all_round": -0.02
+    },
+    "LF": {
+      "power_hitter": 0.138,
+      "contact_hitter": 0.026,
+      "speedster": -0.07,
+      "defensive": -0.13,
+      "all_round": 0.036
+    },
+    "CF": {
+      "power_hitter": -0.09,
+      "contact_hitter": -0.05,
+      "speedster": 0.12,
+      "defensive": 0.06,
+      "all_round": -0.04
+    },
+    "RF": {
+      "power_hitter": 0.138,
+      "contact_hitter": 0.026,
+      "speedster": -0.07,
+      "defensive": -0.13,
+      "all_round": 0.036
     }
   },
   "pitcher_roles": {

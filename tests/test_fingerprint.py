@@ -42,7 +42,11 @@ def test_same_in_a_fresh_process_with_other_hash_seed():
 
 
 def test_without_parks_matches_the_values_before_parks():
-    """球場の倍率をすべて 1.0 にすると、倍率を入れる前の指紋 (a)〜(h) と完全に一致する(回帰の確認。D-137)。"""
+    """球場の倍率をすべて 1.0 にしたときの指紋 (a)〜(h) が、固定した値と完全に一致する(回帰の確認。D-137)。
+
+    ②a では「倍率を入れる前の指紋」と一致することを確かめた。第3弾①で選手生成が変わったので、
+    固定した値は新しい生成で倍率なしのときの値に作り直した(tests/data/fingerprints-parks-off.json)。
+    """
     before = json.loads((ROOT / "tests" / "data" / "fingerprints-parks-off.json").read_text(encoding="utf-8"))
     off = fpmod.fingerprints(parks=False)
     for key in ("league", "game", "days", "season", "records", "save", "baselines", "metrics2"):

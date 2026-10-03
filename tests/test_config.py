@@ -6,6 +6,7 @@ import pytest
 
 from pennant import ConfigError, generate_league, load_generation_config, load_name_parts
 from pennant.config import (
+    archetype_shares,
     default_generation_data,
     validate_generation_config,
     validate_name_parts,
@@ -49,6 +50,35 @@ def test_shares_must_sum_to_one():
     data["batter_archetypes"]["power_hitter"]["share"] = 0.5
     message = _errors(data)
     assert "batter_archetypes" in message and "合計が 1" in message
+
+
+def test_position_shifts_are_validated():
+    """ポジション別の型の足す量(D-157):合計 0、0〜1 の範囲、人数で重みづけした合計が 0 付近。"""
+    data = default_generation_data()
+    data["position_archetype_shifts"]["SS"]["defensive"] = 0.2  # 合計が 0 でなくなる
+    message = _errors(data)
+    assert "position_archetype_shifts.SS" in message and "合計が 0" in message
+    data = default_generation_data()
+    data["position_archetype_shifts"]["SS"]["defensive"] += 0.1
+    data["position_archetype_shifts"]["SS"]["power_hitter"] -= 0.1
+    message = _errors(data)
+    assert "position_archetype_shifts" in message and "重みづけした合計" in message and "defensive" in message
+    data = default_generation_data()
+    data["position_archetype_shifts"]["1B"]["power_hitter"] = 0.9
+    data["position_archetype_shifts"]["1B"]["defensive"] = -0.9
+    message = _errors(data)
+    assert "0〜1 の外" in message
+    data = default_generation_data()
+    data["position_archetype_shifts"]["DH"] = dict(data["position_archetype_shifts"]["1B"])
+    assert "知らないポジション" in _errors(data)
+    data = default_generation_data()
+    data["position_archetype_shifts"]["C"]["slugger"] = 0
+    assert "知らない型" in _errors(data)
+    # 足す量がなければ、全体の割合をそのまま使う
+    data = default_generation_data()
+    data.pop("position_archetype_shifts")
+    cfg = validate_generation_config(data)
+    assert archetype_shares(cfg, "SS") == archetype_shares(cfg) == {k: v["share"] for k, v in cfg["batter_archetypes"].items()}
 
 
 def test_unbalanced_corrections_are_rejected():
