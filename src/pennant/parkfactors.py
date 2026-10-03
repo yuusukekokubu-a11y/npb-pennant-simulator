@@ -252,11 +252,14 @@ def run_seasons(
     on_season: Callable[[int, dict[str, ParkEstimate], object], None] | None = None,
     pa_config=None,
     parks: bool = True,
+    on_results: Callable[[int, list, object, dict[str, ParkEstimate] | None], None] | None = None,
 ) -> tuple[list[dict[str, ParkTally]], dict[str, ParkEstimate], object]:
     """同じリーグを n シーズン繰り返して回し、履歴と推定を返す(F2 の「年度の確定」の最小の形。加齢などは含めない)。
 
     各シーズンは、リーグを作り直して(選手は同じ)、リーグのシードから導いたシーズンのシードで回す。
     on_season には、シーズンごとに (シーズン番号, そこまでの推定, リーグ) を知らせる。
+    on_results には、シーズンごとに (シーズン番号, 試合の結果の一覧, リーグ, 前のシーズンまでの推定(1シーズン目は None)) を知らせる
+    (第3弾②の得点の計算と指紋 (k) 用)。
     """
     from .newgame import new_league
     from .parks import RunConverter, neutralize_parks
@@ -274,6 +277,8 @@ def run_seasons(
         model = OddsRatioModel(pa_config) if pa_config is not None else None
         season = Season(league, derive_seed(league_seed, f"season:{k}"), model=model)
         results = [p.result for p in season.play_to_end().games]
+        if on_results:
+            on_results(k, results, league, estimates if history else None)
         history.append(season_tallies(results))
         estimates = estimate_parks(history, {t.id: t.league_index for t in league.teams}, settings, converter)
         if on_season:

@@ -1,5 +1,5 @@
 {
-  "fingerprint_version": 9,
+  "fingerprint_version": 10,
   "league": "5bdb956ca2b0cd40714baff3bd785763fdae2d1c9bc9226b29aeb2486cda5ba0",
   "game": "7703fc6ed35ddc4fc90b9fdc87acaa5335355e86a6a4a0168b2df256890b2183",
   "days": "33b5b7c0d72392fab24f7c0982d2eacbb29e834ccde5499c66c7f653f3f59a5f",
@@ -10,6 +10,7 @@
   "metrics2": "178e184b7337ff8f722ec0e793d2bfc77806174e9190af065a38ae6d18798ed1",
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
   "park_estimates": "c1ed912b69122e9ee262304c3a7a6c98334d0a4f64b53bdce3c44d6a58e10b0b",
+  "run_values": "dacfddc2e1a2bcb9594777475f160748b4d12812ca495a1642cdb9ec59f086ee",
   "counts": {
     "players": 840,
     "game_plate_appearances": 77,
@@ -66,6 +67,11 @@
     "park_estimates": {
       "seasons": 3,
       "teams": 12
+    },
+    "run_values": {
+      "seasons": 3,
+      "players": 332,
+      "fielding_chances": 35327
     }
   }
 }
