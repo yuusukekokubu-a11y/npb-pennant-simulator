@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 import hashlib
 import json
 import random
@@ -26,7 +28,7 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 9  # 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
+FINGERPRINT_VERSION = 10  # 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -247,6 +249,32 @@ def park_estimate_fingerprint(parks: bool = True) -> tuple[str, dict]:
     return _digest(record), {"seasons": PARK_SEASONS, "teams": len(est)}
 
 
+def run_values_fingerprint(parks: bool = True) -> tuple[str, dict]:
+    """(k)固定のシードで3シーズン回した、選手ごとの打撃・走塁・守備の得点(分数を文字にして。D-166)。
+
+    基準値はシーズンの記録から求めた値(出発点は設定ファイルの既定値)。球場補正は前のシーズンまでの推定(1シーズン目は 1.0)。
+    """
+    from .baselines import load_baseline_settings, season_baselines
+    from .parkfactors import load_park_settings, run_seasons
+    from .runvalues import player_park_factors, runs_record, season_player_runs
+
+    settings = load_baseline_settings()
+    record: dict[str, dict] = {}
+    info: dict = {"seasons": PARK_SEASONS}
+
+    def on_results(k, results, league, estimates):
+        base = season_baselines(results, settings, settings.default_baselines())
+        pfs = player_park_factors(results, estimates)
+        runs = season_player_runs(results, base, lambda pid: pfs.get(pid, Fraction(1)))
+        record[str(k)] = runs_record(runs)
+        if k == PARK_SEASONS:
+            info["players"] = len(runs)
+            info["fielding_chances"] = sum(sum(r.chances_by_position.values()) for r in runs.values())
+
+    run_seasons(LEAGUE_SEED, PARK_SEASONS, load_park_settings(), parks=parks, on_results=on_results)
+    return _digest(record), info
+
+
 def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み、
     (g)基準値、(h)第2弾の指標、(i)球場の倍率 の指紋。parks=False は、球場の倍率をすべて 1.0 にする(回帰の確認用)。"""
@@ -276,6 +304,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     e = _digest(records_record(rec))
     g, h, binfo = baseline_fingerprint(season, parks)
     j, jinfo = park_estimate_fingerprint(parks)
+    kk, kinfo = run_values_fingerprint(parks)
     by_league: dict[int, list] = {}
     for t in league.teams:
         by_league.setdefault(t.league_index, []).append(t)
@@ -302,6 +331,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
         "metrics2": h,
         "parks": i,
         "park_estimates": j,
+        "run_values": kk,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -319,6 +349,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
             "baselines": binfo,
             "parks": park_info,
             "park_estimates": jinfo,
+            "run_values": kinfo,
         },
     }
 
@@ -343,5 +374,6 @@ def format_fingerprints(fp: dict) -> str:
             f"- (i) 球場の倍率(千分率。{c['parks']['teams']}球場。本塁打 {c['parks']['home_run_min_max'][0]}〜{c['parks']['home_run_min_max'][1]}。"
             f"リーグごとの平均 {'・'.join(str(v) for v in c['parks']['home_run_mean'])}): {fp['parks']}",
             f"- (j) 球場補正の推定({c['park_estimates']['seasons']}シーズンを回した結果。{c['park_estimates']['teams']}球場): {fp['park_estimates']}",
+            f"- (k) 打撃・走塁・守備の得点({c['run_values']['seasons']}シーズン。{c['run_values']['players']}人。守備の機会 {c['run_values']['fielding_chances']}): {fp['run_values']}",
         ]
     )

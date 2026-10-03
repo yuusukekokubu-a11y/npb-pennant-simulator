@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Python {platform.python_version()}({platform.system()} {platform.machine()})")
     print(format_fingerprints(fp))
     expected = json.loads(EXPECTED.read_text(encoding="utf-8"))
-    same = all(fp[k] == expected[k] for k in ("fingerprint_version", "league", "game", "days", "season", "records", "save", "baselines", "metrics2", "parks", "park_estimates"))
+    same = all(fp[k] == expected[k] for k in ("fingerprint_version", "league", "game", "days", "season", "records", "save", "baselines", "metrics2", "parks", "park_estimates", "run_values"))
     print("正しい値(tests/data/fingerprints.json)との比較:" + ("○ 一致" if same else "× 不一致"))
     return 0 if same else 1
 
