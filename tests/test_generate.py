@@ -10,8 +10,8 @@ from collections import Counter
 import pytest
 
 from pennant import generate_draft_class, generate_league
-from pennant.abilities import BATTER, PITCHER, STYLE_ITEMS, items_for, strength_items_for
-from pennant.config import validate_generation_config, default_generation_data
+from pennant.abilities import BATTER, FIELDER_POSITIONS, PITCHER, STYLE_ITEMS, items_for, strength_items_for
+from pennant.config import archetype_shares, validate_generation_config, default_generation_data
 from pennant.stats import AGE_BINS, calibration_suggestion, overall, potential_overall
 
 
@@ -93,10 +93,45 @@ def test_draft_ages(draft_class, config):
 # ---- 受け入れ条件4:型の出現割合が、多数回の生成で設定値に近づく ----
 
 def test_batter_archetype_shares(all_players, config):
+    """全体では、ポジション別の足す量が人数で打ち消し合い、設定値(各 20%)どおり(D-157)。"""
     batters = [p for p in all_players if p.role == BATTER]
     counts = Counter(p.hidden.archetype for p in batters)
     for key, entry in config["batter_archetypes"].items():
         assert counts[key] / len(batters) == pytest.approx(entry["share"], abs=0.025)
+
+
+def test_batter_archetype_shares_by_position(all_players, config):
+    """ポジションごとの型の割合が、全体の割合 + 足す量 どおり(第3弾①。受け入れ条件1)。"""
+    batters = [p for p in all_players if p.role == BATTER]
+    for pos in FIELDER_POSITIONS:
+        group = [p for p in batters if p.position == pos]
+        counts = Counter(p.hidden.archetype for p in group)
+        expected = archetype_shares(config, pos)
+        assert sum(expected.values()) == pytest.approx(1.0)
+        for key, share in expected.items():
+            assert counts[key] / len(group) == pytest.approx(share, abs=0.05), (pos, key)  # 1ポジション 360〜1080 人(標準誤差 約 0.02)
+    # 狙いの方向:捕手・遊撃・二塁・中堅は守備型・俊足型が多め、一塁・三塁・両翼は長距離砲が多め
+    for pos in ("C", "SS", "2B", "CF"):
+        s = archetype_shares(config, pos)
+        assert s["defensive"] + s["speedster"] > 0.45 and s["power_hitter"] < 0.15
+    for pos in ("1B", "3B", "LF", "RF"):
+        s = archetype_shares(config, pos)
+        assert s["power_hitter"] > 0.3 and s["defensive"] < 0.1
+
+
+def test_position_ability_means_follow_the_shares(all_players):
+    """ポジション別の潜在能力の平均が、狙いの方向(遊撃・捕手・二塁・中堅は守備範囲・走力が高め、一塁・三塁・両翼は長打力が高め。受け入れ条件3)。"""
+    batters = [p for p in all_players if p.role == BATTER]
+
+    def mean(pos, item):
+        return statistics.fmean(p.hidden.potential[item] for p in batters if p.position == pos)
+
+    for defensive_pos in ("C", "SS", "2B", "CF"):
+        for corner in ("1B", "3B", "LF", "RF"):
+            assert mean(defensive_pos, "range") > mean(corner, "range") + 1.0, (defensive_pos, corner)
+            assert mean(defensive_pos, "speed") > mean(corner, "speed") + 1.0, (defensive_pos, corner)
+            assert mean(corner, "power") > mean(defensive_pos, "power") + 1.0, (defensive_pos, corner)
+    # 投手の生成は変わらない:球質の割合は従来どおり(test_pitcher_quality_and_role_shares)
 
 
 def test_pitcher_quality_and_role_shares(all_players, config):

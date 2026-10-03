@@ -211,7 +211,7 @@ def test_baselines_are_saved_and_loaded(game):
 def test_default_baselines_and_settings():
     d = SETTINGS.default_baselines()
     assert set(d.values) == set(VALUE_NAMES) and d.source == "default"
-    assert d.values["w_hr"] == Fraction("2.182") and SETTINGS.blend_constant == 20000
+    assert d.values["w_hr"] == Fraction("2.140") and SETTINGS.blend_constant == 20000
     g = api.Game.new(2, [None] * 12, 0, baselines="default")
     assert g.state.baselines.source == "default"
     with pytest.raises(ValueError):

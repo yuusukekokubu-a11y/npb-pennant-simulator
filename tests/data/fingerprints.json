@@ -1,36 +1,36 @@
 {
-  "fingerprint_version": 8,
-  "league": "9c1508e6cbbe9854ab1f7806aa886c231d12c0b04b08e262c5f0bb55798b29e0",
-  "game": "da87737c0ffdae88ca1728f3c5e4e4e1d0e98b0459c11908754fc0d83af86631",
-  "days": "51a5f8f66fa20fa9b927eb2e7691a21c3cb64eae19b6cc12aa60d1974d97f47d",
-  "season": "7cdd3c2f7afc86945a05442ce9bc9081a00f08062a8b64204bfaa399f57f78ab",
-  "records": "5d115667bd166e0f41cb977c1f50604628fe65d8267856b532410806db5c964b",
-  "save": "3d17f8d97ce8a57dc4c9cb44bb404d38cff91c0fe88551818ce8b74c510fe8a0",
-  "baselines": "46fcf5886c5d63c21d4b19f2e64d1b2c14d376b4b5935bbfd7f25eaa7ab0da66",
-  "metrics2": "f43d37b76867728a86c054759d8f987473702c5a3a3b9a62eaef20056af12741",
+  "fingerprint_version": 9,
+  "league": "5bdb956ca2b0cd40714baff3bd785763fdae2d1c9bc9226b29aeb2486cda5ba0",
+  "game": "7703fc6ed35ddc4fc90b9fdc87acaa5335355e86a6a4a0168b2df256890b2183",
+  "days": "33b5b7c0d72392fab24f7c0982d2eacbb29e834ccde5499c66c7f653f3f59a5f",
+  "season": "be02694901a8bd1bd01fa469ed0fc791ccbbc5f8b5a05a9addc76bca59573a16",
+  "records": "d825fbf438591d727f6851d66f1517adbfc8d70fe06ea20c71a20700339c820c",
+  "save": "7f9d24881a25045fb84bd3b04696a03e9d1766905e67524bb6e7e625b332e60f",
+  "baselines": "536dcfef77823b0333086b7743d2770f099573049d0641d46f3d9dd09b3d0668",
+  "metrics2": "178e184b7337ff8f722ec0e793d2bfc77806174e9190af065a38ae6d18798ed1",
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
-  "park_estimates": "54b5f6393c8db2c57ae07e5d490f1113a534baa3a8dcc6899f38d63b1751c7af",
+  "park_estimates": "c1ed912b69122e9ee262304c3a7a6c98334d0a4f64b53bdce3c44d6a58e10b0b",
   "counts": {
     "players": 840,
-    "game_plate_appearances": 81,
-    "game_score": "4-1",
+    "game_plate_appearances": 77,
+    "game_score": "5-1",
     "days": 30,
     "days_games": 180,
-    "days_plate_appearances": 13997,
-    "days_runs": 1589,
+    "days_plate_appearances": 14249,
+    "days_runs": 1617,
     "season_games": 750,
-    "season_plate_appearances": 59306,
+    "season_plate_appearances": 59487,
     "season_champions": [
-      "T06",
-      "T08"
+      "T05",
+      "T11"
     ],
     "records_totals": {
-      "R": 6713,
-      "RBI": 6570,
-      "W": 735,
-      "SV": 355,
-      "HLD": 739,
-      "ER": 6355
+      "R": 6840,
+      "RBI": 6691,
+      "W": 738,
+      "SV": 327,
+      "HLD": 752,
+      "ER": 6493
     },
     "save_days": [
       1,
@@ -43,10 +43,10 @@
       true
     ],
     "baselines": {
-      "trial_plate_appearances": 59182,
-      "batters": 172,
+      "trial_plate_appearances": 59421,
+      "batters": 171,
       "pitchers": 168,
-      "weight": "29653/39653"
+      "weight": "59487/79487"
     },
     "parks": {
       "teams": 12,

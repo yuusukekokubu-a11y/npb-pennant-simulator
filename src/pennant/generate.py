@@ -1,7 +1,7 @@
 """架空リーグの生成(段階1・第1弾の実装 ①)。
 
 潜在能力の作り方(D-028、D-030):
-  型を選ぶ → 型ごとの補正を基準値に足す → 正規分布の乱数を足す
+  型を選ぶ(打者は守備位置ごとの割合。D-157)→ 型ごとの補正を基準値に足す → 正規分布の乱数を足す
   (初期選手だけ、年齢が高いほど高めにずらす:生き残りバイアス。D-034)
 現在の能力は、潜在能力から年齢カーブで出す(D-031、aging.py)。
 
@@ -22,7 +22,7 @@ from .abilities import (
     STYLE_ITEMS,
     items_for,
 )
-from .config import ConfigError, GenerationConfig, NameParts, load_generation_config, load_name_parts
+from .config import ConfigError, GenerationConfig, NameParts, archetype_shares, load_generation_config, load_name_parts
 from .models import HiddenInfo, League, Player, PlayerState, Team
 from .names import NameGenerator, team_identities
 from .parks import assign_parks
@@ -57,7 +57,9 @@ class _PlayerFactory:
     def _archetype(self, role: str, position: str) -> tuple[str, dict[str, float]]:
         cfg = self.config
         if role == BATTER:
-            key = _weighted_key(self.rng, cfg["batter_archetypes"])
+            # ポジションごとに型の割合を変える(第3弾①。D-157)。型の補正値は変えない
+            shares = archetype_shares(cfg, position)
+            key = _weighted_key(self.rng, {k: {"share": v} for k, v in shares.items()})
             return key, dict(cfg["batter_archetypes"][key]["corrections"])
         quality = _weighted_key(self.rng, cfg["pitcher_qualities"])
         role_corr = cfg["pitcher_roles"][position]["corrections"]

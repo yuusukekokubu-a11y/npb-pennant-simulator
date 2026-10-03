@@ -10,8 +10,8 @@ import statistics
 from collections import Counter
 from typing import Iterable
 
-from .abilities import BATTER, ITEM_LABELS, PITCHER, POSITION_LABELS, items_for, strength_items_for
-from .config import GenerationConfig
+from .abilities import BATTER, FIELDER_POSITIONS, ITEM_LABELS, PITCHER, POSITION_LABELS, items_for, strength_items_for
+from .config import GenerationConfig, archetype_shares
 from .models import League, Player, Team
 
 AGE_BINS = ((18, 22), (23, 27), (28, 32), (33, 37), (38, 45))
@@ -114,6 +114,17 @@ def _ability_table(players: list[Player], role: str, use_potential: bool = False
     return _table(["能力項目", "平均", "標準偏差"], rows)
 
 
+def _ability_by_position_table(batters: list[Player]) -> str:
+    rows = []
+    for item in items_for(BATTER):
+        row = [ITEM_LABELS[item]]
+        for pos in FIELDER_POSITIONS:
+            vals = [p.hidden.potential[item] for p in batters if p.position == pos]
+            row.append(_f(mean_sd(vals)[0]))
+        rows.append(row)
+    return _table(["潜在能力"] + [POSITION_LABELS[pos] for pos in FIELDER_POSITIONS], rows)
+
+
 def _ability_by_age_table(players: list[Player], role: str) -> str:
     labels = bin_labels()
     rows = []
@@ -179,6 +190,17 @@ def build_report(
             {k: v["label"] for k, v in config["batter_archetypes"].items()},
         )
     )
+    labels_b = {k: v["label"] for k, v in config["batter_archetypes"].items()}
+    rows = []
+    for pos in FIELDER_POSITIONS:
+        group = [p for p in batters if p.position == pos]
+        pc = Counter(p.hidden.archetype for p in group)
+        expected = archetype_shares(config, pos)
+        rows.append([POSITION_LABELS[pos], str(len(group))] + [f"{_pct(pc.get(k, 0), len(group))} ({100 * expected[k]:.0f}%)" for k in labels_b])
+    out.append(
+        "### ポジション別の打者の型の割合(実際の割合(設定値)。D-157)\n"
+        + _table(["ポジション", "人数"] + [labels_b[k] for k in labels_b], rows)
+    )
     q_counter = Counter(p.hidden.archetype.split("/")[1] for p in pitchers)
     out.append(
         "### 投手の球質\n"
@@ -216,6 +238,8 @@ def build_report(
         out.append(f"## {label}の能力(現在の能力)\n### 全選手\n" + _ability_table(players, role))
         out.append("### 一軍相当\n" + _ability_table(ft, role))
         out.append("### 年齢層別の平均\n" + _ability_by_age_table(players, role))
+        if role == BATTER:
+            out.append("### ポジション別の平均(全選手の潜在能力。D-157)\n" + _ability_by_position_table(batters))
 
     # 一軍相当の平均と調整案
     ftc = config["first_team"]
