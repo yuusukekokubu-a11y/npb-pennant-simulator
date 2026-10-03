@@ -16,7 +16,7 @@ const TABS = [
   { id: "games", label: "試合" },
 ];
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure"];
 const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
 
 const $ = (id) => document.getElementById(id);
@@ -45,6 +45,7 @@ const state = {
   warKeys: { batter: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
   playerKind: "basic",
   gamesDay: null,
+  proc: { selected: new Set(), sort: "overall", position: "", open: null }, // オフの手続きの画面の状態(F3-1)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 
@@ -219,12 +220,13 @@ function renderCurrent() {
     stadium: () => renderStadium(args, token),
     yearend: () => renderYearEnd(token),
     offseason: () => renderOffseason(args, token),
+    procedure: () => renderProcedure(token),
   }[name];
   Promise.resolve(job && job()).catch((err) => showError(name, err));
 }
 
 function showError(name, err) {
-  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired" }[name];
+  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message" }[name];
   if (box) $(box).replaceChildren(el("p", { className: "message ng" }, `表示できませんでした:${err.message}`));
 }
 
@@ -337,6 +339,9 @@ function renderProgress() {
   $("topbar-day").textContent = `${seasonWord(s)} ` + (s.is_over ? "シーズン終了" : `${s.day}日目 / ${s.total_days}日`);
   $("year-end-box").hidden = !s.can_year_end;
   $("year-end").disabled = state.running;
+  const off = s.offseason;
+  $("offseason-box").hidden = !off;
+  if (off) $("offseason-box-text").textContent = `${off.year}シーズン目のオフの手続きが進行中です(今の段階:${off.phase_label})。手続きを終えると、${off.year + 1}シーズン目が始まります。`;
   $("games-text").textContent = `${s.games_played} / ${s.total_games} 試合`;
   const m = s.my_team;
   $("mine-card").hidden = !m;
@@ -643,6 +648,7 @@ async function renderPlayer(args, token) {
     ` / ${p.position_label} / ${p.age}歳${p.hand ? ` / ${p.hand}` : ""}${p.retired ? "(引退)" : ""}`,
   );
   renderPlayerHistory(data);
+  await renderPlayerScouting(data, token);
   setPressed("player-kind", state.playerKind);
   const box = $("player-season");
   $("player-baseline").hidden = true;
@@ -697,6 +703,219 @@ async function renderPlayer(args, token) {
     }),
     el("p", { className: "muted small" }, "「対」はホーム、「@」はビジター(相手の本拠地)の試合。結果の ○ は勝ち、● は負け、△ は引き分け。勝・敗・S(セーブ)・H(ホールド)は、その試合の投手の記録。日付を押すと、その試合のページを開きます。"),
   );
+}
+
+// 入団時のスカウト評価(F3-1。D-199、D-206)。答え合わせモードがオンなら、真の能力を並べる
+async function renderPlayerScouting(data, token) {
+  const sc = data.player.scouting;
+  const box = $("player-scouting-box");
+  if (!sc) {
+    box.hidden = true;
+    $("player-scouting").replaceChildren();
+    return;
+  }
+  box.hidden = false;
+  let truth = null;
+  if (state.answerLevel > 0) {
+    truth = await answer("scouting_answers", { player_id: data.player.id });
+    if (token !== state.token) return;
+    if (state.answerLevel === 0) truth = null;
+  }
+  const byKey = truth && truth.available ? Object.fromEntries(truth.items.map((i) => [i.key, i])) : null;
+  const rows = [{ label: "総合", values: [sc.overall_text, byKey ? "" : ""].slice(0, byKey ? 2 : 1) }];
+  for (const i of sc.items) rows.push({ label: i.label, values: byKey ? [i.text, `${byKey[i.key]?.current ?? ""}${byKey[i.key]?.potential ? ` / ${byKey[i.key].potential}` : ""}`] : [i.text] });
+  rows.push({ label: "天井", values: byKey ? [sc.ceiling, ""] : [sc.ceiling] });
+  $("player-scouting").replaceChildren(
+    el("p", { className: "muted small" }, `${sc.year ? `${sc.year}シーズン目の入団時に、` : ""}${sc.team_name} のスカウトがつけた評価(推定値 ± ふれ幅。天井は S〜D)。${byKey ? `右は真の能力(今の能力${truth.level === 2 ? " / 潜在能力" : ""})。` : ""}`),
+    kvTable(rows),
+  );
+  $("player-scouting-note").textContent = byKey ? truth.note : "答え合わせモードをオンにすると、真の能力と並べて見られます。入団後の能力は、オフのときは表示されません。";
+}
+
+// ---- オフの手続き(F3-1。D-201〜D-207) ----
+
+async function procCall(name, args = {}) {
+  const r = await call("offseason", { name, args });
+  if (!r.ok) throw new Error(r.message);
+  return r.value;
+}
+
+function scoutCell(sc) {
+  return `${sc.overall_text}`;
+}
+
+async function renderProcedure(token) {
+  const r = await call("query", { name: "offseason_view", args: {} });
+  if (!r.ok) throw new Error(r.message);
+  if (token !== state.token) return;
+  const v = r.value;
+  const ps = state.proc;
+  $("proc-title").textContent = `オフの手続き(${v.year}シーズン目の終わり)`;
+  $("proc-steps").replaceChildren(...v.phases.map((p) => el("li", { className: p.key === v.phase ? "current" : v.phases.findIndex((x) => x.key === v.phase) > v.phases.findIndex((x) => x.key === p.key) ? "done" : "" }, p.label)));
+  const mine = v.my_team;
+  const roster = mine ? `${mine.team_name}:${mine.players} / ${mine.max} 人${mine.shortages.length ? `(${mine.shortages.join("、")})` : ""}` : "";
+  $("proc-info").textContent = `今の段階:${v.phase_label}。${roster}`;
+  $("proc-next").disabled = state.running;
+  $("proc-auto").disabled = state.running;
+  $("proc-next").textContent = v.phase === "market" ? "完了する(自動補充して次のシーズンへ)" : "次の手続きへ";
+  $("proc-note").textContent = v.note;
+  // 答え合わせモードがオンなら、真の総合値も出す(D-206)
+  let truth = null;
+  if (state.answerLevel > 0) {
+    truth = await answer("procedure_answers", {});
+    if (token !== state.token) return;
+    if (state.answerLevel === 0) truth = null;
+  }
+  const body = $("proc-body");
+  if (v.phase === "release") body.replaceChildren(...releaseSection(v, truth));
+  else if (v.phase === "draft" || v.phase === "market") body.replaceChildren(...poolSection(v, truth));
+  else body.replaceChildren();
+  $("proc-history").replaceChildren(historyTable(v.picks, v.released));
+  $("proc-history-box").open = v.picks.length > 0 && v.phase !== "release";
+}
+
+function ceilingText(g) {
+  return { S: "S(上位 5%)", A: "A", B: "B", C: "C", D: "D" }[g] || g;
+}
+
+function releaseSection(v, truth) {
+  const ps = state.proc;
+  if (!v.my_team) return [el("p", { className: "muted" }, "操作する球団がありません。")];
+  if (v.my_release_done) return [el("p", { className: "info" }, "自由契約の手続きは済んでいます。「次の手続きへ」でドラフトに進みます。"), el("p", { className: "muted small" }, "手放した選手は、自由契約市場に並びます。")];
+  const rows = v.roster.map((p) => ({ ...p, values: { position: p.position_label, age: `${p.age}歳`, overall: p.scouting.overall_text, ceiling: ceilingText(p.scouting.ceiling), truth: truth ? truth.players[p.player_id]?.overall ?? "" : undefined } }));
+  const columns = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合(推定 ± 幅)", description: "自球団のスカウトの推定値と、真の値が約80%の確率で入る幅" }, { key: "ceiling", label: "天井", description: "潜在能力の見立て(S〜D)" }];
+  if (truth) columns.push({ key: "truth", label: "真の総合", description: "答え合わせ:真の今の総合値" });
+  const first = (p) => {
+    const cb = el("input", { type: "checkbox", checked: ps.selected.has(p.player_id), disabled: !p.can_release, onchange: (e) => { if (e.target.checked) ps.selected.add(p.player_id); else ps.selected.delete(p.player_id); updateReleaseButton(v); } });
+    return [cb, " ", playerLink(p.name, p.player_id), el("span", { className: "sub" }, p.can_release ? "" : "最低人数のため外せません")];
+  };
+  const btn = el("button", { id: "proc-release", className: "danger", onclick: () => doRelease(v) }, "選んだ選手を自由契約にする");
+  const warn = el("p", { className: "muted small", id: "proc-release-warn" }, "");
+  const out = [
+    el("p", { className: "small" }, "手放す選手に印を付けて、「選んだ選手を自由契約にする」を押してください。誰も手放さないなら、そのまま「次の手続きへ」。"),
+    table({ firstLabel: "選手", columns, rows, first, rowClass: (p) => (ps.selected.has(p.player_id) ? "selected" : ""), onSort: null }),
+    el("div", { className: "row" }, btn),
+    warn,
+    el("p", { className: "muted small" }, "評価は自球団のスカウトのもので、真の能力とはずれています(ずれの大きさ:" + { small: "小", medium: "中", large: "大" }[v.scout_level] + ")。手放した選手は市場に並び、他の球団が獲得することがあります。表は横にずらせます。"),
+  ];
+  setTimeout(() => updateReleaseButton(v), 0);
+  return out;
+}
+
+function updateReleaseButton(v) {
+  const n = state.proc.selected.size;
+  const b = $("proc-release");
+  if (b) { b.disabled = n === 0 || state.running; b.textContent = n ? `選んだ ${n} 人を自由契約にする` : "選んだ選手を自由契約にする"; }
+}
+
+async function doRelease(v) {
+  const ids = [...state.proc.selected];
+  if (!ids.length) return;
+  const names = v.roster.filter((p) => ids.includes(p.player_id)).map((p) => p.name).join("、");
+  if (!confirm(`${names} を自由契約にします(戻せません)。よろしいですか?`)) return;
+  await runProc("release", { player_ids: ids });
+}
+
+function poolSection(v, truth) {
+  const ps = state.proc;
+  const isDraft = v.phase === "draft";
+  const turnText = v.phase_finished ? "この段階は終わりました。「次の手続きへ」を押してください。" : v.is_my_turn ? `${v.round} 巡目:あなたの番です。選手の「指名」を押すか、「パス」してください。` : `${v.round} / ${v.total_rounds} 巡目。今の指名権:${v.order.find((o) => o.team_id === v.current_team)?.team_name ?? "-"}`;
+  const head = [el("p", { className: "info" }, turnText)];
+  const controls = el("div", { className: "row" });
+  if (!v.phase_finished && !v.is_my_turn && v.my_team) controls.append(el("button", { onclick: () => runProc("advance") }, "次の自分の番まで進める"));
+  if (v.is_my_turn) controls.append(el("button", { className: "secondary", onclick: () => runProc("pass") }, "パス(指名しない)"));
+  head.push(controls);
+  // 並べ替えと絞り込み
+  const positions = [...new Set(v.pool.map((p) => p.position))];
+  const posLabel = Object.fromEntries(v.pool.map((p) => [p.position, p.position_label]));
+  const filters = el("div", { className: "filters" },
+    el("select", { "aria-label": "並び順", onchange: (e) => { ps.sort = e.target.value; renderCurrent(); } }, ...[["overall", "総合の推定値が高い順"], ["ceiling", "天井が高い順"], ["age", "年齢が若い順"], ["position", "ポジション順"]].map(([k, l]) => el("option", { value: k, selected: ps.sort === k }, l))),
+    el("select", { "aria-label": "ポジションの絞り込み", onchange: (e) => { ps.position = e.target.value; renderCurrent(); } }, el("option", { value: "", selected: ps.position === "" }, "すべてのポジション"), ...positions.map((p) => el("option", { value: p, selected: ps.position === p }, posLabel[p]))),
+  );
+  head.push(filters);
+  const grade = { S: 0, A: 1, B: 2, C: 3, D: 4 };
+  const order = Object.keys(posLabel);
+  let rows = v.pool.filter((p) => !ps.position || p.position === ps.position);
+  rows.sort((a, b) => a.player_id.localeCompare(b.player_id));
+  if (ps.sort === "overall") rows.sort((a, b) => b.scouting.overall - a.scouting.overall);
+  else if (ps.sort === "ceiling") rows.sort((a, b) => grade[a.scouting.ceiling] - grade[b.scouting.ceiling] || b.scouting.overall - a.scouting.overall);
+  else if (ps.sort === "age") rows.sort((a, b) => a.age - b.age || b.scouting.overall - a.scouting.overall);
+  else rows.sort((a, b) => order.indexOf(a.position) - order.indexOf(b.position) || b.scouting.overall - a.scouting.overall);
+  const columns = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合(推定 ± 幅)", description: "自球団のスカウトの推定値と、真の値が約80%の確率で入る幅" }, { key: "ceiling", label: "天井", description: "潜在能力の見立て(S〜D)" }];
+  if (!isDraft) columns.push({ key: "former", label: "前の球団" });
+  if (truth) columns.push({ key: "truth", label: "真の総合", description: "答え合わせ:真の今の総合値" + (truth.level === 2 ? " / 潜在能力" : "") });
+  if (v.is_my_turn) columns.push({ key: "pick", label: "" });
+  const tbody = el("tbody");
+  const thead = el("tr", {}, el("th", { className: "sticky", scope: "col" }, "選手"), ...columns.map((c) => el("th", { scope: "col", title: c.description || "" }, c.label)));
+  for (const p of rows) {
+    const t = truth ? truth.players[p.player_id] : null;
+    const cells = { position: p.position_label, age: `${p.age}歳${p.origin ? `・${p.origin}` : ""}`, overall: p.scouting.overall_text, ceiling: ceilingText(p.scouting.ceiling), former: p.former_team || "-", truth: t ? `${t.overall}${t.potential ? ` / ${t.potential}` : ""}` : "" };
+    const tr = el("tr", { className: ps.open === p.player_id ? "selected" : "" }, el("td", { className: "sticky name-cell" }, link(p.name, () => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); }), el("span", { className: "sub" }, p.hand || "")));
+    for (const c of columns) {
+      if (c.key === "pick") tr.append(el("td", {}, el("button", { className: "pick-btn", onclick: () => runProc("pick", { player_id: p.player_id }) }, isDraft ? "指名" : "獲得")));
+      else tr.append(el("td", {}, cells[c.key] ?? ""));
+    }
+    tbody.append(tr);
+    if (ps.open === p.player_id) {
+      const items = p.scouting.items.map((i) => `${i.label} ${i.text}`).join(" / ");
+      tbody.append(el("tr", { className: "detail" }, el("td", { colSpan: columns.length + 1 }, `項目別の推定値 ± ふれ幅:${items}`)));
+    }
+  }
+  const tableEl = el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, thead), tbody));
+  return [...head, el("p", { className: "muted small" }, `${isDraft ? "候補" : "市場の選手"} ${rows.length} 人。名前を押すと項目別の推定値が出ます。表は横にずらせます。`), tableEl];
+}
+
+function historyTable(picks, released) {
+  const rows = [];
+  for (const x of released) rows.push({ k: `自由契約`, team: x.team_name, name: x.name, pos: x.position_label, age: x.age, mine: x.is_mine });
+  for (const x of picks) rows.push({ k: `${x.phase === "draft" ? "ドラフト" : "市場"} ${x.round} 巡`, team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
+  if (!rows.length) return el("p", { className: "muted small" }, "まだありません。");
+  const body = el("tbody", {}, ...rows.map((r) => el("tr", { className: r.mine ? "mine" : "" }, el("td", {}, r.k), el("td", {}, r.team), el("td", {}, r.name), el("td", {}, r.pos || ""), el("td", {}, r.age ? `${r.age}歳` : ""))));
+  return el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "手続き"), el("th", {}, "球団"), el("th", {}, "選手"), el("th", {}, "ポジション"), el("th", {}, "年齢"))), body));
+}
+
+async function runProc(name, args = {}) {
+  if (state.running) return;
+  state.running = true;
+  $("proc-message").className = "message";
+  $("proc-message").textContent = "";
+  try {
+    const r = await procCall(name, args);
+    state.proc.selected = new Set();
+    state.cache.clear();
+    setDirty(true);
+    if (r.finished) {
+      state.view = r.view_all;
+      state.stats.season = "current";
+      state.gamesDay = null;
+      buildStatsFilters();
+      const s = r.summary;
+      state.pages = [];
+      showScreen("progress");
+      renderProgress();
+      $("progress-message").className = "message ok";
+      $("progress-message").textContent = `オフの手続きが終わり、${s.next_year}シーズン目が始まりました(引退 ${s.counts.retired}人・入団 ${s.counts.rookies}人)。`;
+      openPage("offseason", { year: s.year });
+      return;
+    }
+    renderCurrent();
+  } catch (err) {
+    $("proc-message").className = "message ng";
+    $("proc-message").textContent = `操作できませんでした:${err.message}`;
+  } finally {
+    state.running = false;
+  }
+}
+
+async function procAuto() {
+  if (!confirm("残りの手続き(自分の球団の判断を含む)を、自動(AI と同じ方針)で進めます。よろしいですか?")) return;
+  await runProc("auto");
+}
+
+async function procNext() {
+  const off = state.view.status.offseason;
+  if (off && off.phase !== "release" && !confirm("この段階の残り(自分の番を含む)を自動で進めて、次へ移ります。よろしいですか?")) return;
+  await runProc("next");
 }
 
 // 年度別の成績(過去シーズン・今シーズン・通算。F2。D-182)。種類の切り替え(基本・セイバー・WAR)は上の表と同じ
@@ -758,9 +977,17 @@ async function yearEnd() {
     state.pages = [];
     showScreen("progress");
     renderProgress();
-    $("progress-message").className = "message ok";
-    $("progress-message").textContent = `${s.year}シーズン目を確定し、${s.next_year}シーズン目が始まりました(引退 ${s.counts.retired}人・新人 ${s.counts.rookies}人)。`;
-    openPage("offseason", { year: s.year });
+    if (state.view.status.offseason) {
+      // 操作する球団があるときは、オフの手続き(自由契約 → ドラフト → 市場)へ(F3-1)
+      $("progress-message").className = "message ok";
+      $("progress-message").textContent = `${s.year}シーズン目を確定しました(引退 ${s.counts.retired}人)。オフの手続きを進めてください。`;
+      state.proc = { selected: new Set(), sort: "overall", position: "", open: null };
+      openPage("procedure");
+    } else {
+      $("progress-message").className = "message ok";
+      $("progress-message").textContent = `${s.year}シーズン目を確定し、${s.next_year}シーズン目が始まりました(引退 ${s.counts.retired}人・新人 ${s.counts.rookies}人)。`;
+      openPage("offseason", { year: s.year });
+    }
   } catch (err) {
     $("yearend-message").className = "message ng";
     $("yearend-message").textContent = `年度を確定できませんでした:${err.message}`;
@@ -1063,6 +1290,7 @@ function names() {
 
 async function showNewGame() {
   $("new-message").textContent = "";
+  $("my-team-none").checked = true; // 既定は観戦のみ(D-198)
   $("league-seed").value = "";
   $("season-seed").value = "";
   $("league-seed-error").textContent = "";
@@ -1113,7 +1341,7 @@ async function preparePreview(seed, reset) {
       radio.type = "radio";
       radio.name = "my-team";
       radio.value = String(index);
-      radio.checked = prev ? prev.mine === index : index === 0;
+      radio.checked = prev ? prev.mine === index : false; // 既定は観戦のみ(D-198)
       pick.append(radio, "自球団にする");
       div.append(label, input, err, pick);
       fs.appendChild(div);
@@ -1171,11 +1399,7 @@ async function startNewGame() {
     if (bad >= 0) teamInputs()[bad].focus();
     return;
   }
-  const mine = myTeamIndex();
-  if (mine < 0) {
-    $("new-message").textContent = "「自球団にする」で、球団を1つ選んでください。";
-    return;
-  }
+  const mine = myTeamIndex(); // -1 は観戦のみ(球団を操作しない。D-198)
   if (state.dirty && !confirm("今のゲームに、未保存の変更があります。新しく始めると失われます。始めますか?")) return;
   $("new-start").disabled = true;
   try {
@@ -1186,7 +1410,8 @@ async function startNewGame() {
     $("trial-progress").value = 0;
     $("trial-text").textContent = "リーグの歴史を作っています(数十年分の選手の入れ替わり)…";
     const t0 = performance.now();
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines }).finally(() => ($("trial-box").hidden = true));
+    const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel }).finally(() => ($("trial-box").hidden = true));
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");
@@ -1360,6 +1585,9 @@ $("stop").addEventListener("click", () => {
 });
 $("save").addEventListener("click", save);
 $("year-end").addEventListener("click", () => openPage("yearend"));
+$("open-offseason").addEventListener("click", () => openPage("procedure"));
+$("proc-next").addEventListener("click", procNext);
+$("proc-auto").addEventListener("click", procAuto);
 $("yearend-save").addEventListener("click", save);
 $("yearend-go").addEventListener("click", yearEnd);
 $("open-file-start").addEventListener("change", (e) => openFile(e, "start-message"));

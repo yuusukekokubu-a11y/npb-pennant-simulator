@@ -61,6 +61,7 @@ class Player:
     state: PlayerState = field(default_factory=PlayerState)
     team_id: str | None = None
     origin: str | None = None  # 新人の出身区分(high_school など)。初期選手は None
+    scouting: dict | None = None  # 入団時のスカウト評価(獲得した球団の評価。F3-1。D-199)。初期選手・自動補充の前の選手は None
 
     @property
     def name(self) -> str:

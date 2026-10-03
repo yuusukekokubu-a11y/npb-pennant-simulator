@@ -29,7 +29,10 @@ from .metrics import baseline_dependent, MetricsConfig, compute, format_value, f
 from .parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkEstimate, ParkTally, add_game, estimate_parks, load_park_settings, player_park_factor, raw_ratio, season_tallies
 from .war import WarLine, load_war_settings, war_for_results, war_totals
 from .history import ArchivedStanding, SeasonArchive
-from .offseason import OffseasonResult, load_offseason_settings, run_offseason
+from .offseason import OffseasonResult, age_update_retire, load_offseason_settings
+from . import draft as draftmod
+from .draft import PHASE_LABELS, PHASES, load_draft_settings
+from .scouting import ScoutReport
 from .season import derive_seed
 from .records import (
     Records,
@@ -464,6 +467,8 @@ class Game:
         season = state.season
         if not season.is_over:
             raise ValueError("シーズンがまだ終わっていません(最後まで進めてから、年度を確定してください)")
+        if state.procedure is not None:
+            raise ValueError("オフの手続きが進行中です(手続きを終えると、次のシーズンが始まります)")
         archive = self._archive_current_season()
         state.history.append(archive)
         # 残す打席ログの数を守る(直近 log_seasons シーズン。今シーズンは次のシーズンの分として数える)
@@ -471,18 +476,216 @@ class Game:
         with_games = [a for a in state.history if a.games is not None]
         for a in with_games[: max(0, len(with_games) - limit)]:
             a.games = None
+        records = {tid: (int(c["W"]), int(c["L"])) for tid, c in self.records.total.teams.items()}
         state.park_history.append(season_tallies(p.result for p in season.played))
         final, _ = self.baselines()
         state.baselines = Baselines(dict(final.values), list(final.re24), dict(final.linear_weights), final.plate_appearances, "season")  # 次の出発点(D-121)
-        result = run_offseason(state.league, derive_seed(season.seed, "offseason"), state.gen_config, state.name_parts, state.offseason_settings, state.year, state.calibration)
+        off_seed = derive_seed(season.seed, "offseason")
+        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration)
         state.offseasons.append(result)
+        state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records)
+        self.dirty = True
+        if state.my_team_id is None:  # 観戦のみ:手続きはすべて自動(D-198)
+            filled = draftmod.complete(state.league, state.procedure, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, None, *self._mins())
+            self._finish_offseason(filled)
+        return self.offseason_summary(result.year)
+
+    def _mins(self):
+        return draftmod.minimum_positions(self.state.season.game_config), draftmod.minimum_batters(self.state.season.game_config)
+
+    def _finish_offseason(self, filled) -> None:
+        """オフの手続きの完了:履歴に記録し、次のシーズンを作る。"""
+        state = self.state
+        proc = state.procedure
+        season = state.season
+        result = state.offseasons[-1]
+        result.rookies = draftmod.joined_players(proc) + list(filled)
+        for x in proc.released:
+            state.transactions.append({"year": proc.year, "phase": "release", "round": 0, **x})
+        for x in proc.picks:
+            state.transactions.append({"year": proc.year, **x})
+        state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
         self._cache = _StatsCache()
         self._park_estimates = None
         self._war = None
         self.dirty = True
-        return self.offseason_summary(result.year)
+
+    # ---- オフの手続き(F3-1。D-201〜D-207) ----
+
+    def _proc(self):
+        proc = self.state.procedure
+        if proc is None:
+            raise ValueError("オフの手続きは進行中ではありません")
+        return proc
+
+    def _my_team(self):
+        if self.state.my_team_id is None:
+            raise ValueError("操作する球団がありません(観戦のみ)")
+        return self._team(self.state.my_team_id)
+
+    def _report_public(self, player, team_id: str) -> dict:
+        proc = self._proc()
+        return draftmod.scout_report(proc, player, team_id, self.state.scout_sd_of(team_id), self.state.draft_settings).to_public()
+
+    def _player_brief(self, p, team_id: str | None, names: dict) -> dict:
+        return {"player_id": p.id, "name": p.name, "role": p.role, "role_label": ROLE_LABELS[p.role], "position": p.position, "position_label": POSITION_LABELS[p.position], "age": p.age, "origin": ORIGIN_LABELS.get(p.origin, "") if p.origin else "", "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws), "team_id": team_id, "team_name": names.get(team_id, "") if team_id else ""}
+
+    def offseason_view(self) -> dict:
+        """オフの手続きの画面に出す情報(公開用。スカウト評価は操作する球団のもの)。"""
+        state = self.state
+        proc = self._proc()
+        names = self._team_names()
+        my = state.my_team_id
+        mins, min_batters = self._mins()
+        view = {
+            "year": proc.year,
+            "next_year": proc.year + 1,
+            "phase": proc.phase,
+            "phase_label": PHASE_LABELS[proc.phase],
+            "phases": [{"key": k, "label": PHASE_LABELS[k]} for k in PHASES],
+            "order": [{"team_id": t, "team_name": names[t], "is_mine": t == my} for t in proc.order],
+            "round": proc.round,
+            "total_rounds": proc.total_rounds() if proc.phase in ("draft", "market") else 0,
+            "current_team": proc.current_team() if proc.phase in ("draft", "market") else None,
+            "is_my_turn": proc.phase in ("draft", "market") and proc.current_team() == my and not draftmod.phase_finished(proc),
+            "phase_finished": draftmod.phase_finished(proc) if proc.phase in ("draft", "market") else proc.phase == "done",
+            "my_team": None if my is None else {"team_id": my, "team_name": names[my], "players": len(self._team(my).players), "max": draftmod.MAX_ROSTER, "shortages": self._shortage_text(self._team(my).players, mins, min_batters)},
+            "my_release_done": proc.my_release_done,
+            "scout_level": state.scout_level,
+            "scout_sd": state.scout_sd_of(my) if my else None,
+            "picks": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.picks],
+            "released": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.released],
+            "counts": {"candidates": len(proc.candidates), "market": len(proc.market), "released": len(proc.released), "picked": sum(1 for x in proc.picks if x["player_id"])},
+            "rosters": [{"team_id": t.id, "team_name": t.name, "players": len(t.players), "is_mine": t.id == my} for t in state.league.teams],
+            "note": "手続きは 自由契約 → ドラフト → 自由契約市場 → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
+        }
+        if my is not None:
+            team = self._team(my)
+            if proc.phase == "release":
+                rows = []
+                for p in sorted(team.players, key=lambda p: (list(POSITION_LABELS).index(p.position), p.id)):
+                    row = self._player_brief(p, my, names)
+                    row["scouting"] = self._report_public(p, my)
+                    row["can_release"] = draftmod.can_release(team.players, p, mins, min_batters)
+                    rows.append(row)
+                view["roster"] = rows
+            elif proc.phase in ("draft", "market"):
+                pool = draftmod.pool_of(proc)
+                rows = []
+                for p in pool:
+                    row = self._player_brief(p, None, names)
+                    row["scouting"] = self._report_public(p, my)
+                    row["former_team"] = next((names.get(x["team_id"], "") for x in proc.released if x["player_id"] == p.id), "")
+                    rows.append(row)
+                rows.sort(key=lambda r: (-r["scouting"]["overall"], r["player_id"]))
+                view["pool"] = rows
+        return view
+
+    def _shortage_text(self, players, mins, min_batters) -> list[str]:
+        out = []
+        for pos, n in draftmod.shortages(players, mins, min_batters).items():
+            out.append(f"{'野手' if pos == 'batter' else POSITION_LABELS[pos]} があと {n} 人足りません")
+        return out
+
+    def offseason_release(self, player_ids: list[str]) -> dict:
+        """操作する球団が選手を手放す(自由契約の段階)。最低人数を割る選び方は受け付けない(警告は画面側)。"""
+        proc = self._proc()
+        if proc.phase != "release":
+            raise ValueError("今は自由契約の段階ではありません")
+        team = self._my_team()
+        mins, min_batters = self._mins()
+        ids = [str(x) for x in player_ids]
+        chosen = [p for p in team.players if p.id in ids]
+        if len(chosen) != len(set(ids)):
+            raise ValueError("自分の球団にいない選手が含まれています")
+        rest = [p for p in team.players if p.id not in ids]
+        worse = draftmod.new_shortages(team.players, rest, mins, min_batters)
+        if worse:
+            raise ValueError("最低人数を割ってしまいます:" + "、".join(f"{'野手' if pos == 'batter' else POSITION_LABELS[pos]} があと {n} 人足りなくなります" for pos, n in worse.items()))
+        draftmod.release_players(team, chosen, proc)
+        proc.my_release_done = True
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_next(self) -> dict:
+        """次の段階へ。自由契約 → ドラフト(AI の自由契約を適用)、ドラフト・市場は残りを自動で進めて次へ、市場 → 完了(自動補充 → 次のシーズン)。"""
+        state = self.state
+        proc = self._proc()
+        mins, min_batters = self._mins()
+        sd = state.scout_sd_map()
+        if proc.phase == "release":
+            draftmod.apply_ai_releases(state.league, proc, sd, state.draft_settings, state.my_team_id, mins, min_batters)
+            proc.my_release_done = True
+            draftmod.next_phase(proc)
+        elif proc.phase in ("draft", "market"):
+            draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, None, mins, min_batters)  # 自分の残りの番も AI の方針
+            draftmod.next_phase(proc)
+        if proc.phase == "done":
+            filled = draftmod.finalize(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, sd, state.calibration, mins, min_batters)
+            self._finish_offseason(filled)
+            self.dirty = True
+            return {"finished": True, "summary": self.offseason_summary(), "status": self.status()}
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_advance(self) -> dict:
+        """AI の番を、自分の番か段階の終わりまで進める。"""
+        state = self.state
+        proc = self._proc()
+        if proc.phase not in ("draft", "market"):
+            raise ValueError("今は指名の段階ではありません")
+        mins, min_batters = self._mins()
+        draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, state.my_team_id, mins, min_batters)
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_pick(self, player_id: str) -> dict:
+        """自分の番に選手を指名(獲得)し、次の自分の番まで AI を進める。"""
+        state = self.state
+        proc = self._proc()
+        team = self._my_team()
+        mins, min_batters = self._mins()
+        sd = state.scout_sd_map()
+        if proc.phase not in ("draft", "market") or proc.current_team() != team.id or draftmod.phase_finished(proc):
+            raise ValueError("今は自分の番ではありません(「次の自分の番まで進める」を押してください)")
+        player = next((p for p in draftmod.pool_of(proc) if p.id == player_id), None)
+        if player is None:
+            raise ValueError("その選手は一覧にいません")
+        if len(team.players) >= draftmod.MAX_ROSTER:
+            raise ValueError("空き枠がありません(70 人)")
+        draftmod.take(proc, team, player, sd, state.draft_settings)
+        draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, team.id, mins, min_batters)
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_pass(self) -> dict:
+        state = self.state
+        proc = self._proc()
+        team = self._my_team()
+        mins, min_batters = self._mins()
+        if proc.phase not in ("draft", "market") or proc.current_team() != team.id or draftmod.phase_finished(proc):
+            raise ValueError("今は自分の番ではありません")
+        draftmod.pass_turn(proc, team.id, "pass")
+        draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters)
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_auto(self) -> dict:
+        """「おまかせ」:残りの手続きを AI と同じ方針で最後まで進め、次のシーズンを始める(D-207)。"""
+        state = self.state
+        proc = self._proc()
+        mins, min_batters = self._mins()
+        filled = draftmod.complete(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, state.my_team_id, mins, min_batters)
+        self._finish_offseason(filled)
+        return {"finished": True, "summary": self.offseason_summary(), "status": self.status()}
+
+    def transactions(self, year: int | None = None) -> dict:
+        """指名・獲得・自由契約の履歴(公開用)。"""
+        names = self._team_names()
+        rows = [x for x in self.state.transactions if year is None or x["year"] == year]
+        return {"years": sorted({x["year"] for x in self.state.transactions}), "rows": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x.get("position", ""), ""), "phase_label": PHASE_LABELS.get(x["phase"], x["phase"]), "is_mine": x["team_id"] == self.state.my_team_id} for x in rows]}
 
     def offseason_summary(self, year: int | None = None) -> dict:
         """オフの結果(公開用):引退した選手、入団した新人。能力の増減は答え合わせ用(answers.offseason_answers)。"""
@@ -509,7 +712,7 @@ class Game:
             "retired": retired,
             "rookies": rookies,
             "counts": {"retired": len(r.retired), "rookies": len(r.rookies), "players": len(self.state.league.all_players())},
-            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は、答え合わせモードがオンのときだけ見られます)。引退した選手と同じ球団・同じポジションに新人が入りました。",
+            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は、答え合わせモードがオンのときだけ見られます)。新人は、ドラフト・自由契約市場・自動補充で入った選手です。",
         }
 
     # ---- 始める・開く・保存する ----
@@ -519,11 +722,12 @@ class Game:
         cls,
         seed: int,
         team_names: Sequence[str | None],
-        my_team_index: int,
+        my_team_index: int | None,
         season_seed: int | None = None,
         baselines: str = "trial",
         progress=None,
         prerun_progress=None,
+        scout_level: str | None = None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -535,13 +739,18 @@ class Game:
             raise ValueError(f"基準値の求め方は trial か default です(値: {baselines!r})")
         gen, parts = load_generation_config(), load_name_parts()
         offseason_settings = load_offseason_settings()
-        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress)
-        if isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams):
+        draft_settings = load_draft_settings()
+        level = draft_settings.default_level if scout_level is None else str(scout_level)
+        if level not in draft_settings.levels:
+            raise ValueError(f"スカウト評価のずれの大きさは small / medium / large です(値: {scout_level!r})")
+        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level))
+        if my_team_index is not None and (isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams)):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
         settings = load_baseline_settings()
         prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
         season = Season(league, seed if season_seed is None else season_seed)
-        state = GameState(season, gen, parts, "", league.teams[my_team_index].id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration)
+        my_team_id = None if my_team_index is None else league.teams[my_team_index].id
+        state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings)
         return cls(state, dirty=True)
 
     @classmethod
@@ -603,8 +812,10 @@ class Game:
             "my_team": mine,
             "dirty": self.dirty,
             "year": self.state.year,
-            "can_year_end": season.is_over,
+            "can_year_end": season.is_over and self.state.procedure is None,
             "seasons": self.season_choices(),
+            "offseason": None if self.state.procedure is None else {"active": True, "phase": self.state.procedure.phase, "phase_label": PHASE_LABELS[self.state.procedure.phase], "year": self.state.procedure.year},
+            "scout_level": self.state.scout_level,
         }
 
     def season_choices(self) -> list[dict]:
@@ -950,6 +1161,7 @@ class Game:
                 hand=BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
                 is_mine=team.id == self.state.my_team_id,
                 retired=False,
+                scouting=None if p.scouting is None else {**ScoutReport.from_dict(p.scouting).to_public(), "year": p.scouting.get("year"), "team_name": self._team(p.scouting["team_id"]).name},
             )
             role = p.role
         else:  # 引退した選手(過去シーズンの写しから。F2)

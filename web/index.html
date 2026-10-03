@@ -135,6 +135,13 @@
   .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
   .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
   tr.career td, tr.career th { font-weight: bold; border-top: 2px solid var(--line); }
+  .steps { display: flex; gap: 4px; padding: 0; margin: 8px 0; list-style: none; flex-wrap: wrap; }
+  .steps li { flex: 1 1 0; text-align: center; padding: 6px 4px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.85rem; color: var(--muted); }
+  .steps li.current { border-color: var(--accent); color: var(--accent); font-weight: bold; }
+  .steps li.done { background: var(--box); }
+  tr.detail td { background: var(--box); font-size: 0.85rem; white-space: normal; }
+  tr.selected td { background: var(--mine); }
+  .pick-btn { min-height: 32px; padding: 2px 10px; font-size: 0.85rem; }
   .game-card .score { font-weight: bold; font-size: 1.05rem; white-space: nowrap; }
   .game-card .tags { grid-column: 1 / 3; font-size: 0.8rem; color: var(--muted); }
   .daynav { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin: 8px 0; }
@@ -200,7 +207,8 @@
     <strong>ご注意</strong>:実在の球団名や選手名を入れたセーブデータは、ほかの人と共有しないでください(SNS への投稿や、共有リンクで渡すことも含みます)。名前を入れたファイルは、自分で遊ぶためだけに使ってください。
   </div>
   <p>12球団の名前を決めます。<strong>空欄のままにすると、薄く表示されている架空の名前</strong>になります。名前は24文字まで、同じ名前は使えません。</p>
-  <p>「自球団にする」で、応援する球団を1つ選んでください。順位表で目立つように表示します。</p>
+  <p>「自球団にする」で、操作する球団(GM として、オフにドラフトや自由契約の判断をする球団)を1つ選べます。順位表でも目立つように表示します。選ばない場合は<strong>観戦のみ</strong>で、オフの手続きは自動で進みます。</p>
+  <label class="pick"><input type="radio" name="my-team" value="-1" id="my-team-none" checked>観戦のみ(球団を操作しない)</label>
 
   <div id="league-fields"></div>
 
@@ -216,6 +224,10 @@
     <p class="small"><strong>指標の基準値の求め方</strong>:wOBA・FIP などの指標は、リーグ全体の結果から求める「基準値」(重み・リーグ平均)を使います。1年目の基準値は、始める前に、画面に出ない練習のシーズン(試運転)を1回回して求めます。</p>
     <label class="radio"><input type="radio" name="baseline-mode" value="trial" checked><span><strong>試運転で求める</strong>(おすすめ)<br><span class="muted small">このリーグに合った値になります。スマホで数秒かかります。</span></span></label>
     <label class="radio"><input type="radio" name="baseline-mode" value="default"><span><strong>既定値を使う</strong>(速い)<br><span class="muted small">あらかじめ用意した、一般的な値を使います。シーズンが進むと、今シーズンの値に近づいていきます。</span></span></label>
+    <p class="small"><strong>スカウト評価のずれの大きさ</strong>:ドラフトや自由契約で見る選手の評価は、真の能力とずれています。ずれが大きいほど「見る目」が試されます。</p>
+    <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong><br><span class="muted small">推定値のずれの標準偏差 3。ほぼ正確。</span></span></label>
+    <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)<br><span class="muted small">標準偏差 5。</span></span></label>
+    <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong><br><span class="muted small">標準偏差 8。当たり外れが大きい。</span></span></label>
   </details>
 
   <div class="card" id="trial-box" hidden>
@@ -249,8 +261,12 @@
   </div>
   <p class="message" id="progress-message" role="status" aria-live="polite"></p>
   <div class="card" id="year-end-box" hidden>
-    <p class="small">シーズンが終わりました。年度を確定すると、今シーズンの集計を履歴に残して、次のシーズンに進みます。</p>
+    <p class="small">シーズンが終わりました。年度を確定すると、今シーズンの集計を履歴に残して、オフ(選手の入れ替わり)に進みます。</p>
     <button id="year-end" class="secondary">年度を確定する…</button>
+  </div>
+  <div class="card" id="offseason-box" hidden>
+    <p class="small" id="offseason-box-text">オフの手続きが進行中です。</p>
+    <button id="open-offseason">オフの手続きへ</button>
   </div>
 
   <div class="card" id="mine-card">
@@ -348,6 +364,11 @@
   </div>
   <div id="player-season"></div>
   <p class="muted small" id="player-baseline" hidden></p>
+  <div id="player-scouting-box" hidden>
+    <h2>入団時のスカウト評価</h2>
+    <div id="player-scouting"></div>
+    <p class="muted small" id="player-scouting-note"></p>
+  </div>
   <div id="player-history-box" hidden>
     <h2>年度別の成績</h2>
     <div id="player-history"></div>
@@ -382,6 +403,21 @@
   <div id="offseason-rookies"></div>
   <h2>能力の増減</h2>
   <div id="offseason-answers"></div>
+</main>
+
+<!-- オフの手続き(F3-1。D-201〜D-207) -->
+<main class="screen" id="screen-procedure" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1 id="proc-title">オフの手続き</h1></div>
+  <ol class="steps" id="proc-steps"></ol>
+  <p class="small" id="proc-info"></p>
+  <div class="row">
+    <button id="proc-next" class="secondary">次の手続きへ</button>
+    <button id="proc-auto" class="danger">おまかせ(残りを自動で)</button>
+  </div>
+  <p class="message" id="proc-message" role="status" aria-live="polite"></p>
+  <div id="proc-body"></div>
+  <details id="proc-history-box"><summary>指名・自由契約の履歴</summary><div id="proc-history"></div></details>
+  <p class="muted small" id="proc-note"></p>
 </main>
 
 <!-- チームのページ -->

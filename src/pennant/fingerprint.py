@@ -28,7 +28,7 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 13  # 13:事前運転と校正(D-190、D-197)で選手が変わり、(a)〜(m) すべて変わった。 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
+FINGERPRINT_VERSION = 14  # 14:(n)オフの手続き(F3-1)。事前運転が新しい手続きになり、(a)〜(m) も変わった。 13:事前運転と校正(D-190、D-197)で選手が変わり、(a)〜(m) すべて変わった。 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -317,7 +317,7 @@ def multiyear_fingerprint(parks: bool = True) -> tuple[str, dict]:
 
     record: dict[str, dict] = {}
     info: dict = {"year_ends": MULTIYEAR_YEAR_ENDS, "retired": [], "rookies": []}
-    g = Game.new(LEAGUE_SEED, [None] * 12, 0, season_seed=SEASON_SEED, baselines="default")
+    g = Game.new(LEAGUE_SEED, [None] * 12, None, season_seed=SEASON_SEED, baselines="default")  # 観戦のみ(オフの手続きは自動。F3-1)
     if not parks:
         neutralize_parks(g.state.league)
     for k in range(MULTIYEAR_YEAR_ENDS + 1):
@@ -340,6 +340,34 @@ def multiyear_fingerprint(parks: bool = True) -> tuple[str, dict]:
     info["players"] = len(g.state.league.all_players())
     info["seasons"] = g.state.year
     info["history"] = len(g.state.history)
+    return _digest(record), info
+
+
+def procedure_fingerprint(parks: bool = True) -> tuple[str, dict]:
+    """(n)固定のシードで、観戦のみ(全球団 AI)のオフの手続きを 2 回行った後の、選手(年齢・能力)、入団時のスカウト評価、指名・自由契約の履歴(F3-1)。"""
+    from .api import Game
+
+    record: dict = {}
+    info: dict = {"year_ends": MULTIYEAR_YEAR_ENDS, "picked": [], "released": [], "market": []}
+    g = Game.new(LEAGUE_SEED, [None] * 12, None, season_seed=SEASON_SEED, baselines="default")
+    if not parks:
+        neutralize_parks(g.state.league)
+    for k in range(MULTIYEAR_YEAR_ENDS):
+        g.advance(g.state.season.total_days)
+        g.year_end()
+        year = g.state.offseasons[-1].year
+        rows = [x for x in g.state.transactions if x["year"] == year]
+        record[f"transactions-{year}"] = [[x["phase"], x["round"], x["team_id"], x.get("player_id") or "", x.get("note", "")] for x in rows]
+        info["picked"].append(sum(1 for x in rows if x["phase"] in ("draft", "market") and x.get("player_id")))
+        info["market"].append(sum(1 for x in rows if x["phase"] == "market" and x.get("player_id")))
+        info["released"].append(sum(1 for x in rows if x["phase"] == "release"))
+        record[f"players-{year}"] = [
+            [p.id, p.age, {item: int(round(v * 10)) for item, v in sorted(p.ratings.items())}, None if p.scouting is None else [p.scouting["team_id"], p.scouting["ceiling"], int(round(p.scouting["overall"] * 10))]]
+            for t in g.state.league.teams
+            for p in t.players
+        ]
+    info["players"] = len(g.state.league.all_players())
+    info["scouted"] = sum(1 for p in g.state.league.all_players() if p.scouting)
     return _digest(record), info
 
 
@@ -375,6 +403,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     kk, kinfo = run_values_fingerprint(parks)
     ll, linfo = war_fingerprint(parks)
     mm, minfo = multiyear_fingerprint(parks)
+    nn, ninfo = procedure_fingerprint(parks)
     by_league: dict[int, list] = {}
     for t in league.teams:
         by_league.setdefault(t.league_index, []).append(t)
@@ -404,6 +433,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
         "run_values": kk,
         "war": ll,
         "multiyear": mm,
+        "procedure": nn,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -424,6 +454,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
             "run_values": kinfo,
             "war": linfo,
             "multiyear": minfo,
+            "procedure": ninfo,
         },
     }
 
@@ -451,5 +482,6 @@ def format_fingerprints(fp: dict) -> str:
             f"- (k) 打撃・走塁・守備の得点({c['run_values']['seasons']}シーズン。{c['run_values']['players']}人。守備の機会 {c['run_values']['fielding_chances']}): {fp['run_values']}",
             f"- (l) WAR({c['war']['seasons']}シーズン。{c['war']['players']}人。3シーズン目の合計 {c['war']['total_war_x100'] / 100:.2f} 勝): {fp['war']}",
             f"- (m) 複数年(年度の確定 {c['multiyear']['year_ends']} 回・{c['multiyear']['seasons']}シーズン。引退 {'・'.join(str(n) for n in c['multiyear']['retired'])}人、新人 {'・'.join(str(n) for n in c['multiyear']['rookies'])}人。選手 {c['multiyear']['players']}人): {fp['multiyear']}",
+            f"- (n) オフの手続き(全球団 AI で {c['procedure']['year_ends']} 回。指名・獲得 {'・'.join(str(n) for n in c['procedure']['picked'])}人、自由契約 {'・'.join(str(n) for n in c['procedure']['released'])}人。入団時の評価を持つ選手 {c['procedure']['scouted']}人): {fp['procedure']}",
         ]
     )

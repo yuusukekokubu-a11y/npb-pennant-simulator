@@ -1,0 +1,41 @@
+{
+  "format_version": 1,
+  "draft": {
+    "rounds": 6,
+    "candidate_factor": 1.5
+  },
+  "market": {
+    "rounds": 3
+  },
+  "ai": {
+    "release_max": 3,
+    "release_min_age": 27,
+    "release_below": 40,
+    "ceiling_bonus": {
+      "S": 6,
+      "A": 3,
+      "B": 0,
+      "C": -3,
+      "D": -6
+    },
+    "need_bonus": 10,
+    "market_gain_min": 2,
+    "surplus_penalty": 4
+  },
+  "scouting": {
+    "default_level": "medium",
+    "levels": {
+      "small": 3,
+      "medium": 5,
+      "large": 8
+    },
+    "margin_z": 1.28,
+    "ceiling_shares": {
+      "S": 0.05,
+      "A": 0.15,
+      "B": 0.3,
+      "C": 0.3,
+      "D": 0.2
+    }
+  }
+}

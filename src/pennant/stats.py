@@ -36,7 +36,7 @@ def overall(player: Player) -> float:
 
 def potential_overall(player: Player) -> float:
     items = strength_items_for(player.role)
-    return statistics.fmean(player.hidden.potential[i] for i in items)
+    return sum(player.hidden.potential[i] for i in items) / len(items)
 
 
 def first_team(team: Team, config: GenerationConfig) -> list[Player]:
