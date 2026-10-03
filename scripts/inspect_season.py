@@ -14,7 +14,8 @@ import argparse
 import statistics
 import sys
 
-from pennant import ConfigError, generate_league, load_generation_config, load_name_parts
+from pennant import ConfigError, load_generation_config, load_name_parts
+from pennant.newgame import new_league
 from pennant.game_config import load_game_config
 from pennant.pa_config import load_pa_config
 from pennant.plate_appearance import OddsRatioModel
@@ -41,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     def run(seed: int):
-        season = Season(generate_league(seed, gen, names), seed, season_config, game_config, model)
+        season = Season(new_league(seed, None, gen, names, prerun=True), seed, season_config, game_config, model)  # 新規開始と同じ(事前運転と校正を含む。D-190)
         return season, season.play_to_end()
 
     if not args.seeds:

@@ -76,9 +76,24 @@ def new_league(
     team_names: Sequence[str | None] | None = None,
     gen_config: GenerationConfig | None = None,
     name_parts: NameParts | None = None,
+    prerun: bool = True,
+    offseason_settings=None,
+    progress=None,
 ) -> League:
-    """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。"""
-    league = generate_league(seed, gen_config or load_generation_config(), name_parts or load_name_parts())
+    """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。
+
+    prerun=True なら、初期選手の生成の後に事前運転(試合なしで年度の確定を数十年分)と校正を行う(D-190、D-197)。
+    progress には事前運転の (終わった年数, 全年数) を知らせる。"""
+    from .offseason import apply_calibration, load_offseason_settings
+    from .offseason import prerun as run_prerun
+
+    gen_config = gen_config or load_generation_config()
+    name_parts = name_parts or load_name_parts()
+    league = generate_league(seed, gen_config, name_parts)
+    if prerun:
+        settings = offseason_settings or load_offseason_settings()
+        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress)
+        apply_calibration(league, settings.calibration, gen_config)
     if team_names is not None:
         for team, name in zip(league.teams, resolve_team_names(league, team_names)):
             team.display_name = name

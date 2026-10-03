@@ -18,18 +18,18 @@ import math
 from collections import Counter
 from fractions import Fraction
 from datetime import date, datetime
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .abilities import POSITION_LABELS
 from .baselines import Baselines, RunTally, blend, compute_baselines, load_baseline_settings, tally_game, trial_baselines
 from .config import load_generation_config, load_name_parts
 from .decisions import Decisions, decide
 from .game_stats import game_story
-from .metrics import MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
+from .metrics import baseline_dependent, MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
 from .parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkEstimate, ParkTally, add_game, estimate_parks, load_park_settings, player_park_factor, raw_ratio, season_tallies
 from .war import WarLine, load_war_settings, war_for_results, war_totals
 from .history import ArchivedStanding, SeasonArchive
-from .offseason import OffseasonResult, run_offseason
+from .offseason import OffseasonResult, load_offseason_settings, run_offseason
 from .season import derive_seed
 from .records import (
     Records,
@@ -226,12 +226,15 @@ def raw_rate(c, key: str) -> Fraction | None:
     return Fraction(c[num], c[den]) if c[den] else None
 
 
-def _values(config: MetricsConfig, role: str, counts, baselines: Baselines | None = None, park_factor: Fraction | None = None) -> dict:
-    """元の数と指標の値(並べ替え用の数と、表示用の文字)。park_factor は選手ごとの球場補正(式の pf。D-142)。"""
+def _values(config: MetricsConfig, role: str, counts, baselines: Baselines | None = None, park_factor: Fraction | None = None, override: Mapping | None = None) -> dict:
+    """元の数と指標の値(並べ替え用の数と、表示用の文字)。park_factor は選手ごとの球場補正(式の pf。D-142)。
+    override は通算用:指標 → 値(基準値に依存する指標を、シーズンごとの値の加重平均で置き換える。D-192)。"""
     values = dict(baselines.values) if baselines else None
     if values is not None and park_factor is not None:
         values["pf"] = park_factor
     metrics = compute(config, role, counts, values)
+    if override:
+        metrics.update(override)
     out = {}
     for key in config["counts"][role]:
         v = counts.get(key, 0)
@@ -292,6 +295,7 @@ class _SeasonView:
     baseline_note: str
     war_note: str
     day: int | None
+    override: dict | None = None  # 通算:選手 ID → 指標 → 加重平均した値(基準値に依存する指標。D-192)
 
 
 def _add_war(total: WarLine | None, v: WarLine) -> WarLine:
@@ -470,7 +474,7 @@ class Game:
         state.park_history.append(season_tallies(p.result for p in season.played))
         final, _ = self.baselines()
         state.baselines = Baselines(dict(final.values), list(final.re24), dict(final.linear_weights), final.plate_appearances, "season")  # 次の出発点(D-121)
-        result = run_offseason(state.league, derive_seed(season.seed, "offseason"), state.gen_config, state.name_parts, state.offseason_settings, state.year)
+        result = run_offseason(state.league, derive_seed(season.seed, "offseason"), state.gen_config, state.name_parts, state.offseason_settings, state.year, state.calibration)
         state.offseasons.append(result)
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
@@ -519,6 +523,7 @@ class Game:
         season_seed: int | None = None,
         baselines: str = "trial",
         progress=None,
+        prerun_progress=None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -529,13 +534,14 @@ class Game:
         if baselines not in BASELINE_MODES:
             raise ValueError(f"基準値の求め方は trial か default です(値: {baselines!r})")
         gen, parts = load_generation_config(), load_name_parts()
-        league = new_league(seed, team_names, gen, parts)
+        offseason_settings = load_offseason_settings()
+        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress)
         if isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
         settings = load_baseline_settings()
         prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
         season = Season(league, seed if season_seed is None else season_seed)
-        state = GameState(season, gen, parts, "", league.teams[my_team_index].id, prior, settings)
+        state = GameState(season, gen, parts, "", league.teams[my_team_index].id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration)
         return cls(state, dirty=True)
 
     @classmethod
@@ -720,11 +726,37 @@ class Game:
                 return pf_sum[pid] / pa_sum[pid] if pa_sum.get(pid) else Fraction(1)
 
             n = len(state.history) + 1
-            return _SeasonView("career", f"通算(1〜{state.year}シーズン目)", rec, self.baselines()[0], pf, war, lambda pid: info[pid], f"{n}シーズン分の元の数を足し合わせ、指標は今シーズンの基準値で計算しています。球場補正は、各シーズンの値を打席数で重みづけした平均です。", f"{n}シーズン分の WAR の合計です(各シーズンの値を足しています)。", None)
+            return _SeasonView("career", f"通算(1〜{state.year}シーズン目)", rec, self.baselines()[0], pf, war, lambda pid: info[pid], f"{n}シーズン分の元の数を足し合わせています。基準値に依存する指標(wOBA・wRC+・OPS+・FIP)は、各シーズンの値(そのシーズンの基準値と球場補正)を打席数(投手は投球回)で加重平均した値です。", f"{n}シーズン分の WAR の合計です(各シーズンの値を足しています)。", None, self._career_overrides())
         a = next((a for a in state.history if str(a.year) == key), None)
         if a is None:
             raise ValueError(f"シーズン {season!r} の成績はありません(選べるのは、今シーズン・過去のシーズン番号・career)")
         return _SeasonView(key, f"{a.year}シーズン目", a.records, a.baselines, lambda pid: a.park_factors.get(pid, Fraction(1)), a.war, lambda pid: a.players[pid], f"{a.year}シーズン目の最終の基準値(出発点の値に、そのシーズンの値を混ぜたもの)で計算した、確定した値です。球場補正は{'、1シーズン目のため 1.0(補正なし)' if a.year == 1 else f'、前のシーズンまで({a.year - 1}シーズン分)の結果から推定した値'}。", f"{a.year}シーズン目の確定した WAR です。", a.day)
+
+    def _career_overrides(self) -> dict[str, dict]:
+        """通算の、基準値に依存する指標の加重平均(D-192):選手 ID → 指標 → 値(値なしのシーズンは除く。全シーズン値なしなら None)。"""
+        config = metrics_config()
+        dependent = {role: baseline_dependent(config, role) for role in ROLE_LABELS}
+        sums: dict[str, dict[str, list]] = {}  # pid → metric → [重みつき合計, 重みの合計]
+        seasons = [(a.records, a.baselines, lambda pid, a=a: a.park_factors.get(pid, Fraction(1))) for a in self.state.history]
+        seasons.append((self.records.total, self.baselines()[0], self.player_park_factor))
+        for rec, base, pf in seasons:
+            for role, group in (("batter", rec.batters), ("pitcher", rec.pitchers)):
+                for pid, counts in group.items():
+                    weight = counts["PA"] if role == "batter" else counts["OUTS"]
+                    values = dict(base.values)
+                    if role == "batter":
+                        values["pf"] = pf(pid)
+                    metrics = compute(config, role, counts, values)
+                    acc = sums.setdefault(pid, {})
+                    for key in dependent[role]:
+                        v = metrics.get(key)
+                        if v is None or not weight:
+                            acc.setdefault(key, [Fraction(0), 0])
+                            continue
+                        s = acc.setdefault(key, [Fraction(0), 0])
+                        s[0] += v * weight
+                        s[1] += weight
+        return {pid: {key: (s[0] / s[1] if s[1] else None) for key, s in acc.items()} for pid, acc in sums.items()}
 
     def _current_player_info(self, pid: str) -> dict:
         p = self.state.season.players[pid]
@@ -792,7 +824,7 @@ class Game:
         rows = []
         base = view.baselines
         for pid in self.select_players(role, qualified, league, team_id, view.key):
-            values = _values(config, role, group[pid], base, view.park_factor(pid) if role == "batter" else None)
+            values = _values(config, role, group[pid], base, view.park_factor(pid) if role == "batter" else None, (view.override or {}).get(pid))
             row = self._player_row(pid, owner[pid], view)
             row["values"] = {k: values[k][1] for k in shown_keys}
             row["_sort"] = values[sort][0]
@@ -994,7 +1026,7 @@ class Game:
                 continue
             counts = group[player_id]
             info = view.info(player_id)
-            values = _values(config, role, counts, view.baselines, view.park_factor(player_id) if role == "batter" else None)
+            values = _values(config, role, counts, view.baselines, view.park_factor(player_id) if role == "batter" else None, (view.override or {}).get(player_id))
             line = view.war.get(player_id)
             rows.append(
                 {

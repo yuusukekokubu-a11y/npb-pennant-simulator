@@ -51,7 +51,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 6  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)
+SAVE_FORMAT_VERSION = 7  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -99,7 +99,13 @@ def _v5_to_v6(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6}
+def _v6_to_v7(bundle: dict) -> dict:
+    """版6には校正の定数がない。校正なし(0)として足す(旧版の選手には校正を適用しない。D-197)。"""
+    bundle["state"].setdefault("calibration", {"batter": 0.0, "pitcher": 0.0})
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -129,6 +135,7 @@ class GameState:
     history: list = field(default_factory=list)  # 過去シーズンの集計(SeasonArchive。古い順。F2。D-182)
     offseasons: list = field(default_factory=list)  # 年度ごとのオフの結果(OffseasonResult。F2)
     offseason_settings: OffseasonSettings | None = None  # 年度の確定の設定(None は設定ファイル)
+    calibration: dict | None = None  # 新規開始時の校正の定数(役割 → 潜在能力に足す値。新人にも足す。D-197)。None は設定ファイルの値
 
     def __post_init__(self) -> None:
         if self.baseline_settings is None:
@@ -137,6 +144,8 @@ class GameState:
             self.baselines = self.baseline_settings.default_baselines()
         if self.offseason_settings is None:
             self.offseason_settings = load_offseason_settings()
+        if self.calibration is None:
+            self.calibration = self.offseason_settings.calibration
 
     @property
     def league(self) -> League:
@@ -202,6 +211,7 @@ def build_state(state: GameState) -> dict:
         "baselines": state.baselines.to_dict(),
         "park_history": history_to_dict(state.park_history),
         "year": state.year,
+        "calibration": {role: float(v) for role, v in state.calibration.items()},
         "history": [a.to_dict() for a in state.history],
         "offseasons": [o.to_dict() for o in state.offseasons],
         "season": {
@@ -525,6 +535,14 @@ def load_game(data: bytes) -> GameState:
     year = _need(state, "year", int, "state.json", p) or 1
     if year < 1:
         p.add("state.json.year", f"1 以上の整数が必要です(値: {year!r})")
+    calibration_d = _need(state, "calibration", dict, "state.json", p) or {}
+    calibration = {}
+    for role in ("batter", "pitcher"):
+        v = calibration_d.get(role)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not -30 <= v <= 30:
+            p.add(f"state.json.calibration.{role}", f"-30〜30 の数が必要です(値: {v!r})")
+        else:
+            calibration[role] = float(v)
     history_d = _need(state, "history", list, "state.json", p) or []
     offseasons_d = _need(state, "offseasons", list, "state.json", p) or []
     if f"logs/season-{year}.jsonl" not in raws:
@@ -617,7 +635,7 @@ def load_game(data: bytes) -> GameState:
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"])
+    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration)
 
 
 def _check_history(history_d: list, raws: dict, team_ids: set, year: int, p: _Problems) -> list:

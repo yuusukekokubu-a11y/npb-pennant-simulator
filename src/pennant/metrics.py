@@ -61,6 +61,28 @@ def _names(expr: str) -> set[str]:
     return {n.id for n in ast.walk(ast.parse(expr, mode="eval")) if isinstance(n, ast.Name)}
 
 
+def baseline_dependent(config: "MetricsConfig", role: str) -> set[str]:
+    """基準値(リーグ平均・重み・球場補正 pf)に依存する指標(通算で加重平均するもの。D-192)。
+    式に基準値の名前か pf を使う指標と、そのような指標を式に使う指標(推移的)。"""
+    base_names = set(config.data.get("baseline_names", {})) | {"pf"} | {n for n in VALUE_NAMES_FOR_METRICS}
+    out: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for mid, m in config.metrics.items():
+            expr = m["formulas"].get(role)
+            if expr is None or mid in out:
+                continue
+            names = _names(expr)
+            if names & base_names or names & out:
+                out.add(mid)
+                changed = True
+    return out
+
+
+VALUE_NAMES_FOR_METRICS = ("w_bb", "w_hbp", "w_1b", "w_2b", "w_3b", "w_hr", "woba_scale", "lg_obp", "lg_slg", "lg_woba", "lg_r_pa", "lg_era", "fip_hr", "fip_bb", "fip_so", "fip_constant", "pf")
+
+
 def _check_formula(expr: str) -> str | None:
     """式に使えない書き方があれば、その理由を返す。"""
     try:

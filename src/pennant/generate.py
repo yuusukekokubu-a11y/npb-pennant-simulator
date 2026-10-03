@@ -199,8 +199,9 @@ def generate_draft_class(
     return players
 
 
-def make_rookie(config: GenerationConfig, names: NameGenerator, rng: random.Random, role: str, position: str, player_id: str) -> Player:
-    """新人を1人作る(年度の確定の補充用。D-184)。出身と年齢は draft の設定から。ID は呼び出し側が決める。"""
+def make_rookie(config: GenerationConfig, names: NameGenerator, rng: random.Random, role: str, position: str, player_id: str, potential_shift: float = 0.0) -> Player:
+    """新人を1人作る(年度の確定の補充用。D-184)。出身と年齢は draft の設定から。ID は呼び出し側が決める。
+    potential_shift は校正の定数(D-197):強弱の項目の潜在能力に足し、現在の能力を出し直す(生成そのものは変えない)。"""
     factory = _PlayerFactory(config, names, rng, id_prefix="")
     origins = config["draft"]["origins"]
     origin = _weighted_key(rng, origins)
@@ -208,5 +209,16 @@ def make_rookie(config: GenerationConfig, names: NameGenerator, rng: random.Rand
     age = _truncated_normal_int(rng, o["age_mean"], o["age_sd"], o["age_min"], o["age_max"])
     player = factory.make(role, position, age, initial=False, origin=origin)
     player.id = player_id
+    if potential_shift:
+        shift_potential(config, player, potential_shift)
     return player
+
+
+def shift_potential(config: GenerationConfig, player: Player, shift: float) -> None:
+    """校正(D-197):強弱の項目(型の項目を除く)の潜在能力に定数を足し、現在の能力を年齢カーブで出し直す。"""
+    for item in items_for(player.role):
+        if item in STYLE_ITEMS:
+            continue
+        player.hidden.potential[item] += shift
+        player.ratings[item] = aging.current_rating(config, item, player.hidden.potential[item], player.age, player.hidden.growth_type, player.hidden.ability_drift[item])
 

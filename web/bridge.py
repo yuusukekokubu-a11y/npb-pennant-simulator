@@ -36,13 +36,13 @@ def check(seed: int, names_json: str) -> str:
     return _ok(api.check_team_names(int(seed), json.loads(names_json)))
 
 
-def new_game(seed: int, season_seed: int, names_json: str, my_team_index: int, baselines: str = "trial", progress=None) -> str:
+def new_game(seed: int, season_seed: int, names_json: str, my_team_index: int, baselines: str = "trial", progress=None, prerun_progress=None) -> str:
     """新規開始。baselines は基準値の求め方(trial:試運転で求める / default:既定値)。
-    progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。"""
+    progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。prerun_progress は事前運転の (終わった年数, 全年数)。"""
     global _game
     try:
         game = api.Game.new(
-            int(seed), json.loads(names_json), int(my_team_index), season_seed=int(season_seed), baselines=str(baselines), progress=progress
+            int(seed), json.loads(names_json), int(my_team_index), season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress
         )
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)
