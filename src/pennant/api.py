@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import copy
+from dataclasses import dataclass
 import math
 from collections import Counter
 from fractions import Fraction
@@ -26,6 +28,9 @@ from .game_stats import game_story
 from .metrics import MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
 from .parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkEstimate, ParkTally, add_game, estimate_parks, load_park_settings, player_park_factor, raw_ratio, season_tallies
 from .war import WarLine, load_war_settings, war_for_results, war_totals
+from .history import ArchivedStanding, SeasonArchive
+from .offseason import OffseasonResult, run_offseason
+from .season import derive_seed
 from .records import (
     Records,
     game_records,
@@ -89,6 +94,7 @@ def check_team_names(seed: int, names: Sequence[str | None]) -> list[str | None]
 
 
 ROLE_LABELS = {"batter": "打者", "pitcher": "投手"}
+ORIGIN_LABELS = {"high_school": "高卒", "college": "大卒", "corporate": "社会人・独立リーグ"}
 KIND_LABELS = {"basic": "基本", "saber": "セイバー"}
 BATS_LABELS = {"R": "右打ち", "L": "左打ち", "S": "両打ち"}
 THROWS_LABELS = {"R": "右投げ", "L": "左投げ"}
@@ -272,6 +278,35 @@ def _sum(group) -> Counter:
     return total
 
 
+@dataclass
+class _SeasonView:
+    """成績の計算に使う1シーズン分(または通算)のまとまり(F2。D-182)。"""
+
+    key: str  # "current" / シーズン番号 / "career"
+    label: str
+    records: Records
+    baselines: Baselines
+    park_factor: object  # 選手 ID → 球場補正(Fraction)
+    war: dict
+    info: object  # 選手 ID → {name, team_id, role, position, age}
+    baseline_note: str
+    war_note: str
+    day: int | None
+
+
+def _add_war(total: WarLine | None, v: WarLine) -> WarLine:
+    """WAR の行を足す(通算用)。"""
+    if total is None:
+        total = WarLine(v.role, v.team_id)
+    total.team_id = v.team_id
+    total.plate_appearances += v.plate_appearances
+    total.outs += v.outs
+    for k in ("batting", "baserunning", "fielding", "position", "replacement", "war", "fip_runs", "ra_runs", "defense_adjustment", "war_fip", "war_ra"):
+        setattr(total, k, getattr(total, k) + getattr(v, k))
+    total.runs_per_win = v.runs_per_win
+    return total
+
+
 class Game:
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
@@ -361,13 +396,117 @@ class Game:
         return f"{self.state.season.day}日目までの値です(シーズンが進むと変わります)。基準値(リーグ平均・得点期待値)は wRC+ と同じく、出発点の値に今シーズンの値を混ぜたもの。{park}。控え水準とポジション補正は設定値(仮置き)。"
 
     def finish_season(self) -> int:
-        """シーズンを終えて、球場 × シーズンの集計を履歴に足す(F2 の「年度の確定」の最小の形。D-146)。戻り値は履歴の数。"""
+        """シーズンを終えて、球場 × シーズンの集計を履歴に足す(年度の確定の一部。D-146)。戻り値は履歴の数。"""
         if not self.state.season.is_over:
             raise ValueError("シーズンがまだ終わっていません")
         self.state.park_history.append(season_tallies(p.result for p in self.state.season.played))
         self._park_estimates = None
         self.dirty = True
         return len(self.state.park_history)
+
+    # ---- 複数年(F2。D-180〜D-189) ----
+
+    def year_end_preview(self) -> dict:
+        """年度の確定の確認の画面に出す情報(戻せないこと、保存への導線は画面側)。"""
+        season = self.state.season
+        names = self._team_names()
+        champs = []
+        if season.is_over:
+            for i in season.league_indexes():
+                champs.append({"league_name": self.state.league.league_names[i], "teams": [names[t] for t in season.result().champions[i]]})
+        return {
+            "year": self.state.year,
+            "is_over": season.is_over,
+            "champions": champs,
+            "players": len(self.state.league.all_players()),
+            "log_seasons": self.state.offseason_settings.log_seasons,
+            "dirty": self.dirty,
+            "note": "年度を確定すると、今シーズンの集計を履歴に残し、選手の年齢が1つ進んで能力が更新され、引退と新人の入団が決まり、次のシーズンが始まります。この操作は戻せません。直前の状態を残したいときは、先に「保存」で別の名前のファイルに保存してください。",
+        }
+
+    def _archive_current_season(self) -> SeasonArchive:
+        season = self.state.season
+        result = season.result()
+        standings = [
+            ArchivedStanding(i, row.rank, row.team_id, row.wins, row.losses, row.ties, Fraction(row.games_behind))
+            for i, rows in result.standings.items()
+            for row in rows
+        ]
+        rec = self.records.total
+        players = {}
+        for pid in set(rec.batters) | set(rec.pitchers):
+            p = season.players[pid]
+            players[pid] = {"name": p.name, "team_id": p.team_id, "role": p.role, "position": p.position, "age": p.age}
+        keep = len(self.state.history) + 1 < self.state.offseason_settings.log_seasons  # 今シーズンのログを残すか(今シーズンを含めて log_seasons 分)
+        return SeasonArchive(
+            year=self.state.year,
+            seed=season.seed,
+            standings=standings,
+            champions=dict(result.champions),
+            records=copy.deepcopy(rec),
+            players=players,
+            park_factors={pid: self.player_park_factor(pid) for pid in rec.batters},
+            war=dict(self.war_lines()),
+            baselines=self.baselines()[0],
+            games=list(season.played) if keep else None,
+            day=season.day,
+            total_days=season.total_days,
+        )
+
+    def year_end(self) -> dict:
+        """年度の確定(F2。D-185、D-186):今シーズンの集計を履歴へ → 球場補正の履歴と基準値の出発点を更新 →
+        加齢・能力の更新・引退・補充(offseason.run_offseason)→ 次のシーズンを作る。戻り値はオフの結果の要約。"""
+        state = self.state
+        season = state.season
+        if not season.is_over:
+            raise ValueError("シーズンがまだ終わっていません(最後まで進めてから、年度を確定してください)")
+        archive = self._archive_current_season()
+        state.history.append(archive)
+        # 残す打席ログの数を守る(直近 log_seasons シーズン。今シーズンは次のシーズンの分として数える)
+        limit = max(0, state.offseason_settings.log_seasons - 1)
+        with_games = [a for a in state.history if a.games is not None]
+        for a in with_games[: max(0, len(with_games) - limit)]:
+            a.games = None
+        state.park_history.append(season_tallies(p.result for p in season.played))
+        final, _ = self.baselines()
+        state.baselines = Baselines(dict(final.values), list(final.re24), dict(final.linear_weights), final.plate_appearances, "season")  # 次の出発点(D-121)
+        result = run_offseason(state.league, derive_seed(season.seed, "offseason"), state.gen_config, state.name_parts, state.offseason_settings, state.year)
+        state.offseasons.append(result)
+        state.year += 1
+        state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
+        self._cache = _StatsCache()
+        self._park_estimates = None
+        self._war = None
+        self.dirty = True
+        return self.offseason_summary(result.year)
+
+    def offseason_summary(self, year: int | None = None) -> dict:
+        """オフの結果(公開用):引退した選手、入団した新人。能力の増減は答え合わせ用(answers.offseason_answers)。"""
+        if not self.state.offseasons:
+            return {"available": False, "years": []}
+        if year is None:
+            year = self.state.offseasons[-1].year
+        r = next((o for o in self.state.offseasons if o.year == year), None)
+        if r is None:
+            raise ValueError(f"{year} シーズン目のオフの結果はありません")
+        names = self._team_names()
+
+        def note(n):
+            return {"player_id": n.player_id, "name": n.name, "team_id": n.team_id, "team_name": names.get(n.team_id, n.team_id), "role": n.role, "role_label": ROLE_LABELS[n.role], "position": POSITION_LABELS[n.position], "age": n.age, "origin": ORIGIN_LABELS.get(n.origin, "") if n.origin else "", "is_mine": n.team_id == self.state.my_team_id}
+
+        order = {k: i for i, k in enumerate(POSITION_LABELS)}
+        retired = sorted((note(n) for n in r.retired), key=lambda d: (d["team_id"], order[next(k for k, v in POSITION_LABELS.items() if v == d["position"])], d["player_id"]))
+        rookies = sorted((note(n) for n in r.rookies), key=lambda d: (d["team_id"], d["player_id"]))
+        return {
+            "available": True,
+            "year": r.year,
+            "next_year": r.year + 1,
+            "years": [o.year for o in self.state.offseasons],
+            "retired": retired,
+            "rookies": rookies,
+            "counts": {"retired": len(r.retired), "rookies": len(r.rookies), "players": len(self.state.league.all_players())},
+            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は、答え合わせモードがオンのときだけ見られます)。引退した選手と同じ球団・同じポジションに新人が入りました。",
+        }
 
     # ---- 始める・開く・保存する ----
 
@@ -457,7 +596,19 @@ class Game:
             "seed": season.seed,
             "my_team": mine,
             "dirty": self.dirty,
+            "year": self.state.year,
+            "can_year_end": season.is_over,
+            "seasons": self.season_choices(),
         }
+
+    def season_choices(self) -> list[dict]:
+        """成績のページで選べるシーズン(今シーズン・過去の各シーズン・通算。D-182)。"""
+        out = [{"key": "current", "label": f"今シーズン({self.state.year}シーズン目)"}]
+        for a in reversed(self.state.history):
+            out.append({"key": str(a.year), "label": f"{a.year}シーズン目"})
+        if self.state.history:
+            out.append({"key": "career", "label": "通算"})
+        return out
 
     def standings(self) -> dict:
         """2リーグの順位表(実装④の順位の決め方そのまま)。自球団の行には is_mine が付く。"""
@@ -531,11 +682,59 @@ class Game:
                 return t
         raise KeyError(f"チーム '{team_id}' はありません")
 
-    def select_players(self, role: str, qualified: bool = True, league: int | None = None, team_id: str | None = None) -> list[str]:
+    # ---- シーズンの選択(今シーズン・過去シーズン・通算。F2。D-182) ----
+
+    def _season_view(self, season: str | int | None) -> "_SeasonView":
+        """成績に使う元の数・基準値・球場補正・WAR のまとまり。season は None/"current"(今)、シーズン番号、"career"(通算)。"""
+        state = self.state
+        key = "current" if season is None else str(season)
+        if key == "current" or key == str(state.year):
+            return _SeasonView("current", f"今シーズン({state.year}シーズン目)", self.records.total, self.baselines()[0], self.player_park_factor, self.war_lines(), self._current_player_info, self.baseline_info()["text"], self.war_note(), state.season.day)
+        if key == "career":
+            if not state.history:
+                raise ValueError("通算は、2シーズン目から選べます")
+            rec = Records()
+            war: dict[str, WarLine] = {}
+            pf_sum: dict[str, Fraction] = {}
+            pa_sum: dict[str, int] = {}
+            info: dict[str, dict] = {}
+            for a in state.history:
+                rec.add(a.records)
+                for pid, c in a.records.batters.items():
+                    pf_sum[pid] = pf_sum.get(pid, Fraction(0)) + a.park_factors.get(pid, Fraction(1)) * c["PA"]
+                    pa_sum[pid] = pa_sum.get(pid, 0) + c["PA"]
+                for pid, v in a.war.items():
+                    war[pid] = _add_war(war.get(pid), v)
+                info.update(a.players)
+            cur = self.records.total
+            rec.add(cur)
+            for pid, c in cur.batters.items():
+                pf_sum[pid] = pf_sum.get(pid, Fraction(0)) + self.player_park_factor(pid) * c["PA"]
+                pa_sum[pid] = pa_sum.get(pid, 0) + c["PA"]
+            for pid, v in self.war_lines().items():
+                war[pid] = _add_war(war.get(pid), v)
+            for pid in set(cur.batters) | set(cur.pitchers):
+                info[pid] = self._current_player_info(pid)
+
+            def pf(pid):
+                return pf_sum[pid] / pa_sum[pid] if pa_sum.get(pid) else Fraction(1)
+
+            n = len(state.history) + 1
+            return _SeasonView("career", f"通算(1〜{state.year}シーズン目)", rec, self.baselines()[0], pf, war, lambda pid: info[pid], f"{n}シーズン分の元の数を足し合わせ、指標は今シーズンの基準値で計算しています。球場補正は、各シーズンの値を打席数で重みづけした平均です。", f"{n}シーズン分の WAR の合計です(各シーズンの値を足しています)。", None)
+        a = next((a for a in state.history if str(a.year) == key), None)
+        if a is None:
+            raise ValueError(f"シーズン {season!r} の成績はありません(選べるのは、今シーズン・過去のシーズン番号・career)")
+        return _SeasonView(key, f"{a.year}シーズン目", a.records, a.baselines, lambda pid: a.park_factors.get(pid, Fraction(1)), a.war, lambda pid: a.players[pid], f"{a.year}シーズン目の最終の基準値(出発点の値に、そのシーズンの値を混ぜたもの)で計算した、確定した値です。球場補正は{'、1シーズン目のため 1.0(補正なし)' if a.year == 1 else f'、前のシーズンまで({a.year - 1}シーズン分)の結果から推定した値'}。", f"{a.year}シーズン目の確定した WAR です。", a.day)
+
+    def _current_player_info(self, pid: str) -> dict:
+        p = self.state.season.players[pid]
+        return {"name": p.name, "team_id": p.team_id, "role": p.role, "position": p.position, "age": p.age}
+
+    def select_players(self, role: str, qualified: bool = True, league: int | None = None, team_id: str | None = None, season: str | int | None = None) -> list[str]:
         """個人成績に出す選手(試合に出た選手。規定到達者・リーグ・チームで絞り込む)。"""
         if role not in ROLE_LABELS:
             raise ValueError(f"打者か投手を選んでください(値: {role!r})")
-        rec = self.records.total
+        rec = self._season_view(season).records
         group, owner = (rec.batters, rec.batter_team) if role == "batter" else (rec.pitchers, rec.pitcher_team)
         ids = list(group)
         if qualified:
@@ -547,10 +746,10 @@ class Game:
             ids = [pid for pid in ids if owner[pid] == team_id]
         return ids
 
-    def _player_row(self, pid: str, team_id: str) -> dict:
-        p = self.state.season.players[pid]
+    def _player_row(self, pid: str, team_id: str, view: "_SeasonView | None" = None) -> dict:
+        p = view.info(pid) if view else self._current_player_info(pid)
         team = self._team(team_id)
-        return {"player_id": pid, "name": p.name, "team_id": team_id, "team_name": team.name, "position": POSITION_LABELS[p.position], "is_mine": team_id == self.state.my_team_id}
+        return {"player_id": pid, "name": p["name"], "team_id": team_id, "team_name": team.name, "position": POSITION_LABELS[p["position"]], "is_mine": team_id == self.state.my_team_id}
 
     def stats(
         self,
@@ -561,8 +760,10 @@ class Game:
         qualified: bool = True,
         league: int | None = None,
         team_id: str | None = None,
+        season: str | int | None = None,
     ) -> dict:
         """個人成績の表(D-116)。列・既定の並び順は指標の定義データの tables から(D-119)。
+        season は None(今シーズン)、過去のシーズン番号、"career"(通算。F2。D-182)。
 
         sort は列(元の数か指標)の名前。表の列に限らず、その役割の元の数・全指標を使える(D-132)。
         表にない指標で並べたときは、extra_column にその列を返し、各行の values にも値を入れる(画面は名前の隣に出す)。
@@ -571,8 +772,9 @@ class Game:
         """
         if role not in ROLE_LABELS:
             raise ValueError(f"打者か投手を選んでください(値: {role!r})")
+        view = self._season_view(season)
         if kind == WAR_KIND:
-            return self._war_stats(role, sort, order, qualified, league, team_id)
+            return self._war_stats(role, sort, order, qualified, league, team_id, view)
         if kind not in KIND_LABELS:
             raise ValueError(f"基本かセイバーを選んでください(値: {kind!r})")
         config = metrics_config()
@@ -585,13 +787,13 @@ class Game:
         shown_keys = list(table["columns"]) + ([sort] if extra else [])
         if order not in ("asc", "desc"):
             order = "desc" if info["better"] == "high" else "asc"
-        rec = self.records.total
+        rec = view.records
         group, owner = (rec.batters, rec.batter_team) if role == "batter" else (rec.pitchers, rec.pitcher_team)
         rows = []
-        base, _ = self.baselines()
-        for pid in self.select_players(role, qualified, league, team_id):
-            values = _values(config, role, group[pid], base, self.player_park_factor(pid) if role == "batter" else None)
-            row = self._player_row(pid, owner[pid])
+        base = view.baselines
+        for pid in self.select_players(role, qualified, league, team_id, view.key):
+            values = _values(config, role, group[pid], base, view.park_factor(pid) if role == "batter" else None)
+            row = self._player_row(pid, owner[pid], view)
             row["values"] = {k: values[k][1] for k in shown_keys}
             row["_sort"] = values[sort][0]
             rows.append(row)
@@ -616,11 +818,13 @@ class Game:
             "qualified": qualified,
             "qualify_rule": QUALIFY_RULES[role],
             "rows": rows,
-            "day": self.state.season.day,
-            "baseline_note": self.baseline_info()["text"] if any(c["key"] in _BASELINE_METRICS for c in table_cols(config, role, kind)) else None,
+            "day": self.state.season.day if view.key == "current" else view.day,
+            "baseline_note": view.baseline_note if any(c["key"] in _BASELINE_METRICS for c in table_cols(config, role, kind)) else None,
+            "season": view.key,
+            "season_label": view.label,
         }
 
-    def _war_stats(self, role: str, sort: str | None, order: str | None, qualified: bool, league: int | None, team_id: str | None) -> dict:
+    def _war_stats(self, role: str, sort: str | None, order: str | None, qualified: bool, league: int | None, team_id: str | None, view: "_SeasonView") -> dict:
         """個人成績の「WAR」の表(③b。D-179)。列は WAR_COLUMNS。並び順は WAR の列だけ(既定は WAR の高い順)。"""
         columns = WAR_COLUMNS[role]
         default = "war" if role == "batter" else "war_ra"
@@ -628,16 +832,16 @@ class Game:
         info = next(c for c in columns if c["key"] == sort)
         if order not in ("asc", "desc"):
             order = "desc"
-        lines = self.war_lines()
-        rec = self.records.total
+        lines = view.war
+        rec = view.records
         owner = rec.batter_team if role == "batter" else rec.pitcher_team
         rows = []
-        for pid in self.select_players(role, qualified, league, team_id):
+        for pid in self.select_players(role, qualified, league, team_id, view.key):
             line = lines.get(pid)
             if line is None:
                 continue
             values = _war_values(line)
-            row = self._player_row(pid, owner[pid])
+            row = self._player_row(pid, owner[pid], view)
             row["values"] = {k: values[k][1] for k in values}
             row["_sort"] = values[sort][0]
             rows.append(row)
@@ -658,9 +862,11 @@ class Game:
             "qualified": qualified,
             "qualify_rule": QUALIFY_RULES[role],
             "rows": rows,
-            "day": self.state.season.day,
-            "baseline_note": self.war_note(),
+            "day": self.state.season.day if view.key == "current" else view.day,
+            "baseline_note": view.war_note,
             "terms": WAR_TERMS,
+            "season": view.key,
+            "season_label": view.label,
         }
 
     def _game_summary(self, n: int) -> dict:
@@ -702,19 +908,26 @@ class Game:
     def player(self, player_id: str) -> dict:
         """選手のページ:基本情報(公開用)、シーズン通算の成績(基本・セイバー)、試合ごとの成績(新しい順)。"""
         season = self.state.season
-        if player_id not in season.players:
-            raise ValueError(f"選手 '{player_id}' はいません")
-        p = season.players[player_id]
-        team = self._team(p.team_id)
-        info = public_player(p, team.name)
-        info.update(
-            position_label=POSITION_LABELS[p.position],
-            role_label=ROLE_LABELS[p.role],
-            hand=BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
-            is_mine=team.id == self.state.my_team_id,
-        )
+        if player_id in season.players:
+            p = season.players[player_id]
+            team = self._team(p.team_id)
+            info = public_player(p, team.name)
+            info.update(
+                position_label=POSITION_LABELS[p.position],
+                role_label=ROLE_LABELS[p.role],
+                hand=BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
+                is_mine=team.id == self.state.my_team_id,
+                retired=False,
+            )
+            role = p.role
+        else:  # 引退した選手(過去シーズンの写しから。F2)
+            past = next((a.players[player_id] for a in reversed(self.state.history) if player_id in a.players), None)
+            if past is None:
+                raise ValueError(f"選手 '{player_id}' はいません")
+            team = self._team(past["team_id"])
+            role = past["role"]
+            info = {"id": player_id, "name": past["name"], "age": past["age"], "role": role, "position": past["position"], "team_name": team.name, "position_label": POSITION_LABELS[past["position"]], "role_label": ROLE_LABELS[role], "hand": None, "is_mine": team.id == self.state.my_team_id, "retired": True}
         config = metrics_config()
-        role = p.role
         cache = self.records
         total = (cache.total.batters if role == "batter" else cache.total.pitchers).get(player_id)
         season_block = None
@@ -762,8 +975,44 @@ class Game:
         return {
             "player": info,
             "season": season_block,
+            "history": self._player_history(player_id, role, config),
             "game_columns": [column_info(config, role, k) for k in game_cols],
             "games": games,
+        }
+
+    def _player_history(self, player_id: str, role: str, config) -> dict | None:
+        """選手のページの「年度別」の表(過去シーズン・今シーズン・通算。F2。D-182)。2シーズン目から。"""
+        if not self.state.history:
+            return None
+        keys = [str(a.year) for a in self.state.history] + ["current", "career"]
+        war_cols = WAR_COLUMNS[role]
+        rows = []
+        for key in keys:
+            view = self._season_view(key)
+            group = view.records.batters if role == "batter" else view.records.pitchers
+            if player_id not in group:
+                continue
+            counts = group[player_id]
+            info = view.info(player_id)
+            values = _values(config, role, counts, view.baselines, view.park_factor(player_id) if role == "batter" else None)
+            line = view.war.get(player_id)
+            rows.append(
+                {
+                    "season": view.key,
+                    "label": view.label if key != "current" else f"{self.state.year}シーズン目(進行中)",
+                    "year": self.state.year if key == "current" else (None if key == "career" else int(key)),
+                    "age": None if key == "career" else info["age"],
+                    "team_name": "" if key == "career" else self._team(view.records.batter_team[player_id] if role == "batter" else view.records.pitcher_team[player_id]).name,
+                    "position": "" if key == "career" else POSITION_LABELS[info["position"]],
+                    "tables": {kind: {k: values[k][1] for k in config["tables"][role][kind]["columns"]} for kind in KIND_LABELS},
+                    "war": None if line is None else {k: v[1] for k, v in _war_values(line).items()},
+                }
+            )
+        return {
+            "columns": {kind: [column_info(config, role, k) for k in config["tables"][role][kind]["columns"]] for kind in KIND_LABELS},
+            "war_columns": war_cols,
+            "rows": rows,
+            "note": "過去のシーズンは確定した値、今シーズンは進行中の値、通算は元の数の合計から今シーズンの基準値で計算した値です。WAR の通算は各シーズンの合計です。",
         }
 
     def stadium(self, team_id: str) -> dict:

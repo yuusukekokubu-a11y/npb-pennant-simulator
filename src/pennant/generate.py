@@ -197,3 +197,16 @@ def generate_draft_class(
         age = _truncated_normal_int(rng, o["age_mean"], o["age_sd"], o["age_min"], o["age_max"])
         players.append(factory.make(role, position, age, initial=False, origin=origin))
     return players
+
+
+def make_rookie(config: GenerationConfig, names: NameGenerator, rng: random.Random, role: str, position: str, player_id: str) -> Player:
+    """新人を1人作る(年度の確定の補充用。D-184)。出身と年齢は draft の設定から。ID は呼び出し側が決める。"""
+    factory = _PlayerFactory(config, names, rng, id_prefix="")
+    origins = config["draft"]["origins"]
+    origin = _weighted_key(rng, origins)
+    o = origins[origin]
+    age = _truncated_normal_int(rng, o["age_mean"], o["age_sd"], o["age_min"], o["age_max"])
+    player = factory.make(role, position, age, initial=False, origin=origin)
+    player.id = player_id
+    return player
+

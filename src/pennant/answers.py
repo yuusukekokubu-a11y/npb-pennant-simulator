@@ -149,6 +149,42 @@ def stadium_answers(game: Game, team_id: str, level: int = 1) -> dict:
     }
 
 
+def offseason_answers(game: Game, year: int | None = None, level: int = 1) -> dict:
+    """オフの結果の答え合わせ(F2):残った選手の能力の増減(項目ごと。隠し情報)。答え合わせモードがオンのときだけ呼ぶ。"""
+    _check_level(level)
+    if not game.state.offseasons:
+        return {"available": False, "players": []}
+    if year is None:
+        year = game.state.offseasons[-1].year
+    r = next((o for o in game.state.offseasons if o.year == year), None)
+    if r is None:
+        raise ValueError(f"{year} シーズン目のオフの結果はありません")
+    names = {t.id: t.name for t in game.state.league.teams}
+    players = {p.id: p for p in game.state.league.all_players()}
+    rows = []
+    for pid, changes in r.ability_changes.items():
+        p = players.get(pid)
+        if p is None:
+            continue
+        total = sum(changes.values()) / len(changes) if changes else 0.0
+        rows.append(
+            {
+                "player_id": pid,
+                "name": p.name,
+                "team_id": p.team_id,
+                "team_name": names.get(p.team_id, p.team_id),
+                "role": p.role,
+                "position": p.position,
+                "age": r.ages.get(pid, p.age),
+                "mean_change": f"{total:+.1f}",
+                "items": [{"key": item, "label": ITEM_LABELS[item], "change": f"{changes[item]:+.1f}"} for item in items_for(p.role) if item in changes],
+                "is_mine": p.team_id == game.state.my_team_id,
+            }
+        )
+    rows.sort(key=lambda d: (d["team_id"], d["player_id"]))
+    return {"available": True, "year": year, "level": level, "players": rows, "note": "能力の項目ごとの、年度の確定の前後の差(真の能力値の差。答え合わせ用)。年齢カーブと年ごとの揺れの合計です。"}
+
+
 def player_answers(game: Game, player_id: str, level: int = 1) -> dict:
     """1人分の答え合わせ:能力の項目ごとに、現在の能力(段階2では潜在能力も)。段階2は成長タイプ・生成時の型も。"""
     _check_level(level)
