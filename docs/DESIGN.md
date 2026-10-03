@@ -64,6 +64,9 @@ src/pennant/
   runvalues.py        打撃・走塁・守備の得点(第3弾②。D-160〜D-166)
   war.py              WAR の計算(第3弾③a。D-167〜D-173)
   offseason.py        年度の確定の処理(加齢・能力の更新・引退・補充。F2。D-184〜D-187)
+  scouting.py         スカウト評価(推定値・ふれ幅・天井。球団ごとのずれ。F3-1。D-199、D-200)
+  draft.py            オフの手続き(自由契約・ドラフト・市場・自動補充。AI の判断。F3-1。D-201〜D-205)
+  data/draft.json             オフの手続きの設定(巡数、候補の数、市場の巡数、ずれの大きさ、天井の割合、AI の自由契約の上限。仮置き。9 章)
   history.py          シーズンごとの集計(履歴)の形(F2。D-182、D-189)
   data/offseason.json         引退の確率・打席ログを残すシーズン数(仮置き。9 章)
   data/war.json               WAR の設定(ポジション補正、控え水準。9 章)
@@ -255,7 +258,10 @@ web/dev/                             開発者向けの測定ページ(技術検
 - 過去シーズンの成績は `SeasonArchive` の元の数から、その時の基準値と球場補正で指標を出し直す。通算は、元の数から計算できる指標は元の数の合計から、基準値に依存する指標(式に基準値の名前か `pf` を使うもの。`metrics.baseline_dependent`)は各シーズンの値を打席数(投手はアウト数)で加重平均(D-192)。WAR は各シーズンの合計。
 - 打席ログは直近 `log_seasons` シーズン(`data/offseason.json`。既定 1)だけ `logs/season-<年>.jsonl` に保存し、それ以前の `SeasonArchive.games` は None(試合のページは開けない)。
 - 指紋 (m):固定のシードで年度の確定を 2 回行い、3シーズン目を最後まで回した後の、選手の年齢・能力(千分率の整数)、引退・入団の ID、各シーズンの集計(元の数・WAR)。
-- **事前運転と校正**(D-034 の完成形。D-190、D-197。`newgame.new_league(prerun=True)`):初期選手の生成 → `offseason.prerun(league, seed, ...)`(`run_offseason` を `prerun_years` 回。乱数は `derive_seed(リーグのシード, "prerun:<年>")`。新人の ID は `B<年>R<番号>`。履歴は作らない)→ `offseason.apply_calibration(league, calibration)`(強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を年齢カーブで出し直す)→ 試運転の基準値 → 1 シーズン目。校正の定数は `data/offseason.json` の `calibration`(`scripts/calibrate.py` で求める)。`GameState.calibration` に新規開始時の定数を持ち、その後の新人(`make_rookie(potential_shift=…)`)にも足す。引退の判定(能力の分)は、総合値から定数を引いた校正前の目盛りで行う。旧版のセーブデータは定数 0(校正なし)で続ける。保存形式は版 7。
+- **オフの手続き**(F3-1。D-201〜D-207。`draft.py`):`year_end` は、集計の履歴 → 加齢・能力の更新・引退(`offseason.age_update_retire`)の後、`draft.OffseasonProcedure`(年、シード、指名の順番、巡、候補、市場、指名の履歴、手放した選手、段階)を作って `GameState.procedure` に持つ。観戦のみ(操作する球団なし)なら、その場で `complete` → `finalize`(自動補充 → 市場の残りはリーグを去る → 次のシーズン)。操作する球団があるときは、段階ごとに画面の操作(`offseason_release`・`offseason_pick`・`offseason_pass`・`offseason_next`・`offseason_auto`)で進め、保存は手続きの状態ごと行う。AI の判断(`ai_release`・`ai_choose`)は、球団ごとのスカウト評価(`scouting.quick_overall`:乱数は `derive_seed(手続きのシード, "scout:<球団>:<選手>")`)を使い、差し替え可能な関数にする。候補の ID は `D<年>C<番号>`、自動補充の新人は `Y<年>R<番号>`。事前運転も同じ手続き(全球団 AI)で回す。
+- **スカウト評価**(`scouting.py`。D-199):`report(player, team, seed, sd, cuts)` → 項目ごとの推定値とふれ幅、総合の推定値とふれ幅、天井の段階。総合の推定値は乱数の最初の 1 本(真の総合値 + N(0, sd/√n))で決め、項目の推定値はそれに項目ごとの偏り(平均 0)を足す(AI の判断では総合の 1 本だけを引くので速い。項目のずれの標準偏差は sd になる)。天井は潜在能力の総合値 + N(0, sd) を、そのオフの候補全体の分位点(`cuts`)で S〜D に分ける。入団時の評価は `Player.scouting` に保存する。
+- 指紋 (n):固定のシードで、観戦のみ(全球団 AI)のオフの手続きを 2 回行った後の、選手(年齢・能力)、入団時の評価、指名・自由契約の履歴。
+- **事前運転と校正**(D-034 の完成形。D-190、D-197。`newgame.new_league(prerun=True)`):初期選手の生成 → `offseason.prerun(league, seed, ...)`(`run_offseason` を `prerun_years` 回。乱数は `derive_seed(リーグのシード, "prerun:<年>")`。新人の ID は `B<年>R<番号>`。履歴は作らない)→ `offseason.apply_calibration(league, calibration)`(強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を年齢カーブで出し直す)→ 試運転の基準値 → 1 シーズン目。校正の定数は `data/offseason.json` の `calibration`(`scripts/calibrate.py` で求める)。`GameState.calibration` に新規開始時の定数を持ち、その後の新人(`make_rookie(potential_shift=…)`)にも足す。引退の判定(能力の分)は、総合値から定数を引いた校正前の目盛りで行う。旧版のセーブデータは定数 0(校正なし)で続ける。保存形式は版 7。版 8(F3-1):`scout_level`(ずれの段階)、`scout_sd`(球団ごとの値)、`procedure`(オフの手続きの状態)、`transactions`(指名・自由契約の履歴)、選手の `scouting`(入団時の評価)。版 7 以前は、段階「中」・手続きなしとして読み、次の年度の確定から新しい手続きで進む。
 
 ## 5. 画面(入出力)
 
