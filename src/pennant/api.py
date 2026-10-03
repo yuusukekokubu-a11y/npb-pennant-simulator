@@ -25,6 +25,7 @@ from .decisions import Decisions, decide
 from .game_stats import game_story
 from .metrics import MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
 from .parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkEstimate, ParkTally, add_game, estimate_parks, load_park_settings, player_park_factor, raw_ratio, season_tallies
+from .war import WarLine, load_war_settings, war_for_results, war_totals
 from .records import (
     Records,
     game_records,
@@ -121,6 +122,48 @@ SOURCE_LABELS = {"trial": "試運転のシーズンの値", "default": "設定�
 
 
 _BASELINE_METRICS = {"woba", "wrc_plus", "ops_plus", "fip"}  # 基準値を使う指標(第2弾)
+
+WAR_KIND = "war"  # 個人成績の「WAR」の切り替え(第3弾③b。D-179)。指標の式ではないので、列は metrics.json でなくここで持つ
+WAR_TERMS = [
+    {"key": "war", "label": "WAR", "description": "Wins Above Replacement の略。控え水準の選手に比べて、何勝分多く勝ちに貢献したか。打者は(打撃 + 走塁 + 守備 + ポジション補正 + 控え水準)÷ 1勝あたりの得点。高いほどよい"},
+    {"key": "replacement", "label": "控え水準", "description": "いつでも補充できる控え選手の水準。その選手と同じ出場量を控え選手が担ったときに比べて、どれだけ得点(失点)を増減させたかを測る土台。設定値(野手は1打席あたり、投手は9イニングあたり)"},
+    {"key": "position", "label": "ポジション補正", "description": "守備の負担が重いポジションほど加点し、軽いポジション(一塁・指名打者など)は減点する調整(設定値。点/125試合を、守備に就いた量で按分)"},
+    {"key": "runs_per_win", "label": "1勝あたりの得点", "description": "得点(失点)を勝ち数に直す換算。2 × 1チーム1試合あたりの得点(今の得点環境で約 9 点)"},
+    {"key": "war_ra", "label": "失点版", "description": "投手の WAR のうち、実際の失点から求めたもの。チームの野手の守備の得点を投球回で按分して差し引き、球場補正(前のシーズンまでの推定)を入れる"},
+    {"key": "war_fip", "label": "FIP 版", "description": "投手の WAR のうち、FIP(本塁打・四死球・三振だけで見た失点のしにくさ)から求めたもの。守備と運の影響を受けにくい。球場補正はしない"},
+]
+WAR_COLUMNS = {
+    "batter": [
+        {"key": "plate_appearances", "label": "打席", "description": "打数 + 四球 + 死球 + 犠飛(wOBA の分母)", "type": "count", "category": "war", "better": "high"},
+        {"key": "war", "label": "WAR", "description": WAR_TERMS[0]["description"], "type": "metric", "category": "war", "better": "high"},
+        {"key": "batting", "label": "打撃", "description": "打撃の得点:wOBA から求めた、平均的な打者に比べた得点の増減(球場補正つき)", "type": "metric", "category": "war", "better": "high"},
+        {"key": "baserunning", "label": "走塁", "description": "走塁の得点:走者としての進塁(安打での追加の進塁、タッチアップ、併殺の回避など)の価値を、同じ状況の平均と比べたもの", "type": "metric", "category": "war", "better": "high"},
+        {"key": "fielding", "label": "守備", "description": "守備の得点:担当した打球をアウトにした数と、同じポジション・打球の種類のリーグ平均との差を得点に直したもの", "type": "metric", "category": "war", "better": "high"},
+        {"key": "position", "label": "ポジション補正", "description": WAR_TERMS[2]["description"], "type": "metric", "category": "war", "better": "high"},
+        {"key": "replacement", "label": "控え水準", "description": "控え水準の得点:出場量 × 設定値。多く出るほど大きい", "type": "metric", "category": "war", "better": "high"},
+    ],
+    "pitcher": [
+        {"key": "innings", "label": "投球回", "description": "投げたイニング(アウト 3 つで 1 回)", "type": "count", "category": "war", "better": "high"},
+        {"key": "war_ra", "label": "WAR(失点版)", "description": WAR_TERMS[4]["description"], "type": "metric", "category": "war", "better": "high"},
+        {"key": "war_fip", "label": "WAR(FIP 版)", "description": WAR_TERMS[5]["description"], "type": "metric", "category": "war", "better": "high"},
+    ],
+}
+_WAR_SORT_KEYS = {role: [c["key"] for c in cols] for role, cols in WAR_COLUMNS.items()}
+
+
+def _war_text(v: Fraction, digits: int = 2) -> str:
+    return f"{float(v):.{digits}f}"
+
+
+def _war_values(line: WarLine) -> dict:
+    """WAR の表の1行分:並べ替え用の数と表示用の文字。"""
+    if line.role == "batter":
+        raw = {"plate_appearances": Fraction(line.plate_appearances), "war": line.war, "batting": line.batting, "baserunning": line.baserunning, "fielding": line.fielding, "position": line.position, "replacement": line.replacement}
+        text = {k: (str(line.plate_appearances) if k == "plate_appearances" else _war_text(v, 2 if k == "war" else 1)) for k, v in raw.items()}
+    else:
+        raw = {"innings": Fraction(line.outs), "war_ra": line.war_ra, "war_fip": line.war_fip}
+        text = {"innings": innings_text(line.outs), "war_ra": _war_text(line.war_ra), "war_fip": _war_text(line.war_fip)}
+    return {k: (raw[k], text[k]) for k in raw}
 
 
 def table_cols(config: MetricsConfig, role: str, kind: str) -> list[dict]:
@@ -237,6 +280,7 @@ class Game:
         self.dirty = dirty  # 未保存の変更があるか
         self._cache = _StatsCache()
         self._park_estimates: tuple[int, dict[str, ParkEstimate] | None] | None = None
+        self._war: tuple[int, dict[str, WarLine]] | None = None  # (試合数, WAR の表)。試合数が変わるまで覚えておく(D-179)
 
     @property
     def records(self) -> _StatsCache:
@@ -301,6 +345,20 @@ class Game:
     def player_park_factor(self, player_id: str) -> Fraction:
         """選手の球場補正(立った球場ごとの打席数で重みづけ。D-142)。1シーズン目は 1。"""
         return player_park_factor(self.park_estimates(), self.records.player_park_pa.get(player_id, {}))
+
+    def war_lines(self) -> dict[str, WarLine]:
+        """今シーズンの、その時点までの WAR(③b。D-179)。基準値は wRC+ と同じ混ぜた値、球場補正は前のシーズンまでの推定。試合数が変わるまで覚えておく。"""
+        n = len(self.state.season.played)
+        if self._war is None or self._war[0] != n:
+            results = [p.result for p in self.state.season.played]
+            lines, _, _ = war_for_results(results, self.park_estimates(), self.state.baseline_settings or load_baseline_settings(), load_war_settings(), self.baselines()[0], self.records.total)
+            self._war = (n, lines)
+        return self._war[1]
+
+    def war_note(self) -> str:
+        n = self.season_number()
+        park = "球場補正は、1シーズン目のため 1.0(補正なし)" if n == 1 else f"球場補正は、前のシーズンまで({n - 1}シーズン分)の結果から推定した値"
+        return f"{self.state.season.day}日目までの値です(シーズンが進むと変わります)。基準値(リーグ平均・得点期待値)は wRC+ と同じく、出発点の値に今シーズンの値を混ぜたもの。{park}。控え水準とポジション補正は設定値(仮置き)。"
 
     def finish_season(self) -> int:
         """シーズンを終えて、球場 × シーズンの集計を履歴に足す(F2 の「年度の確定」の最小の形。D-146)。戻り値は履歴の数。"""
@@ -513,6 +571,8 @@ class Game:
         """
         if role not in ROLE_LABELS:
             raise ValueError(f"打者か投手を選んでください(値: {role!r})")
+        if kind == WAR_KIND:
+            return self._war_stats(role, sort, order, qualified, league, team_id)
         if kind not in KIND_LABELS:
             raise ValueError(f"基本かセイバーを選んでください(値: {kind!r})")
         config = metrics_config()
@@ -558,6 +618,49 @@ class Game:
             "rows": rows,
             "day": self.state.season.day,
             "baseline_note": self.baseline_info()["text"] if any(c["key"] in _BASELINE_METRICS for c in table_cols(config, role, kind)) else None,
+        }
+
+    def _war_stats(self, role: str, sort: str | None, order: str | None, qualified: bool, league: int | None, team_id: str | None) -> dict:
+        """個人成績の「WAR」の表(③b。D-179)。列は WAR_COLUMNS。並び順は WAR の列だけ(既定は WAR の高い順)。"""
+        columns = WAR_COLUMNS[role]
+        default = "war" if role == "batter" else "war_ra"
+        sort = sort if sort in _WAR_SORT_KEYS[role] else default
+        info = next(c for c in columns if c["key"] == sort)
+        if order not in ("asc", "desc"):
+            order = "desc"
+        lines = self.war_lines()
+        rec = self.records.total
+        owner = rec.batter_team if role == "batter" else rec.pitcher_team
+        rows = []
+        for pid in self.select_players(role, qualified, league, team_id):
+            line = lines.get(pid)
+            if line is None:
+                continue
+            values = _war_values(line)
+            row = self._player_row(pid, owner[pid])
+            row["values"] = {k: values[k][1] for k in values}
+            row["_sort"] = values[sort][0]
+            rows.append(row)
+        rows.sort(key=lambda r: r["player_id"])
+        rows.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+        for i, r in enumerate(rows):
+            r.pop("_sort")
+            r["rank"] = i + 1
+        return {
+            "role": role,
+            "role_label": ROLE_LABELS[role],
+            "kind": WAR_KIND,
+            "kind_label": "WAR",
+            "columns": columns,
+            "sort": info,
+            "order": order,
+            "extra_column": None,
+            "qualified": qualified,
+            "qualify_rule": QUALIFY_RULES[role],
+            "rows": rows,
+            "day": self.state.season.day,
+            "baseline_note": self.war_note(),
+            "terms": WAR_TERMS,
         }
 
     def _game_summary(self, n: int) -> dict:
@@ -619,9 +722,11 @@ class Game:
             pf = self.player_park_factor(player_id) if role == "batter" else None
             values = _values(config, role, total, self.baselines()[0], pf)
             qualified = player_id in (qualified_batters(cache.total) if role == "batter" else qualified_pitchers(cache.total))
+            line = self.war_lines().get(player_id)
             season_block = {
                 "baseline_note": self.baseline_info()["text"],
                 "park_factor": None if pf is None else f"{float(pf):.3f}",
+                "war": None if line is None else {"columns": WAR_COLUMNS[role], "values": {k: v[1] for k, v in _war_values(line).items()}, "note": self.war_note(), "terms": WAR_TERMS},
                 "qualified": qualified,
                 "qualify_rule": QUALIFY_RULES[role],
                 "tables": {
@@ -732,6 +837,8 @@ class Game:
                     "games": counts.get("G", 0),
                 }
             )
+        lines = {pid: v for pid, v in self.war_lines().items() if v.team_id == team_id}
+        totals = war_totals(lines)
         return {
             "team_id": team_id,
             "name": team.name,
@@ -739,6 +846,14 @@ class Game:
             "league_name": self.state.league.league_names[team.league_index],
             "is_mine": team_id == self.state.my_team_id,
             "rank": row.rank,
+            "war": {
+                "batters": _war_text(totals["batters"]),
+                "pitchers_ra": _war_text(totals["pitchers_ra"]),
+                "pitchers_fip": _war_text(totals["pitchers_fip"]),
+                "total_ra": _war_text(totals["batters"] + totals["pitchers_ra"]),
+                "note": self.war_note(),
+                "terms": WAR_TERMS,
+            },
             "record": {
                 "games": t.get("G", 0),
                 "wins": row.wins,

@@ -299,7 +299,7 @@
     <button data-value="batter">打者</button><button data-value="pitcher">投手</button>
   </div>
   <div class="seg" id="stats-kind" role="group" aria-label="成績の種類の切り替え">
-    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="ability">能力</button>
+    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button><button data-value="ability">能力</button>
   </div>
   <div class="filters">
     <select id="stats-league" aria-label="リーグの絞り込み"></select>
@@ -338,7 +338,7 @@
   <p id="player-info"></p>
   <h2>シーズン通算の成績</h2>
   <div class="seg" id="player-kind" role="group" aria-label="成績の種類の切り替え">
-    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="ability">能力</button>
+    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button><button data-value="ability">能力</button>
   </div>
   <div id="player-season"></div>
   <p class="muted small" id="player-baseline" hidden></p>
@@ -351,6 +351,10 @@
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="team-name"></h1></div>
   <p id="team-info"></p>
   <div id="team-record"></div>
+  <h2>チームの WAR(ここまで)</h2>
+  <div id="team-war"></div>
+  <p class="muted small" id="team-war-note"></p>
+  <details><summary>WAR の用語の解説</summary><dl class="terms" id="team-war-terms"></dl></details>
   <h2>投手</h2>
   <div id="team-pitchers"></div>
   <h2>野手</h2>

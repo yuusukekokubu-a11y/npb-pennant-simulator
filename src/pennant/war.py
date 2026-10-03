@@ -259,3 +259,23 @@ def target_total_war(records: Records, settings: WarSettings) -> Fraction:
 def war_record(lines: Mapping[str, WarLine]) -> dict:
     """指紋 (l) 用。"""
     return {pid: v.to_dict() for pid, v in sorted(lines.items())}
+
+
+def war_for_results(results: list[GameResult], estimates, baseline_settings, war_settings: WarSettings, baselines: Baselines | None = None, records: Records | None = None):
+    """試合の結果から、打撃・走塁・守備の得点と WAR を一度に求める(画面とスクリプトで同じ関数。D-179)。
+
+    estimates は前のシーズンまでの球場補正の推定(1シーズン目は None)。baselines を省略すると、
+    今シーズンの記録から求めた値(出発点は設定ファイルの既定値)。画面は混ぜた基準値を渡す。
+    戻り値は (WAR の表, 打撃・走塁・守備の得点, 使った基準値)。
+    """
+    from .baselines import season_baselines
+    from .runvalues import player_park_factors, season_player_runs
+
+    rec = records if records is not None else season_records(results)
+    base = baselines if baselines is not None else season_baselines(results, baseline_settings, baseline_settings.default_baselines())
+    pfs = player_park_factors(results, estimates)
+    runs = season_player_runs(results, base, lambda pid: pfs.get(pid, Fraction(1)), rec)
+    ppf = pitcher_park_factors(results, estimates)
+    lines = season_war(results, base, runs, war_settings, rec, lambda pid: ppf.get(pid, Fraction(1)))
+    return lines, runs, base
+

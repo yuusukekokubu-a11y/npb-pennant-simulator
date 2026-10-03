@@ -22,12 +22,11 @@ import sys
 from fractions import Fraction
 
 from pennant.abilities import BATTER, PITCHER, POSITION_LABELS
-from pennant.baselines import load_baseline_settings, season_baselines
+from pennant.baselines import blended_for_results, load_baseline_settings, season_baselines
 from pennant.parkfactors import load_park_settings, run_seasons
 from pennant.records import season_records
-from pennant.runvalues import player_park_factors, season_player_runs
 from pennant.stats import overall
-from pennant.war import POSITIONS_WITH_DH, dh_plate_appearances, load_war_settings, pitcher_park_factors, season_war, target_total_war, war_totals
+from pennant.war import POSITIONS_WITH_DH, dh_plate_appearances, load_war_settings, target_total_war, war_for_results, war_totals
 
 CHECKPOINTS = (1, 3, 10)
 
@@ -36,6 +35,12 @@ def _table(headers, rows):
     lines = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
     lines += ["| " + " | ".join(r) + " |" for r in rows]
     return "\n".join(lines)
+
+
+def season_war_lines(results, estimates, settings, war_settings, screen: bool = False):
+    """1シーズン分の WAR。screen=True なら画面と同じ混ぜた基準値(出発点は既定値)で計算する(D-179)。"""
+    base = blended_for_results(settings.default_baselines(), results, settings)[0] if screen else None
+    return war_for_results(results, estimates, settings, war_settings, base)
 
 
 def corr(xs, ys):
@@ -55,6 +60,7 @@ def main(argv=None):
     parser.add_argument("--seasons", type=int, default=10, help="回すシーズンの数")
     parser.add_argument("--min-pa", type=int, default=300, help="ポジション別・能力との相関に入れる、1シーズンの打席数の下限")
     parser.add_argument("--min-outs", type=int, default=150, help="投手の相関に入れる、1シーズンのアウト数の下限(50 回)")
+    parser.add_argument("--screen", action="store_true", help="画面と同じ、出発点(既定値)と今シーズンを混ぜた基準値で計算する(既定は今シーズンの値だけ)")
     args = parser.parse_args(argv)
     settings = load_baseline_settings()
     war_settings = load_war_settings()
@@ -64,12 +70,8 @@ def main(argv=None):
 
     def on_results(k, results, league, estimates):
         holder["league"] = league
-        base = season_baselines(results, settings, settings.default_baselines())
+        lines, runs, _ = season_war_lines(results, estimates, settings, war_settings, screen=args.screen)
         rec = season_records(results)
-        pfs = player_park_factors(results, estimates)
-        runs = season_player_runs(results, base, lambda pid: pfs.get(pid, Fraction(1)), rec)
-        ppf = pitcher_park_factors(results, estimates)
-        lines = season_war(results, base, runs, war_settings, rec, lambda pid: ppf.get(pid, Fraction(1)))
         seasons.append((lines, rec, runs, dh_plate_appearances(results)))
         print(f"  ... シーズン {k} / {args.seasons}", file=sys.stderr)
 
