@@ -41,9 +41,11 @@ import json
 from pennant.abilities import ITEM_LABELS
 from pennant.config import load_generation_config
 c = load_generation_config()
-words = set(ITEM_LABELS.values()) | {v["label"] for v in c["aging"]["growth_types"].values()} | {v["label"] for v in c["batter_archetypes"].values()}
+# 能力の項目名(コンタクトなど)は、F3-1 からスカウト評価(推定値)の表示に使うので、隠し情報の言葉には含めない(D-199)。
+# 隠し情報の言葉は、成長タイプ・生成時の型・球質・役割の名前。真の能力値は項目名(キー)で確かめる
+words = {v["label"] for v in c["aging"]["growth_types"].values()} | {v["label"] for v in c["batter_archetypes"].values()}
 words |= {v["label"] for v in c["pitcher_qualities"].values()} | {v["label"] for v in c["pitcher_roles"].values()}
-words -= {"標準", "肩", "捕球"}  # ふつうの文章にも出る短い言葉は除く(項目の解説の文字で確かめる)
+words -= {"標準"}  # ふつうの文章にも出る短い言葉は除く
 print(json.dumps({"words": sorted(words), "keys": ["ratings", "potential", "growth_type", "archetype", "ability_drift", "hidden", "park", "home_run_multiplier"]}, ensure_ascii=False))
 `));
 
@@ -151,7 +153,7 @@ await page.waitForFunction(() => /\d+ \/ 125 日/.test(document.querySelector("#
 check((await page.textContent("#trial-box")).includes("リーグの基準値を求めています"), `試運転の進み具合が出る(「${await page.textContent("#trial-text")}」)`);
 await page.waitForSelector("#screen-progress:not([hidden])", { timeout: 120000 });
 const trialSeconds = (Date.now() - trialStart) / 1000;
-results.push(`  事前運転(30 年)と試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
+results.push(`  事前運転(25 年)と試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
 check(prerunSeen, "新規開始の間に、事前運転(リーグの歴史を作っています)の進み具合が出る");
 const mineName = await page.textContent("#mine-name");
 check(mineName === placeholder7, `選んだ8番目の球団が自球団になる(${mineName})`);
@@ -642,9 +644,9 @@ v = g.offseason_view()
 print(json.dumps([[r["name"], r["position_label"], f"{r['age']}歳", r["scouting"]["overall_text"]] for r in v["roster"]], ensure_ascii=False))`, last.path));
 check(rosterRows.length === rosterPy.length && rosterRows.every((r, i) => r[0] === rosterPy[i][0] && r[1] === rosterPy[i][1] && r[2] === rosterPy[i][2] && r[3] === rosterPy[i][3]), `自由契約の画面に、自球団の全選手(${rosterRows.length}人)がスカウト評価(推定 ± 幅)つきで出て、計算本体と同じ`);
 check(!HIDDEN.keys.some((k) => JSON.stringify(rosterRows).includes(`"${k}"`)) && (await page.$$eval("#proc-body tbody tr th, #proc-body thead th", (ths) => ths.map((t) => t.textContent))).includes("天井"), "自由契約の表に天井(S〜D)の列があり、真の能力の項目名はない");
+page.on("dialog", (d) => d.accept().catch(() => {})); // これ以降の確認(自由契約・次の手続き・おまかせ・答え合わせモード)はすべて承諾する
 const firstBox = page.locator("#proc-body input[type=checkbox]:not([disabled])").first();
 await firstBox.check();
-page.once("dialog", (d) => d.accept());
 await page.click("#proc-release");
 await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("済んでいます"));
 check(true, "選手に印を付けて「自由契約にする」を押すと、確認のあと手放せる");
@@ -682,11 +684,9 @@ const pk0 = Date.now();
 await page.click("#proc-body .pick-btn >> nth=0");
 await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("2 巡目"), null, { timeout: 60000 });
 check((await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `「指名」で入団し、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
-page.once("dialog", (d) => d.accept());
 await page.click("#proc-next");
 await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("自由契約市場"), null, { timeout: 60000 });
 check((await page.textContent("#proc-body")).includes("前の球団"), "ドラフトの残りを自動で進めて市場へ。市場の表には前の球団の列がある");
-page.once("dialog", (d) => d.accept());
 const au0 = Date.now();
 await page.click("#proc-auto");
 await page.waitForFunction(() => !document.querySelector("#screen-offseason").hidden && document.querySelectorAll("#offseason-retired tbody tr").length > 0, null, { timeout: 120000 });
@@ -779,7 +779,6 @@ const y2Messages = await page.evaluate(() => window.__messages.join("\n"));
 const leakedY2 = [...HIDDEN.words.filter((w) => y2Messages.includes(w)), ...HIDDEN.keys.filter((k) => y2Messages.includes(`"${k}"`))];
 check(leakedY2.length === 0, `年度の確定の前後に届いたメッセージにも、隠し情報がない${leakedY2.length ? `(見つかった: ${leakedY2.join("、")})` : ""}`);
 // 答え合わせモードをオンにすると、オフの結果に能力の増減が出る
-page.once("dialog", (d) => d.accept());
 await page.click("#menu");
 await page.check("input[name=answer-level][value='1']");
 await page.click("#screen-settings .back");
@@ -790,7 +789,6 @@ await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody t
 // オフの結果のページは、進行の画面から開き直せないので、確定の直後に出したページと同じ内容を問い合わせで確かめる
 const ansPy = pyYear2(`from pennant import answers\nx = answers.offseason_answers(g, None, 1)\nprint(json.dumps([len(x["players"]), x["players"][0]["mean_change"]]))`);
 check(ansPy[0] > 700 && /^[+-]\d+\.\d$/.test(ansPy[1]), `答え合わせ用の関数で、残った選手(${ansPy[0]}人)の能力の増減が見られる(先頭 ${ansPy[1]})`);
-page.once("dialog", (d) => d.accept());
 await page.click("#menu");
 await page.check("input[name=answer-level][value='0']");
 await page.click("#screen-settings .back");
@@ -832,7 +830,7 @@ await page.waitForFunction(() => document.querySelector("#day-text").textContent
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=saber]");
 await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("設定ファイルの既定値"));
-check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 30 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)。注記も「設定ファイルの既定値」になる`);
+check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 25 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)。注記も「設定ファイルの既定値」になる`);
 await grab();
 
 // ---- 7. 隠し情報・通信・保存領域 ----

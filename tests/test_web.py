@@ -191,9 +191,10 @@ def hidden_words() -> set[str]:
     from pennant.config import load_generation_config
 
     c = load_generation_config()
-    words = set(ITEM_LABELS.values()) | {v["label"] for v in c["aging"]["growth_types"].values()}
+    # 能力の項目名は F3-1 からスカウト評価(推定値)の表示に使うので含めない(D-199)。成長タイプ・型・球質・役割の名前だけ
+    words = {v["label"] for v in c["aging"]["growth_types"].values()}
     words |= {v["label"] for k in ("batter_archetypes", "pitcher_qualities", "pitcher_roles") for v in c[k].values()}
-    return words - {"標準", "肩", "捕球"}  # ふつうの文章にも出る短い言葉は除く
+    return words - {"標準"}  # ふつうの文章にも出る短い言葉は除く
 
 
 HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "ability_drift")

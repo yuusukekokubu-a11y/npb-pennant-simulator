@@ -223,7 +223,10 @@ def test_public_functions_have_no_hidden_info(game):
     values = [game.stats(r, k, qualified=False) for r in ("batter", "pitcher") for k in ("basic", "saber")]
     values += [game.player(pid), game.team("T03"), game.games_on(5), game.game(3), game.last_day_games()]
     assert not (_keys(values) & HIDDEN_KEYS)
-    text = json.dumps(values, ensure_ascii=False)
+    # 能力の項目名は、入団時のスカウト評価(推定値。F3-1)の中にだけ出てよい。それ以外の場所には出ない
+    page = dict(game.player(pid))
+    page["player"] = {k: v for k, v in page["player"].items() if k != "scouting"}
+    text = json.dumps([v for v in values if v is not game.player(pid)] + [page], ensure_ascii=False)
     for label in ITEM_LABELS.values():
         assert label not in text or label in ("肩", "捕球"), label
 
