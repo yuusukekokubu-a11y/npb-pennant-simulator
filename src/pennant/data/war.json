@@ -1,0 +1,21 @@
+{
+  "format_version": 1,
+  "pythagorean_exponent": 2,
+  "replacement_win_pct": 0.29,
+  "position_runs_per_season": {
+    "C": 9,
+    "SS": 6,
+    "2B": 2,
+    "3B": 2,
+    "CF": 2,
+    "LF": -6,
+    "RF": -6,
+    "1B": -10,
+    "DH": -14
+  },
+  "replacement": {
+    "batter_runs_per_pa": 0.0306,
+    "starter_runs_per_9": 0.82,
+    "reliever_runs_per_9": 0.53
+  }
+}
