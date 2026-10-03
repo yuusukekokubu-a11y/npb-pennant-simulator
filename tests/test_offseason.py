@@ -6,6 +6,7 @@ import json
 import random
 import zipfile
 from collections import Counter
+from datetime import datetime, timezone
 
 import pytest
 
@@ -27,6 +28,7 @@ from pennant.stats import overall
 from pennant.war import war_record
 
 SETTINGS = load_offseason_settings()
+AT = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)  # 保存日時を固定(2回の保存を比べるため)
 CONFIG = load_generation_config()
 PARTS = load_name_parts()
 
@@ -229,7 +231,7 @@ def test_save_v6_round_trip_and_log_policy(two_seasons):
     g.advance(2)
     g2.advance(2)
     assert war_record(g.war_lines()) == war_record(g2.war_lines())
-    assert save_game(g.state) == save_game(g2.state)
+    assert save_game(g.state, AT) == save_game(g2.state, AT)
 
 
 def test_v5_save_is_converted_to_v6():
