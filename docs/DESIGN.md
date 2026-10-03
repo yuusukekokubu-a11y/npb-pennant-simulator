@@ -252,10 +252,10 @@ web/dev/                             開発者向けの測定ページ(技術検
   - 年度の確定:`history.SeasonArchive`(年、順位表、優勝、球団の成績、選手 × シーズンの元の数・球場補正・WAR の内訳、選手の名前・年齢・ポジションの写し、最終の基準値)を作って `GameState.history` に足す。`park_history` に集計を足し(`finish_season`)、基準値の出発点を今シーズンの最終値(混ぜた値)にする。
   - 加齢・能力の更新・引退・補充は `offseason.py`(`run_offseason(league, seed, gen_config, names, settings)` → `OffseasonResult`:引退した選手、入団した新人、能力の増減(隠し情報。答え合わせ用))。乱数は `derive_seed(シーズンのシード, "offseason")`。能力の更新は `aging.current_rating`(揺れは `generation.json` の `variation.ability_drift_sd_per_year`)。引退の確率は `data/offseason.json`(年齢の分 + 能力の分)。補充は `generate.make_rookie(role, position, ...)` を使う関数 `replenish` に分け、F3-1 でドラフトに差し替える。新人の ID は `Y<年>R<番号>`。
   - 次のシーズン:`Season(league, derive_seed(今のシーズンのシード, "next-season"))`。一軍・打順・先発は既存の規則(`SimpleManager`)で組み直す。疲労は 0 に。
-- 過去シーズンの成績は `SeasonArchive` の元の数から、その時の基準値と球場補正で指標を出し直す。通算は元の数の合計(指標は今の基準値で計算。注記)と WAR の合計。
+- 過去シーズンの成績は `SeasonArchive` の元の数から、その時の基準値と球場補正で指標を出し直す。通算は、元の数から計算できる指標は元の数の合計から、基準値に依存する指標(式に基準値の名前か `pf` を使うもの。`metrics.baseline_dependent`)は各シーズンの値を打席数(投手はアウト数)で加重平均(D-192)。WAR は各シーズンの合計。
 - 打席ログは直近 `log_seasons` シーズン(`data/offseason.json`。既定 1)だけ `logs/season-<年>.jsonl` に保存し、それ以前の `SeasonArchive.games` は None(試合のページは開けない)。
 - 指紋 (m):固定のシードで年度の確定を 2 回行い、3シーズン目を最後まで回した後の、選手の年齢・能力(千分率の整数)、引退・入団の ID、各シーズンの集計(元の数・WAR)。
-- F2 が動いたら、初期選手の作り方を「試合なしで30年ほど回した状態から始める」方式に置き換える(今回は含めない)。
+- **事前運転と校正**(D-034 の完成形。D-190、D-197。`newgame.new_league(prerun=True)`):初期選手の生成 → `offseason.prerun(league, seed, ...)`(`run_offseason` を `prerun_years` 回。乱数は `derive_seed(リーグのシード, "prerun:<年>")`。新人の ID は `B<年>R<番号>`。履歴は作らない)→ `offseason.apply_calibration(league, calibration)`(強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を年齢カーブで出し直す)→ 試運転の基準値 → 1 シーズン目。校正の定数は `data/offseason.json` の `calibration`(`scripts/calibrate.py` で求める)。`GameState.calibration` に新規開始時の定数を持ち、その後の新人(`make_rookie(potential_shift=…)`)にも足す。旧版のセーブデータは定数 0(校正なし)で続ける。保存形式は版 7。
 
 ## 5. 画面(入出力)
 
@@ -349,7 +349,7 @@ web/dev/                             開発者向けの測定ページ(技術検
 | 新人の入団年齢 | 高卒 18歳、大卒 22歳、社会人・独立リーグ 平均23歳(22〜26歳) | D-039 |
 | 打席の左右 | 右 60%、左 33%、両打ち 7% | 一般的な傾向を参考にした |
 | 投球の左右 | 投手の左投げ 30%(野手の投げ手は持たない。D-048) | 一般的な傾向を参考にした |
-| 一軍相当の人数(確認用) | 投手 14、野手 15 | 一軍登録枠 29人(確認済み。D-029 補足)と合う |
+| 一軍相当の人数(確認用) | 投手 14、野手 15 | 一軍登録枠 29人(確認済み。D-029 補足)と合う。校正(D-197)の「一軍相当」もこの人数 |
 | 名前の部品 | 姓 110件、名 100件(11,000通り)。地名 20件、愛称 16件、球場の接尾語 4件 | リーグ全体の 840人に対して十分な組み合わせ。名前はリーグ全体で重複しないよう、使用済みなら選び直す |
 
 ### 打席の計算(`src/pennant/data/plate_appearance.json`)
