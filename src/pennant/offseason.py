@@ -180,7 +180,8 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
         vacated: list[tuple[str, str]] = []
         for p in list(team.players):
             changes = age_and_update(p, config, rng)
-            retire = rng.random() < retirement_probability(settings, p.age, overall(p))
+            # 引退の判定は校正前の目盛りで行う(校正の定数を引く。事前運転と同じ基準にするため。D-197)
+            retire = rng.random() < retirement_probability(settings, p.age, overall(p) - (calibration or {}).get(p.role, 0.0))
             if retire:
                 result.retired.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
                 vacated.append((p.role, p.position))

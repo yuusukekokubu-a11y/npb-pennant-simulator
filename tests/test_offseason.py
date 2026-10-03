@@ -341,10 +341,18 @@ def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated(
     assert [(p.id, dict(p.ratings)) for p in league.all_players()] == [(p.id, dict(p.ratings)) for p in manual.all_players()]
     plain = new_league(2, None, CONFIG, PARTS, prerun=False)
     assert [p.id for p in plain.all_players()] == [p.id for p in generate_league(2, CONFIG, PARTS).all_players()]
-    # その後の年度の確定で入る新人にも、同じ定数が足される(定数 0 のときより平均が高い)
-    r0 = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, {"batter": 0.0, "pitcher": 0.0})
-    r1 = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, SETTINGS.calibration)
-    assert [n.player_id for n in r0.rookies] == [n.player_id for n in r1.rookies]
+    # その後に入る新人にも同じ定数が足される(同じ乱数で作った新人の強弱の項目が、定数の分だけ高い)
+    from pennant.generate import make_rookie
+    from pennant.names import NameGenerator
+
+    r0 = make_rookie(CONFIG, NameGenerator(PARTS, random.Random(5), set()), random.Random(5), BATTER, "SS", "X1", 0.0)
+    r1 = make_rookie(CONFIG, NameGenerator(PARTS, random.Random(5), set()), random.Random(5), BATTER, "SS", "X1", 4.0)
+    for item in r0.ratings:
+        assert r1.ratings[item] == pytest.approx(r0.ratings[item] + (0.0 if item in STYLE_ITEMS else 4.0))
+    # 引退の判定は校正前の目盛り(総合値 − 定数)で行うので、定数の有無で引退する人数が大きく変わらない
+    r_zero = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, {"batter": 0.0, "pitcher": 0.0})
+    r_cal = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, SETTINGS.calibration)
+    assert len(r_cal.retired) > 0.7 * len(r_zero.retired)
 
 
 def test_game_new_uses_prerun_and_saves_calibration():

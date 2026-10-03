@@ -12,7 +12,7 @@
   "park_estimates": "6fdbb8dfd5279bdbe5f0aa1bdb7d1eb5656630e4e0b8a1dd23d7943f0a69feef",
   "run_values": "dd3afc17c5740d9c04b3b3e0dde2bac11d9d9b0afcd64c76f015024fd801a06a",
   "war": "ff3cf27e281bc3f5fb1421975deaa8613144b95085cd886a5a501419d0881802",
-  "multiyear": "c84eb4379144069a9a1d1803d362b4c863a3024f551a84372b450c1762967376",
+  "multiyear": "c5bbae81e1c443fc48b4fe8b6e024838ff760e57da68b2f3de4ff582f6479848",
   "counts": {
     "players": 840,
     "game_plate_appearances": 79,
@@ -83,12 +83,12 @@
     "multiyear": {
       "year_ends": 2,
       "retired": [
-        46,
-        45
+        77,
+        69
       ],
       "rookies": [
-        46,
-        45
+        77,
+        69
       ],
       "players": 840,
       "seasons": 3,
