@@ -123,7 +123,7 @@ def test_different_seed_gives_different_offseason():
 
 @pytest.fixture(scope="module")
 def two_seasons():
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
     g.advance(125)
     before = {
         "status": g.status(),
@@ -138,7 +138,7 @@ def two_seasons():
 
 
 def test_year_end_requires_season_over():
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
     g.advance(2)
     assert g.status()["can_year_end"] is False and g.year_end_preview()["is_over"] is False
     with pytest.raises(ValueError, match="まだ終わっていません"):
@@ -151,7 +151,7 @@ def test_year_end_advances_year_and_runs_offseason(two_seasons):
     assert s["year"] == 2 and s["day"] == 3 and s["can_year_end"] is False and before["status"]["can_year_end"] is True
     assert [c["key"] for c in s["seasons"]] == ["current", "1", "career"]
     assert summary["available"] and summary["year"] == 1 and summary["next_year"] == 2
-    assert summary["counts"]["retired"] == summary["counts"]["rookies"] == len(summary["retired"]) > 0
+    assert summary["counts"]["retired"] == len(summary["retired"]) > 0 and summary["counts"]["rookies"] >= summary["counts"]["retired"]  # F3-1:入団 = 引退 + 自由契約で去った人数
     assert summary["counts"]["players"] == len(g.state.league.all_players()) == 840
     assert all(len(t.players) == 70 for t in g.state.league.teams)
     # 残った選手は年齢が +1
@@ -218,7 +218,7 @@ def test_offseason_answers_are_hidden_from_public_functions(two_seasons):
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 7
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 8
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)
@@ -237,7 +237,7 @@ def test_save_v6_round_trip_and_log_policy(two_seasons):
 
 
 def test_v5_save_is_converted_to_v6():
-    g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
+    g = api.Game.new(2, [None] * 12, None, season_seed=5, baselines="default")
     g.advance(2)
     data = save_game(g.state)
     # 版5の形にする:year・history・offseasons と offseason の設定を取り除く
@@ -266,7 +266,7 @@ def test_v5_save_is_converted_to_v6():
 
 
 def test_broken_history_is_reported():
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
     g.advance(125)
     g.year_end()
     data = save_game(g.state)
@@ -301,11 +301,13 @@ def test_prerun_is_reproducible_and_keeps_roster_shape():
     a = generate_league(3, CONFIG, PARTS)
     b = generate_league(3, CONFIG, PARTS)
     before = _position_counts(a)
-    assert prerun(a, 3, CONFIG, PARTS, SETTINGS) == SETTINGS.prerun_years == 30
+    assert prerun(a, 3, CONFIG, PARTS, SETTINGS) == SETTINGS.prerun_years == 25
     prerun(b, 3, CONFIG, PARTS, SETTINGS)
     assert [p.id for p in a.all_players()] == [p.id for p in b.all_players()]
     assert [dict(p.ratings) for p in a.all_players()] == [dict(p.ratings) for p in b.all_players()]
-    assert _position_counts(a) == before and all(len(t.players) == 70 for t in a.teams)
+    from pennant.draft import minimum_batters, minimum_positions, shortages
+
+    assert all(len(t.players) == 70 for t in a.teams) and all(not shortages(t.players, minimum_positions(), minimum_batters()) for t in a.teams)  # F3-1:最低人数だけ守る(D-203)
     ids = [p.id for p in a.all_players()]
     assert len(set(ids)) == len(ids) and all(i.startswith("B") for i in ids)  # 30 年回すと、初期選手(P…)は全員引退している(41 歳で必ず引退)
     assert len({(p.family_name, p.given_name) for p in a.all_players()}) == len(ids)
@@ -318,7 +320,7 @@ def test_calibration_shifts_strength_items_only_and_hits_50():
     league = generate_league(1, CONFIG, PARTS)
     prerun(league, 1, CONFIG, PARTS, SETTINGS)
     before = {p.id: (dict(p.hidden.potential), dict(p.ratings)) for p in league.all_players()}
-    cal = SETTINGS.calibration
+    cal = SETTINGS.calibration("medium")
     assert cal[BATTER] > 0 and cal[PITCHER] > 0
     apply_calibration(league, cal, CONFIG)
     for p in league.all_players():
@@ -337,7 +339,7 @@ def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated(
     league = new_league(2, None, CONFIG, PARTS, prerun=True)
     manual = generate_league(2, CONFIG, PARTS)
     prerun(manual, 2, CONFIG, PARTS, SETTINGS)
-    apply_calibration(manual, SETTINGS.calibration, CONFIG)
+    apply_calibration(manual, SETTINGS.calibration("medium"), CONFIG)
     assert [(p.id, dict(p.ratings)) for p in league.all_players()] == [(p.id, dict(p.ratings)) for p in manual.all_players()]
     plain = new_league(2, None, CONFIG, PARTS, prerun=False)
     assert [p.id for p in plain.all_players()] == [p.id for p in generate_league(2, CONFIG, PARTS).all_players()]
@@ -351,22 +353,22 @@ def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated(
         assert r1.ratings[item] == pytest.approx(r0.ratings[item] + (0.0 if item in STYLE_ITEMS else 4.0))
     # 引退の判定は校正前の目盛り(総合値 − 定数)で行うので、定数の有無で引退する人数が大きく変わらない
     r_zero = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, {"batter": 0.0, "pitcher": 0.0})
-    r_cal = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, SETTINGS.calibration)
+    r_cal = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, SETTINGS.calibration("medium"))
     assert len(r_cal.retired) > 0.7 * len(r_zero.retired)
 
 
 def test_game_new_uses_prerun_and_saves_calibration():
     g = api.Game.new(4, [None] * 12, 0, season_seed=4, baselines="default")
-    assert g.state.calibration == SETTINGS.calibration
+    assert g.state.calibration == SETTINGS.calibration("medium")
     means = _first_team_means(g.state.league)
     assert abs(means[BATTER] - 50) < 0.5 and abs(means[PITCHER] - 50) < 0.5
     g.advance(1)
     again = load_game(save_game(g.state))
-    assert again.calibration == SETTINGS.calibration
+    assert again.calibration == SETTINGS.calibration("medium")
 
 
 def test_v6_save_loads_with_zero_calibration():
-    g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
+    g = api.Game.new(2, [None] * 12, None, season_seed=5, baselines="default")
     g.advance(1)
     data = save_game(g.state)
     zin = zipfile.ZipFile(io.BytesIO(data))
@@ -425,7 +427,7 @@ def test_career_metrics_are_weighted_averages_of_seasons(two_seasons):
 
 
 def test_career_with_one_season_equals_current():
-    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
     g.advance(125)
     with pytest.raises(ValueError):
         g.stats("batter", "saber", season="career")  # 1 シーズン目は通算を選べない

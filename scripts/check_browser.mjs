@@ -596,7 +596,16 @@ import json, sys
 from pennant import api
 g = api.Game.load(open(sys.argv[1], "rb").read())
 a = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-summary = g.year_end()
+g.year_end()
+# 画面と同じ操作(F3-1):最初に外せる 1 人を自由契約 → ドラフトへ → 自分の番まで → 一覧の先頭を指名 → 残りを自動で市場へ → おまかせ
+v = g.offseason_view()
+g.offseason_release([next(r["player_id"] for r in v["roster"] if r["can_release"])])
+g.offseason_next()
+v = g.offseason_advance()
+g.offseason_pick(v["pool"][0]["player_id"])
+g.offseason_next()
+g.offseason_auto()
+summary = g.offseason_summary()
 g.advance(1)
 ${code}
 `, last.path, ...args));
@@ -619,14 +628,81 @@ await page.waitForFunction(() => document.querySelector("#yearend-dirty").textCo
 check(!(await page.locator("#screen-yearend").isHidden()), "確認の画面の「先に保存する」で保存しても、確認の画面に留まる");
 const ye0 = Date.now();
 await page.click("#yearend-go");
-await page.waitForFunction(() => !document.querySelector("#screen-offseason").hidden && document.querySelectorAll("#offseason-retired tbody tr").length > 0, null, { timeout: 120000 });
+// 操作する球団があるので、オフの手続き(自由契約 → ドラフト → 市場)の画面になる(F3-1。D-201)
+await page.waitForFunction(() => !document.querySelector("#screen-procedure").hidden && document.querySelector("#proc-body").children.length > 0, null, { timeout: 120000 });
 const yeSeconds = (Date.now() - ye0) / 1000;
+check((await page.textContent("#proc-info")).includes("自由契約") && (await page.$$eval("#proc-steps li", (ls) => ls.length)) === 4, `年度を確定すると、オフの手続きの画面(自由契約の段階)になる(${yeSeconds.toFixed(1)} 秒)`);
+const rosterRows = await page.$$eval("#proc-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
+const rosterPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+g.year_end()
+v = g.offseason_view()
+print(json.dumps([[r["name"], r["position_label"], f"{r['age']}歳", r["scouting"]["overall_text"]] for r in v["roster"]], ensure_ascii=False))`, last.path));
+check(rosterRows.length === rosterPy.length && rosterRows.every((r, i) => r[0] === rosterPy[i][0] && r[1] === rosterPy[i][1] && r[2] === rosterPy[i][2] && r[3] === rosterPy[i][3]), `自由契約の画面に、自球団の全選手(${rosterRows.length}人)がスカウト評価(推定 ± 幅)つきで出て、計算本体と同じ`);
+check(!HIDDEN.keys.some((k) => JSON.stringify(rosterRows).includes(`"${k}"`)) && (await page.$$eval("#proc-body tbody tr th, #proc-body thead th", (ths) => ths.map((t) => t.textContent))).includes("天井"), "自由契約の表に天井(S〜D)の列があり、真の能力の項目名はない");
+const firstBox = page.locator("#proc-body input[type=checkbox]:not([disabled])").first();
+await firstBox.check();
+page.once("dialog", (d) => d.accept());
+await page.click("#proc-release");
+await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("済んでいます"));
+check(true, "選手に印を付けて「自由契約にする」を押すと、確認のあと手放せる");
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("ドラフト"));
+const draftHead = await page.textContent("#proc-body");
+check(draftHead.includes("1 / 6 巡目") && draftHead.includes("候補 108 人"), "「次の手続きへ」でドラフトに進み、1 / 6 巡目と候補 108 人が出る");
+await page.locator("#proc-body button", { hasText: "次の自分の番まで進める" }).click();
+await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("あなたの番"));
+const poolPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+g.year_end()
+v = g.offseason_view()
+g.offseason_release([next(r["player_id"] for r in v["roster"] if r["can_release"])])
+g.offseason_next()
+v = g.offseason_advance()
+print(json.dumps([[p["name"], p["scouting"]["overall_text"], p["scouting"]["ceiling"]] for p in v["pool"][:10]] + [v["round"], v["is_my_turn"]], ensure_ascii=False))`, last.path));
+const poolRows = await page.$$eval("#proc-body tbody tr:not(.detail)", (trs) => trs.slice(0, 10).map((tr) => [tr.querySelector("td .link").textContent, [...tr.children][3].textContent, [...tr.children][4].textContent.slice(0, 1)]));
+check(JSON.stringify(poolRows) === JSON.stringify(poolPy.slice(0, 10)) && poolPy[11] === true, `「次の自分の番まで進める」で自分の番になり、候補の一覧(総合の推定値の高い順)が計算本体と同じ(先頭 ${poolRows[0][0]} ${poolRows[0][1]})`);
+await page.click("#proc-body .name-cell .link >> nth=0");
+await page.waitForSelector("#proc-body tr.detail");
+check((await page.textContent("#proc-body tr.detail")).includes("±"), "名前を押すと、項目別の推定値 ± ふれ幅が出る");
+await page.selectOption("#proc-body select >> nth=1", "SP");
+await page.waitForFunction(() => [...document.querySelectorAll("#proc-body tbody tr:not(.detail) td:nth-child(2)")].every((td) => td.textContent === "先発"));
+check(true, "ポジションで絞り込める(先発だけ)");
+await page.selectOption("#proc-body select >> nth=1", "");
+await page.selectOption("#proc-body select >> nth=0", "age");
+await page.waitForFunction(() => { const ages = [...document.querySelectorAll("#proc-body tbody tr:not(.detail) td:nth-child(3)")].map((td) => parseInt(td.textContent)); return ages.every((a, i) => i === 0 || a >= ages[i - 1]); });
+check(true, "並べ替えができる(年齢が若い順)");
+await page.selectOption("#proc-body select >> nth=0", "overall");
+await page.waitForFunction(() => document.querySelector("#proc-body .pick-btn") !== null);
+const pk0 = Date.now();
+await page.click("#proc-body .pick-btn >> nth=0");
+await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("2 巡目"), null, { timeout: 60000 });
+check((await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `「指名」で入団し、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
+page.once("dialog", (d) => d.accept());
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("自由契約市場"), null, { timeout: 60000 });
+check((await page.textContent("#proc-body")).includes("前の球団"), "ドラフトの残りを自動で進めて市場へ。市場の表には前の球団の列がある");
+page.once("dialog", (d) => d.accept());
+const au0 = Date.now();
+await page.click("#proc-auto");
+await page.waitForFunction(() => !document.querySelector("#screen-offseason").hidden && document.querySelectorAll("#offseason-retired tbody tr").length > 0, null, { timeout: 120000 });
+check(true, `「おまかせ」で残りを自動で進め、オフの結果の画面になる(${((Date.now() - au0) / 1000).toFixed(1)} 秒)`);
 const offPy = pyYear2(`print(json.dumps([summary["counts"]["retired"], summary["counts"]["rookies"], summary["counts"]["players"], [r["name"] for r in summary["retired"]], [r["name"] for r in summary["rookies"]]], ensure_ascii=False))`);
 const retiredOnScreen = await page.$$eval("#offseason-retired tbody tr td .link", (as) => as.map((a) => a.textContent));
 const rookiesOnScreen = await page.$$eval("#offseason-rookies tbody tr td .link", (as) => as.map((a) => a.textContent));
 const countsText = await page.textContent("#offseason-counts");
-check(JSON.stringify(retiredOnScreen) === JSON.stringify(offPy[3]) && JSON.stringify(rookiesOnScreen) === JSON.stringify(offPy[4]) && countsText.includes(`引退 ${offPy[0]}人`) && countsText.includes(`新人 ${offPy[1]}人`) && countsText.includes(`${offPy[2]}人`), `年度を確定すると、オフの結果(引退 ${offPy[0]}人・新人 ${offPy[1]}人・選手 ${offPy[2]}人)が出て、計算本体と同じ(${yeSeconds.toFixed(1)} 秒)`);
+check(JSON.stringify(retiredOnScreen) === JSON.stringify(offPy[3]) && JSON.stringify(rookiesOnScreen) === JSON.stringify(offPy[4]) && countsText.includes(`引退 ${offPy[0]}人`) && countsText.includes(`新人 ${offPy[1]}人`) && countsText.includes(`${offPy[2]}人`), `オフの結果(引退 ${offPy[0]}人・入団 ${offPy[1]}人・選手 ${offPy[2]}人)が、計算本体で同じ操作をした結果と同じ`);
 check((await page.textContent("#offseason-answers")).includes("答え合わせモードをオンにすると") && !/[+-]\d\.\d/.test(await page.textContent("#offseason-answers")), "オフのとき、オフの結果に能力の増減は出ない");
+// 入団した新人の選手ページに、入団時のスカウト評価が出る(答え合わせモードがオフなら真の能力は出ない)
+await page.click("#offseason-rookies tbody tr td .link >> nth=0");
+await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && !document.querySelector("#player-scouting-box").hidden);
+const scoutText = await page.textContent("#player-scouting");
+check(scoutText.includes("±") && scoutText.includes("天井") && (await page.textContent("#player-scouting-note")).includes("答え合わせモードをオンにすると"), "入団した選手のページに、入団時のスカウト評価(推定 ± 幅、天井)が出る。オフなら真の能力は出ない");
+await page.click("#screen-player .back");
 check(await isDirty(), "年度を確定したあとは「未保存」になる");
 await grab();
 await page.click("#screen-offseason .back");

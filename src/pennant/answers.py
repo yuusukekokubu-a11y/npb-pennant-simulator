@@ -149,6 +149,45 @@ def stadium_answers(game: Game, team_id: str, level: int = 1) -> dict:
     }
 
 
+def scouting_answers(game: Game, player_id: str, level: int = 1) -> dict:
+    """入団時のスカウト評価と、真の能力(今の能力。段階2は潜在能力も)を並べる(F3-1。D-206)。"""
+    _check_level(level)
+    p = game.state.season.players[player_id]
+    if p.scouting is None:
+        return {"player_id": player_id, "available": False, "items": []}
+    est = p.scouting["items"]
+    items = []
+    for item in items_for(p.role):
+        if item not in est:
+            continue
+        row = {"key": item, "label": ITEM_LABELS[item], "estimate": scale(est[item])["text"], "current": scale(p.ratings[item])["text"], "diff": f"{p.ratings[item] - est[item]:+.1f}"}
+        if level == 2:
+            row["potential"] = scale(p.hidden.potential[item])["text"]
+        items.append(row)
+    return {"player_id": player_id, "available": True, "level": level, "entry_year": p.scouting.get("year"), "items": items, "note": "入団時の推定値と、今の真の能力の差。入団後の成長・衰退も含まれます。"}
+
+
+def procedure_answers(game: Game, level: int = 1) -> dict:
+    """オフの手続きの一覧(候補・市場・自球団)の、真の総合値と潜在能力の総合値(F3-1。答え合わせ用)。"""
+    _check_level(level)
+    from .stats import overall, potential_overall
+
+    proc = game.state.procedure
+    if proc is None:
+        return {"available": False, "players": {}}
+    players = list(proc.candidates) + list(proc.market)
+    if game.state.my_team_id:
+        players += list(game._team(game.state.my_team_id).players)
+    out = {}
+    for p in players:
+        row = {"overall": f"{overall(p):.1f}"}
+        if level == 2:
+            row["potential"] = f"{potential_overall(p):.1f}"
+            row["growth_type"] = p.hidden.growth_type
+        out[p.id] = row
+    return {"available": True, "level": level, "players": out, "note": "真の総合値(段階 2 は潜在能力の総合値と成長タイプも)。スカウト評価との差が、見る目のずれです。"}
+
+
 def offseason_answers(game: Game, year: int | None = None, level: int = 1) -> dict:
     """オフの結果の答え合わせ(F2):残った選手の能力の増減(項目ごと。隠し情報)。答え合わせモードがオンのときだけ呼ぶ。"""
     _check_level(level)
