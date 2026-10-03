@@ -4,6 +4,8 @@ import copy
 import io
 import json
 import random
+import statistics
+from fractions import Fraction
 import zipfile
 from collections import Counter
 from datetime import datetime, timezone
@@ -216,7 +218,7 @@ def test_offseason_answers_are_hidden_from_public_functions(two_seasons):
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 6
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 7
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)
@@ -279,3 +281,153 @@ def test_broken_history_is_reported():
             zout.writestr(n, b)
     with pytest.raises(api.SaveDataError, match="history\\[0\\]"):
         load_game(buf.getvalue())
+
+
+# ---- 事前運転と校正(D-034 の完成形。D-190、D-197)、通算の加重平均(D-192) ----
+
+from pennant.abilities import BATTER, PITCHER, STYLE_ITEMS
+from pennant.metrics import baseline_dependent, compute
+from pennant.newgame import new_league
+from pennant.offseason import apply_calibration, prerun
+from pennant.stats import first_team
+
+
+def _first_team_means(league):
+    players = [p for t in league.teams for p in first_team(t, CONFIG)]
+    return {role: statistics.fmean(overall(p) for p in players if p.role == role) for role in (BATTER, PITCHER)}
+
+
+def test_prerun_is_reproducible_and_keeps_roster_shape():
+    a = generate_league(3, CONFIG, PARTS)
+    b = generate_league(3, CONFIG, PARTS)
+    before = _position_counts(a)
+    assert prerun(a, 3, CONFIG, PARTS, SETTINGS) == SETTINGS.prerun_years == 30
+    prerun(b, 3, CONFIG, PARTS, SETTINGS)
+    assert [p.id for p in a.all_players()] == [p.id for p in b.all_players()]
+    assert [dict(p.ratings) for p in a.all_players()] == [dict(p.ratings) for p in b.all_players()]
+    assert _position_counts(a) == before and all(len(t.players) == 70 for t in a.teams)
+    ids = [p.id for p in a.all_players()]
+    assert len(set(ids)) == len(ids) and all(i.startswith("B") for i in ids)  # 30 年回すと、初期選手(P…)は全員引退している(41 歳で必ず引退)
+    assert len({(p.family_name, p.given_name) for p in a.all_players()}) == len(ids)
+    other = generate_league(3, CONFIG, PARTS)
+    prerun(other, 4, CONFIG, PARTS, SETTINGS)  # 違うシードなら違う結果
+    assert [p.id for p in other.all_players()] != ids
+
+
+def test_calibration_shifts_strength_items_only_and_hits_50():
+    league = generate_league(1, CONFIG, PARTS)
+    prerun(league, 1, CONFIG, PARTS, SETTINGS)
+    before = {p.id: (dict(p.hidden.potential), dict(p.ratings)) for p in league.all_players()}
+    cal = SETTINGS.calibration
+    assert cal[BATTER] > 0 and cal[PITCHER] > 0
+    apply_calibration(league, cal, CONFIG)
+    for p in league.all_players():
+        pot, rat = before[p.id]
+        for item in p.ratings:
+            if item in STYLE_ITEMS:
+                assert p.hidden.potential[item] == pot[item] and p.ratings[item] == rat[item]
+            else:
+                assert p.hidden.potential[item] == pytest.approx(pot[item] + cal[p.role])
+                assert p.ratings[item] == pytest.approx(rat[item] + cal[p.role])
+    means = _first_team_means(league)
+    assert abs(means[BATTER] - 50) < 0.5 and abs(means[PITCHER] - 50) < 0.5
+
+
+def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated():
+    league = new_league(2, None, CONFIG, PARTS, prerun=True)
+    manual = generate_league(2, CONFIG, PARTS)
+    prerun(manual, 2, CONFIG, PARTS, SETTINGS)
+    apply_calibration(manual, SETTINGS.calibration, CONFIG)
+    assert [(p.id, dict(p.ratings)) for p in league.all_players()] == [(p.id, dict(p.ratings)) for p in manual.all_players()]
+    plain = new_league(2, None, CONFIG, PARTS, prerun=False)
+    assert [p.id for p in plain.all_players()] == [p.id for p in generate_league(2, CONFIG, PARTS).all_players()]
+    # その後の年度の確定で入る新人にも、同じ定数が足される(定数 0 のときより平均が高い)
+    r0 = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, {"batter": 0.0, "pitcher": 0.0})
+    r1 = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, SETTINGS.calibration)
+    assert [n.player_id for n in r0.rookies] == [n.player_id for n in r1.rookies]
+
+
+def test_game_new_uses_prerun_and_saves_calibration():
+    g = api.Game.new(4, [None] * 12, 0, season_seed=4, baselines="default")
+    assert g.state.calibration == SETTINGS.calibration
+    means = _first_team_means(g.state.league)
+    assert abs(means[BATTER] - 50) < 0.5 and abs(means[PITCHER] - 50) < 0.5
+    g.advance(1)
+    again = load_game(save_game(g.state))
+    assert again.calibration == SETTINGS.calibration
+
+
+def test_v6_save_loads_with_zero_calibration():
+    g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
+    g.advance(1)
+    data = save_game(g.state)
+    zin = zipfile.ZipFile(io.BytesIO(data))
+    files = {n: zin.read(n) for n in zin.namelist()}
+    manifest = json.loads(files["manifest.json"])
+    manifest["format_version"] = 6
+    state = json.loads(files["state.json"])
+    del state["calibration"]
+    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+        for n, b in files.items():
+            zout.writestr(n, b)
+    loaded = load_game(buf.getvalue())
+    assert loaded.calibration == {"batter": 0.0, "pitcher": 0.0}
+    old = api.Game(loaded, dirty=False)
+    old.advance(124)
+    old.year_end()  # 旧版の選手には校正を足さず、新人にも足さない(定数 0)
+    assert old.status()["year"] == 2
+
+
+def test_career_metrics_are_weighted_averages_of_seasons(two_seasons):
+    g, _, _ = two_seasons
+    config = api.metrics_config()
+    dep_b, dep_p = baseline_dependent(config, "batter"), baseline_dependent(config, "pitcher")
+    assert dep_b == {"woba", "wrc_plus", "ops_plus"} and dep_p == {"fip"}
+    a = g.state.history[0]
+    career = {r["player_id"]: r["values"] for r in g.stats("batter", "saber", season="career", qualified=False)["rows"]}
+    now_base = g.baselines()[0]
+    checked = 0
+    for pid, values in career.items():
+        c1 = a.records.batters.get(pid)
+        c2 = g.records.total.batters.get(pid)
+        if not c1 or not c2 or not c1["PA"] or not c2["PA"]:
+            continue
+        v1 = compute(config, "batter", c1, {**a.baselines.values, "pf": a.park_factors.get(pid, Fraction(1))})
+        v2 = compute(config, "batter", c2, {**now_base.values, "pf": g.player_park_factor(pid)})
+        for key in ("woba", "wrc_plus", "ops_plus"):
+            expected = (v1[key] * c1["PA"] + v2[key] * c2["PA"]) / (c1["PA"] + c2["PA"])
+            assert values[key] == api.format_value(config, key, expected), (pid, key)
+        # 元の数から計算できる指標は、元の数の合計から
+        total = Counter(c1) + Counter(c2)
+        assert values["iso"] == api.format_value(config, "iso", compute(config, "batter", total)["iso"])
+        checked += 1
+    assert checked > 50
+    pc = {r["player_id"]: r["values"] for r in g.stats("pitcher", "saber", season="career", qualified=False)["rows"]}
+    for pid, values in list(pc.items())[:30]:
+        c1, c2 = a.records.pitchers.get(pid), g.records.total.pitchers.get(pid)
+        if not c1 or not c2 or not c1["OUTS"] or not c2["OUTS"]:
+            continue
+        f1 = compute(config, "pitcher", c1, dict(a.baselines.values))["fip"]
+        f2 = compute(config, "pitcher", c2, dict(now_base.values))["fip"]
+        assert values["fip"] == api.format_value(config, "fip", (f1 * c1["OUTS"] + f2 * c2["OUTS"]) / (c1["OUTS"] + c2["OUTS"]))
+    assert "加重平均" in g.stats("batter", "saber", season="career")["baseline_note"]
+
+
+def test_career_with_one_season_equals_current():
+    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    g.advance(125)
+    with pytest.raises(ValueError):
+        g.stats("batter", "saber", season="career")  # 1 シーズン目は通算を選べない
+    g.year_end()
+    # 2 シーズン目の 0 日目:通算 = 1 シーズン目の確定した値と同じ(選手ごとの値)
+    past = {r["player_id"]: r["values"] for r in g.stats("batter", "saber", season=1, qualified=False)["rows"]}
+    career = {r["player_id"]: r["values"] for r in g.stats("batter", "saber", season="career", qualified=False)["rows"]}
+    assert set(past) == set(career)
+    for pid in past:
+        assert past[pid] == career[pid]
+    pp = {r["player_id"]: r["values"] for r in g.stats("pitcher", "saber", season=1, qualified=False)["rows"]}
+    cp = {r["player_id"]: r["values"] for r in g.stats("pitcher", "saber", season="career", qualified=False)["rows"]}
+    assert pp == cp

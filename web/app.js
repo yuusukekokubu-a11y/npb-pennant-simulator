@@ -68,6 +68,10 @@ function createWorker() {
         bootProgress(msg.progress);
         return;
       }
+      if (msg.prerun) {
+        prerunProgress(msg.prerun);
+        return;
+      }
       if (msg.trial) {
         trialProgress(msg.trial);
         return;
@@ -1178,9 +1182,9 @@ async function startNewGame() {
     const seed = state.newGame.seed;
     const seasonSeed = ss.value === null ? randomSeed() : ss.value;
     const baselines = document.querySelector("input[name=baseline-mode]:checked").value;
-    $("trial-box").hidden = baselines !== "trial";
+    $("trial-box").hidden = false; // 事前運転(リーグの歴史を作る)は、基準値の求め方にかかわらず行う(D-190)
     $("trial-progress").value = 0;
-    $("trial-text").textContent = "試運転のシーズンを始めています…";
+    $("trial-text").textContent = "リーグの歴史を作っています(数十年分の選手の入れ替わり)…";
     const t0 = performance.now();
     const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines }).finally(() => ($("trial-box").hidden = true));
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
@@ -1195,6 +1199,12 @@ async function startNewGame() {
   } finally {
     $("new-start").disabled = false;
   }
+}
+
+function prerunProgress({ year, total }) {
+  $("trial-progress").max = total;
+  $("trial-progress").value = year;
+  $("trial-text").textContent = `リーグの歴史を作っています:${year} / ${total} 年(試合はせず、選手の入れ替わりだけを進めます)`;
 }
 
 function trialProgress({ day, total }) {

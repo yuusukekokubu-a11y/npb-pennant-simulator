@@ -14,6 +14,7 @@ import argparse
 import sys
 
 from pennant import ConfigError, generate_draft_class, generate_league, load_generation_config, load_name_parts
+from pennant.newgame import new_league
 from pennant.stats import build_report
 
 
@@ -24,12 +25,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--draft", type=int, default=1000, help="確認用に作る新人(ドラフト候補)の人数")
     parser.add_argument("--config", help="生成設定の JSON ファイル(省略時は既定)")
     parser.add_argument("--names", help="名前の部品の JSON ファイル(省略時は既定)")
+    parser.add_argument("--prerun", action="store_true", help="新規開始と同じく、事前運転と校正(D-190)をした後の分布を出す")
     args = parser.parse_args(argv)
 
     try:
         config = load_generation_config(args.config)
         names = load_name_parts(args.names)
-        leagues = [generate_league(args.seed + i, config, names) for i in range(args.leagues)]
+        leagues = [(new_league(args.seed + i, None, config, names, prerun=True) if args.prerun else generate_league(args.seed + i, config, names)) for i in range(args.leagues)]
         draft = generate_draft_class(args.seed, args.draft, config, names) if args.draft > 0 else None
     except ConfigError as exc:
         print(exc, file=sys.stderr)

@@ -46,7 +46,8 @@ const handlers = {
   newGame({ seed, seasonSeed, names, myTeamIndex, baselines }) {
     // 試運転の進み具合は、計算の途中でも画面に知らせる(D-121)
     const progress = (day, total) => self.postMessage({ trial: { day, total } });
-    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress));
+    const prerun = (year, total) => self.postMessage({ prerun: { year, total } });
+    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress, prerun));
   },
 
   load({ bytes }) {

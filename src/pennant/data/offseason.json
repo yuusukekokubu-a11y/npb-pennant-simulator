@@ -2,12 +2,17 @@
   "format_version": 1,
   "log_seasons": 1,
   "retirement": {
-    "start_age": 31,
-    "per_year_over_start": 0.07,
+    "start_age": 33,
+    "per_year_over_start": 0.05,
     "overall_floor": 42,
     "per_point_below_floor": 0.03,
     "young_floor_age": 24,
     "max_age": 41,
     "cap": 0.95
+  },
+  "prerun_years": 30,
+  "calibration": {
+    "batter": 4.48,
+    "pitcher": 4.06
   }
 }

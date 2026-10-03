@@ -19,7 +19,7 @@ from pathlib import Path
 from . import aging
 from .abilities import items_for
 from .config import ConfigError, GenerationConfig, NameParts, _Checker, _read_json
-from .generate import make_rookie
+from .generate import make_rookie, shift_potential
 from .models import League, Player, Team
 from .names import NameGenerator
 from .stats import overall
@@ -37,6 +37,14 @@ class OffseasonSettings:
     @property
     def log_seasons(self) -> int:
         return int(self.data["log_seasons"])
+
+    @property
+    def prerun_years(self) -> int:
+        return int(self.data["prerun_years"])
+
+    @property
+    def calibration(self) -> dict[str, float]:
+        return {role: float(v) for role, v in self.data["calibration"].items()}
 
     def retirement(self, key: str) -> float:
         return float(self.data["retirement"][key])
@@ -56,6 +64,10 @@ def validate_offseason_settings(data, source: str = "(辞書)") -> OffseasonSett
     if version is not None and version != SUPPORTED_FORMAT_VERSION:
         c.add("format_version", f"対応していない形式のバージョンです(値: {version!r}、対応: {SUPPORTED_FORMAT_VERSION})")
     c.integer(c.get(root, "log_seasons", ""), "log_seasons", 1, 100)
+    c.integer(c.get(root, "prerun_years", ""), "prerun_years", 0, 200)
+    cal = c.section(c.get(root, "calibration", ""), "calibration")
+    for role in ("batter", "pitcher"):
+        c.number(c.get(cal, role, "calibration"), f"calibration.{role}", -30, 30)
     r = c.section(c.get(root, "retirement", ""), "retirement")
     for key, low, high in (
         ("start_age", 18, 60), ("per_year_over_start", 0, 1), ("overall_floor", 0, 100), ("per_point_below_floor", 0, 1),
@@ -142,20 +154,22 @@ def age_and_update(player: Player, config: GenerationConfig, rng: random.Random)
     return {item: player.ratings[item] - before[item] for item in items_for(player.role)}
 
 
-def replenish(team: Team, slots: list[tuple[str, str]], config: GenerationConfig, names: NameGenerator, rng: random.Random, year: int, counter: list[int]) -> list[Player]:
-    """空いた枠(役割, ポジション)の分だけ新人を作って球団に入れる(簡易な補充。D-184)。F3-1 ではドラフトに差し替える。"""
+def replenish(team: Team, slots: list[tuple[str, str]], config: GenerationConfig, names: NameGenerator, rng: random.Random, year: int, counter: list[int], calibration: dict[str, float] | None = None, id_prefix: str = "Y") -> list[Player]:
+    """空いた枠(役割, ポジション)の分だけ新人を作って球団に入れる(簡易な補充。D-184)。F3-1 ではドラフトに差し替える。
+    calibration は校正の定数(役割 → 潜在能力に足す値。D-197)。id_prefix は新人の ID の頭(事前運転は B)。"""
     rookies = []
     for role, position in slots:
         counter[0] += 1
-        p = make_rookie(config, names, rng, role, position, f"Y{year + 1:02d}R{counter[0]:03d}")
+        p = make_rookie(config, names, rng, role, position, f"{id_prefix}{year + 1:02d}R{counter[0]:03d}", (calibration or {}).get(role, 0.0))
         p.team_id = team.id
         team.players.append(p)
         rookies.append(p)
     return rookies
 
 
-def run_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, year: int) -> OffseasonResult:
-    """年度の確定の処理(加齢 → 能力の更新 → 引退 → 補充)。league を書き換える。同じ入力なら同じ結果。"""
+def run_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None, id_prefix: str = "Y") -> OffseasonResult:
+    """年度の確定の処理(加齢 → 能力の更新 → 引退 → 補充)。league を書き換える。同じ入力なら同じ結果。
+    calibration は新人に足す校正の定数(D-197)。"""
     rng = random.Random(seed)
     result = OffseasonResult(year, seed)
     used = {(p.family_name, p.given_name) for p in league.all_players()}
@@ -175,6 +189,29 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
                 result.ability_changes[p.id] = changes
                 result.ages[p.id] = p.age
         team.players = kept
-        for p in replenish(team, vacated, config, names, rng, year, counter):
+        for p in replenish(team, vacated, config, names, rng, year, counter, calibration, id_prefix):
             result.rookies.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
     return result
+
+
+# ---- 事前運転と校正(D-034 の完成形。D-190、D-197) ----
+
+def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None) -> int:
+    """新規開始のとき、試合をせずに年度の確定の処理だけを years 回回す(事前運転)。履歴は作らない。
+    乱数は derive_seed(seed, "prerun:<年>")。新人の ID は B<年>R<番号>。戻り値は回した年数。progress には (終わった年数, 全年数) を知らせる。"""
+    from .season import derive_seed
+
+    n = settings.prerun_years if years is None else int(years)
+    for k in range(1, n + 1):
+        run_offseason(league, derive_seed(seed, f"prerun:{k}"), config, parts, settings, k, None, "B")
+        if progress is not None:
+            progress(k, n)
+    return n
+
+
+def apply_calibration(league: League, calibration: dict[str, float], config: GenerationConfig) -> None:
+    """校正(D-197):全選手の強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を出し直す。"""
+    for p in league.all_players():
+        shift = float(calibration.get(p.role, 0.0))
+        if shift:
+            shift_potential(config, p, shift)

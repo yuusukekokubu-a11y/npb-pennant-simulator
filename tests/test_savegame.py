@@ -140,6 +140,10 @@ def test_not_a_save_file():
     _assert_error(b"hello", "ZIP")
 
 
+def _first_pitcher(s):
+    return next(p for p in s["league"]["teams"][0]["players"] if p["role"] == "pitcher")
+
+
 def test_missing_file(saved):
     files = _zip(saved[1])
     del files["state.json"]
@@ -156,7 +160,7 @@ def test_broken_json(saved):
     "change, pattern",
     [
         (lambda s: s.pop("seed"), r"「seed」がありません"),
-        (lambda s: s["league"]["teams"][0]["players"][0]["ratings"].update(stamina=9999), r"teams\[0\]\.players\[0\]\.ratings\.stamina: 能力値が範囲外です"),
+        (lambda s: _first_pitcher(s)["ratings"].update(stamina=9999), r"teams\[0\]\.players\[\d+\]\.ratings\.stamina: 能力値が範囲外です"),
         (lambda s: s["league"]["teams"][1]["players"].__delitem__(slice(0, 50)), r"teams\[1\]\.players: 選手の数が範囲外です"),
         (lambda s: s["league"]["teams"][0]["players"][1].update(id=s["league"]["teams"][0]["players"][0]["id"]), r"ID .* が重複しています"),
         (lambda s: s["season"].update(day=6), r"日付と試合が合いません"),
@@ -230,16 +234,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 7)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 6: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 8)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 7: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 8)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 6: lambda b: b})
-    _assert_error(saved[1], "バージョン 7 から 8 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 9)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 7: lambda b: b})
+    _assert_error(saved[1], "バージョン 8 から 9 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----
