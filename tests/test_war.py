@@ -151,3 +151,52 @@ def test_war_correlates_with_true_ability(season):
     assert statistics.correlation([float(lines[p].war) for p in bats], [overall(players[p]) for p in bats]) > 0.4
     assert statistics.correlation([float(lines[p].war_fip) for p in pits], [overall(players[p]) for p in pits]) > 0.2  # 1シーズンの投手は運のぶれが大きい(複数シーズンは inspect_war.py)
     assert statistics.correlation([float(lines[p].war_ra) for p in pits], [overall(players[p]) for p in pits]) > 0.2
+
+
+# ---- 画面(③b。D-179):画面の WAR が、確認用スクリプトの値と一致する。読み込んだ後も同じ ----
+
+def test_screen_war_matches_the_script_and_survives_save_load():
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    from pennant.season import derive_seed
+
+    spec = importlib.util.spec_from_file_location("inspect_war", Path(__file__).resolve().parent.parent / "scripts" / "inspect_war.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["inspect_war"] = mod
+    spec.loader.exec_module(mod)
+    # 画面:リーグ 1 を、確認用スクリプト(run_seasons)の1シーズン目と同じシードで最後まで進める
+    g = api.Game.new(1, [None] * 12, 0, season_seed=derive_seed(1, "season:1"), baselines="default")
+    g.advance(125)
+    results = [p.result for p in g.state.season.played]
+    expected, _, _ = mod.season_war_lines(results, None, SETTINGS, WAR, screen=True)
+    assert war_record(g.war_lines()) == war_record(expected)
+    # 個人成績の WAR の表・選手のページ・チームのページが、同じ値を出す
+    s = g.stats("batter", "war")
+    assert s["columns"][1]["key"] == "war" and s["sort"]["key"] == "war" and s["order"] == "desc"
+    top = s["rows"][0]
+    assert top["values"]["war"] == f"{float(expected[top['player_id']].war):.2f}"
+    wars = [float(r["values"]["war"]) for r in s["rows"]]
+    assert wars == sorted(wars, reverse=True)
+    p = g.player(top["player_id"])
+    assert p["season"]["war"]["values"] == top["values"] and "日目までの値" in p["season"]["war"]["note"]
+    ps = g.stats("pitcher", "war", sort="war_fip")
+    assert ps["sort"]["key"] == "war_fip" and [c["key"] for c in ps["columns"]] == ["innings", "war_ra", "war_fip"]
+    team = g.team("T01")
+    t = war_totals({pid: v for pid, v in expected.items() if v.team_id == "T01"})
+    assert team["war"]["batters"] == f"{float(t['batters']):.2f}" and team["war"]["pitchers_ra"] == f"{float(t['pitchers_ra']):.2f}"
+    # 読み込んだ後も同じ(保存形式は版 5 のまま)
+    from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
+
+    assert SAVE_FORMAT_VERSION == 5
+    again = api.Game(load_game(save_game(g.state)), dirty=False)
+    assert war_record(again.war_lines()) == war_record(g.war_lines())
+    assert again.stats("batter", "war") == s
+    # 並び順に使えない列は、既定(WAR の高い順)に戻す
+    assert g.stats("batter", "war", sort="avg")["sort"]["key"] == "war"
+    # 公開用の情報に、能力値・隠し情報は入らない
+    import json
+
+    assert "ratings" not in json.dumps(s) and "potential" not in json.dumps(p)
+

@@ -229,8 +229,8 @@ async function statsOnScreen() {
   return page.$$eval("#stats-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
 }
 
-async function waitStats(text) {
-  await page.waitForFunction((t) => document.querySelector("#stats-info").textContent.includes(t), text);
+async function waitStats(text, timeout = 30000) {
+  await page.waitForFunction((t) => document.querySelector("#stats-info").textContent.includes(t), text, { timeout });
   return statsOnScreen();
 }
 
@@ -335,6 +335,63 @@ await page.click("#stats-table th button.sort >> text=FIP");
 screenRows = await waitStats("FIP(低い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "saber", sort: "fip", order: "asc" })), `投手のセイバーに FIP(低い順)が出て、計算本体と同じ(${screenRows.length}人)`);
 await grab();
+
+// WAR(第3弾③b。D-179):打者の表が計算本体と同じ。計算時間を測る。並び順の欄に WAR の列が入る
+await page.click("#stats-role button[data-value=batter]");
+await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 && [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("打率")));
+results.push(`  (WAR の前の並び順: ${await page.textContent("#stats-info")})`);
+const warStart = Date.now();
+await page.click("#stats-kind button[data-value=war]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("WAR")), null, { timeout: 180000 });
+screenRows = await waitStats("WAR(高い順)", 180000);
+const warSeconds = (Date.now() - warStart) / 1000;
+results.push(`  WAR の計算と表示にかかった時間(打者、初回): ${warSeconds.toFixed(1)} 秒`);
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "war" })), `打者の WAR(WAR の高い順。打席・内訳つき)が、計算本体と同じ(${screenRows.length}人。${warSeconds.toFixed(1)} 秒)`);
+heads = await headsOnScreen();
+check(heads.slice(1).join("・") === "打席・WAR・打撃・走塁・守備・ポジション補正・控え水準", `打者の WAR の列(${heads.slice(1).join("・")})`);
+check((await page.textContent("#stats-baseline")).includes("日目までの値"), "WAR の注記に「○日目までの値」と出る");
+check((await page.textContent("#stats-terms-list")).includes("控え水準") && (await page.$eval("#stats-terms", (d) => d.open)), "WAR の表の下に、用語の解説(控え水準など)が開いて出る");
+const warGroups = await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label));
+check(warGroups.some((g) => g.startsWith("WAR")), "並び順の欄に WAR の列の区分が出る");
+await page.click("#stats-table th button.sort >> text=守備");
+screenRows = await waitStats("守備(高い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "war", sort: "fielding" })), "守備の得点で並べ替えても、計算本体と同じ");
+await page.click("#stats-kind button[data-value=basic]");
+await waitStats("打率");
+check(true, "WAR の列で並べていても、「基本」に戻すと打率の既定に戻る");
+await page.click("#stats-kind button[data-value=war]");
+await waitStats("守備(高い順)");
+check(true, "「WAR」に戻すと、守備の得点の並び順が保たれる(D-131)");
+await page.click("#stats-role button[data-value=pitcher]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("WAR(失点版)")), null, { timeout: 60000 });
+screenRows = await waitStats("WAR(失点版)(高い順)", 60000);
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "war" })), `投手の WAR(失点版の高い順。投球回・失点版・FIP 版)が、計算本体と同じ(${screenRows.length}人)`);
+// 選手のページの WAR と、チームのページの WAR の合計
+await page.click("#stats-table tbody tr:first-child td.sticky .link");
+await page.waitForFunction(() => document.querySelector("#player-name").textContent.length > 0);
+await page.click("#player-kind button[data-value=war]");
+await page.waitForFunction(() => document.querySelectorAll("#player-season td").length === 3);
+const warPid = pyGame(`print(json.dumps(g.stats("pitcher", "war")["rows"][0]["player_id"]))`);
+const pyWarPlayer = pyGame(`d = g.player(a["id"])["season"]["war"]
+print(json.dumps([d["values"][c["key"]] for c in d["columns"]], ensure_ascii=False))`, JSON.stringify({ id: warPid }));
+check(JSON.stringify(await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent))) === JSON.stringify(pyWarPlayer), `選手のページの WAR(投球回・失点版・FIP 版)が、計算本体と同じ`);
+await page.click("#player-info .link");
+await page.waitForFunction(() => document.querySelectorAll("#team-war td").length === 4);
+const warTid = pyGame(`print(json.dumps(g.player(a["id"])["player"]["team_id"]))`, JSON.stringify({ id: warPid }));
+const pyTeamWar = pyGame(`w = g.team(a["id"])["war"]
+print(json.dumps([w["batters"], w["pitchers_ra"], w["pitchers_fip"], w["total_ra"]]))`, JSON.stringify({ id: warTid }));
+check(JSON.stringify(await page.$$eval("#team-war td", (tds) => tds.map((td) => td.textContent))) === JSON.stringify(pyTeamWar), `チームのページの WAR の合計(野手・投手別)が、計算本体と同じ(合計 ${pyTeamWar[3]})`);
+await page.click("#screen-team .back");
+await page.waitForFunction(() => !document.querySelector("#screen-player").hidden);
+await page.click("#player-kind button[data-value=basic]"); // 後の確認は「基本」を前提にしている
+await page.waitForFunction(() => document.querySelectorAll("#player-season td").length > 3);
+await page.click("#screen-player .back");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
+await page.click("#stats-kind button[data-value=saber]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("FIP")));
+await page.click("#stats-table th button.sort >> text=FIP");
+await waitStats("FIP(低い順)");
 
 // 能力:オフのときは「オンにすると見られます」だけ
 await page.click("#stats-kind button[data-value=ability]");

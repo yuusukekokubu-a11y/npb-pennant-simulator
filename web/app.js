@@ -42,6 +42,7 @@ const state = {
   sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } },
   shownSort: { batter: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
   abilityKeys: { batter: [], pitcher: [] }, // 答え合わせモードがオンのときだけ入る、能力の項目の名前
+  warKeys: { batter: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
   playerKind: "basic",
   gamesDay: null,
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
@@ -425,8 +426,12 @@ function isAbilityKey(key) {
   return state.abilityKeys[state.stats.role].includes(key);
 }
 
+function isWarKey(key) {
+  return state.warKeys[state.stats.role].includes(key);
+}
+
 // 並び順の選択欄(D-132):基本・セイバーの全指標。答え合わせモードがオンなら、能力の項目も
-async function buildSortSelect(sortKey) {
+async function buildSortSelect(sortKey, warColumns) {
   const role = state.stats.role;
   const keys = await query("sortable_keys", { role });
   const groups = { basic: [], saber: [], count: [] };
@@ -436,6 +441,10 @@ async function buildSortSelect(sortKey) {
     el("optgroup", { label: "セイバー" }, ...groups.saber.map((k) => el("option", { value: k.key }, k.label))),
     el("optgroup", { label: "元の数" }, ...groups.count.map((k) => el("option", { value: k.key }, k.label))),
   ];
+  if (warColumns) {
+    state.warKeys[role] = warColumns.map((c) => c.key);
+    options.unshift(el("optgroup", { label: "WAR(WAR の表でだけ)" }, ...warColumns.map((c) => el("option", { value: c.key }, c.label))));
+  }
   if (state.answerLevel > 0) {
     const cols = await answer("ability_columns", { role });
     state.abilityKeys[role] = cols.map((c) => c.key);
@@ -472,6 +481,7 @@ async function renderStats(token) {
   const note = {
     basic: "基本:打率・防御率など、昔からよく使われる成績です。",
     saber: "セイバー:セイバーメトリクス(統計で選手の実力を測る考え方)の指標です。運に左右されにくく、実力が出やすい数を集めています。",
+    war: "WAR:控え水準の選手に比べて、何勝分多く勝ちに貢献したか(打撃・走塁・守備・ポジション補正をまとめた値)。用語の解説は表の下にあります。",
     ability: "能力:選手の本当の実力の数値です(答え合わせモードのときだけ)。",
   }[s.kind];
   $("stats-kind-note").textContent = note;
@@ -480,12 +490,14 @@ async function renderStats(token) {
     return renderAbilityTable(token);
   }
   const sort = currentSort();
-  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(能力の値は、公開用の関数では扱わない)
-  const key = sort.key && !isAbilityKey(sort.key) ? sort.key : null;
+  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(能力の値は、公開用の関数では扱わない)。
+  // WAR の列は WAR の表でだけ、WAR 以外の列は WAR 以外の表でだけ使える
+  const usable = sort.key && !isAbilityKey(sort.key) && (s.kind === "war" ? isWarKey(sort.key) : !isWarKey(sort.key));
+  const key = usable ? sort.key : null;
   const args = { ...statsArgs(), kind: s.kind, sort: key, order: key ? sort.order : null };
   const data = await withLoading("stats-loading", query("stats", args));
   if (token !== state.token) return;
-  await buildSortSelect(data.sort.key);
+  await buildSortSelect(data.sort.key, s.kind === "war" ? data.columns : null);
   if (token !== state.token) return;
   showSortState(data.sort, data.order);
   const first = (r) => [el("span", { className: "rank" }, String(r.rank)), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)];
@@ -510,7 +522,8 @@ async function renderStats(token) {
   $("stats-baseline").textContent = data.baseline_note || "";
   const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」はこの表にない指標なので、名前の隣に固定して出しています。` : "";
   $("stats-rule").textContent = `${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} ${extraNote}表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。上の「並び順」の欄からも選べます。`;
-  terms("stats-terms-list", data.extra_column ? [data.extra_column, ...data.columns] : data.columns);
+  terms("stats-terms-list", (data.extra_column ? [data.extra_column, ...data.columns] : data.columns).concat(data.terms || []));
+  $("stats-terms").open = Boolean(data.terms); // WAR の表は、用語の解説を表の下に開いて出す(D-179)
 }
 
 function sortStats(key) {
@@ -627,6 +640,11 @@ async function renderPlayer(args, token) {
     }
   } else if (!data.season) {
     box.replaceChildren(el("p", { className: "muted" }, "まだ試合に出ていません。"));
+  } else if (state.playerKind === "war") {
+    const w = data.season.war;
+    const rows = w.columns.map((c) => ({ label: c.label, description: c.description, values: [w.values[c.key]] }));
+    const dl = el("dl", { className: "terms" }, ...w.terms.flatMap((c) => [el("dt", {}, c.label), el("dd", {}, c.description)]));
+    box.replaceChildren(kvTable(rows), el("p", { className: "muted small" }, `${w.note} 見出しを押すと解説が出ます。`), el("details", { open: true }, el("summary", {}, "WAR の用語の解説"), dl));
   } else {
     const t = data.season.tables[state.playerKind];
     $("player-baseline").hidden = !(state.playerKind === "saber" && data.season.baseline_note);
@@ -679,6 +697,17 @@ async function renderTeam(args, token) {
       { label: "失点", description: "チームが取られた点の合計", values: [String(r.runs_allowed)] },
     ]),
   );
+  const w = d.war;
+  $("team-war").replaceChildren(
+    kvTable([
+      { label: "野手の WAR", description: "チームの野手の WAR の合計", values: [w.batters] },
+      { label: "投手の WAR(失点版)", description: "チームの投手の WAR(失点版)の合計", values: [w.pitchers_ra] },
+      { label: "投手の WAR(FIP 版)", description: "チームの投手の WAR(FIP 版)の合計", values: [w.pitchers_fip] },
+      { label: "合計(野手 + 投手の失点版)", description: "控え選手だけのチーム(勝率 .290 ほど)に比べて、何勝分多いか", values: [w.total_ra] },
+    ]),
+  );
+  $("team-war-note").textContent = w.note;
+  $("team-war-terms").replaceChildren(...w.terms.flatMap((c) => [el("dt", {}, c.label), el("dd", {}, c.description)]));
   const cols = [
     { key: "position", label: "ポジション" },
     { key: "age", label: "年齢" },
