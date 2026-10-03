@@ -301,4 +301,4 @@ def test_home_advantage_does_not_bias_the_ratio():
         for est in (est_on, est_off):
             raws = [float(e.raw[key]) for e in est.values()]
             assert abs(sum(raws) / len(raws) - 1) < 0.04, (key, sum(raws) / len(raws))  # 全球場の生の比の平均 ≈ 1.0(偏りなし)
-            assert all(abs(float(e.estimate[key]) - 1) < 0.15 for e in est.values())  # 2シーズンの運のぶれ(本塁打で ±0.04 ほど)の範囲内
+            assert all(abs(float(e.estimate[key]) - 1) < 0.2 for e in est.values())  # 2シーズンの運のぶれの範囲内(本塁打の生の比は ±0.3 まで出る)

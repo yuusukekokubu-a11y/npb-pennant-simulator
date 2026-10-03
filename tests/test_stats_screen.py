@@ -203,7 +203,7 @@ def test_game_page_matches_narrate(game):
 
 
 def test_narrate_text_is_unchanged():
-    """文章ログの文字は、②の前と同じ(構造のデータから作るように直しても、内容は変えない)。"""
+    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。第3弾①で選手が変わったので値を取り直した)。"""
     from pennant.newgame import new_league
     from pennant.parks import neutralize_parks
     from pennant.season import Season
@@ -214,7 +214,7 @@ def test_narrate_text_is_unchanged():
     s.play_days(3)
     names = {t.id: t.name for t in s.league.teams}
     text = "".join(narrate(p.result, s.players, names) for p in s.played)
-    assert hashlib.sha256(text.encode()).hexdigest() == "048102e5aa5c95409b4f74de90b828fc7a10bf785a9a86b892dc69ca026b0468"
+    assert hashlib.sha256(text.encode()).hexdigest() == "3cf08a5baa7a08184880ae9dd8234e374758842a80bcf3f97702b30239e370e5"
 
 
 def test_public_functions_have_no_hidden_info(game):

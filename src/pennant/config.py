@@ -225,7 +225,8 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
     c.number(c.get(pot, "style_mean", "potential"), "potential.style_mean", 0, 100)
     c.number(c.get(pot, "noise_sd", "potential"), "potential.noise_sd", 0, 30)
     tolerance = c.number(c.get(pot, "balance_tolerance", "potential"), "potential.balance_tolerance", 0, 5)
-    share_tolerance = c.number(c.get(pot, "share_balance_tolerance", "potential"), "potential.share_balance_tolerance", 0, 0.1)
+    # 省略可(第3弾①より前の設定・セーブデータにはない)。省略時は 0.005
+    share_tolerance = c.number(pot.get("share_balance_tolerance", 0.005), "potential.share_balance_tolerance", 0, 0.1) if pot is not None else None
 
     # 打者の型(D-028)
     batter_types = c.section(c.get(root, "batter_archetypes", ""), "batter_archetypes")
