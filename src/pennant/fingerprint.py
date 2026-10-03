@@ -28,7 +28,7 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 10  # 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
+FINGERPRINT_VERSION = 11  # 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -275,6 +275,36 @@ def run_values_fingerprint(parks: bool = True) -> tuple[str, dict]:
     return _digest(record), info
 
 
+def war_fingerprint(parks: bool = True) -> tuple[str, dict]:
+    """(l)固定のシードで3シーズン回した、選手ごとの WAR(内訳つき。分数を文字にして。D-172)。"""
+    from .baselines import load_baseline_settings, season_baselines
+    from .parkfactors import load_park_settings, run_seasons
+    from .records import season_records
+    from .runvalues import player_park_factors, season_player_runs
+    from .war import load_war_settings, pitcher_park_factors, season_war, war_record, war_totals
+
+    settings = load_baseline_settings()
+    war_settings = load_war_settings()
+    record: dict[str, dict] = {}
+    info: dict = {"seasons": PARK_SEASONS}
+
+    def on_results(k, results, league, estimates):
+        base = season_baselines(results, settings, settings.default_baselines())
+        rec = season_records(results)
+        pfs = player_park_factors(results, estimates)
+        runs = season_player_runs(results, base, lambda pid: pfs.get(pid, Fraction(1)), rec)
+        ppf = pitcher_park_factors(results, estimates)
+        lines = season_war(results, base, runs, war_settings, rec, lambda pid: ppf.get(pid, Fraction(1)))
+        record[str(k)] = war_record(lines)
+        if k == PARK_SEASONS:
+            t = war_totals(lines)
+            info["players"] = len(lines)
+            info["total_war_x100"] = int((t["batters"] + t["pitchers_ra"]) * 100)
+
+    run_seasons(LEAGUE_SEED, PARK_SEASONS, load_park_settings(), parks=parks, on_results=on_results)
+    return _digest(record), info
+
+
 def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み、
     (g)基準値、(h)第2弾の指標、(i)球場の倍率 の指紋。parks=False は、球場の倍率をすべて 1.0 にする(回帰の確認用)。"""
@@ -305,6 +335,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     g, h, binfo = baseline_fingerprint(season, parks)
     j, jinfo = park_estimate_fingerprint(parks)
     kk, kinfo = run_values_fingerprint(parks)
+    ll, linfo = war_fingerprint(parks)
     by_league: dict[int, list] = {}
     for t in league.teams:
         by_league.setdefault(t.league_index, []).append(t)
@@ -332,6 +363,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
         "parks": i,
         "park_estimates": j,
         "run_values": kk,
+        "war": ll,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -350,6 +382,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
             "parks": park_info,
             "park_estimates": jinfo,
             "run_values": kinfo,
+            "war": linfo,
         },
     }
 
@@ -375,5 +408,6 @@ def format_fingerprints(fp: dict) -> str:
             f"リーグごとの平均 {'・'.join(str(v) for v in c['parks']['home_run_mean'])}): {fp['parks']}",
             f"- (j) 球場補正の推定({c['park_estimates']['seasons']}シーズンを回した結果。{c['park_estimates']['teams']}球場): {fp['park_estimates']}",
             f"- (k) 打撃・走塁・守備の得点({c['run_values']['seasons']}シーズン。{c['run_values']['players']}人。守備の機会 {c['run_values']['fielding_chances']}): {fp['run_values']}",
+            f"- (l) WAR({c['war']['seasons']}シーズン。{c['war']['players']}人。3シーズン目の合計 {c['war']['total_war_x100'] / 100:.2f} 勝): {fp['war']}",
         ]
     )
