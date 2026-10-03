@@ -141,6 +141,8 @@ const placeholder7 = await page.getAttribute("#team-7", "placeholder");
 await page.check("input[name=my-team][value='7']");
 await page.click("#season-seed"); // 欄を移っても(変更の知らせが出ても)、選んだ自球団が変わらないこと
 check(await page.isChecked("input[name=baseline-mode][value=trial]"), "基準値の求め方は、最初は「試運転で求める」");
+let prerunSeen = false;
+const prerunWatch = page.waitForFunction(() => document.querySelector("#trial-text").textContent.includes("リーグの歴史を作っています"), null, { timeout: 60000 }).then(() => (prerunSeen = true)).catch(() => {});
 const trialStart = Date.now();
 await page.click("#new-start");
 // 試運転の進み具合(D-121)
@@ -149,7 +151,8 @@ await page.waitForFunction(() => /\d+ \/ 125 日/.test(document.querySelector("#
 check((await page.textContent("#trial-box")).includes("リーグの基準値を求めています"), `試運転の進み具合が出る(「${await page.textContent("#trial-text")}」)`);
 await page.waitForSelector("#screen-progress:not([hidden])", { timeout: 120000 });
 const trialSeconds = (Date.now() - trialStart) / 1000;
-results.push(`  試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
+results.push(`  事前運転(30 年)と試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
+check(prerunSeen, "新規開始の間に、事前運転(リーグの歴史を作っています)の進み具合が出る");
 const mineName = await page.textContent("#mine-name");
 check(mineName === placeholder7, `選んだ8番目の球団が自球団になる(${mineName})`);
 check((await page.textContent("#day-text")).startsWith("1シーズン目 0日目 / 125日"), `進行の画面:「${await page.textContent("#day-text")}」`);
@@ -753,7 +756,7 @@ await page.waitForFunction(() => document.querySelector("#day-text").textContent
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=saber]");
 await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("設定ファイルの既定値"));
-check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。試運転ありは ${trialSeconds.toFixed(1)} 秒)。注記も「設定ファイルの既定値」になる`);
+check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 30 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)。注記も「設定ファイルの既定値」になる`);
 await grab();
 
 // ---- 7. 隠し情報・通信・保存領域 ----
