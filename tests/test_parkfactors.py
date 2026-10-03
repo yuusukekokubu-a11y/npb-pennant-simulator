@@ -11,6 +11,7 @@ from pennant import api
 from pennant.baselines import VALUE_NAMES
 from pennant.config import ConfigError
 from pennant.metrics import compute
+from pennant.models import ParkFactors
 from pennant.parkfactors import (
     FACTOR_KEYS,
     ParkTally,
@@ -24,9 +25,10 @@ from pennant.parkfactors import (
     run_seasons,
     season_tallies,
     shrink_weight,
+    thousandths,
     validate_park_settings,
 )
-from pennant.parks import expected_run_factors, neutralize_parks
+from pennant.parks import RunConverter, expected_run_factors, neutralize_parks
 from pennant.plate_appearance import OddsRatioModel
 from pennant.savegame import SaveDataError, load_game, save_game
 
@@ -47,7 +49,7 @@ def test_raw_ratio_and_shrink_by_hand():
     assert raw_ratio(t, "runs") == Fraction(120, 100)
     assert raw_ratio(_tally({"PA": 10}, {"PA": 0}), "runs") is None
     assert shrink_weight(1000, 1000) == Fraction(1, 2) and shrink_weight(0, 100) == 0
-    settings = validate_park_settings({"format_version": 1, "assumed_sd": {"runs": 0.03, "home_run": 0.08, "babip": 0.015}, "shrink_pa": {"runs": 1000, "home_run": 1000, "babip": 1000}})
+    settings = validate_park_settings({"format_version": 1, "assumed_sd": {"home_run": 0.08, "babip": 0.015}, "shrink_pa": {"home_run": 1000, "babip": 1000}})
     # 2球場のリーグ:片方が 1.5 倍(縮めて 1.25)、もう片方が 1.0 → 平均で割ってそろえる
     history = [{"A": t, "B": _tally({"PA": 1000, "HR": 20, "BIP": 700, "HIT": 200, "R": 100}, {"PA": 1000, "HR": 20, "BIP": 700, "HIT": 200, "R": 100})}]
     est = estimate_parks(history, {"A": 0, "B": 0}, settings)
@@ -55,11 +57,17 @@ def test_raw_ratio_and_shrink_by_hand():
     mean = (Fraction(5, 4) + 1) / 2
     assert est["A"].estimate["home_run"] == Fraction(5, 4) / mean and est["B"].estimate["home_run"] == 1 / mean
     assert est["A"].estimate["home_run"] + est["B"].estimate["home_run"] == 2  # 平均 1.0
-    assert est["A"].estimate["runs"] == Fraction(11, 10) / ((Fraction(11, 10) + 1) / 2)
+    # 得点:本塁打と BABIP の推定(千分率)を、真の値側と同じ換算で「得点の出やすさ」にし、千分率に丸めて平均 1.0 にそろえる(D-147)
+    conv = RunConverter()
+    composed = {tid: Fraction(round(conv.run_factor(ParkFactors(thousandths(est[tid].estimate["home_run"]), thousandths(est[tid].estimate["babip"]))) * 1000), 1000) for tid in est}
+    mean_r = (composed["A"] + composed["B"]) / 2
+    assert est["A"].estimate["runs"] == composed["A"] / mean_r and est["B"].estimate["runs"] == composed["B"] / mean_r
+    assert est["A"].estimate["runs"] > 1 > est["B"].estimate["runs"]  # 本塁打が出やすい球場は、得点も出やすい
+    assert est["A"].raw["runs"] == Fraction(6, 5)  # 直接推定した得点は、生の比として残す(検証用)
 
 
 def test_player_park_factor_is_pa_weighted():
-    settings = validate_park_settings({"format_version": 1, "assumed_sd": {"runs": 0.03, "home_run": 0.08, "babip": 0.015}, "shrink_pa": {"runs": 1, "home_run": 1, "babip": 1}})
+    settings = validate_park_settings({"format_version": 1, "assumed_sd": {"home_run": 0.08, "babip": 0.015}, "shrink_pa": {"home_run": 1, "babip": 1}})
     history = [{"A": _tally({"PA": 10000, "HR": 300, "BIP": 7000, "HIT": 2100, "R": 1320}, {"PA": 10000, "HR": 200, "BIP": 7000, "HIT": 2000, "R": 1000}), "B": _tally({"PA": 10000, "HR": 200, "BIP": 7000, "HIT": 2000, "R": 1000}, {"PA": 10000, "HR": 200, "BIP": 7000, "HIT": 2000, "R": 1000})}]
     est = estimate_parks(history, {"A": 0, "B": 0}, settings)
     a, b = est["A"].estimate["runs"], est["B"].estimate["runs"]
@@ -193,9 +201,14 @@ def test_finish_season_appends_history():
 
 def test_settings_validation():
     data = copy.deepcopy(SETTINGS.data)
-    data["shrink_pa"]["runs"] = 0
+    data["shrink_pa"]["home_run"] = 0
+    with pytest.raises(ConfigError, match="shrink_pa.home_run"):
+        validate_park_settings(data)
+    data = copy.deepcopy(SETTINGS.data)
+    data["shrink_pa"]["runs"] = 28600  # 得点用の定数は廃止(D-148)
     with pytest.raises(ConfigError, match="shrink_pa.runs"):
         validate_park_settings(data)
+    assert "runs" not in SETTINGS.data["shrink_pa"] and "runs" not in SETTINGS.data["assumed_sd"]
     data = copy.deepcopy(SETTINGS.data)
     data["assumed_sd"]["xyz"] = 1
     with pytest.raises(ConfigError, match="assumed_sd.xyz"):
@@ -238,16 +251,32 @@ def test_home_run_estimates_improve_with_seasons(ten_seasons):
     assert sum(c10) > sum(c1)
 
 
-def test_runs_estimates_follow_true_effect(ten_seasons):
-    """得点ベースの推定と、真の倍率から求めた得点の出やすさの目安との相関(3リーグの平均)。
+def _rmse(xs, ys):
+    return (sum((x - y) ** 2 for x, y in zip(xs, ys)) / len(xs)) ** 0.5
 
-    依頼の目標は 0.7 だったが、真の得点効果の幅(±3%ほど)に対して1シーズンの運のぶれ(約7%)が大きく、
-    10シーズンでも平均 0.65 ほどにしかならない(報告 Issue の壁打ち論点)。ここでは「正の相関があり、
-    1シーズン目より良くなる」ことと、実測に基づく下限 0.5 を確かめる。
-    """
-    c1 = [_corr_at(snaps, league, "runs", 1, truth) for snaps, _, league, truth in ten_seasons.values()]
-    c10 = [_corr_at(snaps, league, "runs", 10, truth) for snaps, _, league, truth in ten_seasons.values()]
-    assert sum(c10) / len(c10) >= 0.5 and sum(c10) > sum(c1), (c1, c10)
+
+def _rmse_at(snaps, league, key, k, truth):
+    ids = [t.id for t in league.teams]
+    return _rmse([snaps[k][i][key] for i in ids], [truth[i] for i in ids])
+
+
+def test_runs_estimates_beat_assuming_all_one(ten_seasons):
+    """10シーズン時点の得点の推定(本塁打と BABIP から組み立てたもの)の誤差が、「全部 1.0 と推定した場合」の誤差より小さい(3リーグの平均。D-147、D-150)。"""
+    est_err, one_err, c10 = [], [], []
+    for snaps, _, league, truth in ten_seasons.values():
+        ids = [t.id for t in league.teams]
+        est_err.append(_rmse_at(snaps, league, "runs", 10, truth))
+        one_err.append(_rmse([1.0] * len(ids), [truth[i] for i in ids]))
+        c10.append(_corr_at(snaps, league, "runs", 10, truth))
+    assert sum(est_err) / 3 < sum(one_err) / 3, (est_err, one_err)
+    assert sum(c10) / 3 > 0.7, c10  # 参考値:②b の直接推定(0.65)より良い
+
+
+def test_home_run_estimates_beat_assuming_all_one(ten_seasons):
+    for snaps, _, league, _ in ten_seasons.values():
+        truth = {t.id: t.park.home_run / 1000 for t in league.teams}
+        ids = [t.id for t in league.teams]
+        assert _rmse_at(snaps, league, "home_run", 10, truth) < _rmse([1.0] * len(ids), [truth[i] for i in ids])
 
 
 def test_league_means_are_exactly_one(ten_seasons):

@@ -66,25 +66,40 @@ def assign_parks(league: League, config: GenerationConfig) -> None:
             team.park = ParkFactors(h, b)
 
 
-def expected_run_factors(league: League, model, values: dict) -> dict[str, float]:
-    """真の倍率から求めた「1打席あたりの得点の出やすさ」の目安(開発者向け・テスト用。画面には出さない)。
+_WOBA_WEIGHTS = {"walk": "w_bb", "hit_by_pitch": "w_hbp", "single": "w_1b", "double": "w_2b", "triple": "w_3b", "home_run": "w_hr"}
 
-    平均的な打者と投手の対戦の、打席の結果の確率(球場の倍率入り)に wOBA の重みを掛けて期待 wOBA を求め、
-    (期待 wOBA − 倍率なしの期待 wOBA)÷ wOBA の尺度 で「1打席あたりの得点の増減」に直し、リーグの平均得点(lg_r_pa)に足して比にする。
-    各リーグの平均が 1.0 になるよう割る。推定(parkfactors.py)の「得点」と比べるための真の値。
+
+class RunConverter:
+    """本塁打と BABIP の倍率から「1打席あたりの得点の出やすさ」(倍率なし = 1.0)を求める換算(D-147)。
+
+    平均的な打者と投手の対戦の、打席の結果の確率(倍率入り)に wOBA の重みを掛けて期待 wOBA を求め、
+    (期待 wOBA − 倍率なしの期待 wOBA)÷ wOBA の目盛り で「1打席あたりの得点の増減」に直し、
+    リーグの平均得点(lg_r_pa)に足して比にする。真の倍率(答え合わせ・テスト用)にも、推定した倍率(指標の球場補正)にも、同じ式を使う。
     """
-    from .pa_stats import average_defense, average_player
 
-    batter, pitcher, defense = average_player("batter"), average_player("pitcher"), average_defense()
-    weights = {"walk": "w_bb", "hit_by_pitch": "w_hbp", "single": "w_1b", "double": "w_2b", "triple": "w_3b", "home_run": "w_hr"}
+    def __init__(self, model=None, values: dict | None = None):
+        from .baselines import load_baseline_settings
+        from .pa_stats import average_defense, average_player
+        from .plate_appearance import OddsRatioModel
 
-    def woba(park):
-        probs = model.probabilities(batter, pitcher, defense, park=park)
-        return sum(float(probs[k]) * float(values[v]) for k, v in weights.items())
+        self.model = model if model is not None else OddsRatioModel()
+        self.values = values if values is not None else load_baseline_settings().default_baselines().values
+        self._matchup = (average_player("batter"), average_player("pitcher"), average_defense())
+        self._base = self.woba(ParkFactors())
 
-    base = woba(ParkFactors())
-    r0 = float(values["lg_r_pa"])
-    out = {t.id: (r0 + (woba(t.park) - base) / float(values["woba_scale"])) / r0 for t in league.teams}
+    def woba(self, park: ParkFactors) -> float:
+        probs = self.model.probabilities(*self._matchup, park=park)
+        return sum(float(probs[k]) * float(self.values[v]) for k, v in _WOBA_WEIGHTS.items())
+
+    def run_factor(self, park: ParkFactors) -> float:
+        r0 = float(self.values["lg_r_pa"])
+        return (r0 + (self.woba(park) - self._base) / float(self.values["woba_scale"])) / r0
+
+
+def expected_run_factors(league: League, model=None, values: dict | None = None) -> dict[str, float]:
+    """真の倍率から求めた「1打席あたりの得点の出やすさ」(開発者向け・テスト用。画面には出さない)。各リーグの平均が 1.0 になるよう割る。"""
+    conv = RunConverter(model, values)
+    out = {t.id: conv.run_factor(t.park) for t in league.teams}
     groups: dict[int, list[str]] = {}
     for t in league.teams:
         groups.setdefault(t.league_index, []).append(t.id)

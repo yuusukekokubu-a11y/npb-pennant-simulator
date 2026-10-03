@@ -723,9 +723,9 @@ async function renderStadium(args, token) {
   if (d.estimate) {
     $("stadium-estimate").replaceChildren(
       kvTable([
-        { label: "得点", description: "1打席あたりの得点の出やすさ(wRC+・OPS+ の球場補正に使う)", values: [d.estimate.runs] },
+        { label: "得点", description: "1打席あたりの得点の出やすさ(本塁打と BABIP の推定から組み立てた値。wRC+・OPS+ の球場補正に使う)", values: [d.estimate.runs] },
         { label: "本塁打", description: "本塁打の出やすさ(表示用)", values: [d.estimate.home_run] },
-        { label: "BABIP", description: "インプレーの打球が安打になりやすさ(表示用)", values: [d.estimate.babip] },
+        { label: "BABIP(参考値)", description: "インプレーの打球が安打になりやすさ(参考値。運のぶれに埋もれやすい)", values: [d.estimate.babip] },
       ]),
     );
   } else {
