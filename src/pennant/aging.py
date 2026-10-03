@@ -14,11 +14,21 @@ from .config import GenerationConfig
 FIXED_GROUP = "fixed"
 
 
+_GROUP_CACHE: dict[int, dict[str, str]] = {}  # 設定ごとの 項目 → グループ(何度も引くので覚えておく)
+
+
 def group_of(config: GenerationConfig, item: str) -> str:
-    for key, group in config["aging"]["groups"].items():
-        if item in group["items"]:
-            return key
-    raise KeyError(item)
+    table = _GROUP_CACHE.get(id(config))
+    if table is None:
+        table = {}
+        for key, group in config["aging"]["groups"].items():
+            for it in group["items"]:
+                table[it] = key
+        _GROUP_CACHE[id(config)] = table
+    try:
+        return table[item]
+    except KeyError:
+        raise KeyError(item) from None
 
 
 def age_gap(config: GenerationConfig, item: str, age: float, growth_type: str) -> float:

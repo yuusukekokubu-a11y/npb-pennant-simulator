@@ -82,8 +82,8 @@ def measure(g: api.Game, config, war_settings) -> dict:
     return out
 
 
-def run_world(seed: int, years: int, config, war_settings, log=sys.stderr) -> list[dict]:
-    g = api.Game.new(seed, [None] * 12, 0, season_seed=seed, baselines="default")
+def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium") -> list[dict]:
+    g = api.Game.new(seed, [None] * 12, None, season_seed=seed, baselines="default", scout_level=scout_level)  # 観戦のみ(全球団 AI)
     sizes = {t.id: len(t.players) for t in g.state.league.teams}
     positions = {t.id: sorted(p.position for p in t.players) for t in g.state.league.teams}
     rows = []
@@ -92,13 +92,16 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr) -> li
         row = measure(g, config, war_settings)
         row["year"] = year
         row["seed"] = seed
+        row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release") if year < years else 0
         if year < years:
             t0 = time.perf_counter()
             summary = g.year_end()
             row["year_end_seconds"] = time.perf_counter() - t0
             row["retired"] = summary["counts"]["retired"]
             assert {t.id: len(t.players) for t in g.state.league.teams} == sizes, "選手の数が変わった"
-            assert {t.id: sorted(p.position for p in t.players) for t in g.state.league.teams} == positions, "ポジションの数が変わった"
+            from pennant.draft import minimum_batters, minimum_positions, shortages
+
+            assert all(not shortages(t.players, minimum_positions(), minimum_batters()) for t in g.state.league.teams), "最低人数を割った"  # F3-1:ポジションの構成は最低人数だけ守る(D-203)
         else:
             row["year_end_seconds"] = 0.0
             row["retired"] = 0
@@ -113,6 +116,7 @@ def main(argv=None):
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--years", type=int, default=30)
     parser.add_argument("--json", help="年ごとの数を書き出す JSON ファイル")
+    parser.add_argument("--scout-level", choices=("small", "medium", "large"), default="medium", help="スカウト評価のずれの段階(F3-1)")
     parser.add_argument("--load", nargs="*", help="回す代わりに、--json で書き出したファイルを読んで表を出す(別々に回した世界をまとめる)")
     args = parser.parse_args(argv)
     config = load_generation_config()
@@ -127,7 +131,7 @@ def main(argv=None):
         args.years = min(len(v) for v in worlds.values())
     else:
         for seed in range(args.seed_start, args.seed_start + args.worlds):
-            worlds[seed] = run_world(seed, args.years, config, war_settings)
+            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(worlds, f, ensure_ascii=False, indent=1)

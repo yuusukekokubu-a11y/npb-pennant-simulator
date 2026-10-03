@@ -79,6 +79,9 @@ def new_league(
     prerun: bool = True,
     offseason_settings=None,
     progress=None,
+    draft_settings=None,
+    scout_sd: float | None = None,
+    calibration: dict | None = None,
 ) -> League:
     """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。
 
@@ -91,9 +94,12 @@ def new_league(
     name_parts = name_parts or load_name_parts()
     league = generate_league(seed, gen_config, name_parts)
     if prerun:
+        from .draft import load_draft_settings
+
         settings = offseason_settings or load_offseason_settings()
-        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress)
-        apply_calibration(league, settings.calibration, gen_config)
+        draft_settings = draft_settings or load_draft_settings()
+        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress, draft_settings=draft_settings, scout_sd=scout_sd)
+        apply_calibration(league, calibration if calibration is not None else settings.calibration(draft_settings.default_level), gen_config)
     if team_names is not None:
         for team, name in zip(league.teams, resolve_team_names(league, team_names)):
             team.display_name = name
