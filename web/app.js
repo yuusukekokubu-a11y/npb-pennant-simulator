@@ -49,7 +49,7 @@ const state = {
   proc: { selected: new Set(), sort: "overall", position: "", open: null }, // オフの手続きの画面の状態(F3-1)
   review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
   // 自由契約・市場の表の状態(D-222)。手続きの画面を行き来しても保つ。sortBy / shownSort は個人成績と同じ仕組み(D-131)
-  rosterTable: { role: "batter", kind: "basic", season: "current", group: "", sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } }, shownSort: { batter: null, pitcher: null } },
+  rosterTable: { role: "batter", kinds: { release: "basic", market: "war" }, season: "current", group: "", sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } }, shownSort: { batter: null, pitcher: null } }, // 成績の種類は段階ごと(市場の初期値は WAR。D-240)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 
@@ -919,8 +919,9 @@ function inGroup(position, group) {
 // 成績つきの表を計算本体から受け取る。能力(答え合わせモード)のときだけ answer を呼ぶ
 async function fetchRosterTable(phase) {
   const rt = state.rosterTable;
-  if (rt.kind === "ability" && state.answerLevel === 0) rt.kind = "basic";
-  const kind = rt.kind;
+  rt.phase = phase;
+  if (rt.kinds[phase] === "ability" && state.answerLevel === 0) rt.kinds[phase] = "basic";
+  const kind = rt.kinds[phase];
   const sortBy = rt.sortBy[rt.role];
   const abilityKeys = state.answerLevel > 0 ? (await answer("ability_columns", { role: rt.role })).map((c) => c.key) : [];
   // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(個人成績と同じ)。評価の列は画面側で並べる
@@ -943,7 +944,7 @@ function rosterControls(data) {
   if (state.answerLevel > 0) kinds.push(["ability", "能力"]);
   const out = [
     seg("roster-role", [["batter", "野手"], ["pitcher", "投手"]], rt.role, (k) => { rt.role = k; rt.group = ""; renderCurrent(); }),
-    seg("roster-kind", kinds, rt.kind, (k) => { rt.kind = k; renderCurrent(); }),
+    seg("roster-kind", kinds, rt.kinds[rt.phase], (k) => { rt.kinds[rt.phase] = k; renderCurrent(); }),
   ];
   const filters = el("div", { className: "filters" });
   if (data.seasons.length > 1) {

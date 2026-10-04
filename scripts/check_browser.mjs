@@ -737,11 +737,11 @@ await page.click("#proc-next");
 await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("自由契約市場"), null, { timeout: 60000 });
 await page.waitForFunction(() => document.querySelectorAll("#proc-body tbody tr").length > 0);
 const marketHead = await rosterHeads();
-check(marketHead.includes("総合(推定 ± 幅)") && marketHead.includes("天井") && marketHead.includes("前の球団") && marketHead.includes("投球回"), `ドラフトの残りを自動で進めて市場へ。市場の表には入団時の評価(総合・天井)・前の球団と、成績の列がある(投手の表のまま)`);
+check(marketHead.includes("総合(推定 ± 幅)") && marketHead.includes("天井") && marketHead.includes("前の球団") && marketHead.includes("投球回") && marketHead.includes("WAR(失点版)") && !marketHead.includes("FIP"), `ドラフトの残りを自動で進めて市場へ。市場の表には入団時の評価(総合・天井)・前の球団と、成績の列がある(投手の表のまま。成績の種類の初期値は WAR。D-240)`);
 await page.selectOption("#roster-group", ""); // 自由契約で選んだ絞り込み(救援)は市場でも保たれているので、全投手に戻してから比べる
 await page.waitForFunction(() => document.querySelector("#roster-group").value === "" && [...document.querySelectorAll("#proc-body tbody tr")].some((tr) => tr.textContent.includes("先発")));
-const marketPy = pyProc(`t = g.offseason_table("market", "pitcher", "saber")\nprint(json.dumps([[r["name"], r["former_team"] or "-", r["values"]["usage"], r["values"]["fip"]] for r in t["rows"]], ensure_ascii=False))`, true);
-const marketRows = await rosterCells(["前の球団", "投球回", "FIP"]);
+const marketPy = pyProc(`t = g.offseason_table("market", "pitcher", "war")\nprint(json.dumps([[r["name"], r["former_team"] or "-", r["values"]["usage"], r["values"]["war_ra"]] for r in t["rows"]], ensure_ascii=False))`, true);
+const marketRows = await rosterCells(["前の球団", "投球回", "WAR(失点版)"]);
 check(marketRows.length === marketPy.length && marketRows.every((r, i) => r.join("|") === marketPy[i].join("|")) && marketRows.some((r) => r[2] === "—" && r[1] === "-") && marketRows.some((r) => r[2] !== "—"), `市場の投手(${marketRows.length}人)が計算本体と同じ。指名されなかった候補の成績は「—」、手放された選手には成績が出る`);
 await page.click("#proc-body thead th button:has-text('総合')");
 await page.waitForFunction(() => document.querySelector("#roster-sort-line").textContent.includes("並び順:総合"));
