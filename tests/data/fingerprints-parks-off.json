@@ -1,5 +1,5 @@
 {
- "fingerprint_version": 16,
+ "fingerprint_version": 17,
  "league": "dcd49f740833451ba396ad0bc45d8796064583661d02d6aa7cd451ec05b8b21e",
  "game": "e9c09af9345ce18a0ac9df4641e6289d0b488e0e425edaace5de7b9b693fedaa",
  "days": "b4fe2f638ed7887431212ae3a690cfce47dd5ae5fdbef78faf40db33a12898c2",
@@ -12,9 +12,10 @@
  "park_estimates": "fd6b2f257037e39d839c5713fee4c6a0e7ca2ff0fd7a49560575765908d3d9ea",
  "run_values": "69ad6388fda3f1e6150028a7e7eaa8a33fca1df40fbe49e15a0ec83aca656d7c",
  "war": "30237faea23d3033e98f9917944fa389432c2254bc7102322967ccea24734d4b",
- "multiyear": "740626274460fcb0a12eec0c1a52bd74aeaadf50822b4eba7e112c75f3a98142",
- "procedure": "2b97d9d1cada72a117f0666be92f76c12f72525ded7f632ed54bdf5e492b2e76",
- "contracts": "b22cdb65e5d382870b55d93738d670be91604841be66adcf8fa2de098adc1d5e",
+ "multiyear": "9cfd61747649e895be921ef0f947e346c17a6f2131e5c4d013c3fec4822ea777",
+ "procedure": "9e756d4cd5aff7f354ed694ab982c0e83950e7b7403386956631baa9f3ee9cc3",
+ "contracts": "f2cb31022d904a0dcf064482fa6a6d9778e6eb83da5119901c42c113c2f48f17",
+ "negotiation": "a0f09c453d16efd2f3e0052ef667fb4589458cb93d0a1bdcfef0a1dfc0c5aa35",
  "counts": {
   "players": 840,
   "game_plate_appearances": 82,
@@ -86,11 +87,11 @@
    "year_ends": 2,
    "retired": [
     26,
-    37
+    30
    ],
    "rookies": [
-    59,
-    69
+    118,
+    123
    ],
    "players": 840,
    "seasons": 3,
@@ -99,16 +100,16 @@
   "procedure": {
    "year_ends": 2,
    "picked": [
-    59,
-    69
+    98,
+    101
    ],
    "released": [
-    33,
-    32
+    92,
+    93
    ],
    "market": [
-    3,
-    8
+    28,
+    29
    ],
    "players": 840,
    "scouted": 840
@@ -117,17 +118,46 @@
    "year_ends": 2,
    "rule": "standard",
    "budget_releases": [
-    3,
-    0
+    10,
+    1
    ],
    "rates": [
-    14791,
-    9654,
-    9680
+    13686,
+    9428,
+    9889
    ],
    "totals": [
-    390375,
-    387283
+    395108,
+    401608
+   ],
+   "players": 840
+  },
+  "negotiation": {
+   "year_ends": 2,
+   "rule": "standard",
+   "refused": [
+    75,
+    63
+   ],
+   "released": [
+    73,
+    60
+   ],
+   "multi_year": [
+    19,
+    10
+   ],
+   "reasons": [
+    {
+     "playing_time": 67,
+     "salary": 5,
+     "winning": 3
+    },
+    {
+     "playing_time": 62,
+     "salary": 1,
+     "winning": 3
+    }
    ],
    "players": 840
   }

@@ -190,7 +190,7 @@ def test_salary_editable_only_with_money_rules(renewal_games):
 
     room = g.budget_info("T01")["cap"] - projected_total(g._team("T01"), proc)
     with pytest.raises(ValueError, match="上限"):
-        g.offseason_offer(e["player_id"], 1, e["auto_salary"] + room + 100)
+        g.offseason_offer(e["player_id"], 1, e["auto_salary"] + max(0, room) + 100)  # すでに上限を超えていれば、算定より高い年俸は出せない
 
 
 def test_three_refusals_release_and_answers_are_stable(renewal_games):

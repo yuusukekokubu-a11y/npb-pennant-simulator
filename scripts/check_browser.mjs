@@ -730,6 +730,7 @@ for (const role of ["batter", "pitcher"]) {
     const before = await page.textContent("#renewal-counts");
     if (!(await page.$("#offer-panel"))) await page.click("#proc-body tbody tr:first-child .name-cell .link");
     await page.waitForSelector("#offer-release");
+    page.once("dialog", (d) => d.accept()); // 「自由契約にします(戻せません)」の確認
     await page.click("#offer-release");
     await page.waitForFunction((b) => document.querySelector("#renewal-counts").textContent !== b, before, { timeout: 30000 });
   }
