@@ -285,8 +285,10 @@ function setPressed(groupId, value) {
 // fluid は、広い画面で横スクロールなしに全列を出す表(新しく作る表だけ。D-223)。detail(row) が要素を返せば、その行の下に 1 行足す
 function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass, limit, more, extra, fluid, detail }) {
   const headCell = (c, className) => {
-    const arrow = sort === c.key ? (order === "desc" ? " ▼" : " ▲") : "";
-    const label = onSort ? el("button", { className: "sort", type: "button", onclick: () => onSort(c.key) }, c.label + arrow) : c.label;
+    // ▲▼ は別の要素にして、列の右の余白に置く(文字の右端を数値の右端にそろえる。D-267)
+    const arrow = sort === c.key ? el("span", { className: "arrow" }, order === "desc" ? " ▼" : " ▲") : null;
+    const text = arrow ? [c.label, arrow] : [c.label];
+    const label = onSort ? el("button", { className: "sort", type: "button", onclick: () => onSort(c.key) }, ...text) : el("span", {}, ...text);
     return el("th", { scope: "col", className: `${className} ${sort === c.key ? "sorted" : ""}`.trim(), title: c.description || "" }, label);
   };
   const nameClass = extra ? "sticky name-fixed" : "sticky";
@@ -297,8 +299,8 @@ function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass
   const shown = limit ? rows.slice(0, limit) : rows;
   for (const r of shown) {
     const tr = el("tr", { className: rowClass ? rowClass(r) : "" }, el("td", { className: `${nameClass} name-cell` }, ...first(r)));
-    if (extra) tr.append(el("td", { className: "sticky2" }, r.values[extra.key] ?? ""));
-    for (const c of columns) tr.append(el("td", {}, r.values[c.key] ?? ""));
+    if (extra) tr.append(el("td", { className: sort === extra.key ? "sticky2 sorted" : "sticky2" }, r.values[extra.key] ?? ""));
+    for (const c of columns) tr.append(el("td", sort === c.key ? { className: "sorted" } : {}, r.values[c.key] ?? ""));
     body.append(tr);
     const d = detail ? detail(r) : null;
     if (d) body.append(el("tr", { className: "detail" }, el("td", { colSpan: columns.length + 1 + (extra ? 1 : 0) }, d)));

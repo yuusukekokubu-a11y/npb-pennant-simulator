@@ -279,3 +279,18 @@ def test_main_page_basics():
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert "beforeunload" in app and "state.dirty" in app
     assert re.search(r'a\.download = r\.value\.file_name', app)  # ファイル名は Python が作る日付だけの名前
+
+
+def test_table_fixed_columns_use_one_width():
+    """表の固定列の幅と位置は、見出しと本体で同じ変数を使う(em は文字の大きさで変わるので使わない。D-267・D-268)。
+    実際の位置のそろいは scripts/check_table_align.mjs がブラウザで測る。"""
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    rules = {m.group(1).strip(): m.group(2) for m in re.finditer(r"([^{}\n]+)\{([^{}]*)\}", html)}
+    fixed = rules["th.name-fixed, td.name-fixed"]
+    sticky2 = rules["th.sticky2, td.sticky2"]
+    assert "var(--table-name-w)" in fixed and "border-box" in fixed and "em" not in fixed.replace("var(--table-name-w)", "")
+    assert "left: var(--table-name-w)" in sticky2
+    assert "padding-right: var(--table-sort-mark-w)" in rules["th.sorted, td.sorted"]
+    assert any("var(--table-first-scroll-gap)" in body for sel, body in rules.items() if "td.sticky2 + td" in sel)
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'className: "arrow"' in app and 'className: "sorted"' in app  # ▲▼ は別の要素、本体の並べ替えた列にも印

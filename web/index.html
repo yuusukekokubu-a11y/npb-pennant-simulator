@@ -15,6 +15,10 @@
     --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; --mine: #fff8c5; --mine-line: #d4a72c; --warn-bg: #fff1e5; --warn-line: #e16f24;
     /* 余白・文字の大きさ・角丸(F3-2a から新しく作る部分で使う。既存の画面はデザインの見直しで置き換える。D-239) */
     --space-1: 4px; --space-2: 8px; --space-3: 12px; --font-small: 0.9rem; --font-tiny: 0.8rem; --radius: 10px;
+    /* 表の固定列の幅と、列の余白(D-267・D-268)。見出し(文字 0.8rem)と本体(0.92rem)で同じ値になるよう、em ではなく rem と px で決める */
+    --table-name-w: calc(8.28rem + 13px); /* 名前の列(並べ替えた指標を隣に固定するとき)。中身 8.28rem + 左右の余白 8px・5px */
+    --table-sort-mark-w: 1rem; /* 並べ替えた列の右の余白(▲▼ を置く場所)。見出しと本体で同じにして、文字と数値の右端をそろえる */
+    --table-first-scroll-gap: var(--space-3); /* 固定列のすぐ右の列の左の余白 */
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -112,14 +116,21 @@
   .sub { display: block; font-size: 0.75rem; color: var(--muted); font-weight: normal; max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
   td.name-cell { min-width: 7.5em; max-width: 10em; white-space: normal; line-height: 1.3; }
   /* 並び順の指標が表にないとき、名前の隣に固定の列を出す(D-131)。名前の列の幅を決めて、その右に固定する */
-  th.name-fixed, td.name-fixed { width: 9em; min-width: 9em; max-width: 9em; }
-  th.sticky2, td.sticky2 { position: sticky; left: 9em; z-index: 1; box-shadow: 2px 0 0 var(--line); font-weight: bold; }
+  /* 幅と位置は見出しと本体で同じ値(変数)を使う。em は文字の大きさで変わり、見出しと本体でずれるため使わない(D-267) */
+  th.name-fixed, td.name-fixed { box-sizing: border-box; width: var(--table-name-w); min-width: var(--table-name-w); max-width: var(--table-name-w); }
+  th.sticky2, td.sticky2 { position: sticky; left: var(--table-name-w); z-index: 1; box-shadow: 2px 0 0 var(--line); font-weight: bold; }
+  /* 固定列のすぐ右の列(横にずらす側の最初の列)は、固定列の線から少し離す(D-268) */
+  th.sticky + th:not(.sticky2), td.sticky + td:not(.sticky2), th.sticky2 + th, td.sticky2 + td { padding-left: var(--table-first-scroll-gap); }
   .seg.small-seg { flex: 0 0 auto; margin: 0; }
   .seg.small-seg button { padding: 6px 10px; min-height: 40px; font-size: 0.9rem; }
   #stats-sort { flex: 1 1 8em; }
   td.name-cell .link { white-space: nowrap; }
   th button.sort { font: inherit; background: none; border: none; color: inherit; padding: 4px 0; min-height: 32px; cursor: pointer; }
   th.sorted { color: var(--accent); font-weight: bold; }
+  /* 並べ替えた列:▲▼ は右の余白に置き、文字の右端を数値の右端にそろえる(本体の列も同じ余白。D-267) */
+  th.sorted, td.sorted { padding-right: var(--table-sort-mark-w); }
+  th.sorted:not(.sticky):not(.sticky2) { position: relative; }
+  th.sorted .arrow { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
   /* 広い画面(幅が app.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */
   .wide #screen-procedure, .wide #screen-review { max-width: 1180px; } /* fluid の表がある画面だけ、広い画面では列の幅を広げる(他の画面は第 2 段階で) */
@@ -130,6 +141,7 @@
   .wide .table-wrap.fluid th.name-fixed, .wide .table-wrap.fluid td.name-fixed { width: auto; min-width: 9em; max-width: none; }
   .wide .table-wrap.fluid td.name-cell { max-width: none; }
   .wide .table-wrap.fluid tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
+  .wide .table-wrap.fluid th.sticky + th, .wide .table-wrap.fluid td.sticky + td, .wide .table-wrap.fluid th.sticky2 + th, .wide .table-wrap.fluid td.sticky2 + td { padding-left: 5px; } /* 固定しないときは、ほかの列と同じ */
   .warn { color: var(--warn-line); font-weight: bold; }
   /* 契約・予算(F3-2a。色・余白・文字は変数で指定。D-239) */
   .contract-box { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); }
