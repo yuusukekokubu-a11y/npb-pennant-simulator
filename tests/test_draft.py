@@ -365,7 +365,7 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
     assert prerun_ids and not any(pid in prerun_ids for y in (2, 3) for t in g.state.league.teams for pid in {r["player_id"] for r in g.draft_review(t.id, y)["rows"]})
     v2 = g.draft_review("T05", 2)
     assert v2["team_id"] == "T05" and v2["year"] == 2 and v2["rows"] and all(r["route_label"].startswith(("ドラフト", "市場", "自動補充")) for r in v2["rows"])
-    assert sum(len(g.draft_review(t.id, 2)["rows"]) for t in g.state.league.teams) == sum(1 for x in g.state.transactions if x["player_id"] and x["year"] == 1 and x["phase"] != "release")
+    assert sum(len(g.draft_review(t.id, 2)["rows"]) for t in g.state.league.teams) == sum(1 for x in g.state.transactions if x["player_id"] and x["year"] == 1 and x["phase"] not in ("release", "fa_declare", "fa"))  # FA の宣言・契約は入団ではない(F3-2c)
     with pytest.raises(ValueError):
         g.draft_review("T01", 9)
     with pytest.raises(ValueError):
