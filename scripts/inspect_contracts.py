@@ -115,7 +115,7 @@ def print_trend(rows: list[dict], rule: str) -> None:
     for y in years:
         rs = [r for r in rows if r["year"] == y]
         rate = statistics.fmean(r["rate"] for r in rs if r["rate"])
-        out.append([str(y), f"{rate:,.0f}", f"{statistics.fmean(r['total_mean'] for r in rs):,.0f}", f"{statistics.fmean(r['total_max'] for r in rs):,.0f}", f"{100 * statistics.fmean(r['usage_max'] for r in rs):.1f}%" if rs[0]["usage_max"] else "-", f"{statistics.fmean(r.get('releases', 0) for r in rs):.1f}", f"{statistics.fmean(r.get('budget_releases', 0) for r in rs):.1f}", f"{statistics.fmean(r.get('budget_passes', 0) for r in rs):.1f}"])
+        out.append([str(y), f"{rate:,.0f}", f"{statistics.fmean(r['total_mean'] for r in rs):,.0f}", f"{statistics.fmean(r['total_max'] for r in rs):,.0f}", f"{100 * statistics.fmean(r['usage_max'] for r in rs):.1f}%" if rs[0]["usage_max"] else "-", *[f"{statistics.fmean(r[k] for r in rs):.1f}" if all(k in r for r in rs) else "-" for k in ("releases", "budget_releases", "budget_passes")]])
     print(_table(["年", "単価(万円/WAR)", "総年俸の平均", "総年俸の最大", "使用率の最大", "自由契約(全体)", "うち予算超過", "予算不足のパス"], out))
     print()
 
