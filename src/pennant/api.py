@@ -1811,18 +1811,25 @@ class Game:
         story = game_story(season.played[n].result, season.players, self._team_names(), self.records.decisions[n])
         return {"summary": self._game_summary(n), "story": story}
 
+    def _unattached_label(self, player_id: str) -> str:
+        """オフの間、球団を離れている選手の所属の表示(FA 宣言中か、自由契約)。"""
+        proc = self.state.procedure
+        if proc is not None and player_id in proc.fa_info and proc.fa_info[player_id]["status"] == "open":
+            return "FA 宣言中"
+        return "自由契約"
+
     def player(self, player_id: str) -> dict:
         """選手のページ:基本情報(公開用)、シーズン通算の成績(基本・セイバー)、試合ごとの成績(新しい順)。"""
         season = self.state.season
         if player_id in season.players:
             p = season.players[player_id]
-            team = self._team(p.team_id)
-            info = public_player(p, team.name)
+            team = self._team(p.team_id) if p.team_id is not None else None
+            info = public_player(p, team.name if team is not None else self._unattached_label(p.id))
             info.update(
                 position_label=POSITION_LABELS[p.position],
                 role_label=ROLE_LABELS[p.role],
                 hand=BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
-                is_mine=team.id == self.state.my_team_id,
+                is_mine=team is not None and team.id == self.state.my_team_id,
                 retired=False,
                 scouting=None if p.scouting is None else {**ScoutReport.from_dict(p.scouting).to_public(), "year": p.scouting.get("year"), "team_name": self._team(p.scouting["team_id"]).name},
                 contract=self._contract_public(p),
@@ -1858,13 +1865,14 @@ class Game:
         game_cols = config["tables"][role]["game"]["columns"]
         games = []
         names = self._team_names()
+        game_team_id = team.id if team is not None else next((a.players[player_id]["team_id"] for a in reversed(self.state.history) if player_id in a.players), None)
         for n in range(len(cache.per_game) - 1, -1, -1):
             group = cache.per_game[n].batters if role == "batter" else cache.per_game[n].pitchers
             if player_id not in group:
                 continue
             values = _values(config, role, group[player_id])  # 試合ごとは元の数だけを出す
             s = self._game_summary(n)
-            mine_home = s["home"]["team_id"] == team.id
+            mine_home = s["home"]["team_id"] == game_team_id
             us, them = (s["home"], s["away"]) if mine_home else (s["away"], s["home"])
             d = cache.decisions[n]
             mark = "勝" if d.win == player_id else "敗" if d.loss == player_id else "S" if d.save == player_id else "H" if player_id in d.holds else ""
@@ -1875,7 +1883,7 @@ class Game:
                     "opponent": names[them["team_id"]],
                     "home": mine_home,
                     "score": f"{us['runs']}-{them['runs']}",
-                    "outcome": "分" if s["winner"] is None else ("勝" if s["winner"] == team.id else "負"),
+                    "outcome": "分" if s["winner"] is None else ("勝" if s["winner"] == game_team_id else "負"),
                     "decision": mark,
                     "values": {k: values[k][1] for k in game_cols},
                 }
