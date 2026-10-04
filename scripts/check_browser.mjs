@@ -607,7 +607,7 @@ g = api.Game.load(open(sys.argv[1], "rb").read())
 a = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
 g.year_end()
 # 画面と同じ操作(F3-1):最初に外せる 1 人を自由契約 → ドラフトへ → 自分の番まで → 一覧の先頭を指名 → 残りを自動で市場へ → おまかせ
-t = g.offseason_table("release", "pitcher", "saber", "age", "desc")
+t = g.offseason_table("release", "pitcher", "saber")  # 投手の表は投手の既定の並び順(WAR(失点版)の低い順)
 g.offseason_release([next(r["player_id"] for r in t["rows"] if r["can_release"] and r["position"] == "RP")])
 g.offseason_next()
 v = g.offseason_advance()
@@ -694,7 +694,7 @@ check(rpAfter === rpBefore - 1 && !remainAfter.includes("割っています"), `
 await page.click("#screen-procedure .back");
 await page.click("#open-offseason");
 await page.waitForFunction(() => !document.querySelector("#screen-procedure").hidden && document.querySelector("#roster-role button[data-value=pitcher][aria-pressed=true]"));
-check((await page.inputValue("#roster-group")) === "RP" && (await page.$$eval("#proc-body input[type=checkbox]:checked", (cs) => cs.length)) === 1 && (await page.textContent("#roster-sort-line")).includes("並び順:年齢(高い順)"), "進行の画面に戻って開き直しても、投手・救援の絞り込み・年齢の並び順・印は保たれる");
+check((await page.inputValue("#roster-group")) === "RP" && (await page.$$eval("#proc-body input[type=checkbox]:checked", (cs) => cs.length)) === 1 && (await page.textContent("#roster-sort-line")).includes("並び順:WAR(失点版)(低い順)") && (await page.$$eval("#roster-kind button[aria-pressed=true]", (b) => b[0].dataset.value)) === "saber", "進行の画面に戻って開き直しても、投手・セイバー・救援の絞り込み・並び順・印は保たれる(並び順は野手・投手ごとに保つ)");
 page.on("dialog", (d) => d.accept().catch(() => {})); // これ以降の確認(自由契約・次の手続き・おまかせ・答え合わせモード)はすべて承諾する
 await page.click("#proc-release");
 await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("済んでいます"));
@@ -710,7 +710,7 @@ import json, sys
 from pennant import api
 g = api.Game.load(open(sys.argv[1], "rb").read())
 g.year_end()
-t = g.offseason_table("release", "pitcher", "saber", "age", "desc")
+t = g.offseason_table("release", "pitcher", "saber")  # 投手の表は投手の既定の並び順(WAR(失点版)の低い順)
 g.offseason_release([next(r["player_id"] for r in t["rows"] if r["can_release"] and r["position"] == "RP")])
 g.offseason_next()
 v = g.offseason_advance()
@@ -738,7 +738,7 @@ await page.waitForFunction(() => document.querySelector("#proc-info").textConten
 await page.waitForFunction(() => document.querySelectorAll("#proc-body tbody tr").length > 0);
 const marketHead = await rosterHeads();
 check(marketHead.includes("総合(推定 ± 幅)") && marketHead.includes("天井") && marketHead.includes("前の球団") && marketHead.includes("投球回"), `ドラフトの残りを自動で進めて市場へ。市場の表には入団時の評価(総合・天井)・前の球団と、成績の列がある(投手の表のまま)`);
-const marketPy = pyProc(`t = g.offseason_table("market", "pitcher", "saber", "age", "desc")\nprint(json.dumps([[r["name"], r["former_team"] or "-", r["values"]["usage"], r["values"]["fip"]] for r in t["rows"]], ensure_ascii=False))`, true);
+const marketPy = pyProc(`t = g.offseason_table("market", "pitcher", "saber")\nprint(json.dumps([[r["name"], r["former_team"] or "-", r["values"]["usage"], r["values"]["fip"]] for r in t["rows"]], ensure_ascii=False))`, true);
 const marketRows = await rosterCells(["前の球団", "投球回", "FIP"]);
 check(marketRows.length === marketPy.length && marketRows.every((r, i) => r.join("|") === marketPy[i].join("|")) && marketRows.some((r) => r[2] === "—" && r[1] === "-") && marketRows.some((r) => r[2] !== "—"), `市場の投手(${marketRows.length}人)が計算本体と同じ。指名されなかった候補の成績は「—」、手放された選手には成績が出る`);
 await page.click("#proc-body thead th button:has-text('総合')");
