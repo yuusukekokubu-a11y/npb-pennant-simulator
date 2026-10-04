@@ -1287,7 +1287,7 @@ async function releaseSection(v, truth, token) {
   const ps = state.proc;
   const rt = state.rosterTable;
   if (!v.my_team) return [el("p", { className: "muted" }, "操作する球団がありません。")];
-  if (v.my_release_done) return [el("p", { className: "info" }, "自由契約の手続きは済んでいます。「次の手続きへ」でドラフトに進みます。"), el("p", { className: "muted small" }, "手放した選手は、自由契約市場に並びます。")];
+  if (v.my_release_done) return [el("p", { className: "info" }, "自由契約の手続きは済んでいます。「次の手続きへ」で FA(宣言した選手がいなければドラフト)に進みます。"), el("p", { className: "muted small" }, "手放した選手は、自由契約市場に並びます。")];
   const data = await fetchRosterTable("release");
   if (token !== state.token) return null;
   const rows = data.rows.filter((r) => inGroup(r.position, rt.group));
