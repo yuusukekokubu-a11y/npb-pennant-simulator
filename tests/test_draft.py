@@ -41,7 +41,18 @@ MINS = minimum_positions()
 MIN_BATTERS = minimum_batters()
 
 
+def finish_renewal(g):
+    """契約更改の段階(F3-2b)を済ませる:自動案でまとめて提示し、断った選手は自由契約にして、自由契約の段階へ進む。"""
+    proc = g.state.procedure
+    if proc is not None and proc.phase == "renewal":
+        g.offseason_renew_auto()
+        for e in [e for e in proc.negotiations.values() if e["team_id"] == g.state.my_team_id and e["status"] == "pending"]:
+            g.offseason_renew_release(e["player_id"])
+        g.offseason_next()
+
+
 # ---- 設定 ----
+
 
 def test_settings_and_validation():
     assert DS.rounds == 6 and DS.market_rounds == 3 and DS.default_level == "medium"
@@ -232,6 +243,7 @@ def operated():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default", scout_level="large")
     g.advance(125)
     g.year_end()
+    finish_renewal(g)
     return g
 
 
@@ -247,16 +259,17 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     ok = [r["player_id"] for r in v["roster"] if r["can_release"]][:2]
     with pytest.raises(ValueError, match="最低人数"):
         g.offseason_release([r["player_id"] for r in v["roster"] if r["position"] == "C"])  # 捕手を全員は外せない
+    before = v["counts"]["released"]  # 更改の交渉で自由契約になった選手(F3-2b)を含む
     v = g.offseason_release(ok)
-    assert v["my_release_done"] and v["counts"]["released"] == 2
+    assert v["my_release_done"] and v["counts"]["released"] == before + 2
     v = g.offseason_next()
-    assert v["phase"] == "draft" and v["counts"]["released"] >= 2 and v["counts"]["candidates"] == 108
+    assert v["phase"] == "draft" and v["counts"]["released"] >= before + 2 and v["counts"]["candidates"] == 108
     v = g.offseason_advance()
     assert v["is_my_turn"] and v["round"] == 1
     # 保存して読み込むと、途中から再開できる(版 9)
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 10 and again.state.procedure.method == 2
+    assert SAVE_FORMAT_VERSION == 11 and again.state.procedure.method == 2
     v2 = again.offseason_view()
     assert v2["phase"] == "draft" and v2["round"] == v["round"] and v2["is_my_turn"] and [p["player_id"] for p in v2["pool"]] == [p["player_id"] for p in v["pool"]]
     assert v2["pool"][0]["scouting"] == v["pool"][0]["scouting"]  # 評価も同じ(シードから導く)
@@ -307,6 +320,7 @@ def test_v7_save_loads_and_continues_with_new_procedure():
     old = api.Game(loaded, dirty=False)
     old.advance(124)
     old.year_end()
+    finish_renewal(old)
     assert old.status()["offseason"]["phase"] == "release"
     old.offseason_auto()
     assert old.status()["year"] == 2
@@ -378,6 +392,7 @@ def test_v8_save_loads_with_old_method_and_converted_sd():
     g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
     g.advance(125)
     g.year_end()
+    finish_renewal(g)
     g.offseason_next()
     g.offseason_advance()
     before = g.offseason_view()
@@ -420,6 +435,7 @@ def test_v8_save_loads_with_old_method_and_converted_sd():
     # 次のドラフトから新方式
     old.advance(125)
     old.year_end()
+    finish_renewal(old)
     assert old.state.procedure.method == 2
     assert all(p["scouting"]["method"] == 2 for p in old.offseason_next()["pool"])
     assert answers.draft_review_answers(old, "T02", 2)["available"]  # 版 8 の入団(区切りなし)でも実際の天井が出る
@@ -452,6 +468,7 @@ def release_game():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
     g.advance(125)
     g.year_end()
+    finish_renewal(g)
     return g
 
 
@@ -523,5 +540,6 @@ def test_market_table_marks_candidates_without_stats(release_game):
     assert t is None
     g.advance(122)
     g.year_end()
+    finish_renewal(g)
     c = g.offseason_table("release", "batter", "basic", season="career")
     assert c["season"] == "career" and [x["key"] for x in c["seasons"]] == ["current", "career"]

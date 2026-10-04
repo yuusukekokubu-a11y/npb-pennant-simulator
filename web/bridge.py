@@ -99,6 +99,9 @@ def year_end() -> str:
 
 _OFFSEASON = {
     "release": lambda a: _game.offseason_release(list(a.get("player_ids", []))),
+    "renew_auto": lambda a: _game.offseason_renew_auto(),
+    "offer": lambda a: _game.offseason_offer(str(a["player_id"]), a.get("years", 1), a.get("salary")),
+    "renew_release": lambda a: _game.offseason_renew_release(str(a["player_id"])),
     "next": lambda a: _game.offseason_next(),
     "advance": lambda a: _game.offseason_advance(),
     "pick": lambda a: _game.offseason_pick(str(a["player_id"])),
@@ -151,6 +154,7 @@ _ANSWERS = {
     "offseason_answers": lambda a: answers.offseason_answers(_game, a.get("year"), int(a.get("level", 1))),
     "scouting_answers": lambda a: answers.scouting_answers(_game, a["player_id"], int(a.get("level", 1))),
     "procedure_answers": lambda a: answers.procedure_answers(_game, int(a.get("level", 1))),
+    "negotiation_answers": lambda a: answers.negotiation_answers(_game, int(a.get("level", 1))),
     "offseason_ability_table": lambda a: answers.roster_ability_table(_game, a.get("phase", "release"), a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order"), a.get("season")),
     "draft_review_answers": lambda a: answers.draft_review_answers(_game, a.get("team_id"), a.get("year"), int(a.get("level", 1))),
 }

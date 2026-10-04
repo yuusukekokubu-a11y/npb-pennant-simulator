@@ -1,4 +1,5 @@
-"""F3-2a(契約の土台:年俸・契約年数・お金のルール 4 段階・予算。D-229〜D-241)の確認。"""
+"""F3-2a(契約の土台:年俸・契約年数・お金のルール 4 段階・予算。D-229〜D-241)の確認。
+F3-2b で契約年数の既定が 1 年になり(D-243)、手続きの最初に契約更改の段階が入った(D-244)。更改そのものの確認は test_negotiation.py。"""
 
 import copy
 import io
@@ -36,7 +37,7 @@ CS = load_contract_settings()
 
 def test_settings_and_validation():
     assert CS.minimum == 500 and CS.base_budget == 400000 and CS.cap_factor == 1.1 and CS.default_rule == "none"
-    assert CS.rookie_salary(1) == 1500 and CS.rookie_salary(6) == 500 and CS.rookie_salary(9) == 500 and CS.rookie_years == 3
+    assert CS.rookie_salary(1) == 1500 and CS.rookie_salary(6) == 500 and CS.rookie_salary(9) == 500 and CS.rookie_years == 1 and CS.default_years == 1 and CS.max_years == 5
     data = copy.deepcopy(CS.data)
     data["budget"]["tier_counts"]["large"] = 5
     with pytest.raises(ConfigError, match="tier_counts"):
@@ -63,9 +64,8 @@ def test_salary_formula_uses_only_visible_inputs():
     assert expected_war(35, "pitcher", [], None, CS) == (0.0, "none")
     # 年俸:最低年俸 + 単価 × 見込み(下限は最低年俸。100 万円に丸める)
     assert salary_for(-1.0, 14000, CS) == 500 and salary_for(2.0, 14000, CS) == 28500 and salary_for(0.004, 14000, CS) == 600
-    # 契約年数:若手 3 年、全盛期は見込みで 2〜4 年、ベテランは短く
-    assert contract_years(22, 0.0, CS) == 3 and contract_years(27, 2.5, CS) == 4 and contract_years(27, 1.2, CS) == 3 and contract_years(27, 0.1, CS) == 2
-    assert contract_years(31, 2.0, CS) == 2 and contract_years(31, 1.0, CS) == 1 and contract_years(36, 5.0, CS) == 1
+    # 契約年数:既定は 1 年(F3-2b。D-243)。複数年は更改であなたが選んだ選手と AI の若手だけ
+    assert contract_years(22, 0.0, CS) == 1 and contract_years(27, 2.5, CS) == 1 and contract_years(36, 5.0, CS) == 1
     # 単価:(基準予算 × 球団数 − 最低年俸 × 選手数)÷ Σ max(0, 見込み)
     assert rate_for([3.0, 2.0, -1.0], 12, 840, CS) == pytest.approx((400000 * 12 - 500 * 840) / 5.0)
     assert rate_for([0.0, -1.0], 12, 840, CS) == 0.0
@@ -145,12 +145,18 @@ def test_renewal_and_hard_rules_flow(games):
         expiring = [p.id for t in g.state.league.teams for p in t.players if p.contract["until"] <= 1]
         g.year_end()
         proc = g.state.procedure
-        v = g.offseason_view()
+        assert g.offseason_view()["phase"] == "renewal"
+        g.offseason_renew_auto()
+        for e in [e for e in proc.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
+            g.offseason_renew_release(e["player_id"])
+        v = g.offseason_next()
         c = v["contracts"]
-        assert c["rule"] == rule and proc.contracts_done and proc.rate > 0 and g.state.contract_rates["2"] == proc.rate
+        assert v["phase"] == "release" and c["rule"] == rule and proc.contracts_done and proc.rate > 0 and g.state.contract_rates["2"] == proc.rate
+        negotiated = {pid for pid, e in proc.negotiations.items()}
+        assert negotiated == {pid for pid in expiring if pid in negotiated or any(p.id == pid for t in g.state.league.teams for p in t.players)}  # 満了者は全員(引退した人を除く)が更改の対象
         renewed = {x["player_id"] for x in proc.renewals}
-        assert renewed == {pid for pid in expiring if any(p.id == pid for t in g.state.league.teams for p in t.players)}  # 満了者は全員(引退した人を除く)更改
-        assert all(p.contract["until"] >= 2 for t in g.state.league.teams for p in t.players)
+        assert renewed == {pid for pid, e in proc.negotiations.items() if e["status"] == "accepted"} and renewed
+        assert all(p.contract["until"] >= 2 for t in g.state.league.teams for p in t.players)  # 残った選手は全員、次のシーズンの契約がある
         if rule == "none":
             assert not proc.budget_releases and c["mine"]["cap"] is None and not c["mine"]["blocked"]
         else:
@@ -202,6 +208,10 @@ def test_loose_rule_only_warns():
     g = api.Game.new(2, [None] * 12, 0, season_seed=5, baselines="default", money_rule="loose")
     g.advance(125)
     g.year_end()
+    g.offseason_renew_auto()
+    for e in [e for e in g.state.procedure.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
+        g.offseason_renew_release(e["player_id"])
+    g.offseason_next()
     c = g.offseason_view()["contracts"]
     assert c["rule"] == "loose" and not c["hard"] and c["mine"]["cap"] == 440000 and not c["mine"]["blocked"] and not g.state.procedure.budget_releases
     g.offseason_next()  # 超えていても進める
@@ -225,7 +235,7 @@ def test_contract_pages_are_public_and_without_hidden_info(games):
         g.offseason_table("release")
 
 
-# ---- 保存形式(版 10)と旧版 ----
+# ---- 保存形式(版 10。F3-2b で版 11)と旧版 ----
 
 def test_save_round_trip_and_v9_migration(games):
     g = api.Game(copy.deepcopy(games["strict"].state), dirty=False)
@@ -233,7 +243,7 @@ def test_save_round_trip_and_v9_migration(games):
     g.year_end()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 10 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
+    assert SAVE_FORMAT_VERSION == 11 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
     assert all(p.contract == q.contract for p, q in zip(g.state.league.all_players(), again.league.all_players()))
     assert again.procedure.rate == g.state.procedure.rate and len(again.procedure.renewals) == len(g.state.procedure.renewals)
     # 版 9(契約なし)として読む:ルールは「なし」、契約は算定で補い、残りは 1〜3 年
@@ -250,9 +260,11 @@ def test_save_round_trip_and_v9_migration(games):
     for key in ("money_rule", "budget_tiers", "contract_rates"):
         del state[key]
     del state["configs"]["contracts"]
+    del state["configs"]["negotiation"]
     for team in state["league"]["teams"]:
         for pd in team["players"]:
             del pd["contract"]
+            del pd["preference"]
     files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
     files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
     buf = io.BytesIO()

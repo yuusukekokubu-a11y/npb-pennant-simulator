@@ -62,7 +62,8 @@ class Player:
     team_id: str | None = None
     origin: str | None = None  # 新人の出身区分(high_school など)。初期選手は None
     scouting: dict | None = None  # 入団時のスカウト評価(獲得した球団の評価。F3-1。D-199)。初期選手・自動補充の前の選手は None
-    contract: dict | None = None  # 契約({salary: 年俸(万円), until: 満了シーズン, history: [{year, salary, years, reason}]}。F3-2a。D-232)。所属がなければ None でもよい
+    contract: dict | None = None  # 契約({salary: 年俸(万円), until: 満了シーズン, history: [{year, salary, years, reason, offers?}]}。F3-2a。D-232)。所属がなければ None でもよい
+    preference: dict | None = None  # 志望の重み(軸 → 重み。合計 1。隠し情報。F3-2b。D-245)。付ける前は None
 
     @property
     def name(self) -> str:

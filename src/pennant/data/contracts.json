@@ -45,36 +45,8 @@
   "years": {
     "min": 1,
     "max": 5,
-    "young_until": 25,
-    "young": 3,
-    "prime_until": 29,
-    "prime": [
-      [
-        2.0,
-        4
-      ],
-      [
-        1.0,
-        3
-      ],
-      [
-        0.0,
-        2
-      ]
-    ],
-    "veteran_until": 32,
-    "veteran": [
-      [
-        2.0,
-        2
-      ],
-      [
-        0.0,
-        1
-      ]
-    ],
-    "old": 1,
-    "rookie": 3
+    "default": 1,
+    "rookie": 1
   },
   "rookie_salaries": {
     "1": 1500,

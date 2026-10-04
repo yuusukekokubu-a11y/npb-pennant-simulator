@@ -197,7 +197,7 @@ def hidden_words() -> set[str]:
     return words - {"標準"}  # ふつうの文章にも出る短い言葉は除く
 
 
-HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "ability_drift")
+HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "ability_drift", "preference")
 
 
 @pytest.fixture()

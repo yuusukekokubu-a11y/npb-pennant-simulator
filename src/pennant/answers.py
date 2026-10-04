@@ -337,4 +337,24 @@ def player_answers(game: Game, player_id: str, level: int = 1) -> dict:
         growth, arche = _labels(game)
         out["growth_type"] = growth.get(p.hidden.growth_type, p.hidden.growth_type)
         out["archetype"] = arche.get(p.hidden.archetype, p.hidden.archetype)
+    out["preference"] = preference_rows(game, p)
     return out
+
+
+def preference_rows(game: Game, p) -> list[dict]:
+    """志望の重み(隠し情報。答え合わせモードのときだけ。F3-2b。D-245)。"""
+    neg = game.state.negotiation_settings
+    if not p.preference:
+        return []
+    return [{"key": k, "label": neg.label(k) if k in neg.axes else k, "weight": round(float(v), 3), "text": f"{float(v) * 100:.0f}%", "active": not (k in neg.axes and neg.axes[k].get("needs_money") and game.state.money_rule == "none")} for k, v in p.preference.items()]
+
+
+def negotiation_answers(game: Game, level: int = 1) -> dict:
+    """契約更改の段階の、自球団の対象選手の志望の重み(答え合わせ用。F3-2b)。"""
+    _check_level(level)
+    proc = game.state.procedure
+    if proc is None or game.state.my_team_id is None:
+        return {"available": False, "players": {}}
+    team = game._team(game.state.my_team_id)
+    ids = {e["player_id"] for e in proc.negotiations.values() if e["team_id"] == team.id}
+    return {"available": True, "level": level, "players": {p.id: preference_rows(game, p) for p in team.players if p.id in ids}, "note": "志望の重み(合計 100%)。断られた理由は、重み × 満足度が最も低い軸から出ます。「なし」では年俸の軸は効きません。"}

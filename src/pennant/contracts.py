@@ -23,7 +23,7 @@ from .season import derive_seed
 MONEY_RULES = ("none", "loose", "standard", "strict")
 RULE_LABELS = {"none": "なし", "loose": "ゆるい", "standard": "標準", "strict": "きびしい"}
 RULE_NOTES = {
-    "none": "予算の機能なし。年俸と契約年数は表示されるだけで、契約満了者は全員更改します。",
+    "none": "予算の機能なし。年俸は算定どおりで、更改では年俸を変えられません(年数は選べます)。",
     "loose": "予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。",
     "standard": "予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。",
     "strict": "標準に加えて、球団ごとの予算の格差(大・中・小)があります。",
@@ -84,6 +84,18 @@ class ContractSettings:
     def rookie_years(self) -> int:
         return int(self.data["years"]["rookie"])
 
+    @property
+    def default_years(self) -> int:
+        return int(self.data["years"]["default"])
+
+    @property
+    def max_years(self) -> int:
+        return int(self.data["years"]["max"])
+
+    @property
+    def min_years(self) -> int:
+        return int(self.data["years"]["min"])
+
     def scouting_war(self, role: str) -> dict:
         return self.data["scouting_war"][role]
 
@@ -125,12 +137,8 @@ def validate_contract_settings(root, source: str = "contracts.json") -> Contract
     c.number(c.get(ad, "per_year", "salary.age_discount"), "salary.age_discount.per_year", 0, 1)
     c.number(c.get(ad, "floor", "salary.age_discount"), "salary.age_discount.floor", 0, 1)
     y = c.section(c.get(root, "years", ""), "years")
-    for key in ("min", "max", "young_until", "young", "prime_until", "veteran_until", "old", "rookie"):
-        c.integer(c.get(y, key, "years"), f"years.{key}", 1 if key not in ("young_until", "prime_until", "veteran_until") else 18, 60)
-    for key in ("prime", "veteran"):
-        table = c.get(y, key, "years")
-        if not (isinstance(table, list) and all(isinstance(x, list) and len(x) == 2 for x in table)):
-            c.add(f"years.{key}", "[[見込みの WAR の下限, 年数], ...] の一覧にしてください")
+    for key in ("min", "max", "default", "rookie"):
+        c.integer(c.get(y, key, "years"), f"years.{key}", 1, 10)
     rs = c.section(c.get(root, "rookie_salaries", ""), "rookie_salaries")
     if rs is not None:
         for k, v in rs.items():
@@ -197,24 +205,9 @@ def salary_for(expected: float, rate: float, settings: ContractSettings) -> int:
 
 
 def contract_years(age: int, expected: float, settings: ContractSettings) -> int:
-    """契約年数(年齢と見込みの WAR から。乱数は使わない。D-233。9 章の表)。"""
-    y = settings.data["years"]
-
-    def by_table(table):
-        for low, n in table:
-            if expected >= float(low):
-                return int(n)
-        return int(table[-1][1])
-
-    if age <= int(y["young_until"]):
-        n = int(y["young"])
-    elif age <= int(y["prime_until"]):
-        n = by_table(y["prime"])
-    elif age <= int(y["veteran_until"]):
-        n = by_table(y["veteran"])
-    else:
-        n = int(y["old"])
-    return max(int(y["min"]), min(int(y["max"]), n))
+    """既定の契約年数(F3-2b から 1 年。D-243)。複数年は、更改であなたが選んだ選手と、AI の若手だけ(negotiation.ai_years)。
+    引数の年齢と見込みは、F3-2a の形と合わせるために残している(使わない)。"""
+    return settings.default_years
 
 
 def rate_for(expected_wars: list[float], n_teams: int, n_players: int, settings: ContractSettings) -> float:
@@ -271,11 +264,14 @@ def team_salary(team: Team) -> int:
 
 # ---- 契約の付け替え ----
 
-def set_contract(player: Player, salary: int, years: int, year: int, reason: str) -> dict:
-    """新しい契約(year シーズンから years 年。満了は year + years − 1)。履歴に残す。"""
+def set_contract(player: Player, salary: int, years: int, year: int, reason: str, offers: int | None = None) -> dict:
+    """新しい契約(year シーズンから years 年。満了は year + years − 1)。履歴に残す(更改は提示回数 offers も。F3-2b)。"""
     old = player.contract or {}
     history = list(old.get("history", []))
-    history.append({"year": int(year), "salary": int(salary), "years": int(years), "reason": reason})
+    entry = {"year": int(year), "salary": int(salary), "years": int(years), "reason": reason}
+    if offers is not None:
+        entry["offers"] = int(offers)
+    history.append(entry)
     player.contract = {"salary": int(salary), "until": int(year) + int(years) - 1, "history": history}
     return player.contract
 
