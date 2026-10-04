@@ -31,6 +31,7 @@ from .history import SeasonArchive
 from .offseason import OffseasonResult, OffseasonSettings, load_offseason_settings, validate_offseason_settings
 from .parkfactors import COUNT_KEYS, ParkTally, history_from_dict, history_to_dict
 from .contracts import MONEY_RULES, TIERS, load_contract_settings, validate_contract_settings
+from .negotiation import load_negotiation_settings, validate_negotiation_settings
 from .draft import OffseasonProcedure, load_draft_settings, validate_draft_settings
 from .baserunning import RunnerMove
 from .config import (
@@ -53,7 +54,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 10  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)
+SAVE_FORMAT_VERSION = 11  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -163,7 +164,29 @@ def _v9_to_v10(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9, 9: _v9_to_v10}
+def _v10_to_v11(bundle: dict) -> dict:
+    """版10には志望と交渉がない(F3-2b。D-253):志望は読み込みの後にシードから補う。契約の設定の年数は新しい既定(1 年)に置き換え、
+    交渉の設定は設定ファイルの値を使う。進行中の手続き(更改は済んでいる)は、自由契約の段階から続ける(from_dict が更改の結果を交渉の形に直す)。"""
+    state = bundle["state"]
+    cfg = state.get("configs", {})
+    ct = cfg.get("contracts")
+    if isinstance(ct, dict):
+        ct["years"] = copy.deepcopy(load_contract_settings().data["years"])
+    cfg.setdefault("negotiation", copy.deepcopy(load_negotiation_settings().data))
+    for team in state.get("league", {}).get("teams", []):
+        for pd in team.get("players", []):
+            if isinstance(pd, dict):
+                pd.setdefault("preference", None)
+    proc = state.get("procedure")
+    if isinstance(proc, dict):
+        for key in ("candidates", "market"):
+            for pd in proc.get(key, []):
+                if isinstance(pd, dict):
+                    pd.setdefault("preference", None)
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9, 9: _v9_to_v10, 10: _v10_to_v11}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -203,6 +226,7 @@ class GameState:
     budget_tiers: dict = field(default_factory=dict)  # きびしいの格差(球団 → large / medium / small。D-231)
     contract_rates: dict = field(default_factory=dict)  # 年俸の単価の推移(シーズン番号(文字)→ 1 WAR あたりの万円。D-234)
     contract_settings: object | None = None  # 契約の設定(None は設定ファイル)
+    negotiation_settings: object | None = None  # 交渉(志望の判定)の設定(None は設定ファイル。F3-2b)
 
     def __post_init__(self) -> None:
         from .draft import load_draft_settings
@@ -211,6 +235,8 @@ class GameState:
             self.draft_settings = load_draft_settings()
         if self.contract_settings is None:
             self.contract_settings = load_contract_settings()
+        if self.negotiation_settings is None:
+            self.negotiation_settings = load_negotiation_settings()
         if self.baseline_settings is None:
             self.baseline_settings = load_baseline_settings()
         if self.baselines is None:
@@ -285,6 +311,7 @@ def build_state(state: GameState) -> dict:
             "offseason": copy.deepcopy(state.offseason_settings.data),
             "draft": copy.deepcopy(state.draft_settings.data),
             "contracts": copy.deepcopy(state.contract_settings.data),
+            "negotiation": copy.deepcopy(state.negotiation_settings.data),
         },
         "league": {
             "seed": s.league.seed,
@@ -406,6 +433,9 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     ct = pd.get("contract")
     if ct is not None and not (isinstance(ct, dict) and isinstance(ct.get("salary"), int) and not isinstance(ct.get("salary"), bool) and ct["salary"] >= 0 and isinstance(ct.get("until"), int) and isinstance(ct.get("history", []), list)):
         p.add(f"{where}.contract", "契約の形が違います(年俸は 0 以上の整数、満了シーズンは整数)")
+    pref = pd.get("preference")
+    if pref is not None and not (isinstance(pref, dict) and pref and all(isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 for k, v in pref.items())):
+        p.add(f"{where}.preference", "志望の形が違います(軸 → 0 以上の重み)")
     items = items_for(role)
     for group in ("ratings",):
         ratings = _need(pd, group, dict, where, p)
@@ -457,6 +487,7 @@ def _player_from(pd: dict) -> Player:
         origin=pd.get("origin"),
         scouting=copy.deepcopy(pd.get("scouting")),
         contract=copy.deepcopy(pd.get("contract")),
+        preference=None if pd.get("preference") is None else {str(k): float(v) for k, v in pd["preference"].items()},
     )
 
 
@@ -564,6 +595,7 @@ def load_game(data: bytes) -> GameState:
         "offseason": validate_offseason_settings,
         "draft": validate_draft_settings,
         "contracts": validate_contract_settings,
+        "negotiation": validate_negotiation_settings,
     }
     if "offseason" not in configs:
         configs["offseason"] = load_offseason_settings().data  # 版5以前は設定ファイルの値
@@ -571,6 +603,8 @@ def load_game(data: bytes) -> GameState:
         configs["draft"] = load_draft_settings().data  # 版7以前は設定ファイルの値
     if "contracts" not in configs:
         configs["contracts"] = load_contract_settings().data  # 版9以前は設定ファイルの値
+    if "negotiation" not in configs:
+        configs["negotiation"] = load_negotiation_settings().data  # 版10以前は設定ファイルの値
     cfg = {}
     for key, validate in validators.items():
         if key not in configs:
@@ -783,11 +817,16 @@ def load_game(data: bytes) -> GameState:
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], money_rule=str(money_rule), budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"])
+    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], money_rule=str(money_rule), budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"])
     if any(p_.contract is None for p_ in out.league.all_players()):
         from .draft import fill_missing_contracts
 
         fill_missing_contracts(out)  # 版9以前のセーブデータ:契約を算定で補う(D-235)
+    from .negotiation import ensure_preferences
+
+    ensure_preferences(out.league.all_players(), out.league.seed, out.negotiation_settings)  # 版10以前:志望をシードから補う(D-253)
+    if out.procedure is not None:
+        ensure_preferences(list(out.procedure.candidates) + list(out.procedure.market), out.league.seed, out.negotiation_settings)
     return out
 
 
@@ -800,7 +839,7 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
         p.add(where, "手続きのまとまり({ })が必要です")
         return None
     try:
-        if d["phase"] not in ("release", "draft", "market", "done"):
+        if d["phase"] not in ("renewal", "release", "draft", "market", "done"):
             p.add(f"{where}.phase", f"段階が正しくありません(値: {d['phase']!r})")
         for i, tid in enumerate(d["order"]):
             if tid not in team_ids:
@@ -813,6 +852,20 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
                 if pid in seen or pid in league_ids:
                     p.add(f"{where}.{key}[{i}].id", f"選手の ID {pid!r} が重複しています")
                 seen.add(pid)
+        negs = d.get("negotiations", {})
+        if not isinstance(negs, dict):
+            p.add(f"{where}.negotiations", "選手 ID → 交渉のまとまりが必要です")
+        else:
+            for pid, e in negs.items():
+                w = f"{where}.negotiations.{pid}"
+                if not isinstance(e, dict) or e.get("status") not in ("pending", "accepted", "released") or not isinstance(e.get("offers"), list) or not isinstance(e.get("auto_salary"), int) or e.get("team_id") not in team_ids:
+                    p.add(w, "交渉の形が違います(状態は pending / accepted / released、提示の一覧、自動案の年俸、球団)")
+                    continue
+                for j, o in enumerate(e["offers"]):
+                    if not (isinstance(o, dict) and isinstance(o.get("years"), int) and isinstance(o.get("salary"), int) and isinstance(o.get("accepted"), bool)):
+                        p.add(f"{w}.offers[{j}]", "提示の形が違います(年数・年俸は整数、受けたかは真偽)")
+                if e["status"] == "pending" and e["player_id"] not in league_ids:
+                    p.add(w, "交渉中の選手が、リーグにいません")
         if p.items:
             return None
         return OffseasonProcedure.from_dict(d, _player_from)

@@ -99,6 +99,9 @@ def year_end() -> str:
 
 _OFFSEASON = {
     "release": lambda a: _game.offseason_release(list(a.get("player_ids", []))),
+    "renew_auto": lambda a: _game.offseason_renew_auto(),
+    "offer": lambda a: _game.offseason_offer(str(a["player_id"]), a.get("years", 1), a.get("salary")),
+    "renew_release": lambda a: _game.offseason_renew_release(str(a["player_id"])),
     "next": lambda a: _game.offseason_next(),
     "advance": lambda a: _game.offseason_advance(),
     "pick": lambda a: _game.offseason_pick(str(a["player_id"])),
