@@ -167,6 +167,53 @@ def scouting_answers(game: Game, player_id: str, level: int = 1) -> dict:
     return {"player_id": player_id, "available": True, "level": level, "entry_year": p.scouting.get("year"), "items": items, "note": "入団時の推定値と、今の真の能力の差。入団後の成長・衰退も含まれます。"}
 
 
+def draft_review_answers(game: Game, team_id: str | None = None, year: int | None = None, level: int = 1) -> dict:
+    """ドラフトの振り返りの答え合わせ(D-216):今の真の総合、入団時の推定値との差、実際の天井(潜在能力を入団時の分位点で判定)。
+    球団ごとの差の平均と標準偏差(その球団の「見る目」の目安)と、リーグ全体の値も出す。"""
+    import statistics
+
+    from .draft import entry_summary
+    from .scouting import ceiling_cuts, grade_of
+    from .stats import overall, potential_overall
+
+    _check_level(level)
+    view = game.draft_review(team_id, year)
+    team_id, year = view["team_id"], view["year"]
+    if year is None:
+        return {"available": False, "players": {}, "teams": []}
+    players = {p.id: p for p in game.state.league.all_players()}
+    settings = game.state.draft_settings
+    # 入団時の区切りがない評価(版 8)のために、その年の入団者全体の分位点を用意する
+    class_members = [players[x["player_id"]] for t in game.state.league.teams for x in game.review_entries(t.id, year) if x["player_id"] in players]
+    class_cuts = ceiling_cuts(class_members, settings.ceiling_shares) if class_members else None
+
+    def diff_of(x, p):
+        sc = p.scouting or {}
+        est = x.get("overall") if x.get("overall") is not None else entry_summary(sc).get("overall")
+        return None if est is None else overall(p) - float(est)
+
+    out = {}
+    for x in game.review_entries(team_id, year):
+        p = players.get(x["player_id"])
+        if p is None:
+            continue
+        d = diff_of(x, p)
+        cuts = (p.scouting or {}).get("cuts") or class_cuts
+        row = {"overall": f"{overall(p):.1f}", "diff": None if d is None else f"{d:+.1f}", "actual_ceiling": grade_of(potential_overall(p), cuts) if cuts else "-"}
+        if level == 2:
+            row["potential"] = f"{potential_overall(p):.1f}"
+        out[p.id] = row
+    teams = []
+    all_diffs = []
+    for t in game.state.league.teams:
+        diffs = [diff_of(x, players[x["player_id"]]) for x in game.review_entries(t.id, year) if x["player_id"] in players]
+        diffs = [d for d in diffs if d is not None]
+        all_diffs += diffs
+        teams.append({"team_id": t.id, "team_name": t.name, "is_mine": t.id == game.state.my_team_id, "selected": t.id == team_id, "count": len(diffs), "mean": f"{statistics.fmean(diffs):+.1f}" if diffs else "-", "sd": f"{statistics.pstdev(diffs):.1f}" if len(diffs) >= 2 else "-"})
+    league = {"count": len(all_diffs), "mean": f"{statistics.fmean(all_diffs):+.1f}" if all_diffs else "-", "sd": f"{statistics.pstdev(all_diffs):.1f}" if len(all_diffs) >= 2 else "-"}
+    return {"available": True, "level": level, "year": year, "team_id": team_id, "players": out, "teams": teams, "league": league, "note": "差 = 今の真の総合 − 入団時の推定値(+ は期待以上、− は期待以下。入団後の成長・衰退も含みます)。実際の天井は、潜在能力の総合値を入団時の区切りで判定した段階。球団ごとの差の平均をリーグ全体と比べると、その球団の「見る目」の目安になります(差の標準偏差が小さいほど、評価のぶれが小さい)。引退・退団した選手は、今の能力がないので対象外です。"}
+
+
 def procedure_answers(game: Game, level: int = 1) -> dict:
     """オフの手続きの一覧(候補・市場・自球団)の、真の総合値と潜在能力の総合値(F3-1。答え合わせ用)。"""
     _check_level(level)

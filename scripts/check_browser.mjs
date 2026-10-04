@@ -711,6 +711,45 @@ check(await page.isHidden("#year-end-box") && (await page.textContent("#progress
 await page.click(".adv[data-days='1']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("2シーズン目 1日目"));
 check(true, "2シーズン目を1日進められる");
+// ドラフトの振り返り(D-216):進行の画面のボタンから開く。計算本体と同じ行。オフなら真の値は出ない
+await page.click("#open-review");
+await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-table tbody tr").length > 0);
+const reviewPy = pyYear2(`v = g.draft_review()\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
+const reviewRows = async () => page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent, tr.children[4].textContent, tr.children[6].textContent, tr.children[8].textContent]));
+let reviewOnScreen = await reviewRows();
+const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
+check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の総合 ± ふれ幅・今の所属・WAR 累計)`);
+check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-answers")).trim() && (await page.textContent("#review-answers-note")).includes("答え合わせモードをオンにすると"), "オフのとき、振り返りに真の総合・差・実際の天井の列は出ない");
+check(reviewOnScreen.every((r) => /^ドラフト \d 巡$|^市場$|^自動補充$/.test(r[1]) && /^\d+ ± \d+$/.test(r[2])), "経路は「ドラフト n 巡」「市場」「自動補充」、入団時の総合は「推定値 ± ふれ幅」の形");
+await grab();
+// 別の球団を選ぶと、その球団の入団者になる
+await page.selectOption("#review-team", "T05");
+await page.waitForFunction(() => document.querySelector("#review-note").textContent.includes("T05") || document.querySelectorAll("#review-table tbody tr").length > 0, null, { timeout: 60000 });
+await page.waitForFunction((name) => document.querySelector("#review-note").textContent.includes(name), await page.textContent("#review-team option[value=T05]"));
+const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
+reviewOnScreen = await reviewRows();
+check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);
+// 答え合わせモードをオンにすると、真の総合・差・実際の天井と、球団ごとの「見る目」の目安が出る
+await page.click("#screen-review .back");
+await page.click("#menu");
+await page.check("input[name=answer-level][value='1']");
+await page.click("#screen-settings .back");
+await page.click("#open-review");
+await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-answers tbody tr").length > 0, null, { timeout: 60000 });
+const reviewAnsPy = pyYear2(`from pennant import answers\nv = g.draft_review()\na = answers.draft_review_answers(g, None, None, 1)\nprint(json.dumps([[a["players"][r["player_id"]]["overall"], a["players"][r["player_id"]]["diff"], a["players"][r["player_id"]]["actual_ceiling"]] if r["player_id"] in a["players"] else ["-", "-", "-"] for r in v["rows"]] + [[a["league"]["count"], a["league"]["mean"], a["league"]["sd"]]], ensure_ascii=False))`);
+const reviewTruth = await page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.children[9].textContent, tr.children[10].textContent, tr.children[11].textContent]));
+const leagueRow = await page.$$eval("#review-answers tbody tr:last-child td", (tds) => tds.map((td) => td.textContent));
+check(JSON.stringify(reviewTruth) === JSON.stringify(reviewAnsPy.slice(0, -1)) && leagueRow[0].startsWith("リーグ全体") && leagueRow[1] === String(reviewAnsPy.at(-1)[0]) && leagueRow[2] === reviewAnsPy.at(-1)[1] && leagueRow[3] === reviewAnsPy.at(-1)[2], `オンのとき、今の真の総合・差・実際の天井と、球団ごとの差の平均・標準偏差(リーグ全体 ${leagueRow[1]} 人、差の平均 ${leagueRow[2]})が、答え合わせ用の関数と同じ`);
+check((await page.$$eval("#review-answers tbody tr", (trs) => trs.length)) === 13, "「見る目」の目安の表は 12 球団 + リーグ全体");
+await grab();
+await page.click("#screen-review .back");
+await page.click("#menu");
+await page.check("input[name=answer-level][value='0']");
+await page.click("#screen-settings .back");
+await page.click("#open-review");
+await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-table tbody tr").length > 0 && document.querySelectorAll("#review-table thead th").length === 9);
+check(!(await page.textContent("#review-answers")).trim(), "オフに戻すと、振り返りの真の値と「見る目」の表は消える");
+await page.click("#screen-review .back");
 // 成績:シーズンの選択(今シーズン・1シーズン目・通算)
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=basic]");

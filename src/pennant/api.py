@@ -504,6 +504,8 @@ class Game:
             state.transactions.append({"year": proc.year, "phase": "release", "round": 0, **x})
         for x in proc.picks:
             state.transactions.append({"year": proc.year, **x})
+        for x in proc.filled:
+            state.transactions.append({"year": proc.year, **x})  # 自動補充も履歴に残す(振り返りのため。D-216)
         state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
@@ -686,6 +688,97 @@ class Game:
         names = self._team_names()
         rows = [x for x in self.state.transactions if year is None or x["year"] == year]
         return {"years": sorted({x["year"] for x in self.state.transactions}), "rows": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x.get("position", ""), ""), "phase_label": PHASE_LABELS.get(x["phase"], x["phase"]), "is_mine": x["team_id"] == self.state.my_team_id} for x in rows]}
+
+    # ---- ドラフトの振り返り(当たり外れの一覧。D-216) ----
+
+    def review_years(self) -> list[int]:
+        """振り返りで選べる入団の年度(入団したシーズンの番号。履歴から。事前運転の入団は含まない)。"""
+        return sorted({int(x["year"]) + 1 for x in self.state.transactions if x.get("player_id") and x["phase"] in ("draft", "market", "fill")})
+
+    def _career_totals(self) -> tuple[dict[str, int], dict[str, float]]:
+        """選手 ID → 出場(G)の累計、WAR の累計(野手は WAR、投手は失点版)。履歴と今シーズンの合計。"""
+        games: dict[str, int] = {}
+        war: dict[str, float] = {}
+
+        def add(rec, lines):
+            for group in (rec.batters, rec.pitchers):
+                for pid, c in group.items():
+                    games[pid] = games.get(pid, 0) + int(c.get("G", 0))
+            for pid, line in lines.items():
+                war[pid] = war.get(pid, 0.0) + float(line.war if line.role == "batter" else line.war_ra)
+
+        for a in self.state.history:
+            add(a.records, a.war)
+        add(self.records.total, self.war_lines())
+        return games, war
+
+    def review_entries(self, team_id: str, year: int) -> list[dict]:
+        """振り返りの元になる履歴の行(その年度にその球団に入った選手。経路つき)。"""
+        rows = [x for x in self.state.transactions if x.get("player_id") and x["phase"] in ("draft", "market", "fill") and int(x["year"]) + 1 == int(year) and x["team_id"] == team_id]
+        order = {"draft": 0, "market": 1, "fill": 2}
+        return sorted(rows, key=lambda x: (order[x["phase"]], int(x.get("round") or 0), x["player_id"]))
+
+    def draft_review(self, team_id: str | None = None, year: int | None = None) -> dict:
+        """ドラフトの振り返り(公開用):入団の経路、入団時の総合の推定値とふれ幅・天井、今の所属、出場と WAR の累計(D-216)。
+        真の能力は含めない(答え合わせ用は answers.draft_review_answers)。"""
+        state = self.state
+        names = self._team_names()
+        years = self.review_years()
+        teams = [{"team_id": t.id, "team_name": t.name, "is_mine": t.id == state.my_team_id} for t in state.league.teams]
+        if team_id is None:
+            team_id = state.my_team_id or state.league.teams[0].id
+        if team_id not in names:
+            raise ValueError(f"球団 '{team_id}' はありません")
+        if year is None:
+            year = years[-1] if years else None
+        elif int(year) not in years:
+            raise ValueError(f"{year} シーズン目に入団した選手の履歴はありません")
+        out = {"team_id": team_id, "team_name": names[team_id], "year": year, "years": years, "teams": teams, "rows": [], "is_mine": team_id == state.my_team_id, "note": ""}
+        if year is None:
+            out["note"] = "まだドラフトを行っていません。年度を確定してオフの手続きを終えると、ここに入団した選手の一覧が出ます。"
+            return out
+        games, war = self._career_totals()
+        players = {p.id: p for p in state.league.all_players()}
+        rows = []
+        for x in self.review_entries(team_id, int(year)):
+            p = players.get(x["player_id"])
+            sc = p.scouting if p is not None and p.scouting else None
+            summary = dict(x)
+            if sc and "overall" not in summary:  # 版 8 の履歴には入団時の要約がない。選手が残っていれば評価から引く
+                summary.update(draftmod.entry_summary(sc))
+            if p is None:
+                status, status_label = "left", "引退・退団"
+            elif p.team_id == team_id:
+                status, status_label = "same", "在籍"
+            else:
+                status, status_label = "moved", names.get(p.team_id, "")
+            rows.append(
+                {
+                    "player_id": x["player_id"],
+                    "name": x["name"],
+                    "role": x["role"],
+                    "role_label": ROLE_LABELS.get(x["role"], ""),
+                    "position": x["position"],
+                    "position_label": POSITION_LABELS.get(x["position"], ""),
+                    "route": x["phase"],
+                    "route_label": f"ドラフト {x['round']} 巡" if x["phase"] == "draft" else ("市場" if x["phase"] == "market" else "自動補充"),
+                    "entry_age": x.get("age"),
+                    "age": None if p is None else p.age,
+                    "entry_overall": summary.get("overall"),
+                    "entry_margin": summary.get("margin"),
+                    "entry_text": f"{summary['overall']} ± {float(summary['margin']):.0f}" if summary.get("overall") is not None else "-",
+                    "entry_ceiling": summary.get("ceiling", "-"),
+                    "method": summary.get("method"),
+                    "status": status,
+                    "status_label": status_label,
+                    "games": games.get(x["player_id"], 0),
+                    "war": f"{war.get(x['player_id'], 0.0):.1f}",
+                    "in_league": p is not None,
+                }
+            )
+        out["rows"] = rows
+        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の評価は、そのときの {names[team_id]} のスカウトの推定値 ± ふれ幅と天井(S〜D)。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。答え合わせモードをオンにすると、今の真の総合と、入団時の推定値との差、実際の天井が並びます。"
+        return out
 
     def offseason_summary(self, year: int | None = None) -> dict:
         """オフの結果(公開用):引退した選手、入団した新人。能力の増減は答え合わせ用(answers.offseason_answers)。"""
@@ -970,7 +1063,12 @@ class Game:
         return {pid: {key: (s[0] / s[1] if s[1] else None) for key, s in acc.items()} for pid, acc in sums.items()}
 
     def _current_player_info(self, pid: str) -> dict:
-        p = self.state.season.players[pid]
+        p = self.state.season.players.get(pid)
+        if p is None:  # オフの手続きの途中で読み込んだ状態では、引退した選手がシーズンの一覧にいない。終わったシーズンの写し(履歴)から引く
+            for a in reversed(self.state.history):
+                if pid in a.players:
+                    return dict(a.players[pid])
+            raise KeyError(pid)
         return {"name": p.name, "team_id": p.team_id, "role": p.role, "position": p.position, "age": p.age}
 
     def select_players(self, role: str, qualified: bool = True, league: int | None = None, team_id: str | None = None, season: str | int | None = None) -> list[str]:

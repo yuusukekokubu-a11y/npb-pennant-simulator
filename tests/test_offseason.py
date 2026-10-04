@@ -207,7 +207,8 @@ def test_offseason_answers_are_hidden_from_public_functions(two_seasons):
     for key in ("ratings", "potential", "ability_changes", "growth_type", "archetype", "mean_change"):
         assert key not in text
     a = answers.offseason_answers(g, 1, 1)
-    assert a["available"] and a["year"] == 1 and len(a["players"]) == 840 - summary["counts"]["rookies"]
+    stayed = [p.id for p in g.state.league.all_players() if p.id in before["players"]]  # オフの前からいた選手(市場で拾われた選手も含む)
+    assert a["available"] and a["year"] == 1 and len(a["players"]) == len(stayed)
     row = a["players"][0]
     pid = row["player_id"]
     p = next(p for p in g.state.league.all_players() if p.id == pid)
@@ -218,7 +219,7 @@ def test_offseason_answers_are_hidden_from_public_functions(two_seasons):
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 8
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 9
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)

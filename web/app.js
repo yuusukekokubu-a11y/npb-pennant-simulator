@@ -16,7 +16,7 @@ const TABS = [
   { id: "games", label: "試合" },
 ];
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "review"];
 const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
 
 const $ = (id) => document.getElementById(id);
@@ -46,6 +46,7 @@ const state = {
   playerKind: "basic",
   gamesDay: null,
   proc: { selected: new Set(), sort: "overall", position: "", open: null }, // オフの手続きの画面の状態(F3-1)
+  review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 
@@ -221,12 +222,13 @@ function renderCurrent() {
     yearend: () => renderYearEnd(token),
     offseason: () => renderOffseason(args, token),
     procedure: () => renderProcedure(token),
+    review: () => renderReview(args, token),
   }[name];
   Promise.resolve(job && job()).catch((err) => showError(name, err));
 }
 
 function showError(name, err) {
-  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message" }[name];
+  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", review: "review-table" }[name];
   if (box) $(box).replaceChildren(el("p", { className: "message ng" }, `表示できませんでした:${err.message}`));
 }
 
@@ -726,10 +728,112 @@ async function renderPlayerScouting(data, token) {
   for (const i of sc.items) rows.push({ label: i.label, values: byKey ? [i.text, `${byKey[i.key]?.current ?? ""}${byKey[i.key]?.potential ? ` / ${byKey[i.key].potential}` : ""}`] : [i.text] });
   rows.push({ label: "天井", values: byKey ? [sc.ceiling, ""] : [sc.ceiling] });
   $("player-scouting").replaceChildren(
-    el("p", { className: "muted small" }, `${sc.year ? `${sc.year}シーズン目の入団時に、` : ""}${sc.team_name} のスカウトがつけた評価(推定値 ± ふれ幅。天井は S〜D)。${byKey ? `右は真の能力(今の能力${truth.level === 2 ? " / 潜在能力" : ""})。` : ""}`),
+    el("p", { className: "muted small" }, `${sc.year ? `${sc.year}シーズン目の入団時に、` : "リーグの歴史(ゲーム開始前)の入団時に、"}${sc.team_name} のスカウトがつけた評価(推定値 ± ふれ幅。天井は S〜D${sc.method === 1 ? "。旧方式の評価" : ""})。${byKey ? `右は真の能力(今の能力${truth.level === 2 ? " / 潜在能力" : ""})。` : ""}`),
     kvTable(rows),
   );
   $("player-scouting-note").textContent = byKey ? truth.note : "答え合わせモードをオンにすると、真の能力と並べて見られます。入団後の能力は、オフのときは表示されません。";
+}
+
+// ---- ドラフトの振り返り(当たり外れの一覧。D-216) ----
+
+async function renderReview(args, token) {
+  const rv = state.review;
+  if (args.team_id) {
+    rv.team = args.team_id;
+    rv.year = null;
+    args.team_id = null;
+  }
+  $("review-loading").hidden = false;
+  let d;
+  try {
+    d = await query("draft_review", { team_id: rv.team, year: rv.year });
+  } finally {
+    if (token === state.token) $("review-loading").hidden = true;
+  }
+  if (token !== state.token) return;
+  rv.team = d.team_id;
+  rv.year = d.year;
+  const teamSel = $("review-team");
+  teamSel.replaceChildren(...d.teams.map((t) => el("option", { value: t.team_id }, t.team_name + (t.is_mine ? " ★" : ""))));
+  teamSel.value = d.team_id;
+  const yearSel = $("review-year");
+  yearSel.replaceChildren(...d.years.map((y) => el("option", { value: String(y) }, `${y}シーズン目に入団`)));
+  yearSel.disabled = d.years.length === 0;
+  if (d.year !== null) yearSel.value = String(d.year);
+  $("review-answers").replaceChildren();
+  $("review-answers-note").textContent = "";
+  if (d.year === null) {
+    $("review-table").replaceChildren(el("p", { className: "info" }, d.note));
+    $("review-note").textContent = "";
+    return;
+  }
+  let truth = null;
+  if (state.answerLevel > 0) {
+    truth = await answer("draft_review_answers", { team_id: d.team_id, year: d.year });
+    if (token !== state.token) return;
+    if (state.answerLevel === 0) truth = null;
+  }
+  const on = truth && truth.available;
+  const cols = [
+    { key: "route", label: "経路", description: "入団の経路。ドラフトの巡、自由契約市場、自動補充" },
+    { key: "position", label: "ポジション" },
+    { key: "age", label: "年齢", description: "今の年齢(引退・退団した選手は入団時の年齢)" },
+    { key: "entry", label: "入団時の総合", description: "入団時のスカウトの総合の推定値 ± ふれ幅(真の値が入る確率が約 80% の幅)" },
+    { key: "ceiling", label: "天井", description: "入団時の天井の段階(S〜D。候補全体の中での伸びしろの見積もり)" },
+    { key: "status", label: "今の所属", description: "在籍 / 他球団の名前 / 引退・退団" },
+    { key: "games", label: "出場", description: "入団から今までの出場試合数の合計(投手は登板数)" },
+    { key: "war", label: "WAR 累計", description: "入団から今までの WAR の合計(野手は WAR、投手は失点版)" },
+  ];
+  if (on) {
+    cols.push(
+      { key: "truth", label: "今の真の総合", description: "答え合わせ:今の真の能力の総合値" },
+      { key: "diff", label: "差", description: "答え合わせ:今の真の総合 − 入団時の推定値(+ は期待以上、− は期待以下。入団後の成長・衰退も含む)" },
+      { key: "actual", label: "実際の天井", description: "答え合わせ:潜在能力の総合値を、入団時の区切りで判定した段階" },
+    );
+    if (truth.level === 2) cols.push({ key: "potential", label: "潜在能力", description: "答え合わせ(2段階目):潜在能力の総合値" });
+  }
+  const rows = d.rows.map((r) => {
+    const t = on ? truth.players[r.player_id] : null;
+    return {
+      ...r,
+      values: {
+        route: r.route_label,
+        position: r.position_label,
+        age: r.age !== null ? `${r.age}歳` : r.entry_age !== null ? `(${r.entry_age}歳)` : "",
+        entry: r.entry_text,
+        ceiling: ceilingText(r.entry_ceiling),
+        status: r.status_label,
+        games: String(r.games),
+        war: r.war,
+        truth: t ? t.overall : r.in_league ? "" : "-",
+        diff: t ? t.diff : r.in_league ? "" : "-",
+        actual: t ? t.actual_ceiling : "-",
+        potential: t && t.potential ? t.potential : "",
+      },
+    };
+  });
+  $("review-table").replaceChildren(
+    rows.length
+      ? table({ firstLabel: "選手", columns: cols, rows, first: (r) => [r.in_league ? playerLink(r.name, r.player_id) : el("span", {}, r.name)], rowClass: (r) => (r.status === "left" ? "muted" : "") })
+      : el("p", { className: "info" }, "この年度にこの球団に入った選手はいません。"),
+  );
+  $("review-note").textContent = d.note;
+  if (!on) {
+    $("review-answers-note").textContent = state.answerLevel > 0 ? "" : "答え合わせモードをオンにすると(上の「メニュー」から)、今の真の総合・入団時の推定値との差・実際の天井と、球団ごとの「見る目」の目安が出ます。";
+    return;
+  }
+  const tcols = [
+    { key: "count", label: "人数", description: "その年度に入って、今もリーグにいる選手の数" },
+    { key: "mean", label: "差の平均", description: "今の真の総合 − 入団時の推定値 の平均。リーグ全体より高ければ、見積もりが控えめ(当たりが多い)" },
+    { key: "sd", label: "差の標準偏差", description: "差のばらつき。小さいほど評価のぶれが小さい" },
+  ];
+  const trows = truth.teams.map((t) => ({ ...t, values: { count: String(t.count), mean: t.mean, sd: t.sd } }));
+  trows.push({ team_id: "", team_name: "リーグ全体", selected: false, is_mine: false, values: { count: String(truth.league.count), mean: truth.league.mean, sd: truth.league.sd } });
+  $("review-answers").replaceChildren(
+    el("h2", {}, `球団ごとの「見る目」の目安(${d.year}シーズン目の入団)`),
+    table({ firstLabel: "球団", columns: tcols, rows: trows, first: (r) => [el("span", { className: r.selected ? "sorted" : "" }, r.team_name + (r.is_mine ? " ★" : ""))], rowClass: (r) => (r.selected ? "mine" : "") }),
+  );
+  $("review-answers-note").textContent = truth.note;
 }
 
 // ---- オフの手続き(F3-1。D-201〜D-207) ----
@@ -1252,7 +1356,7 @@ function setAnswerLevel(level) {
   clearAnswers();
   if (level === 0) {
     // オフにしたら、隠れている画面に残った能力の表示も消す(D-108)。並び順の欄の選択肢と、能力の項目での並び順も戻す
-    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort", "stadium-answers", "offseason-answers"]) $(id).replaceChildren();
+    for (const id of ["stats-table", "stats-info", "stats-terms-list", "stats-rule", "player-season", "stats-sort", "stadium-answers", "offseason-answers", "review-answers"]) $(id).replaceChildren();
     for (const role of ["batter", "pitcher"]) {
       if (state.abilityKeys[role].includes(state.sortBy[role].key)) state.sortBy[role] = { key: null, order: null };
       if (state.shownSort[role] && state.abilityKeys[role].includes(state.shownSort[role].key)) state.shownSort[role] = null;
@@ -1586,6 +1690,17 @@ $("stop").addEventListener("click", () => {
 $("save").addEventListener("click", save);
 $("year-end").addEventListener("click", () => openPage("yearend"));
 $("open-offseason").addEventListener("click", () => openPage("procedure"));
+$("open-review").addEventListener("click", () => openPage("review"));
+$("team-review").addEventListener("click", () => openPage("review", { team_id: current().args.id }));
+$("review-team").addEventListener("change", () => {
+  state.review.team = $("review-team").value;
+  state.review.year = null;
+  renderCurrent();
+});
+$("review-year").addEventListener("change", () => {
+  state.review.year = Number($("review-year").value);
+  renderCurrent();
+});
 $("proc-next").addEventListener("click", procNext);
 $("proc-auto").addEventListener("click", procAuto);
 $("yearend-save").addEventListener("click", save);

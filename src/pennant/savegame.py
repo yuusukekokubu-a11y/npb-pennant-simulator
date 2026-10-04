@@ -52,7 +52,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 8  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)
+SAVE_FORMAT_VERSION = 9  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -126,7 +126,30 @@ def _v7_to_v8(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8}
+def _v8_to_v9(bundle: dict) -> dict:
+    """版8のずれの値は 1 つの数。2 層の形({common, item}。合計は元の値のまま)に直す。設定の段階の値は今の設定ファイルに置き換える(D-215)。
+    進行中の手続きと入団時の評価は、方式の版 1(旧方式)として読む。"""
+    from .scouting import total_from_single
+
+    state = bundle["state"]
+    state["scout_sd"] = {tid: (v if isinstance(v, dict) else total_from_single(v)) for tid, v in state.get("scout_sd", {}).items()}
+    cfg = state.get("configs", {})
+    draft = cfg.get("draft")
+    if isinstance(draft, dict) and isinstance(draft.get("scouting"), dict):
+        levels = draft["scouting"].get("levels")
+        if isinstance(levels, dict) and any(not isinstance(v, dict) for v in levels.values()):
+            draft["scouting"]["levels"] = copy.deepcopy(load_draft_settings().data["scouting"]["levels"])
+    proc = state.get("procedure")
+    if isinstance(proc, dict):
+        proc.setdefault("method", 1)
+    for team in state.get("league", {}).get("teams", []):
+        for pd in team.get("players", []):
+            if isinstance(pd, dict) and isinstance(pd.get("scouting"), dict):
+                pd["scouting"].setdefault("method", 1)
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -158,7 +181,7 @@ class GameState:
     offseason_settings: OffseasonSettings | None = None  # 年度の確定の設定(None は設定ファイル)
     calibration: dict | None = None  # 新規開始時の校正の定数(役割 → 潜在能力に足す値。新人にも足す。D-197)。None は設定ファイルの値
     scout_level: str = "medium"  # スカウト評価のずれの段階(small / medium / large。D-199)
-    scout_sd: dict = field(default_factory=dict)  # 球団ごとのずれの標準偏差(設定より優先。既定は空 = 全球団同じ。D-200)
+    scout_sd: dict = field(default_factory=dict)  # 球団ごとのずれ({common, item}。設定より優先。既定は空 = 全球団同じ。D-200、D-212)
     procedure: object | None = None  # 進行中のオフの手続き(draft.OffseasonProcedure)。None なら手続き中でない(F3-1)
     transactions: list = field(default_factory=list)  # 指名・獲得・自由契約の履歴({year, phase, round, team_id, player_id, name, ...})
     draft_settings: object | None = None  # オフの手続きの設定(None は設定ファイル)
@@ -177,13 +200,13 @@ class GameState:
         if self.calibration is None:
             self.calibration = self.offseason_settings.calibration(self.scout_level)
 
-    def scout_sd_of(self, team_id: str) -> float:
+    def scout_sd_of(self, team_id: str) -> dict[str, float]:
         """球団のスカウト評価のずれの標準偏差(球団ごとの値があればそれ、なければ段階の設定値)。"""
         if team_id in self.scout_sd:
-            return float(self.scout_sd[team_id])
+            return {k: float(v) for k, v in self.scout_sd[team_id].items()}
         return self.draft_settings.level_sd(self.scout_level)
 
-    def scout_sd_map(self) -> dict[str, float]:
+    def scout_sd_map(self) -> dict[str, dict]:
         return {t.id: self.scout_sd_of(t.id) for t in self.league.teams}
 
     @property
@@ -253,7 +276,7 @@ def build_state(state: GameState) -> dict:
         "year": state.year,
         "calibration": {role: float(v) for role, v in state.calibration.items()},
         "scout_level": state.scout_level,
-        "scout_sd": {tid: float(v) for tid, v in state.scout_sd.items()},
+        "scout_sd": {tid: {k: float(x) for k, x in v.items()} for tid, v in state.scout_sd.items()},
         "procedure": None if state.procedure is None else state.procedure.to_dict(_plain),
         "transactions": [dict(x) for x in state.transactions],
         "history": [a.to_dict() for a in state.history],
@@ -603,9 +626,15 @@ def load_game(data: bytes) -> GameState:
     if not isinstance(scout_sd_d, dict):
         p.add("state.json.scout_sd", "球団 → 数のまとまりが必要です")
         scout_sd_d = {}
-    for tid, v in scout_sd_d.items():
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 30:
-            p.add(f"state.json.scout_sd.{tid}", f"0〜30 の数が必要です(値: {v!r})")
+    for tid, v in list(scout_sd_d.items()):
+        if not (isinstance(v, dict) and set(v) == {"common", "item"}):
+            p.add(f"state.json.scout_sd.{tid}", "共通(common)と項目ごと(item)の 2 つの数が必要です")
+            scout_sd_d[tid] = {"common": 0.0, "item": 0.0}
+            continue
+        for key, x in v.items():
+            if isinstance(x, bool) or not isinstance(x, (int, float)) or not 0 <= x <= 30:
+                p.add(f"state.json.scout_sd.{tid}.{key}", f"0〜30 の数が必要です(値: {x!r})")
+                scout_sd_d[tid] = {"common": 0.0, "item": 0.0}
     transactions_d = state.get("transactions", [])
     if not isinstance(transactions_d, list) or not all(isinstance(x, dict) for x in transactions_d):
         p.add("state.json.transactions", "履歴の一覧が必要です")
@@ -699,13 +728,16 @@ def load_game(data: bytes) -> GameState:
     history = _check_history(history_d, raws, team_ids, year + (1 if procedure_d else 0), p)  # 手続き中は、今シーズンの集計がすでに履歴にある
     offseasons = _check_offseasons(offseasons_d, p)
     procedure = _check_procedure(procedure_d, team_ids, {p_.id for p_ in season.players.values()}, p)
+    if procedure is not None:
+        for p_ in procedure.market:  # 手放された選手は、終わったシーズンの成績を持つので、シーズンの選手の一覧に残す(選手のページ・通算のため)
+            season.players.setdefault(p_.id, p_)
     for tid in scout_sd_d:
         if tid not in team_ids:
             p.add(f"state.json.scout_sd.{tid}", "球団の一覧にない ID です")
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: float(v) for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"])
+    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"])
 
 
 def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):

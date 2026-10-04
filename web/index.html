@@ -274,6 +274,7 @@
     <div class="mine-line"><strong id="mine-name"></strong></div>
     <div id="mine-record"></div>
   </div>
+  <p><button id="open-review" class="secondary" type="button">ドラフトの振り返り</button></p>
 
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
@@ -420,6 +421,20 @@
   <p class="muted small" id="proc-note"></p>
 </main>
 
+<!-- ドラフトの振り返り(当たり外れの一覧。D-216) -->
+<main class="screen" id="screen-review" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>ドラフトの振り返り</h1></div>
+  <div class="row">
+    <select id="review-team" aria-label="球団の選択"></select>
+    <select id="review-year" aria-label="入団した年度の選択"></select>
+  </div>
+  <p class="loading" id="review-loading" hidden>集計しています…</p>
+  <div id="review-table"></div>
+  <p class="small" id="review-note"></p>
+  <div id="review-answers"></div>
+  <p class="muted small" id="review-answers-note"></p>
+</main>
+
 <!-- チームのページ -->
 <main class="screen" id="screen-team" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="team-name"></h1></div>
@@ -429,6 +444,7 @@
   <div id="team-war"></div>
   <p class="muted small" id="team-war-note"></p>
   <details><summary>WAR の用語の解説</summary><dl class="terms" id="team-war-terms"></dl></details>
+  <p><button id="team-review" class="secondary" type="button">ドラフトの振り返り(この球団に入った選手の当たり外れ)</button></p>
   <h2>投手</h2>
   <div id="team-pitchers"></div>
   <h2>野手</h2>

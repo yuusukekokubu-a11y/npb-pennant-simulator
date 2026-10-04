@@ -1,40 +1,40 @@
 {
-  "fingerprint_version": 14,
-  "league": "4b93abc0447e41067fa6640e91de6571c7fcd1caecadd4e5e8258e58998c8b56",
-  "game": "6212a6d1fc98c976441481d8928dc04b6a5ecbd5411fd0dc71de28cbaa71bcc4",
-  "days": "57659513c854a831e26123a717169194c52faeef6958c80e3a1d7821fc94a23d",
-  "season": "4df1fe1d2a583c82a3f0d35e091ccae1c76caa44d50af8c9e32a2d9ed9ceb064",
-  "records": "d2a8a466a791804863586b4198db1118e2afdeebec9695e58d9da83bfe4e1f52",
-  "save": "f1d1010b1125ac84d2c4e021dbebd94586f4b99b00c241e91961efdf99627679",
-  "baselines": "4cff1a917a8ab142a0bf033fb5c2503ab5b3b5cebad5a6619560f02688157f0a",
-  "metrics2": "4ae623a24ccc7da07baef9ff12eb8aa136cc808776dfc3dc8e31097d5701b0b9",
+  "fingerprint_version": 15,
+  "league": "dcd49f740833451ba396ad0bc45d8796064583661d02d6aa7cd451ec05b8b21e",
+  "game": "e9c09af9345ce18a0ac9df4641e6289d0b488e0e425edaace5de7b9b693fedaa",
+  "days": "f85e39fc75ef0354702fd0cb2b128efcabd4c4b854b92500bc1fb936dfea5125",
+  "season": "b414fb3eb6ab35e2913ebd729d7978171a28e85a604d5a88a9b1bdfc9c7b6f99",
+  "records": "ea3d4578796e352a76391e6b657b0a35dda2c12a37c3bd0e011ae9f289082d4c",
+  "save": "87fdc42a1c7f3565ba88ce93f55c04531d2820cc0eb4d348d039cfb780285cf3",
+  "baselines": "9ec3d9226137de94501e729076bad960a83e68a1051e8adebe602d6e5e942d1c",
+  "metrics2": "362af76b3de62854012ee4e58a9c1987e76d8018e9641ce9961b5439ca664756",
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
-  "park_estimates": "ca2b772f47755575c696f4ba92b1c991e8ce93b2de60b96a4f5143c395bc9749",
-  "run_values": "5e3d3706f507c0836fe8463483706270396581aa44ef7f44b4bde92e9537d69d",
-  "war": "ea768f67c2e60a3fa2214721b2a056502b1ea125e439423f85d61b10c8af136e",
-  "multiyear": "f73b14ee0b0bc2f33ce89aa6da9733618678901e6b8197d4e097775c800601f7",
-  "procedure": "c08d0433fc607727f434a454d4626a59142a538bc6cf72f6b42b986b41f2c77b",
+  "park_estimates": "d1995cbf6eea9d33dd26cc4e40eeb67c118522d3f854796c6d1235848ae9e145",
+  "run_values": "496f16501704416a7d0bca1bbdd21a21a2051b482566bb9d3b76824a67e497cc",
+  "war": "931333df02ed4a6829a833c679ec0c86e344d8508905c36df9155870742dc13b",
+  "multiyear": "bd9dc4b44b072e7645707fd0c40b7562241f3697271a7c9cbefab3f02f2c7075",
+  "procedure": "72febd72088087afb58f36bbddcc0741ebae31d2d5cd33ed617c90af5251f293",
   "counts": {
     "players": 840,
-    "game_plate_appearances": 77,
-    "game_score": "3-0",
+    "game_plate_appearances": 82,
+    "game_score": "5-6",
     "days": 30,
     "days_games": 180,
-    "days_plate_appearances": 14108,
-    "days_runs": 1578,
+    "days_plate_appearances": 14246,
+    "days_runs": 1656,
     "season_games": 750,
-    "season_plate_appearances": 58985,
+    "season_plate_appearances": 59311,
     "season_champions": [
-      "T01",
-      "T08"
+      "T05",
+      "T07"
     ],
     "records_totals": {
-      "R": 6499,
-      "RBI": 6346,
-      "W": 731,
-      "SV": 339,
-      "HLD": 744,
-      "ER": 6117
+      "R": 6524,
+      "RBI": 6370,
+      "W": 736,
+      "SV": 354,
+      "HLD": 809,
+      "ER": 6138
     },
     "save_days": [
       1,
@@ -47,10 +47,10 @@
       true
     ],
     "baselines": {
-      "trial_plate_appearances": 58817,
-      "batters": 169,
+      "trial_plate_appearances": 59351,
+      "batters": 164,
       "pitchers": 168,
-      "weight": "11797/15797"
+      "weight": "59311/79311"
     },
     "parks": {
       "teams": 12,
@@ -73,23 +73,23 @@
     },
     "run_values": {
       "seasons": 3,
-      "players": 328,
-      "fielding_chances": 35534
+      "players": 329,
+      "fielding_chances": 35155
     },
     "war": {
       "seasons": 3,
       "players": 335,
-      "total_war_x100": 31518
+      "total_war_x100": 30372
     },
     "multiyear": {
       "year_ends": 2,
       "retired": [
-        23,
-        38
+        26,
+        30
       ],
       "rookies": [
-        28,
-        45
+        59,
+        62
       ],
       "players": 840,
       "seasons": 3,
@@ -98,16 +98,16 @@
     "procedure": {
       "year_ends": 2,
       "picked": [
-        28,
-        45
+        59,
+        62
       ],
       "released": [
-        5,
-        7
+        33,
+        32
       ],
       "market": [
-        0,
-        0
+        3,
+        6
       ],
       "players": 840,
       "scouted": 840

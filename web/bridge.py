@@ -129,6 +129,7 @@ _QUERIES = {
     "offseason_summary": lambda a: _game.offseason_summary(a.get("year")),
     "offseason_view": lambda a: _game.offseason_view(),
     "transactions": lambda a: _game.transactions(a.get("year")),
+    "draft_review": lambda a: _game.draft_review(a.get("team_id"), a.get("year")),
     "player": lambda a: _game.player(a["player_id"]),
     "games_on": lambda a: _game.games_on(int(a["day"])),
     "game": lambda a: _game.game(int(a["game_no"])),
@@ -148,6 +149,7 @@ _ANSWERS = {
     "offseason_answers": lambda a: answers.offseason_answers(_game, a.get("year"), int(a.get("level", 1))),
     "scouting_answers": lambda a: answers.scouting_answers(_game, a["player_id"], int(a.get("level", 1))),
     "procedure_answers": lambda a: answers.procedure_answers(_game, int(a.get("level", 1))),
+    "draft_review_answers": lambda a: answers.draft_review_answers(_game, a.get("team_id"), a.get("year"), int(a.get("level", 1))),
 }
 
 

@@ -80,7 +80,7 @@ def new_league(
     offseason_settings=None,
     progress=None,
     draft_settings=None,
-    scout_sd: float | None = None,
+    scout_sd: dict | None = None,
     calibration: dict | None = None,
 ) -> League:
     """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。

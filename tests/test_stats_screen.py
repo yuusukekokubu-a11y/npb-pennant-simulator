@@ -222,7 +222,7 @@ def test_public_functions_have_no_hidden_info(game):
     pid = game.stats("batter")["rows"][0]["player_id"]
     values = [game.stats(r, k, qualified=False) for r in ("batter", "pitcher") for k in ("basic", "saber")]
     page = game.player(pid)
-    values += [page, game.team("T03"), game.games_on(5), game.game(3), game.last_day_games()]
+    values += [page, game.team("T03"), game.games_on(5), game.game(3), game.last_day_games(), game.draft_review()]
     assert not (_keys(values) & HIDDEN_KEYS)
     # 能力の項目名は、入団時のスカウト評価(推定値。F3-1)の中にだけ出てよい。それ以外の場所には出ない
     stripped = dict(page)
