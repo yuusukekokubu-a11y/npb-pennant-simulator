@@ -158,6 +158,19 @@ WAR_COLUMNS = {
     ],
 }
 _WAR_SORT_KEYS = {role: [c["key"] for c in cols] for role, cols in WAR_COLUMNS.items()}
+# 選手の一覧の表(自由契約・市場。D-222)の基本の列
+ROSTER_BASE_COLUMNS = {
+    "batter": [
+        {"key": "pos", "label": "ポジション", "description": "守備位置", "type": "text", "better": "low"},
+        {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
+        {"key": "usage", "label": "打席", "description": "選んだシーズンの打席数", "type": "count", "better": "high"},
+    ],
+    "pitcher": [
+        {"key": "pos", "label": "ポジション", "description": "先発か救援か", "type": "text", "better": "low"},
+        {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
+        {"key": "usage", "label": "投球回", "description": "選んだシーズンの投球回(アウト 3 つで 1 回)", "type": "count", "better": "high"},
+    ],
+}
 
 
 def _war_text(v: Fraction, digits: int = 2) -> str:
@@ -555,6 +568,8 @@ class Game:
             "phase_finished": draftmod.phase_finished(proc) if proc.phase in ("draft", "market") else proc.phase == "done",
             "my_team": None if my is None else {"team_id": my, "team_name": names[my], "players": len(self._team(my).players), "max": draftmod.MAX_ROSTER, "shortages": self._shortage_text(self._team(my).players, mins, min_batters)},
             "my_release_done": proc.my_release_done,
+            "minimums": {"positions": dict(mins), "batters": min_batters, "labels": {pos: POSITION_LABELS[pos] for pos in mins}},
+            "seasons": self.roster_seasons(),
             "scout_level": state.scout_level,
             "scout_sd": state.scout_sd_of(my) if my else None,
             "picks": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.picks],
@@ -688,6 +703,124 @@ class Game:
         names = self._team_names()
         rows = [x for x in self.state.transactions if year is None or x["year"] == year]
         return {"years": sorted({x["year"] for x in self.state.transactions}), "rows": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x.get("position", ""), ""), "phase_label": PHASE_LABELS.get(x["phase"], x["phase"]), "is_mine": x["team_id"] == self.state.my_team_id} for x in rows]}
+
+    # ---- 選手の一覧の表(自由契約・市場。D-222) ----
+
+    def roster_seasons(self) -> list[dict]:
+        """選手の一覧の表で選べるシーズン(今シーズンと、2 シーズン目以降は通算)。"""
+        out = [{"key": "current", "label": f"今シーズン({self.state.year}シーズン目)"}]
+        if len(self.state.history) > (1 if self.state.procedure is not None else 0):  # 手続き中は、終わったシーズンがすでに履歴にある
+            out.append({"key": "career", "label": "通算"})
+        return out
+
+    def roster_table(self, players: list, role: str, kind: str = "basic", sort: str | None = None, order: str | None = None, season: str | None = None) -> dict:
+        """任意の選手の一覧(自球団の全選手、市場の選手)を、個人成績と同じ列・値で表にする(D-222)。
+        基本の列(ポジション・年齢・打席か投球回)+ 選んだ種類(基本・セイバー・WAR)の列。並び順は全部の列と、その役割の全指標・WAR の列から選べ、
+        表にない指標で並べたときは extra_column で返す(D-131 と同じ)。成績のない選手の値は「—」で、並び順によらず最後。初期は WAR の低い順。"""
+        if role not in ROLE_LABELS:
+            raise ValueError(f"打者か投手を選んでください(値: {role!r})")
+        if season not in (None, "current") and season not in [x["key"] for x in self.roster_seasons()]:
+            raise ValueError(f"このシーズンは選べません(値: {season!r})")
+        view = self._season_view(None if season in (None, "current") else season)
+        config = metrics_config()
+        base_cols = ROSTER_BASE_COLUMNS[role]
+        if kind == WAR_KIND:
+            cols = list(WAR_COLUMNS[role])
+        elif kind in KIND_LABELS:
+            cols = table_cols(config, role, kind)
+        else:
+            raise ValueError(f"基本・セイバー・WAR を選んでください(値: {kind!r})")
+        cols = [c for c in cols if c["key"] not in ("PA", "OUTS", "plate_appearances", "innings")]  # 打席・投球回は基本の列にあるので重ねない
+        shown = {c["key"]: c for c in base_cols + cols}
+        if not sort:  # 初期は WAR の低い順(手放す候補が上に来る。D-222)
+            sort = "war" if role == "batter" else "war_ra"
+            order = order or "asc"
+        if sort in shown:
+            info, extra = shown[sort], None
+        elif sort in _WAR_SORT_KEYS[role]:
+            info = next(c for c in WAR_COLUMNS[role] if c["key"] == sort)
+            extra = info
+        elif is_sortable(config, role, sort):
+            info = column_info(config, role, sort)
+            extra = info
+        else:
+            raise ValueError(f"並び順に使えない列です(値: {sort!r})")
+        if order not in ("asc", "desc"):
+            order = "desc" if info.get("better", "high") == "high" else "asc"
+        keys = [c["key"] for c in base_cols + cols] + ([sort] if extra else [])
+        rec = view.records
+        group = rec.batters if role == "batter" else rec.pitchers
+        names = self._team_names()
+        positions = list(POSITION_LABELS)
+        rows = []
+        for p in players:
+            if p.role != role:
+                continue
+            counts = group.get(p.id)
+            metrics = _values(config, role, counts, view.baselines, view.park_factor(p.id) if role == "batter" else None, (view.override or {}).get(p.id)) if counts is not None else {}
+            line = view.war.get(p.id)
+            war = _war_values(line) if line is not None else {}
+            if counts is None:
+                usage = (None, "—")
+            elif role == "batter":
+                usage = (Fraction(int(counts.get("PA", 0))), str(int(counts.get("PA", 0))))
+            else:
+                usage = (Fraction(int(counts.get("OUTS", 0))), innings_text(int(counts.get("OUTS", 0))))
+            base = {"pos": (positions.index(p.position), POSITION_LABELS[p.position]), "age": (p.age, f"{p.age}歳"), "usage": usage}
+            cell = {}
+            for k in keys:
+                v = base.get(k) or metrics.get(k) or war.get(k)
+                cell[k] = v if v is not None else (None, "—")
+            row = {
+                "player_id": p.id, "name": p.name, "role": role, "position": p.position, "position_label": POSITION_LABELS[p.position], "age": p.age,
+                "hand": BATS_LABELS.get(p.bats) if role == "batter" else THROWS_LABELS.get(p.throws),
+                "team_id": p.team_id, "team_name": names.get(p.team_id, "") if p.team_id else "", "has_stats": counts is not None,
+                "values": {k: v[1] for k, v in cell.items()}, "_sort": cell[sort][0],
+            }
+            rows.append(row)
+        present = [r for r in rows if r["_sort"] is not None]
+        missing = [r for r in rows if r["_sort"] is None]
+        present.sort(key=lambda r: r["player_id"])
+        present.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+        missing.sort(key=lambda r: r["player_id"])
+        rows = present + missing
+        for r in rows:
+            r.pop("_sort")
+        return {
+            "role": role, "role_label": ROLE_LABELS[role], "kind": kind, "kind_label": "WAR" if kind == WAR_KIND else KIND_LABELS[kind],
+            "columns": base_cols + cols, "sort": info, "order": order, "extra_column": extra, "rows": rows,
+            "season": view.key, "season_label": view.label, "seasons": self.roster_seasons(),
+            "baseline_note": view.baseline_note if any(c["key"] in _BASELINE_METRICS for c in cols) else None,
+            "terms": WAR_TERMS if kind == WAR_KIND else None,
+        }
+
+    def offseason_players(self, phase: str) -> list:
+        """手続きの画面の表に出す選手:自由契約は自球団の全選手、市場は市場の選手、ドラフトは候補。"""
+        proc = self._proc()
+        if phase == "release":
+            return list(self._my_team().players)
+        if phase == "market":
+            return list(proc.market)
+        if phase == "draft":
+            return list(proc.candidates)
+        raise ValueError(f"自由契約か市場を選んでください(値: {phase!r})")
+
+    def offseason_table(self, phase: str, role: str = "batter", kind: str = "basic", sort: str | None = None, order: str | None = None, season: str | None = None) -> dict:
+        """自由契約・市場の画面の、成績つきの選手の一覧(公開用。D-222)。市場の行には前の球団を足す。"""
+        proc = self._proc()
+        table = self.roster_table(self.offseason_players(phase), role, kind, sort, order, season)
+        if phase != "release":
+            names = self._team_names()
+            former = {x["player_id"]: names.get(x["team_id"], "") for x in proc.released}
+            for r in table["rows"]:
+                r["former_team"] = former.get(r["player_id"], "")
+        else:
+            mins, min_batters = self._mins()
+            team = self._my_team()
+            for r in table["rows"]:
+                r["can_release"] = draftmod.can_release(team.players, next(p for p in team.players if p.id == r["player_id"]), mins, min_batters)
+        table["phase"] = phase
+        return table
 
     # ---- ドラフトの振り返り(当たり外れの一覧。D-216) ----
 

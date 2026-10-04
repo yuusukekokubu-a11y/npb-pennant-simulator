@@ -8,6 +8,7 @@ const MAX_SEED = 4294967295;
 const WAIT_SHOW_MS = 600; // 待ち時間の表示は、これを超えたときだけ出し、出したらこれ以上は続ける(D-118)
 const STATS_PAGE = 50; // 個人成績の表で、一度に出す人数(仮置き。DESIGN 9章)
 const GAMES_PAGE = 20; // 選手の試合ごとの成績で、一度に出す試合数(仮置き。DESIGN 9章)
+const WIDE_MIN_WIDTH = 900; // この幅(px)以上を「広い画面」とし、fluid の印を付けた表は横スクロールなしで全列を出す(仮置き。D-223。DESIGN 9章)
 // 下のタブ。増やすときは、ここに足して、同じ名前の画面(screen-…)を index.html に作る
 const TABS = [
   { id: "progress", label: "進行" },
@@ -47,8 +48,18 @@ const state = {
   gamesDay: null,
   proc: { selected: new Set(), sort: "overall", position: "", open: null }, // オフの手続きの画面の状態(F3-1)
   review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
+  // 自由契約・市場の表の状態(D-222)。手続きの画面を行き来しても保つ。sortBy / shownSort は個人成績と同じ仕組み(D-131)
+  rosterTable: { role: "batter", kind: "basic", season: "current", group: "", sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } }, shownSort: { batter: null, pitcher: null } },
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
+
+// 広い画面かどうか(D-223):幅が WIDE_MIN_WIDTH 以上なら <html> に wide の印を付け、fluid の表を横スクロールなしにする(CSS)
+const wideQuery = window.matchMedia(`(min-width: ${WIDE_MIN_WIDTH}px)`);
+function applyWide() {
+  document.documentElement.classList.toggle("wide", wideQuery.matches);
+}
+applyWide();
+wideQuery.addEventListener("change", applyWide);
 
 // ---- 裏の Python とのやり取り ----
 
@@ -271,7 +282,8 @@ function setPressed(groupId, value) {
 // 表を作る。columns は { key, label, description }、rows の値は row.values[key]。
 // first は左端(固定)の列の中身を作る関数。onSort があれば、見出しを押して並べ替えられる。
 // extra は、名前の隣に固定して出す列(並び順の指標が表にないとき。D-131)
-function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass, limit, more, extra }) {
+// fluid は、広い画面で横スクロールなしに全列を出す表(新しく作る表だけ。D-223)。detail(row) が要素を返せば、その行の下に 1 行足す
+function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass, limit, more, extra, fluid, detail }) {
   const headCell = (c, className) => {
     const arrow = sort === c.key ? (order === "desc" ? " ▼" : " ▲") : "";
     const label = onSort ? el("button", { className: "sort", type: "button", onclick: () => onSort(c.key) }, c.label + arrow) : c.label;
@@ -288,8 +300,10 @@ function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass
     if (extra) tr.append(el("td", { className: "sticky2" }, r.values[extra.key] ?? ""));
     for (const c of columns) tr.append(el("td", {}, r.values[c.key] ?? ""));
     body.append(tr);
+    const d = detail ? detail(r) : null;
+    if (d) body.append(el("tr", { className: "detail" }, el("td", { colSpan: columns.length + 1 + (extra ? 1 : 0) }, d)));
   }
-  const wrap = el("div", {}, el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head), body)));
+  const wrap = el("div", {}, el("div", { className: fluid ? "table-wrap fluid" : "table-wrap" }, el("table", {}, el("thead", {}, head), body)));
   if (limit && rows.length > limit && more) {
     wrap.append(el("button", { className: "secondary more", type: "button", onclick: more }, `もっと見る(あと ${rows.length - limit} 件)`));
   }
@@ -552,17 +566,19 @@ async function renderStats(token) {
   $("stats-terms").open = Boolean(data.terms); // WAR の表は、用語の解説を表の下に開いて出す(D-179)
 }
 
-function sortStats(key) {
-  // 今の並びと同じ列なら逆順に、違う列ならその指標の「よい」向き(能力の項目は高い順)から
-  const s = currentSort();
-  const shown = state.shownSort[state.stats.role];
+// 見出しを押したときの並び順の決め方(表の部品で共通。D-131):今の並びと同じ列なら逆順に、違う列ならその指標の「よい」向き(能力の項目は高い順)から
+function sortToggle(sortBy, shown, key) {
   if (shown && shown.key === key) {
-    s.key = key;
-    s.order = shown.order === "desc" ? "asc" : "desc";
+    sortBy.key = key;
+    sortBy.order = shown.order === "desc" ? "asc" : "desc";
   } else {
-    s.key = key;
-    s.order = null;
+    sortBy.key = key;
+    sortBy.order = null;
   }
+}
+
+function sortStats(key) {
+  sortToggle(currentSort(), state.shownSort[state.stats.role], key);
   state.stats.shown = STATS_PAGE;
   renderCurrent();
 }
@@ -814,10 +830,10 @@ async function renderReview(args, token) {
   });
   $("review-table").replaceChildren(
     rows.length
-      ? table({ firstLabel: "選手", columns: cols, rows, first: (r) => [r.in_league ? playerLink(r.name, r.player_id) : el("span", {}, r.name)], rowClass: (r) => (r.status === "left" ? "muted" : "") })
+      ? table({ firstLabel: "選手", columns: cols, rows, first: (r) => [r.in_league ? playerLink(r.name, r.player_id) : el("span", {}, r.name)], rowClass: (r) => (r.status === "left" ? "muted" : ""), fluid: true })
       : el("p", { className: "info" }, "この年度にこの球団に入った選手はいません。"),
   );
-  $("review-note").textContent = d.note;
+  $("review-note").textContent = `${d.note} 入団直後は「差」がマイナスに偏りやすい(評価が高く見えた候補が選ばれるため。いわゆる勝者の呪い)。数年進めて育った後に見ると、本来の差に近づきます。`;
   if (!on) {
     $("review-answers-note").textContent = state.answerLevel > 0 ? "" : "答え合わせモードをオンにすると(上の「メニュー」から)、今の真の総合・入団時の推定値との差・実際の天井と、球団ごとの「見る目」の目安が出ます。";
     return;
@@ -831,7 +847,7 @@ async function renderReview(args, token) {
   trows.push({ team_id: "", team_name: "リーグ全体", selected: false, is_mine: false, values: { count: String(truth.league.count), mean: truth.league.mean, sd: truth.league.sd } });
   $("review-answers").replaceChildren(
     el("h2", {}, `球団ごとの「見る目」の目安(${d.year}シーズン目の入団)`),
-    table({ firstLabel: "球団", columns: tcols, rows: trows, first: (r) => [el("span", { className: r.selected ? "sorted" : "" }, r.team_name + (r.is_mine ? " ★" : ""))], rowClass: (r) => (r.selected ? "mine" : "") }),
+    table({ firstLabel: "球団", columns: tcols, rows: trows, first: (r) => [el("span", { className: r.selected ? "sorted" : "" }, r.team_name + (r.is_mine ? " ★" : ""))], rowClass: (r) => (r.selected ? "mine" : ""), fluid: true }),
   );
   $("review-answers-note").textContent = truth.note;
 }
@@ -871,9 +887,12 @@ async function renderProcedure(token) {
     if (state.answerLevel === 0) truth = null;
   }
   const body = $("proc-body");
-  if (v.phase === "release") body.replaceChildren(...releaseSection(v, truth));
-  else if (v.phase === "draft" || v.phase === "market") body.replaceChildren(...poolSection(v, truth));
-  else body.replaceChildren();
+  let parts = [];
+  if (v.phase === "release") parts = await releaseSection(v, truth, token);
+  else if (v.phase === "draft") parts = poolSection(v, truth);
+  else if (v.phase === "market") parts = await marketSection(v, truth, token);
+  if (parts === null || token !== state.token) return;
+  body.replaceChildren(...parts);
   $("proc-history").replaceChildren(historyTable(v.picks, v.released));
   $("proc-history-box").open = v.picks.length > 0 && v.phase !== "release";
 }
@@ -882,26 +901,118 @@ function ceilingText(g) {
   return { S: "S(上位 5%)", A: "A", B: "B", C: "C", D: "D" }[g] || g;
 }
 
-function releaseSection(v, truth) {
+// ---- 自由契約・市場の、成績つきの選手の一覧(D-222)。表の部品(table・sortToggle)と個人成績と同じ並び順の仕組みを使う ----
+
+const POSITION_GROUPS = {
+  batter: [["", "すべての野手"], ["C", "捕手"], ["IF", "内野手"], ["OF", "外野手"]],
+  pitcher: [["", "すべての投手"], ["SP", "先発"], ["RP", "救援"]],
+};
+const SCOUT_SORT_KEYS = ["overall", "ceiling"]; // 評価の列は計算本体の表にないので、画面側で並べる
+
+function inGroup(position, group) {
+  if (!group) return true;
+  if (group === "IF") return ["1B", "2B", "3B", "SS"].includes(position);
+  if (group === "OF") return ["LF", "CF", "RF"].includes(position);
+  return position === group;
+}
+
+// 成績つきの表を計算本体から受け取る。能力(答え合わせモード)のときだけ answer を呼ぶ
+async function fetchRosterTable(phase) {
+  const rt = state.rosterTable;
+  if (rt.kind === "ability" && state.answerLevel === 0) rt.kind = "basic";
+  const kind = rt.kind;
+  const sortBy = rt.sortBy[rt.role];
+  const abilityKeys = state.answerLevel > 0 ? (await answer("ability_columns", { role: rt.role })).map((c) => c.key) : [];
+  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(個人成績と同じ)。評価の列は画面側で並べる
+  const usable = sortBy.key && !SCOUT_SORT_KEYS.includes(sortBy.key) && (kind === "ability" || !abilityKeys.includes(sortBy.key));
+  const args = { phase, role: rt.role, kind, sort: usable ? sortBy.key : null, order: usable ? sortBy.order : null, season: rt.season };
+  const data = kind === "ability" ? await answer("offseason_ability_table", { ...args, level: state.answerLevel }) : await query("offseason_table", args);
+  rt.shownSort[rt.role] = { key: data.sort.key, order: data.order };
+  return data;
+}
+
+// 切り替え(野手・投手 / 基本・セイバー・WAR・能力 / シーズン / ポジション)
+function rosterControls(data) {
+  const rt = state.rosterTable;
+  const seg = (id, items, value, onPick) => {
+    const box = el("div", { className: "seg", id, role: "group" });
+    for (const [k, label] of items) box.append(el("button", { type: "button", "aria-pressed": String(k === value), dataset: { value: k }, onclick: () => onPick(k) }, label));
+    return box;
+  };
+  const kinds = [["basic", "基本"], ["saber", "セイバー"], ["war", "WAR"]];
+  if (state.answerLevel > 0) kinds.push(["ability", "能力"]);
+  const out = [
+    seg("roster-role", [["batter", "野手"], ["pitcher", "投手"]], rt.role, (k) => { rt.role = k; rt.group = ""; renderCurrent(); }),
+    seg("roster-kind", kinds, rt.kind, (k) => { rt.kind = k; renderCurrent(); }),
+  ];
+  const filters = el("div", { className: "filters" });
+  if (data.seasons.length > 1) {
+    filters.append(el("select", { id: "roster-season", "aria-label": "シーズンの選択", onchange: (e) => { rt.season = e.target.value; renderCurrent(); } }, ...data.seasons.map((x) => el("option", { value: x.key, selected: x.key === rt.season }, x.label))));
+  }
+  filters.append(el("select", { id: "roster-group", "aria-label": "ポジションの絞り込み", onchange: (e) => { rt.group = e.target.value; renderCurrent(); } }, ...POSITION_GROUPS[rt.role].map(([k, label]) => el("option", { value: k, selected: k === rt.group }, label))));
+  out.push(filters);
+  return out;
+}
+
+function rosterSortLine(data) {
+  const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」はこの表にない列なので、名前の隣に固定して出しています。` : "";
+  return el("p", { className: "muted small", id: "roster-sort-line" }, `並び順:${data.sort.label}(${sortWord(data.sort, data.order)})。見出しを押すと並べ替え、もう一度押すと逆の順になります。${extraNote}`);
+}
+
+function rosterSort(key) {
+  const rt = state.rosterTable;
+  sortToggle(rt.sortBy[rt.role], rt.shownSort[rt.role], key);
+  renderCurrent();
+}
+
+// 手放す印を付けたあとの、ポジション別の残り人数と最低人数(D-222)
+function remainingText(v) {
+  const sel = state.proc.selected;
+  const counts = {};
+  let batters = 0;
+  for (const p of v.roster) {
+    if (sel.has(p.player_id)) continue;
+    counts[p.position] = (counts[p.position] || 0) + 1;
+    if (p.role === "batter") batters += 1;
+  }
+  const m = v.minimums;
+  const parts = [];
+  let short = false;
+  for (const [pos, min] of Object.entries(m.positions)) {
+    const n = counts[pos] || 0;
+    if (n < min) short = true;
+    parts.push(`${m.labels[pos]} ${n}/${min}`);
+  }
+  if (batters < m.batters) short = true;
+  parts.push(`野手の合計 ${batters}/${m.batters}`);
+  return { text: `残り人数 / 最低人数:${parts.join("・")}`, short };
+}
+
+async function releaseSection(v, truth, token) {
   const ps = state.proc;
+  const rt = state.rosterTable;
   if (!v.my_team) return [el("p", { className: "muted" }, "操作する球団がありません。")];
   if (v.my_release_done) return [el("p", { className: "info" }, "自由契約の手続きは済んでいます。「次の手続きへ」でドラフトに進みます。"), el("p", { className: "muted small" }, "手放した選手は、自由契約市場に並びます。")];
-  const rows = v.roster.map((p) => ({ ...p, values: { position: p.position_label, age: `${p.age}歳`, overall: p.scouting.overall_text, ceiling: ceilingText(p.scouting.ceiling), truth: truth ? truth.players[p.player_id]?.overall ?? "" : undefined } }));
-  const columns = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合(推定 ± 幅)", description: "自球団のスカウトの推定値と、真の値が約80%の確率で入る幅" }, { key: "ceiling", label: "天井", description: "潜在能力の見立て(S〜D)" }];
-  if (truth) columns.push({ key: "truth", label: "真の総合", description: "答え合わせ:真の今の総合値" });
+  const data = await fetchRosterTable("release");
+  if (token !== state.token) return null;
+  const rows = data.rows.filter((r) => inGroup(r.position, rt.group));
   const first = (p) => {
-    const cb = el("input", { type: "checkbox", checked: ps.selected.has(p.player_id), disabled: !p.can_release, onchange: (e) => { if (e.target.checked) ps.selected.add(p.player_id); else ps.selected.delete(p.player_id); updateReleaseButton(v); } });
-    return [cb, " ", playerLink(p.name, p.player_id), el("span", { className: "sub" }, p.can_release ? "" : "最低人数のため外せません")];
+    const cb = el("input", { type: "checkbox", checked: ps.selected.has(p.player_id), disabled: !p.can_release, "aria-label": `${p.name} を手放す`, onchange: (e) => { if (e.target.checked) ps.selected.add(p.player_id); else ps.selected.delete(p.player_id); updateReleaseButton(v); } });
+    return [cb, " ", playerLink(p.name, p.player_id), el("span", { className: "sub" }, p.can_release ? p.hand || "" : "最低人数のため外せません")];
   };
   const btn = el("button", { id: "proc-release", className: "danger", onclick: () => doRelease(v) }, "選んだ選手を自由契約にする");
-  const warn = el("p", { className: "muted small", id: "proc-release-warn" }, "");
   const out = [
     el("p", { className: "small" }, "手放す選手に印を付けて、「選んだ選手を自由契約にする」を押してください。誰も手放さないなら、そのまま「次の手続きへ」。"),
-    table({ firstLabel: "選手", columns, rows, first, rowClass: (p) => (ps.selected.has(p.player_id) ? "selected" : ""), onSort: null }),
+    ...rosterControls(data),
+    el("p", { className: "small", id: "proc-remaining" }, ""),
+    rows.length
+      ? table({ firstLabel: "選手", columns: data.columns, rows, first, sort: data.sort.key, order: data.order, onSort: rosterSort, rowClass: (p) => (ps.selected.has(p.player_id) ? "selected" : ""), extra: data.extra_column, fluid: true })
+      : el("p", { className: "muted" }, "この絞り込みに合う選手はいません。"),
+    rosterSortLine(data),
     el("div", { className: "row" }, btn),
-    warn,
-    el("p", { className: "muted small" }, "評価は自球団のスカウトのもので、真の能力とはずれています(ずれの大きさ:" + { small: "小", medium: "中", large: "大" }[v.scout_level] + ")。手放した選手は市場に並び、他の球団が獲得することがあります。表は横にずらせます。"),
+    el("p", { className: "muted small" }, `${data.kind === "ability" ? data.note + "。" : `${data.season_label}の成績です。${data.baseline_note ? data.baseline_note : ""}`}成績のない選手は「—」。初期の並び順は WAR の低い順(手放す候補が上)。表は狭い画面では横にずらせ、広い画面では全列が出ます。`),
   ];
+  if (data.terms) out.push(el("details", {}, el("summary", {}, "WAR の用語の解説"), el("dl", { className: "terms" }, ...data.terms.flatMap((c) => [el("dt", {}, c.label), el("dd", {}, c.description)]))));
   setTimeout(() => updateReleaseButton(v), 0);
   return out;
 }
@@ -910,6 +1021,12 @@ function updateReleaseButton(v) {
   const n = state.proc.selected.size;
   const b = $("proc-release");
   if (b) { b.disabled = n === 0 || state.running; b.textContent = n ? `選んだ ${n} 人を自由契約にする` : "選んだ選手を自由契約にする"; }
+  const line = $("proc-remaining");
+  if (line && v.minimums) {
+    const r = remainingText(v);
+    line.textContent = r.short ? `${r.text}(最低人数を割っています)` : r.text;
+    line.className = r.short ? "small warn" : "small";
+  }
 }
 
 async function doRelease(v) {
@@ -918,6 +1035,61 @@ async function doRelease(v) {
   const names = v.roster.filter((p) => ids.includes(p.player_id)).map((p) => p.name).join("、");
   if (!confirm(`${names} を自由契約にします(戻せません)。よろしいですか?`)) return;
   await runProc("release", { player_ids: ids });
+}
+
+// 市場:入団時の評価(今までどおり)に、成績の列を足す(D-222)。指名されなかった候補は成績なし「—」
+async function marketSection(v, truth, token) {
+  const ps = state.proc;
+  const rt = state.rosterTable;
+  const turnText = v.phase_finished ? "この段階は終わりました。「次の手続きへ」を押してください。" : v.is_my_turn ? `${v.round} 巡目:あなたの番です。選手の「獲得」を押すか、「パス」してください。` : `${v.round} / ${v.total_rounds} 巡目。今の指名権:${v.order.find((o) => o.team_id === v.current_team)?.team_name ?? "-"}`;
+  const head = [el("p", { className: "info" }, turnText)];
+  const controls = el("div", { className: "row" });
+  if (!v.phase_finished && !v.is_my_turn && v.my_team) controls.append(el("button", { onclick: () => runProc("advance") }, "次の自分の番まで進める"));
+  if (v.is_my_turn) controls.append(el("button", { className: "secondary", onclick: () => runProc("pass") }, "パス(指名しない)"));
+  head.push(controls);
+  const data = await fetchRosterTable("market");
+  if (token !== state.token) return null;
+  const scout = Object.fromEntries(v.pool.map((p) => [p.player_id, p]));
+  const grade = { S: 0, A: 1, B: 2, C: 3, D: 4 };
+  const sortBy = rt.sortBy[rt.role];
+  let rows = data.rows.filter((r) => inGroup(r.position, rt.group)).map((r) => {
+    const sc = scout[r.player_id]?.scouting;
+    const t = truth ? truth.players[r.player_id] : null;
+    return { ...r, scouting: sc, values: { ...r.values, overall: sc ? sc.overall_text : "", ceiling: sc ? ceilingText(sc.ceiling) : "", former: r.former_team || "-", truth: t ? `${t.overall}${t.potential ? ` / ${t.potential}` : ""}` : "" } };
+  });
+  let sortKey = data.sort.key;
+  let order = data.order;
+  if (sortBy.key && SCOUT_SORT_KEYS.includes(sortBy.key) && rows.every((r) => r.scouting)) {
+    sortKey = sortBy.key;
+    order = sortBy.order || "desc";
+    const value = (r) => (sortKey === "overall" ? r.scouting.overall : -grade[r.scouting.ceiling]);
+    rows.sort((a, b) => a.player_id.localeCompare(b.player_id));
+    rows.sort((a, b) => (order === "desc" ? value(b) - value(a) : value(a) - value(b)));
+    rt.shownSort[rt.role] = { key: sortKey, order };
+  }
+  const columns = [
+    { key: "overall", label: "総合(推定 ± 幅)", description: "自球団のスカウトの推定値と、真の値が約80%の確率で入る幅", type: "metric", better: "high" },
+    { key: "ceiling", label: "天井", description: "潜在能力の見立て(S〜D)", type: "text", better: "high" },
+    { key: "former", label: "前の球団", description: "手放した球団(指名されなかった候補は「-」)" },
+    ...data.columns,
+  ];
+  if (truth) columns.push({ key: "truth", label: "真の総合", description: "答え合わせ:真の今の総合値" + (truth.level === 2 ? " / 潜在能力" : "") });
+  if (v.is_my_turn) columns.push({ key: "pick", label: "" });
+  for (const r of rows) if (v.is_my_turn) r.values.pick = el("button", { className: "pick-btn", type: "button", onclick: () => runProc("pick", { player_id: r.player_id }) }, "獲得");
+  const sortCol = SCOUT_SORT_KEYS.includes(sortKey) ? columns.find((c) => c.key === sortKey) : data.sort;
+  const first = (p) => [link(p.name, () => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); }), el("span", { className: "sub" }, p.hand || "")];
+  const detail = (p) => (ps.open === p.player_id && p.scouting ? `項目別の推定値 ± ふれ幅:${p.scouting.items.map((i) => `${i.label} ${i.text}`).join(" / ")}` : null);
+  const tableEl = rows.length
+    ? table({ firstLabel: "選手", columns, rows, first, sort: sortKey, order, onSort: rosterSort, rowClass: (p) => (ps.open === p.player_id ? "selected" : ""), extra: data.extra_column, fluid: true, detail })
+    : el("p", { className: "muted" }, "この絞り込みに合う選手はいません。");
+  return [
+    ...head,
+    ...rosterControls(data),
+    el("p", { className: "muted small" }, `市場の選手 ${rows.length} 人。名前を押すと項目別の推定値が出ます。`),
+    tableEl,
+    rosterSortLine({ ...data, sort: sortCol, order }),
+    el("p", { className: "muted small" }, `${data.kind === "ability" ? data.note + "。" : `${data.season_label}の成績です。`}指名されなかった候補は成績がないので「—」。表は狭い画面では横にずらせ、広い画面では全列が出ます。`),
+  ];
 }
 
 function poolSection(v, truth) {

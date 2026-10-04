@@ -119,6 +119,16 @@
   th button.sort { font: inherit; background: none; border: none; color: inherit; padding: 4px 0; min-height: 32px; cursor: pointer; }
   th.sorted { color: var(--accent); font-weight: bold; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  /* 広い画面(幅が app.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */
+  .wide #screen-procedure, .wide #screen-review { max-width: 1180px; } /* fluid の表がある画面だけ、広い画面では列の幅を広げる(他の画面は第 2 段階で) */
+  .wide .table-wrap.fluid { overflow-x: visible; }
+  .wide .table-wrap.fluid table { table-layout: auto; }
+  .wide .table-wrap.fluid th { white-space: normal; }
+  .wide .table-wrap.fluid th.sticky, .wide .table-wrap.fluid td.sticky, .wide .table-wrap.fluid th.sticky2, .wide .table-wrap.fluid td.sticky2 { position: static; box-shadow: none; }
+  .wide .table-wrap.fluid th.name-fixed, .wide .table-wrap.fluid td.name-fixed { width: auto; min-width: 9em; max-width: none; }
+  .wide .table-wrap.fluid td.name-cell { max-width: none; }
+  .wide .table-wrap.fluid tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
+  .warn { color: var(--warn-line); font-weight: bold; }
   select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-height: 40px; max-width: 100%; }
   .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
   .check input { width: 20px; height: 20px; }
