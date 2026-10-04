@@ -166,8 +166,15 @@ def shortages(players: list[Player], mins: dict[str, int], min_batters: int) -> 
 
 def can_release(players: list[Player], player: Player, mins: dict[str, int], min_batters: int) -> bool:
     """この選手を外しても、最低人数の不足が今より増えないか(すでに足りないポジションは、それ以上減らさない)。"""
-    rest = [p for p in players if p.id != player.id]
-    return not new_shortages(players, rest, mins, min_batters)
+    return player.id in releasable(players, mins, min_batters)
+
+
+def releasable(players: list[Player], mins: dict[str, int], min_batters: int) -> set[str]:
+    """外しても不足が増えない選手の ID(new_shortages が空になる選手と同じ。1 人外すと、そのポジションの人数と野手の合計だけが 1 減るので、
+    ポジションの人数が最低人数より多く、野手なら野手の合計が最低人数より多いとき)。"""
+    counts = position_counts(players)
+    batters = sum(1 for p in players if p.role == BATTER)
+    return {p.id for p in players if counts[p.position] > mins.get(p.position, 0) and (p.role != BATTER or batters > min_batters)}
 
 
 def new_shortages(before: list[Player], after: list[Player], mins: dict[str, int], min_batters: int) -> dict[str, int]:
@@ -430,10 +437,17 @@ class ContractContext:
 
 
 def contract_scout(seed: int, sd_of, cuts: list[float]):
-    """所属球団の評価(契約用。乱数は contract の系列)を返す関数を作る。"""
+    """所属球団の評価(契約用。乱数は contract の系列)を返す関数を作る。同じ (選手, 球団) は覚えておく(手続きの間は能力が変わらない)。"""
+    contract_seed = derive_seed(seed, "contract")
+    memo: dict = {}
 
     def scout(player: Player, team_id: str) -> tuple[float, str]:
-        return quick_value(player, team_id, derive_seed(seed, "contract"), sd_of(team_id), cuts)
+        key = (player.id, team_id)
+        v = memo.get(key)
+        if v is None:
+            v = quick_value(player, team_id, contract_seed, sd_of(team_id), cuts)
+            memo[key] = v
+        return v
 
     return scout
 
@@ -652,7 +666,8 @@ def resolve_overrun(team: Team, proc: OffseasonProcedure, ctx: ContractContext, 
     if not ctx.hard():
         return out
     while over_cap(team, ctx) > 0:
-        candidates = [p for p in team.players if can_release(team.players, p, mins, min_batters)]
+        ok = releasable(team.players, mins, min_batters)
+        candidates = [p for p in team.players if p.id in ok]
         if not candidates:
             break
 
@@ -788,6 +803,29 @@ def affordable_pool(team: Team, proc: OffseasonProcedure, ctx: ContractContext |
     return [p for p in pool if can_afford(team, ctx.salary(p, team.id)[0], ctx, total)]
 
 
+def _choose_within_budget(team: Team, proc: OffseasonProcedure, sd: dict, settings: DraftSettings, mins, min_batters, ctx: ContractContext) -> tuple[Player | None, str]:
+    """ai_choose を、上限の中で結べる選手だけから選ぶのと同じ結果で、速く行う(評価の高い順に、結べる最初の選手を探す)。
+    戻り値は (選んだ選手, 選ばなかったときの理由 budget / skip)。"""
+    pool = pool_of(proc)
+    total = team_salary(team)
+    if proc.phase == "draft":
+        if not can_afford(team, ctx.settings.rookie_salary(proc.round), ctx, total):
+            return None, "budget"
+        choice = ai_choose(team, pool, proc, sd, settings, mins, min_batters, proc.phase)
+        return choice, "skip"
+    need = shortages(team.players, mins, min_batters)
+    surplus = surplus_positions(team, settings.gen_config) if settings.gen_config is not None else set()
+    ranked = sorted(pool, key=lambda p: (ai_value(p, team, proc, sd, settings, need, surplus), p.id), reverse=True)
+    best = next((p for p in ranked if can_afford(team, ctx.salary(p, team.id)[0], ctx, total)), None)
+    if best is None:
+        return None, "budget"
+    if not need:
+        worst = min((cached_value(proc, p, team.id, sd)[0] for p in team.players), default=0.0)
+        if cached_value(proc, best, team.id, sd)[0] < worst + float(settings.ai("market_gain_min")):
+            return None, "skip"
+    return best, "skip"
+
+
 def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose, ctx: ContractContext | None = None) -> bool:
     """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。
     標準以上では、予算が足りない球団はパスする(note="budget")。"""
@@ -808,6 +846,13 @@ def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, d
         team = teams[tid]
         if len(team.players) >= MAX_ROSTER:
             pass_turn(proc, tid, "full")
+            continue
+        if policy is ai_choose and ctx is not None and ctx.hard() and pool_of(proc):
+            choice, why = _choose_within_budget(team, proc, scout_sd[tid], settings, mins, min_batters, ctx)
+            if choice is None:
+                pass_turn(proc, tid, why)
+            else:
+                take(proc, team, choice, scout_sd, settings, ctx)
             continue
         pool = affordable_pool(team, proc, ctx)
         if not pool:

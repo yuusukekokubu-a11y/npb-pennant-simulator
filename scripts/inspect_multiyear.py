@@ -84,10 +84,36 @@ def measure(g: api.Game, config, war_settings) -> dict:
     return out
 
 
-def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium", money_rule: str = "none") -> list[dict]:
+def negotiation_stats(g: api.Game) -> dict:
+    """契約更改の段階の集計(F3-2b。自球団は自動案でまとめて提示した直後)。理由・軸は設定のキー。"""
+    proc = g.state.procedure
+    my = g.state.my_team_id
+    players = {p.id: p for p in g.state.league.all_players()} | {p.id: p for p in proc.market}
+    first_ref: dict[str, int] = {t.id: 0 for t in g.state.league.teams}
+    reasons: dict[str, int] = {}
+    axis_offers: dict[str, list[int]] = {}
+    for e in proc.negotiations.values():
+        if not e["offers"]:
+            continue
+        o = e["offers"][0]
+        p = players.get(e["player_id"])
+        top = max(p.preference, key=p.preference.get) if p is not None and p.preference else "?"
+        axis_offers.setdefault(top, [0, 0])
+        axis_offers[top][0] += 1
+        if o["accepted"]:
+            axis_offers[top][1] += 1
+        else:
+            first_ref[e["team_id"]] += 1
+            reasons[o["reason"] or "?"] = reasons.get(o["reason"] or "?", 0) + 1
+    return {"my_first_refusals": first_ref.get(my, 0), "first_refusals": [first_ref[t] for t in sorted(first_ref)], "reasons": reasons, "axis_offers": axis_offers}
+
+
+def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium", money_rule: str = "none", my_team: bool = False) -> list[dict]:
     from pennant.contracts import team_salary
 
-    g = api.Game.new(seed, [None] * 12, None, season_seed=seed, baselines="default", scout_level=scout_level, money_rule=money_rule)  # 観戦のみ(全球団 AI)
+    g = api.Game.new(seed, [None] * 12, 0 if my_team else None, season_seed=seed, baselines="default", scout_level=scout_level, money_rule=money_rule)  # 観戦のみ(全球団 AI)。my_team なら T01 を自動案 + おまかせで進める(F3-2b)
+    if my_team:
+        prefs = [p.preference for p in g.state.league.all_players()]
     sizes = {t.id: len(t.players) for t in g.state.league.teams}
     positions = {t.id: sorted(p.position for p in t.players) for t in g.state.league.teams}
     rows = []
@@ -109,6 +135,24 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
         if year < years:
             t0 = time.perf_counter()
             summary = g.year_end()
+            if my_team:  # 自球団:自動案でまとめて提示 → 集計 → おまかせ(AI と同じ方針)
+                if g.state.procedure.phase == "renewal":
+                    g.offseason_renew_auto()
+                row.update(negotiation_stats(g))
+                g.offseason_auto()
+                negs = g.last_negotiations or {}
+                row["negotiation_released"] = [e["expected"] for e in negs.values() if e["status"] == "released"]
+                row["multi_year"] = sum(1 for e in negs.values() if e["status"] == "accepted" and e["offers"] and e["offers"][-1]["years"] > 1)
+                row["accepted"] = sum(1 for e in negs.values() if e["status"] == "accepted")
+                row["entries"] = len(negs)
+                if year == 1:
+                    row["preferences"] = prefs
+                caps_now = {t.id: g.budget_info(t.id)["cap"] for t in g.state.league.teams}
+                fills = {}
+                for x in g.state.transactions:
+                    if x["year"] == year and x["phase"] == "fill":
+                        fills[x["team_id"]] = fills.get(x["team_id"], 0) + int(x.get("salary") or 0)
+                row["over_cap_excl_fill"] = max([team_salary(t) - fills.get(t.id, 0) - caps_now[t.id] for t in g.state.league.teams if caps_now[t.id]] or [0])
             row["year_end_seconds"] = time.perf_counter() - t0
             row["retired"] = summary["counts"]["retired"]
             row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release")  # 確定の後に数える(そのオフの自由契約)
@@ -135,6 +179,7 @@ def main(argv=None):
     parser.add_argument("--json", help="年ごとの数を書き出す JSON ファイル")
     parser.add_argument("--scout-level", choices=("small", "medium", "large"), default="medium", help="スカウト評価のずれの段階(F3-1)")
     parser.add_argument("--money-rule", choices=("none", "loose", "standard", "strict"), default="none", help="お金のルール(F3-2a)")
+    parser.add_argument("--my-team", action="store_true", help="球団 T01 を操作する球団にし、毎年 自動案でまとめて更改 → おまかせ で進める(F3-2b。更改の集計を JSON に残す)")
     parser.add_argument("--load", nargs="*", help="回す代わりに、--json で書き出したファイルを読んで表を出す(別々に回した世界をまとめる)")
     args = parser.parse_args(argv)
     config = load_generation_config()
@@ -149,7 +194,7 @@ def main(argv=None):
         args.years = min(len(v) for v in worlds.values())
     else:
         for seed in range(args.seed_start, args.seed_start + args.worlds):
-            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level, money_rule=args.money_rule)
+            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level, money_rule=args.money_rule, my_team=args.my_team)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(worlds, f, ensure_ascii=False, indent=1)

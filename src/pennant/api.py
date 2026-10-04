@@ -343,6 +343,7 @@ class Game:
         self._cache = _StatsCache()
         self._park_estimates: tuple[int, dict[str, ParkEstimate] | None] | None = None
         self._war: tuple[int, dict[str, WarLine]] | None = None  # (試合数, WAR の表)。試合数が変わるまで覚えておく(D-179)
+        self.last_negotiations: dict | None = None  # 直前に終わったオフの手続きの更改の交渉(保存しない。F3-2b)
 
     @property
     def records(self) -> _StatsCache:
@@ -557,6 +558,7 @@ class Game:
             "mine": mine,
             "renewals": [renew(x) for x in proc.renewals],
             "budget_releases": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my, "salary_text": f"{x['salary']:,} 万円"} for x in proc.budget_releases],
+            "negotiation_releases": [{"player_id": e["player_id"], "name": e["name"], "team_id": e["team_id"], "team_name": names.get(e["team_id"], ""), "position_label": POSITION_LABELS.get(e["position"], ""), "age": e["age"], "is_mine": e["team_id"] == my, "offers": len(e["offers"]), "reason": self._renewal_status({**e, "status": "pending"})[2] if e["offers"] else ""} for e in proc.negotiations.values() if e["status"] == "released"],
             "teams": [{"team_id": t.id, "team_name": t.name, "is_mine": t.id == my, **{k: v for k, v in self.budget_info(t.id).items() if k in ("total", "total_text", "cap", "cap_text", "usage", "tier_label")}} for t in state.league.teams],
             "note": "契約が満了した選手に、見込みの WAR(直近 3 シーズンの加重平均。履歴がなければスカウト評価)から算定した年俸で提示し、選手が志望で受けるか断るかを決めました(AI 球団は、断られたら見込みの高い選手にだけ条件を上げて再提示し、ほかは自由契約)。" + ("標準以上では、予算の上限を超える球団は、見込みの WAR あたりの年俸が高い選手から自由契約にして超過を解消します(あなたの球団は自由契約の画面で自分で選びます)。" if ctx.hard() else ""),
         }
@@ -581,6 +583,7 @@ class Game:
             state.transactions.append({"year": proc.year, **x})
         for x in proc.filled:
             state.transactions.append({"year": proc.year, **x})  # 自動補充も履歴に残す(振り返りのため。D-216)
+        self.last_negotiations = proc.negotiations  # 終わった手続きの更改の交渉(保存しない。指紋 (p) と開発者向けの集計用)
         state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)

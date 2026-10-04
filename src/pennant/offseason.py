@@ -213,7 +213,7 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
 
 # ---- 事前運転と校正(D-034 の完成形。D-190、D-197) ----
 
-PRERUN_NEGOTIATION = "hard"  # 事前運転で志望の判定を扱うか(D-254)
+PRERUN_NEGOTIATION = "none"  # 事前運転で志望の判定を扱わない(全ルール。新規開始の時間が 4 割ほど増えるため。D-254)
 
 
 def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None, money_rule: str = "none", tiers: dict | None = None, contract_settings=None, negotiation_settings=None, negotiate: str = PRERUN_NEGOTIATION) -> int:

@@ -139,6 +139,14 @@
   .budget-bar.over span { background: var(--warn-line); }
   .contract-box.over { background: var(--warn-bg); border-left: 4px solid var(--warn-line); }
   .contract-box dl { margin: var(--space-1) 0 0; font-size: var(--font-tiny); color: var(--muted); }
+  /* 契約更改(F3-2b):提示のパネル。色・文字・余白は変数で指定(D-239) */
+  .offer-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); font-size: var(--font-small); white-space: normal; }
+  .offer-panel p { margin: var(--space-1) 0; }
+  .offer-fields { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: var(--space-1) 0; }
+  .offer-fields input[type=number] { width: 8em; }
+  .offer-history { margin: var(--space-1) 0; padding-left: var(--space-3); font-size: var(--font-tiny); }
+  tr.refused td { background: var(--warn-bg); }
+  .small.answer { color: var(--warn-line); }
   select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-height: 40px; max-width: 100%; }
   .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
   .check input { width: 20px; height: 20px; }
@@ -249,7 +257,7 @@
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)<br><span class="muted small">標準偏差 5。</span></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong><br><span class="muted small">標準偏差 8。当たり外れが大きい。</span></span></label>
     <p class="small"><strong>お金のルール</strong>:年俸と予算の厳しさです。途中では変えられません。</p>
-    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)<br><span class="muted small">予算の機能なし。年俸と契約年数は表示されるだけで、契約満了者は全員更改します。</span></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)<br><span class="muted small">予算の機能なし。年俸は算定どおりで、更改では年俸を変えられません(年数は選べます)。</span></span></label>
     <label class="radio"><input type="radio" name="money-rule" value="loose"><span><strong>ゆるい</strong><br><span class="muted small">予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。</span></span></label>
     <label class="radio"><input type="radio" name="money-rule" value="standard"><span><strong>標準</strong><br><span class="muted small">予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。</span></span></label>
     <label class="radio"><input type="radio" name="money-rule" value="strict"><span><strong>きびしい</strong><br><span class="muted small">標準に加えて、球団ごとの予算の格差(大・中・小)があります。</span></span></label>

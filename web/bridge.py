@@ -154,6 +154,7 @@ _ANSWERS = {
     "offseason_answers": lambda a: answers.offseason_answers(_game, a.get("year"), int(a.get("level", 1))),
     "scouting_answers": lambda a: answers.scouting_answers(_game, a["player_id"], int(a.get("level", 1))),
     "procedure_answers": lambda a: answers.procedure_answers(_game, int(a.get("level", 1))),
+    "negotiation_answers": lambda a: answers.negotiation_answers(_game, int(a.get("level", 1))),
     "offseason_ability_table": lambda a: answers.roster_ability_table(_game, a.get("phase", "release"), a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order"), a.get("season")),
     "draft_review_answers": lambda a: answers.draft_review_answers(_game, a.get("team_id"), a.get("year"), int(a.get("level", 1))),
 }

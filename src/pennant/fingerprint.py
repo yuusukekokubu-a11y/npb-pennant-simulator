@@ -28,7 +28,7 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 16  # 16:(o)契約(F3-2a。お金のルール「標準」)。(a)〜(n) は変わらない(D-237)。 15:評価の 2 層化(D-212)で事前運転が変わり、(a)〜(m) と (n) が変わった((i) は同じ)。 14:(n)オフの手続き(F3-1)。事前運転が新しい手続きになり、(a)〜(m) も変わった。 13:事前運転と校正(D-190、D-197)で選手が変わり、(a)〜(m) すべて変わった。 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
+FINGERPRINT_VERSION = 17  # 17:(p)契約更改と志望(F3-2b。お金のルール「標準」)。更改で断る選手が出るので (m)(n)(o) が変わった。 16:(o)契約(F3-2a。お金のルール「標準」)。(a)〜(n) は変わらない(D-237)。 15:評価の 2 層化(D-212)で事前運転が変わり、(a)〜(m) と (n) が変わった((i) は同じ)。 14:(n)オフの手続き(F3-1)。事前運転が新しい手続きになり、(a)〜(m) も変わった。 13:事前運転と校正(D-190、D-197)で選手が変わり、(a)〜(m) すべて変わった。 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -399,6 +399,35 @@ def contracts_fingerprint(parks: bool = True) -> tuple[str, dict]:
     return _digest(record), info
 
 
+def negotiation_fingerprint(parks: bool = True) -> tuple[str, dict]:
+    """(p)固定のシード、お金のルール「標準」で、観戦のみ(全球団 AI)の更改・志望の判定・自由契約を 2 回行った後の集計(F3-2b)。
+    交渉ごとの (選手, 球団, 状態, 提示の (年数, 年俸, 受けたか, 理由)) と、志望の重み(1 万倍の整数)、そのオフの後の契約。"""
+    from collections import Counter
+
+    from .api import Game
+
+    record: dict = {}
+    info: dict = {"year_ends": MULTIYEAR_YEAR_ENDS, "rule": "standard", "refused": [], "released": [], "multi_year": [], "reasons": []}
+    g = Game.new(LEAGUE_SEED, [None] * 12, None, season_seed=SEASON_SEED, baselines="default", money_rule="standard")
+    if not parks:
+        neutralize_parks(g.state.league)
+    record["preferences"] = [[p.id] + [int(round(float(p.preference[k]) * 10000)) for k in sorted(p.preference)] for t in g.state.league.teams for p in t.players]
+    for k in range(MULTIYEAR_YEAR_ENDS):
+        g.advance(g.state.season.total_days)
+        g.year_end()
+        year = g.state.offseasons[-1].year
+        negs = g.last_negotiations or {}
+        record[f"negotiations-{year}"] = [[e["player_id"], e["team_id"], e["status"], [[o["years"], o["salary"], o["accepted"], o.get("reason") or ""] for o in e["offers"]]] for e in negs.values()]
+        record[f"contracts-{year}"] = [[p.id, int(p.contract["salary"]), int(p.contract["until"])] for t in g.state.league.teams for p in t.players]
+        info["refused"].append(sum(1 for e in negs.values() if e["offers"] and not e["offers"][0]["accepted"]))
+        info["released"].append(sum(1 for e in negs.values() if e["status"] == "released"))
+        info["multi_year"].append(sum(1 for e in negs.values() if e["status"] == "accepted" and e["offers"] and e["offers"][-1]["years"] > 1))
+        reasons = Counter(o["reason"] for e in negs.values() for o in e["offers"] if not o["accepted"] and o.get("reason"))
+        info["reasons"].append({k2: reasons[k2] for k2 in sorted(reasons)})
+    info["players"] = len(g.state.league.all_players())
+    return _digest(record), info
+
+
 def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     """(a)リーグの生成、(b)1試合、(c)数十日分の試合、(d)1シーズン、(e)集計結果、(f)保存と読み込み、
     (g)基準値、(h)第2弾の指標、(i)球場の倍率 の指紋。parks=False は、球場の倍率をすべて 1.0 にする(回帰の確認用)。"""
@@ -433,6 +462,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
     mm, minfo = multiyear_fingerprint(parks)
     nn, ninfo = procedure_fingerprint(parks)
     oo, oinfo = contracts_fingerprint(parks)
+    pp, pinfo = negotiation_fingerprint(parks)
     by_league: dict[int, list] = {}
     for t in league.teams:
         by_league.setdefault(t.league_index, []).append(t)
@@ -464,6 +494,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
         "multiyear": mm,
         "procedure": nn,
         "contracts": oo,
+        "negotiation": pp,
         "counts": {
             "players": len(league.all_players()),
             "game_plate_appearances": len(game.log),
@@ -486,6 +517,7 @@ def fingerprints(quick: bool = False, parks: bool = True) -> dict:
             "multiyear": minfo,
             "procedure": ninfo,
             "contracts": oinfo,
+            "negotiation": pinfo,
         },
     }
 
@@ -515,5 +547,6 @@ def format_fingerprints(fp: dict) -> str:
             f"- (m) 複数年(年度の確定 {c['multiyear']['year_ends']} 回・{c['multiyear']['seasons']}シーズン。引退 {'・'.join(str(n) for n in c['multiyear']['retired'])}人、新人 {'・'.join(str(n) for n in c['multiyear']['rookies'])}人。選手 {c['multiyear']['players']}人): {fp['multiyear']}",
             f"- (n) オフの手続き(全球団 AI で {c['procedure']['year_ends']} 回。指名・獲得 {'・'.join(str(n) for n in c['procedure']['picked'])}人、自由契約 {'・'.join(str(n) for n in c['procedure']['released'])}人。入団時の評価を持つ選手 {c['procedure']['scouted']}人): {fp['procedure']}",
             f"- (o) 契約(お金のルール「標準」で全球団 AI の手続きを {c['contracts']['year_ends']} 回。単価 {'・'.join(str(n) for n in c['contracts']['rates'])} 万円/WAR、球団の総年俸の平均 {'・'.join(str(n) for n in c['contracts']['totals'])} 万円、予算超過の自由契約 {'・'.join(str(n) for n in c['contracts']['budget_releases'])}人): {fp['contracts']}",
+            f"- (p) 契約更改(お金のルール「標準」で全球団 AI の更改を {c['negotiation']['year_ends']} 回。最初の提示を断った {'・'.join(str(n) for n in c['negotiation']['refused'])}人、交渉決裂で自由契約 {'・'.join(str(n) for n in c['negotiation']['released'])}人、複数年 {'・'.join(str(n) for n in c['negotiation']['multi_year'])}人): {fp['negotiation']}",
         ]
     )
