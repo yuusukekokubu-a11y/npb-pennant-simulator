@@ -1107,7 +1107,7 @@ async function renewalSection(v, token) {
 // 選手を押して出る提示のパネル:年数(1〜5)、年俸(ゆるい以上)、残りの回数、提示・自由契約にする
 function offerPanel(p, rn, prefs) {
   const r = p.renewal;
-  const box = el("div", { className: "offer-panel", id: "offer-panel" });
+  const box = el("div", { className: "offer-panel", id: "offer-panel", dataset: { playerId: p.player_id } });
   box.append(el("p", {}, `自動案:1 年・${r.auto_text}。現在の年俸 ${r.old_text}。見込みの WAR ${Number(r.expected).toFixed(2)}。`));
   if (r.offers.length) {
     box.append(el("ul", { className: "offer-history" }, ...r.offers.map((o, i) => el("li", {}, `${i + 1} 回目:${o.years} 年・${o.salary_text} → ${o.accepted ? "受けた" : `断られた(${o.reason})`}`))));
