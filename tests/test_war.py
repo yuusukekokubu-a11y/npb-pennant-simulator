@@ -189,7 +189,7 @@ def test_screen_war_matches_the_script_and_survives_save_load():
     # 読み込んだ後も同じ
     from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 
-    assert SAVE_FORMAT_VERSION == 9
+    assert SAVE_FORMAT_VERSION == 10
     again = api.Game(load_game(save_game(g.state)), dirty=False)
     assert war_record(again.war_lines()) == war_record(g.war_lines())
     assert again.stats("batter", "war") == s

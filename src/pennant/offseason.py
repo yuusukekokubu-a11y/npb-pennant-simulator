@@ -213,21 +213,26 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
 
 # ---- 事前運転と校正(D-034 の完成形。D-190、D-197) ----
 
-def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None) -> int:
+def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None, money_rule: str = "none", tiers: dict | None = None, contract_settings=None) -> int:
     """新規開始のとき、試合をせずに年度の確定の処理だけを years 回回す(事前運転)。履歴は作らない。
     F3-1 からは、オフの手続き(自由契約・ドラフト・市場・自動補充。全球団 AI)を使う(D-210)。
     乱数は derive_seed(seed, "prerun:<年>")。戻り値は回した年数。progress には (終わった年数, 全年数) を知らせる。"""
-    from .draft import load_draft_settings, run_ai_offseason
+    from .contracts import is_hard, load_contract_settings
+    from .draft import ContractContext, load_draft_settings, run_ai_offseason
 
     draft_settings = draft_settings or load_draft_settings()
     if scout_sd is None:
         scout_sd = draft_settings.level_sd(draft_settings.default_level)
+    contract_settings = contract_settings or load_contract_settings()
     n = settings.prerun_years if years is None else int(years)
     order = [t.id for t in league.teams]
+    sd_map = {t.id: scout_sd for t in league.teams}
     for k in range(1, n + 1):
         year_seed = derive_seed(seed, f"prerun:{k}")
         age_update_retire(league, year_seed, config, settings, k, None)
-        run_ai_offseason(league, year_seed, config, parts, settings, draft_settings, k, None, {t.id: scout_sd for t in league.teams}, order, id_prefix="B")
+        # 標準以上だけ、事前運転でも契約を扱う(予算が AI の判断に効くため)。なし・ゆるいでは契約は判断に効かないので省き、開始時に作る(時間のため。D-237)
+        ctx = ContractContext(contract_settings, money_rule, tiers or {}, lambda pid, role: [], sd_map.__getitem__) if is_hard(money_rule) else None
+        run_ai_offseason(league, year_seed, config, parts, settings, draft_settings, k, None, sd_map, order, id_prefix="B", ctx=ctx)
         if progress is not None:
             progress(k, n)
     return n

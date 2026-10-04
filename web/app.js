@@ -666,6 +666,7 @@ async function renderPlayer(args, token) {
     ` / ${p.position_label} / ${p.age}歳${p.hand ? ` / ${p.hand}` : ""}${p.retired ? "(引退)" : ""}`,
   );
   renderPlayerHistory(data);
+  renderPlayerContract(data);
   await renderPlayerScouting(data, token);
   setPressed("player-kind", state.playerKind);
   const box = $("player-season");
@@ -724,6 +725,24 @@ async function renderPlayer(args, token) {
 }
 
 // 入団時のスカウト評価(F3-1。D-199、D-206)。答え合わせモードがオンなら、真の能力を並べる
+// 契約(F3-2a。D-232):年俸・契約年数・残り年数・年俸の履歴(公開情報。他球団の選手も)
+function renderPlayerContract(data) {
+  const c = data.player.contract;
+  const box = $("player-contract-box");
+  box.hidden = !c;
+  if (!c) return;
+  const years = c.history.length ? c.history[c.history.length - 1].years : null;
+  $("player-contract").replaceChildren(
+    kvTable([
+      { label: "年俸", description: "架空の「万円」。見込みの WAR(直近 3 シーズンの WAR の加重平均。履歴がなければスカウト評価)から算定した値", values: [c.salary_text] },
+      { label: "契約年数", description: "今の契約の年数(年齢と見込みの WAR で決まる)", values: [years ? `${years} 年` : "-"] },
+      { label: "残り年数", description: "今シーズンを含めた残り。0 なら今シーズンの終わりで満了", values: [`${c.remaining} 年(${c.until}シーズン目まで)`] },
+    ]),
+    el("details", {}, el("summary", {}, "年俸の履歴"), table({ firstLabel: "シーズン", columns: [{ key: "salary", label: "年俸" }, { key: "years", label: "年数" }, { key: "reason", label: "きっかけ" }], rows: [...c.history].reverse().map((h) => ({ ...h, values: { salary: h.salary_text, years: `${h.years} 年`, reason: h.reason_label } })), first: (h) => [el("span", {}, `${h.year}シーズン目〜`)] })),
+  );
+  $("player-contract-note").textContent = "年俸は見える情報(成績とスカウト評価)だけで決まり、真の能力は使っていません。契約が満了すると、次のオフに算定し直した年俸で自動で更改します。";
+}
+
 async function renderPlayerScouting(data, token) {
   const sc = data.player.scouting;
   const box = $("player-scouting-box");
@@ -879,6 +898,7 @@ async function renderProcedure(token) {
   $("proc-auto").disabled = state.running;
   $("proc-next").textContent = v.phase === "market" ? "完了する(自動補充して次のシーズンへ)" : "次の手続きへ";
   $("proc-note").textContent = v.note;
+  renderProcedureContracts(v);
   // 答え合わせモードがオンなら、真の総合値も出す(D-206)
   let truth = null;
   if (state.answerLevel > 0) {
@@ -895,6 +915,35 @@ async function renderProcedure(token) {
   body.replaceChildren(...parts);
   $("proc-history").replaceChildren(historyTable(v.picks, v.released));
   $("proc-history-box").open = v.picks.length > 0 && v.phase !== "release";
+}
+
+// 契約更改の結果と予算(F3-2a。D-235):手続きの最初(自由契約の段階)に出す。超過のままでは「次の手続きへ」が押せない
+function renderProcedureContracts(v) {
+  const c = v.contracts;
+  const box = $("proc-contracts");
+  if (!c) { box.replaceChildren(); return; }
+  const parts = [];
+  if (c.mine) {
+    const b = { ...c.mine, over: c.mine.over_now };
+    const card = el("div", { className: b.over > 0 && b.hard ? "contract-box over" : "contract-box" }, ...budgetLines(b));
+    if (b.blocked) card.append(el("div", { className: "warn" }, "総年俸が予算の上限を超えています。自由契約で減らすまで「次の手続きへ」は押せません(「おまかせ」なら、見込みの WAR あたりの年俸が高い選手から自動で外します)。"));
+    parts.push(card);
+    if (v.phase === "release") $("proc-next").disabled = state.running || b.blocked;
+  }
+  if (v.phase === "release" && (c.renewals.length || c.budget_releases.length)) {
+    const mineFirst = (rows) => [...rows].sort((a, b) => (b.is_mine ? 1 : 0) - (a.is_mine ? 1 : 0));
+    const renewCols = [{ key: "team", label: "球団" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "old", label: "前の年俸" }, { key: "salary", label: "新しい年俸" }, { key: "change", label: "増減" }, { key: "years", label: "年数" }];
+    const renewRows = mineFirst(c.renewals).map((r) => ({ ...r, values: { team: r.team_name, position: r.position_label, age: `${r.age}歳`, old: r.old_text || "-", salary: r.salary_text, change: r.change === null ? "-" : `${r.change >= 0 ? "+" : ""}${r.change.toLocaleString()}`, years: `${r.years} 年` } }));
+    const det = el("details", { open: c.renewals.some((r) => r.is_mine) }, el("summary", {}, `契約更改の結果(更改 ${c.renewals.length} 人${c.budget_releases.length ? `・予算超過で自由契約 ${c.budget_releases.length} 人` : ""})`));
+    det.append(el("p", { className: "muted small" }, `${c.note} 単価は ${c.rate_text}。`));
+    if (c.renewals.length) det.append(el("h3", {}, "更改した選手(自球団が上)"), table({ firstLabel: "選手", columns: renewCols, rows: renewRows, first: (r) => [playerLink(r.name, r.player_id)], rowClass: (r) => (r.is_mine ? "mine" : ""), fluid: true, limit: state.proc.renewalsShown || 20, more: () => { state.proc.renewalsShown = (state.proc.renewalsShown || 20) + 50; renderCurrent(); } }));
+    if (c.budget_releases.length) det.append(el("h3", {}, "予算超過で自由契約になった選手(AI 球団)"), table({ firstLabel: "選手", columns: [{ key: "team", label: "球団" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸" }], rows: c.budget_releases.map((r) => ({ ...r, values: { team: r.team_name, position: r.position_label, age: `${r.age}歳`, salary: r.salary_text } })), first: (r) => [el("span", {}, r.name)], fluid: true }));
+    parts.push(det);
+  }
+  if (!c.mine && c.teams && v.phase === "release") {
+    parts.push(el("details", {}, el("summary", {}, "各球団の総年俸"), table({ firstLabel: "球団", columns: [{ key: "total", label: "総年俸" }, { key: "cap", label: c.hard ? "上限" : "目安" }, { key: "usage", label: "使用率" }], rows: c.teams.map((t) => ({ ...t, values: { total: t.total_text, cap: t.cap_text || "-", usage: t.usage === null ? "-" : `${t.usage}%` } })), first: (t) => [teamLink(t.team_name, t.team_id)], fluid: true })));
+  }
+  box.replaceChildren(...parts);
 }
 
 function ceilingText(g) {
@@ -1076,7 +1125,7 @@ async function marketSection(v, truth, token) {
   ];
   if (truth) columns.push({ key: "truth", label: "真の総合", description: "答え合わせ:真の今の総合値" + (truth.level === 2 ? " / 潜在能力" : "") });
   if (v.is_my_turn) columns.push({ key: "pick", label: "" });
-  for (const r of rows) if (v.is_my_turn) r.values.pick = el("button", { className: "pick-btn", type: "button", onclick: () => runProc("pick", { player_id: r.player_id }) }, "獲得");
+  for (const r of rows) if (v.is_my_turn) r.values.pick = r.offer && !r.offer.affordable ? el("span", { className: "muted small" }, "予算不足") : el("button", { className: "pick-btn", type: "button", onclick: () => runProc("pick", { player_id: r.player_id }) }, "獲得");
   const sortCol = SCOUT_SORT_KEYS.includes(sortKey) ? columns.find((c) => c.key === sortKey) : data.sort;
   const first = (p) => [link(p.name, () => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); }), el("span", { className: "sub" }, p.hand || "")];
   const detail = (p) => (ps.open === p.player_id && p.scouting ? `項目別の推定値 ± ふれ幅:${p.scouting.items.map((i) => `${i.label} ${i.text}`).join(" / ")}` : null);
@@ -1348,6 +1397,13 @@ async function renderTeam(args, token) {
     ]),
   );
   $("team-war-note").textContent = w.note;
+  $("team-budget").replaceChildren(...budgetLines(d.budget));
+  $("team-salaries").replaceChildren(
+    d.salaries.length
+      ? table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸(万円)" }, { key: "remaining", label: "残り", description: "残りの契約年数(今シーズンを含む)" }], rows: d.salaries.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, salary: r.salary_text, remaining: `${r.remaining} 年` } })), first: (r) => [playerLink(r.name, r.player_id)], fluid: true, limit: d.salariesShown || 20, more: () => { d.salariesShown = (d.salariesShown || 20) + 50; renderCurrent(); } })
+      : el("p", { className: "muted" }, "契約の情報がありません。"),
+  );
+  $("team-salaries-note").textContent = "年俸の高い順。年俸は架空の「万円」で、見える情報(成績とスカウト評価)から算定した値です。" + (d.budget.cap ? "予算は支配下 70 人の総年俸の枠で、上限(目安)は基準予算の 1.10 倍です。" : "お金のルールが「なし」なので、予算はありません。");
   $("team-war-terms").replaceChildren(...w.terms.flatMap((c) => [el("dt", {}, c.label), el("dd", {}, c.description)]));
   const cols = [
     { key: "position", label: "ポジション" },
@@ -1359,6 +1415,21 @@ async function renderTeam(args, token) {
   const first = (p) => [playerLink(p.name, p.player_id)];
   $("team-pitchers").replaceChildren(table({ firstLabel: "選手", columns: cols, rows: rows("pitcher"), first }));
   $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: cols, rows: rows("batter"), first }));
+}
+
+// 総年俸と予算の表示(F3-2a。D-231):なしは総年俸だけ、ゆるいは目安、標準・きびしいは上限
+function budgetLines(b) {
+  const lines = [el("div", {}, el("span", { className: "big" }, `総年俸 ${b.total_text}`), b.tier_label ? el("span", { className: "sub" }, `予算の格差:${b.tier_label}`) : null)];
+  if (b.cap) {
+    const over = b.over > 0;
+    lines.push(
+      el("div", {}, `${b.hard ? "予算の上限" : "予算の目安"} ${b.cap_text}(使用率 ${b.usage}%)`),
+      el("div", { className: over ? "budget-bar over" : "budget-bar" }, el("span", { style: `width: ${Math.min(100, b.usage)}%` })),
+      over ? el("div", { className: "warn" }, `${b.hard ? "上限" : "目安"}を ${b.over.toLocaleString()} 万円超えています${b.hard ? "" : "(ゆるいなので契約は結べます)"}`) : null,
+    );
+  }
+  lines.push(el("dl", {}, el("dt", {}, `お金のルール:${b.rule_label}`), el("dd", {}, b.rate ? `年俸の単価は 1 WAR あたり約 ${(b.rate / 10000).toFixed(2)} 億円(毎年のオフにリーグの環境から求め直します)。` : "")));
+  return lines.filter((x) => x !== null);
 }
 
 // ---- 球場のページ(公開用の結果と、答え合わせモードでの真の倍率。D-138) ----
@@ -1688,7 +1759,8 @@ async function startNewGame() {
     $("trial-text").textContent = "リーグの歴史を作っています(数十年分の選手の入れ替わり)…";
     const t0 = performance.now();
     const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel }).finally(() => ($("trial-box").hidden = true));
+    const moneyRule = document.querySelector("input[name=money-rule]:checked").value;
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, moneyRule }).finally(() => ($("trial-box").hidden = true));
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");

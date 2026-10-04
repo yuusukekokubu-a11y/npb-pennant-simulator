@@ -31,6 +31,8 @@ from pennant.war import load_war_settings, target_total_war, war_totals
 AGE_BINS = ((18, 22), (23, 27), (28, 32), (33, 37), (38, 99))
 COLUMNS = [
     ("first_team", "一軍の能力", "{:.2f}"),
+    ("rate", "単価(万円/WAR)", "{:,.0f}"),
+    ("total_mean", "総年俸の平均", "{:,.0f}"),
     ("avg", "打率", "{:.3f}"),
     ("hr_per_game", "本塁打/試合", "{:.2f}"),
     ("runs_per_game", "得点/試合(両チーム)", "{:.2f}"),
@@ -82,8 +84,10 @@ def measure(g: api.Game, config, war_settings) -> dict:
     return out
 
 
-def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium") -> list[dict]:
-    g = api.Game.new(seed, [None] * 12, None, season_seed=seed, baselines="default", scout_level=scout_level)  # 観戦のみ(全球団 AI)
+def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium", money_rule: str = "none") -> list[dict]:
+    from pennant.contracts import team_salary
+
+    g = api.Game.new(seed, [None] * 12, None, season_seed=seed, baselines="default", scout_level=scout_level, money_rule=money_rule)  # 観戦のみ(全球団 AI)
     sizes = {t.id: len(t.players) for t in g.state.league.teams}
     positions = {t.id: sorted(p.position for p in t.players) for t in g.state.league.teams}
     rows = []
@@ -92,6 +96,15 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
         row = measure(g, config, war_settings)
         row["year"] = year
         row["seed"] = seed
+        totals = [team_salary(t) for t in g.state.league.teams]  # 契約(F3-2a):単価・総年俸・使用率
+        caps = [g.budget_info(t.id)["cap"] for t in g.state.league.teams]
+        row["rate"] = g.state.contract_rates.get(str(year))
+        row["total_mean"] = statistics.fmean(totals)
+        row["total_max"] = max(totals)
+        row["usage_max"] = max(t / c for t, c in zip(totals, caps)) if caps[0] else None
+        row["win_pct"] = {r["team_id"]: r["wins"] / max(1, r["wins"] + r["losses"]) for lg in g.standings()["leagues"] for r in lg["rows"]}  # きびしいの格差の確認用(F3-2a)
+        row["rank"] = {r["team_id"]: r["rank"] for lg in g.standings()["leagues"] for r in lg["rows"]}
+        row["tiers"] = dict(g.state.budget_tiers)
         row["released"] = 0
         if year < years:
             t0 = time.perf_counter()
@@ -99,6 +112,8 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
             row["year_end_seconds"] = time.perf_counter() - t0
             row["retired"] = summary["counts"]["retired"]
             row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release")  # 確定の後に数える(そのオフの自由契約)
+            row["budget_releases"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release" and x.get("note") == "budget")
+            row["budget_passes"] = sum(1 for x in g.state.transactions if x["year"] == year and x.get("note") == "budget")
             now = {t.id: len(t.players) for t in g.state.league.teams}
             assert now == sizes, f"選手の数が変わった(リーグ {seed}、{year} 年目の確定の後:{ {k: v for k, v in now.items() if v != sizes[k]} })"
             from pennant.draft import minimum_batters, minimum_positions, shortages
@@ -119,6 +134,7 @@ def main(argv=None):
     parser.add_argument("--years", type=int, default=30)
     parser.add_argument("--json", help="年ごとの数を書き出す JSON ファイル")
     parser.add_argument("--scout-level", choices=("small", "medium", "large"), default="medium", help="スカウト評価のずれの段階(F3-1)")
+    parser.add_argument("--money-rule", choices=("none", "loose", "standard", "strict"), default="none", help="お金のルール(F3-2a)")
     parser.add_argument("--load", nargs="*", help="回す代わりに、--json で書き出したファイルを読んで表を出す(別々に回した世界をまとめる)")
     args = parser.parse_args(argv)
     config = load_generation_config()
@@ -133,7 +149,7 @@ def main(argv=None):
         args.years = min(len(v) for v in worlds.values())
     else:
         for seed in range(args.seed_start, args.seed_start + args.worlds):
-            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level)
+            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level, money_rule=args.money_rule)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(worlds, f, ensure_ascii=False, indent=1)
@@ -165,6 +181,19 @@ def main(argv=None):
     for seed, w in worlds.items():
         rows.append([str(seed)] + [f"{statistics.fmean(r[k] for r in w):.3g}({min(r[k] for r in w):.3g}〜{max(r[k] for r in w):.3g})" for k in ("first_team", "avg", "runs_per_game", "era", "war_ratio", "age_mean")])
     print(_table(["リーグ", "一軍の能力", "打率", "得点/試合", "防御率", "WAR ÷ 目標", "年齢の平均"], rows))
+    # きびしい:最強・最弱チームの勝率(全年の平均)と、予算の格差ごとの平均順位(F3-2a)
+    if any(w[0].get("tiers") for w in worlds.values()):
+        print("\n## 予算の格差と成績(きびしい)\n")
+        best, worst, by_tier = [], [], {"large": [], "medium": [], "small": []}
+        for seed, w in worlds.items():
+            teams = list(w[0]["win_pct"])
+            avg = {tid: statistics.fmean(r["win_pct"][tid] for r in w) for tid in teams}
+            best.append(max(avg.values()))
+            worst.append(min(avg.values()))
+            for tid in teams:
+                tier = w[0]["tiers"].get(tid, "medium")
+                by_tier[tier].append(statistics.fmean(r["rank"][tid] for r in w))
+        print(_table(["最強チームの勝率(全年の平均。世界の平均)", "最弱チームの勝率", "予算 大 の平均順位", "中", "小"], [[f"{statistics.fmean(best):.3f}", f"{statistics.fmean(worst):.3f}"] + [f"{statistics.fmean(by_tier[t]):.2f}" if by_tier[t] else "-" for t in ("large", "medium", "small")]]))
     total_time = sum(r["year_end_seconds"] for w in worlds.values() for r in w)
     count = sum(1 for w in worlds.values() for r in w if r["year_end_seconds"] > 0)
     print(f"\n- 年度の確定にかかった時間(PC):平均 {total_time / count:.2f} 秒({count} 回)" if count else "")

@@ -1,0 +1,111 @@
+{
+  "format_version": 1,
+  "unit": "万円",
+  "rules": {
+    "default": "none",
+    "levels": [
+      "none",
+      "loose",
+      "standard",
+      "strict"
+    ]
+  },
+  "budget": {
+    "base": 400000,
+    "cap_factor": 1.1,
+    "tiers": {
+      "large": 1.2,
+      "medium": 1.0,
+      "small": 0.85
+    },
+    "tier_counts": {
+      "large": 3,
+      "medium": 6,
+      "small": 3
+    }
+  },
+  "salary": {
+    "minimum": 500,
+    "rounding": 100,
+    "war_weights": [
+      0.5,
+      0.3,
+      0.2
+    ],
+    "usage_full": {
+      "batter": 300,
+      "pitcher": 100
+    },
+    "age_discount": {
+      "start": 30,
+      "per_year": 0.08,
+      "floor": 0.4
+    }
+  },
+  "years": {
+    "min": 1,
+    "max": 5,
+    "young_until": 25,
+    "young": 3,
+    "prime_until": 29,
+    "prime": [
+      [
+        2.0,
+        4
+      ],
+      [
+        1.0,
+        3
+      ],
+      [
+        0.0,
+        2
+      ]
+    ],
+    "veteran_until": 32,
+    "veteran": [
+      [
+        2.0,
+        2
+      ],
+      [
+        0.0,
+        1
+      ]
+    ],
+    "old": 1,
+    "rookie": 3
+  },
+  "rookie_salaries": {
+    "1": 1500,
+    "2": 1000,
+    "3": 800,
+    "4": 600,
+    "5": 500,
+    "6": 500
+  },
+  "scouting_war": {
+    "batter": {
+      "intercept": 0.678,
+      "slope": 0.069,
+      "ceiling_bonus": {
+        "S": 0.36,
+        "A": 0.09,
+        "B": -0.05,
+        "C": -0.12,
+        "D": -0.11
+      }
+    },
+    "pitcher": {
+      "intercept": 0.455,
+      "slope": 0.0405,
+      "ceiling_bonus": {
+        "S": 0.18,
+        "A": 0.02,
+        "B": 0.0,
+        "C": -0.02,
+        "D": -0.09
+      }
+    }
+  }
+}

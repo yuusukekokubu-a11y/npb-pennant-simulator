@@ -1,5 +1,5 @@
 {
-  "fingerprint_version": 15,
+  "fingerprint_version": 16,
   "league": "dcd49f740833451ba396ad0bc45d8796064583661d02d6aa7cd451ec05b8b21e",
   "game": "e9c09af9345ce18a0ac9df4641e6289d0b488e0e425edaace5de7b9b693fedaa",
   "days": "f85e39fc75ef0354702fd0cb2b128efcabd4c4b854b92500bc1fb936dfea5125",
@@ -14,6 +14,7 @@
   "war": "931333df02ed4a6829a833c679ec0c86e344d8508905c36df9155870742dc13b",
   "multiyear": "bd9dc4b44b072e7645707fd0c40b7562241f3697271a7c9cbefab3f02f2c7075",
   "procedure": "72febd72088087afb58f36bbddcc0741ebae31d2d5cd33ed617c90af5251f293",
+  "contracts": "30a5ac10d9699b115397576011bee4883e2b74ec264c468479ec2c1913ecdfdd",
   "counts": {
     "players": 840,
     "game_plate_appearances": 82,
@@ -111,6 +112,24 @@
       ],
       "players": 840,
       "scouted": 840
+    },
+    "contracts": {
+      "year_ends": 2,
+      "rule": "standard",
+      "budget_releases": [
+        7,
+        0
+      ],
+      "rates": [
+        14791,
+        9687,
+        9694
+      ],
+      "totals": [
+        388783,
+        384475
+      ],
+      "players": 840
     }
   }
 }
