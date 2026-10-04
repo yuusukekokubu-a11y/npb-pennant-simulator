@@ -54,7 +54,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 11  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)
+SAVE_FORMAT_VERSION = 12  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -186,7 +186,26 @@ def _v10_to_v11(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9, 9: _v9_to_v10, 10: _v10_to_v11}
+def _v11_to_v12(bundle: dict) -> dict:
+    """版11には FA がない(F3-2c。D-263):FA 権の年数は読み込みの後に補う(D-264)。FA の設定は設定ファイルの値。進行中の手続きはそのまま(FA は飛ばす)。"""
+    state = bundle["state"]
+    neg = state.get("configs", {}).get("negotiation")
+    if isinstance(neg, dict):
+        neg.setdefault("fa", copy.deepcopy(load_negotiation_settings().data["fa"]))
+    for team in state.get("league", {}).get("teams", []):
+        for pd in team.get("players", []):
+            if isinstance(pd, dict):
+                pd.setdefault("fa_seasons", None)
+    proc = state.get("procedure")
+    if isinstance(proc, dict):
+        for key in ("candidates", "market"):
+            for pd in proc.get(key, []):
+                if isinstance(pd, dict):
+                    pd.setdefault("fa_seasons", 0)
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9, 9: _v9_to_v10, 10: _v10_to_v11, 11: _v11_to_v12}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -436,6 +455,9 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     pref = pd.get("preference")
     if pref is not None and not (isinstance(pref, dict) and pref and all(isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 for k, v in pref.items())):
         p.add(f"{where}.preference", "志望の形が違います(軸 → 0 以上の重み)")
+    fs = pd.get("fa_seasons")
+    if fs is not None and not (isinstance(fs, int) and not isinstance(fs, bool) and 0 <= fs <= 60):
+        p.add(f"{where}.fa_seasons", "FA 権の年数は 0〜60 の整数にしてください")
     items = items_for(role)
     for group in ("ratings",):
         ratings = _need(pd, group, dict, where, p)
@@ -488,6 +510,7 @@ def _player_from(pd: dict) -> Player:
         scouting=copy.deepcopy(pd.get("scouting")),
         contract=copy.deepcopy(pd.get("contract")),
         preference=None if pd.get("preference") is None else {str(k): float(v) for k, v in pd["preference"].items()},
+        fa_seasons=pd.get("fa_seasons", 0),
     )
 
 
@@ -806,7 +829,7 @@ def load_game(data: bytes) -> GameState:
     offseasons = _check_offseasons(offseasons_d, p)
     procedure = _check_procedure(procedure_d, team_ids, {p_.id for p_ in season.players.values()}, p)
     if procedure is not None:
-        for p_ in procedure.market:  # 手放された選手は、終わったシーズンの成績を持つので、シーズンの選手の一覧に残す(選手のページ・通算のため)
+        for p_ in list(procedure.market) + list(procedure.fa_pool):  # 手放された選手と FA を宣言した選手は、終わったシーズンの成績を持つので、シーズンの選手の一覧に残す(選手のページ・通算のため)
             season.players.setdefault(p_.id, p_)
     for tid in scout_sd_d:
         if tid not in team_ids:
@@ -826,7 +849,11 @@ def load_game(data: bytes) -> GameState:
 
     ensure_preferences(out.league.all_players(), out.league.seed, out.negotiation_settings)  # 版10以前:志望をシードから補う(D-253)
     if out.procedure is not None:
-        ensure_preferences(list(out.procedure.candidates) + list(out.procedure.market), out.league.seed, out.negotiation_settings)
+        ensure_preferences(list(out.procedure.candidates) + list(out.procedure.market) + list(out.procedure.fa_pool), out.league.seed, out.negotiation_settings)
+    if any(p_.fa_seasons is None for p_ in out.league.all_players()):
+        from .fa import initialize_seasons
+
+        initialize_seasons(out.league, out.season.actives, out.league.seed, out.negotiation_settings, out.history, only_missing=True)  # 版11以前:FA 権の年数を補う(D-264)
     return out
 
 
@@ -839,14 +866,14 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
         p.add(where, "手続きのまとまり({ })が必要です")
         return None
     try:
-        if d["phase"] not in ("renewal", "release", "draft", "market", "done"):
+        if d["phase"] not in ("renewal", "release", "fa", "draft", "market", "done"):
             p.add(f"{where}.phase", f"段階が正しくありません(値: {d['phase']!r})")
         for i, tid in enumerate(d["order"]):
             if tid not in team_ids:
                 p.add(f"{where}.order[{i}]", "球団の一覧にない ID です")
         seen = set()
-        for key in ("candidates", "market"):
-            for i, pd in enumerate(d[key]):
+        for key in ("candidates", "market", "fa_pool"):
+            for i, pd in enumerate(d.get(key, [])):
                 _check_player(pd, f"{where}.{key}[{i}]", None, p)
                 pid = pd.get("id") if isinstance(pd, dict) else None
                 if pid in seen or pid in league_ids:
@@ -858,8 +885,8 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
         else:
             for pid, e in negs.items():
                 w = f"{where}.negotiations.{pid}"
-                if not isinstance(e, dict) or e.get("status") not in ("pending", "accepted", "released") or not isinstance(e.get("offers"), list) or not isinstance(e.get("auto_salary"), int) or e.get("team_id") not in team_ids:
-                    p.add(w, "交渉の形が違います(状態は pending / accepted / released、提示の一覧、自動案の年俸、球団)")
+                if not isinstance(e, dict) or e.get("status") not in ("pending", "accepted", "released", "declared") or not isinstance(e.get("offers"), list) or not isinstance(e.get("auto_salary"), int) or e.get("team_id") not in team_ids:
+                    p.add(w, "交渉の形が違います(状態は pending / accepted / released / declared、提示の一覧、自動案の年俸、球団)")
                     continue
                 for j, o in enumerate(e["offers"]):
                     if not (isinstance(o, dict) and isinstance(o.get("years"), int) and isinstance(o.get("salary"), int) and isinstance(o.get("accepted"), bool)):

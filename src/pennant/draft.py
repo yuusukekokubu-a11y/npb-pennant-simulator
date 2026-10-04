@@ -1,8 +1,9 @@
-"""オフの手続き(F3-1。D-201〜D-207):契約更改(F3-2b)→ 自由契約 → ドラフト → 自由契約市場 → 自動補充。
+"""オフの手続き(F3-1。D-201〜D-207):契約更改(F3-2b)→ 自由契約 → FA(F3-2c)→ ドラフト → 自由契約市場 → 自動補充。
 
 年度の確定(加齢・能力の更新・引退)の後に、OffseasonProcedure を作って段階ごとに進める。
   - 契約更改(renewal):契約が満了した選手に提示し、選手が志望で受ける・断るを決める(F3-2b。negotiation.py。D-243〜D-252)
   - 自由契約(release):球団が選手を手放す。AI は自球団のスカウト評価の低い選手を上限まで(方針は ai_release)
+  - FA(fa):更改を断った FA 権保持者の提示ラウンド制の市場(F3-2c。fa.py。D-258〜D-264)
   - ドラフト(draft):ウェーバー方式(前年の勝率が低い順。巡ごとに往復)。空き枠がない球団はパス。AI は ai_choose
   - 市場(market):手放された選手 + 指名されなかった候補。同じ順番で数巡。残った選手はリーグを去る
   - 完了(done):70 人に満たない球団を自動補充(offseason.replenish。F2 の穴埋め)
@@ -22,6 +23,7 @@ from pathlib import Path
 from .abilities import BATTER, FIELDER_POSITIONS, PITCHER, PITCHER_POSITIONS
 from .config import ConfigError, GenerationConfig, NameParts, _Checker, _read_json
 from .contracts import ContractSettings, cap_of, contract_years, expected_war, is_hard, rate_for, salary_for, set_contract, team_salary
+from .fa import declare, fa_settings, is_holder
 from .negotiation import NegotiationSettings, ai_offer, ai_years, depth_ranks, depth_slots, ensure_preferences, judge, noise_for, standing_ranks
 from .game_config import load_game_config
 from .generate import make_rookie
@@ -32,8 +34,8 @@ from .scouting import GRADES, SCOUT_METHOD, ScoutReport, ceiling_cuts, quick_val
 from .season import derive_seed
 
 SUPPORTED_FORMAT_VERSION = 1
-PHASES = ("renewal", "release", "draft", "market", "done")
-PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "draft": "ドラフト", "market": "自由契約市場", "done": "完了"}
+PHASES = ("renewal", "release", "fa", "draft", "market", "done")
+PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "draft": "ドラフト", "market": "自由契約市場", "done": "完了"}
 MAX_ROSTER = 70
 
 
@@ -209,6 +211,13 @@ class OffseasonProcedure:
     rate: float = 0.0  # このオフの年俸の単価(1 WAR あたりの万円。D-234)
     negotiations: dict = field(default_factory=dict)  # 選手 ID → 更改の交渉(F3-2b。D-244。{team_id, player_id, name, ..., auto_salary, ai_years, expected, context, status, offers})
     ranks: dict = field(default_factory=dict)  # 球団 → 前年のリーグ内の順位(勝利軸。D-250)。事前運転では空
+    fa_pool: list[Player] = field(default_factory=list)  # FA を宣言して、まだ決まっていない選手(F3-2c)
+    fa_info: dict = field(default_factory=dict)  # 選手 ID → {former_team, calc_salary, expected, ai_years, status(open / signed / unsigned), team_id, ...}
+    fa_round: int = 1  # 今の FA のラウンド(1 から)
+    fa_offers: dict = field(default_factory=dict)  # あなたの球団の今のラウンドの提示(選手 ID → {years, salary})
+    fa_results: list[dict] = field(default_factory=list)  # 成立した FA の契約
+    fa_log: list[dict] = field(default_factory=list)  # 全球団の提示の記録({round, player_id, team_id, years, salary})
+    fa_done: bool = False  # FA 市場が終わったか
     budget_releases: list[dict] = field(default_factory=list)  # 予算超過の解消で自由契約になった選手({team_id, player_id, name, salary})
     contracts_done: bool = False  # 更改と AI の超過の解消を済ませたか
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 天井)。保存しない
@@ -243,6 +252,8 @@ class OffseasonProcedure:
             "my_release_done": self.my_release_done, "ai_release_done": self.ai_release_done,
             "rate": round(float(self.rate), 4), "negotiations": {pid: copy.deepcopy(e) for pid, e in self.negotiations.items()}, "ranks": dict(self.ranks),
             "budget_releases": [dict(x) for x in self.budget_releases], "contracts_done": self.contracts_done,
+            "fa_pool": [plain(p) for p in self.fa_pool], "fa_info": copy.deepcopy(self.fa_info), "fa_round": self.fa_round, "fa_offers": copy.deepcopy(self.fa_offers),
+            "fa_results": [dict(x) for x in self.fa_results], "fa_log": [dict(x) for x in self.fa_log], "fa_done": self.fa_done,
         }
 
     @classmethod
@@ -265,6 +276,13 @@ class OffseasonProcedure:
             for x in d.get("renewals", []):
                 proc.negotiations[str(x["player_id"])] = {**{k: x.get(k) for k in ("team_id", "player_id", "name", "role", "position", "age", "old_salary", "expected")}, "auto_salary": int(x["salary"]), "ai_years": int(x["years"]), "context": {}, "status": "accepted", "offers": []}
         proc.ranks = {str(k): int(v) for k, v in d.get("ranks", {}).items()}
+        proc.fa_pool = [player_from(x) for x in d.get("fa_pool", [])]
+        proc.fa_info = copy.deepcopy(d.get("fa_info", {}))
+        proc.fa_round = int(d.get("fa_round", 1))
+        proc.fa_offers = copy.deepcopy(d.get("fa_offers", {}))
+        proc.fa_results = [dict(x) for x in d.get("fa_results", [])]
+        proc.fa_log = [dict(x) for x in d.get("fa_log", [])]
+        proc.fa_done = bool(d.get("fa_done", "fa_pool" not in d))  # 版 11 以前の手続き:FA はない
         proc.budget_releases = [dict(x) for x in d.get("budget_releases", [])]
         proc.contracts_done = bool(d.get("contracts_done", False))
         return proc
@@ -479,6 +497,9 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
         for p in expiring:
             exp = expected[p.id]
             context = {"rank": ranks.get(p.id, 0), "slots": round((ctx.slots or {}).get(p.position, 1.0), 3), "standing": proc.ranks.get(team.id), "league_size": sizes[team.league_index]}
+            if neg is not None and is_holder(p, neg):  # FA 権保持者の更改は厳しい。断ったら宣言する(F3-2c。D-259)
+                context["fa_holder"] = True
+                context["threshold_add"] = float(fa_settings(neg)["threshold_add"])
             proc.negotiations[p.id] = {
                 "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age,
                 "old_salary": int(p.contract["salary"]) if p.contract else None, "auto_salary": salary_for(exp, ctx.rate, ctx.settings),
@@ -534,6 +555,8 @@ def make_offer(team: Team, entry: dict, years: int, salary: int, proc: Offseason
     if rec["accepted"]:
         set_contract(player, int(salary), int(years), proc.year + 1, "renew" if player.contract else "initial", offers=len(entry["offers"]))
         entry["status"] = "accepted"
+    elif neg is not None and entry["context"].get("fa_holder"):
+        declare(team, player, entry, proc, ctx)  # FA 権保持者は、断ったらその場で宣言する(D-259)
     elif neg is not None and len(entry["offers"]) >= neg.max_offers:
         release_entry(team, entry, proc)
     return rec
@@ -679,7 +702,7 @@ def resolve_overrun(team: Team, proc: OffseasonProcedure, ctx: ContractContext, 
         salary = int(worst.contract["salary"]) if worst.contract else 0
         release_players(team, [worst], proc)
         proc.released[-1]["note"] = "budget"
-        proc.budget_releases.append({"team_id": team.id, "player_id": worst.id, "name": worst.name, "role": worst.role, "position": worst.position, "age": worst.age, "salary": salary})
+        proc.budget_releases.append({"team_id": team.id, "player_id": worst.id, "name": worst.name, "role": worst.role, "position": worst.position, "age": worst.age, "salary": salary, "expected": round(ctx.expected(worst, team.id)[0], 2)})
         out.append(worst)
     return out
 
@@ -785,6 +808,9 @@ def phase_finished(proc: OffseasonProcedure) -> bool:
 def next_phase(proc: OffseasonProcedure) -> None:
     i = PHASES.index(proc.phase)
     proc.phase = PHASES[min(i + 1, len(PHASES) - 1)]
+    if proc.phase == "fa" and (proc.fa_done or not proc.fa_pool):  # 宣言した選手がいなければ FA は飛ばす
+        proc.fa_done = True
+        proc.phase = "draft"
     proc.round = 1
     proc.index = 0
     if proc.phase == "market":
@@ -943,6 +969,13 @@ def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts:
     return proc, joined_players(proc) + filled
 
 
+def finish_fa_market(proc: OffseasonProcedure) -> None:
+    from .fa import finish_market
+
+    if not proc.fa_done:
+        finish_market(proc)
+
+
 def joined_players(proc: OffseasonProcedure) -> list[PlayerNote]:
     return [PlayerNote(x["player_id"], x["name"], x["team_id"], x["role"], x["position"], x["age"]) for x in proc.picks if x["player_id"]]
 
@@ -964,6 +997,14 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
                 team = next(t for t in league.teams if t.id == my_team_id)
                 release_players(team, ai_release(team, proc, scout_sd[team.id], settings, mins, min_batters), proc)
                 proc.my_release_done = True
+            next_phase(proc)
+        elif proc.phase == "fa":
+            if ctx is not None:
+                from .fa import run_all_rounds
+
+                run_all_rounds(league, proc, ctx, my_team_id, my_ai=True)
+            else:
+                finish_fa_market(proc)
             next_phase(proc)
         elif proc.phase in ("draft", "market"):
             run_ai_turns(league, proc, scout_sd, settings, None, mins, min_batters, ctx=ctx)

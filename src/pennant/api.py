@@ -34,6 +34,7 @@ from . import draft as draftmod
 from .draft import PHASE_LABELS, PHASES, load_draft_settings
 from .scouting import ScoutReport
 from .contracts import MONEY_RULES, RULE_LABELS, RULE_NOTES, TIER_LABELS, assign_tiers, budget_of, cap_of, is_hard, load_contract_settings, remaining_years, team_salary
+from . import fa as famod
 from .negotiation import load_negotiation_settings
 from .season import derive_seed
 from .records import (
@@ -160,7 +161,7 @@ WAR_COLUMNS = {
     ],
 }
 _WAR_SORT_KEYS = {role: [c["key"] for c in cols] for role, cols in WAR_COLUMNS.items()}
-CONTRACT_REASONS = {"initial": "開始時", "renew": "更改", "draft": "ドラフト", "market": "市場", "fill": "自動補充", "migrate": "旧版から"}
+CONTRACT_REASONS = {"initial": "開始時", "renew": "更改", "draft": "ドラフト", "market": "市場", "fill": "自動補充", "migrate": "旧版から", "fa": "FA"}
 # 選手の一覧の表(自由契約・市場。D-222)の基本の列
 ROSTER_BASE_COLUMNS = {
     "batter": [
@@ -344,6 +345,7 @@ class Game:
         self._park_estimates: tuple[int, dict[str, ParkEstimate] | None] | None = None
         self._war: tuple[int, dict[str, WarLine]] | None = None  # (試合数, WAR の表)。試合数が変わるまで覚えておく(D-179)
         self.last_negotiations: dict | None = None  # 直前に終わったオフの手続きの更改の交渉(保存しない。F3-2b)
+        self.last_fa: dict | None = None  # 直前に終わったオフの FA(保存しない。F3-2c)
 
     @property
     def records(self) -> _StatsCache:
@@ -490,6 +492,7 @@ class Game:
             raise ValueError("シーズンがまだ終わっていません(最後まで進めてから、年度を確定してください)")
         if state.procedure is not None:
             raise ValueError("オフの手続きが進行中です(手続きを終えると、次のシーズンが始まります)")
+        famod.count_active_seasons(state.league, season.actives)  # このシーズンの一軍に入っていた選手の FA 権の年数(D-258)
         archive = self._archive_current_season()
         state.history.append(archive)
         # 残す打席ログの数を守る(直近 log_seasons シーズン。今シーズンは次のシーズンの分として数える)
@@ -537,7 +540,9 @@ class Game:
         if not c:
             return None
         y = self.state.year if year is None else year
-        return {"salary": int(c["salary"]), "salary_text": f"{int(c['salary']):,} 万円", "until": int(c["until"]), "remaining": remaining_years(c, y), "history": [{"year": h["year"], "salary": h["salary"], "salary_text": f"{int(h['salary']):,} 万円", "years": h["years"], "reason": h["reason"], "reason_label": CONTRACT_REASONS.get(h["reason"], h["reason"]), "offers": h.get("offers")} for h in c.get("history", [])]}
+        need = int(famod.fa_settings(self.state.negotiation_settings)["seasons_required"])
+        seasons = famod.seasons_of(p)
+        return {"fa_seasons": seasons, "fa_required": need, "fa_holder": seasons >= need, "fa_text": f"FA 権あり(一軍 {seasons} シーズン)" if seasons >= need else f"一軍 {seasons} シーズン(FA 権まであと {need - seasons})", "salary": int(c["salary"]), "salary_text": f"{int(c['salary']):,} 万円", "until": int(c["until"]), "remaining": remaining_years(c, y), "history": [{"year": h["year"], "salary": h["salary"], "salary_text": f"{int(h['salary']):,} 万円", "years": h["years"], "reason": h["reason"], "reason_label": CONTRACT_REASONS.get(h["reason"], h["reason"]), "offers": h.get("offers")} for h in c.get("history", [])]}
 
     def _procedure_contracts(self, proc) -> dict:
         """手続きの画面に出す契約の情報:ルール、自球団の総年俸と予算、更改の結果、予算超過で自由契約になった選手。"""
@@ -583,7 +588,12 @@ class Game:
             state.transactions.append({"year": proc.year, **x})
         for x in proc.filled:
             state.transactions.append({"year": proc.year, **x})  # 自動補充も履歴に残す(振り返りのため。D-216)
+        for pid, x in proc.fa_info.items():
+            state.transactions.append({"year": proc.year, "phase": "fa_declare", "round": 0, "team_id": x["former_team"], "player_id": pid, "name": x["name"], "role": x["role"], "position": x["position"], "age": x["age"], "salary": x.get("old_salary")})
+        for x in proc.fa_results:
+            state.transactions.append({"year": proc.year, "phase": "fa", **{k: v for k, v in x.items() if k != "offers"}})
         self.last_negotiations = proc.negotiations  # 終わった手続きの更改の交渉(保存しない。指紋 (p) と開発者向けの集計用)
+        self.last_fa = {"info": proc.fa_info, "results": proc.fa_results, "log": proc.fa_log, "ranks": dict(proc.ranks), "budget_releases": list(proc.budget_releases)}  # 終わった FA(保存しない。指紋 (q) と集計用)
         state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
@@ -642,10 +652,12 @@ class Game:
             "released": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.released],
             "counts": {"candidates": len(proc.candidates), "market": len(proc.market), "released": len(proc.released), "picked": sum(1 for x in proc.picks if x["player_id"])},
             "rosters": [{"team_id": t.id, "team_name": t.name, "players": len(t.players), "is_mine": t.id == my} for t in state.league.teams],
-            "note": "手続きは 契約更改 → 自由契約 → ドラフト → 自由契約市場 → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
+            "note": "手続きは 契約更改 → 自由契約 → FA → ドラフト → 自由契約市場 → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
         }
         if my is not None and proc.phase == "renewal":
             view["renewal"] = self._renewal_info(proc)
+        if proc.phase == "fa":
+            view["fa"] = self._fa_info(proc)
         if my is not None:
             team = self._team(my)
             if proc.phase == "release":
@@ -684,6 +696,9 @@ class Game:
             return 2, f"更改済({last['years']} 年・{int(last['salary']):,})", ""
         if e["status"] == "released":
             return 3, "自由契約", ""
+        if e["status"] == "declared":
+            reason = e["offers"][-1].get("reason") if e["offers"] else None
+            return 3, "FA 宣言", neg.reason(reason) if reason in neg.axes else ""
         if not e["offers"]:
             return 1, "未提示", ""
         left = draftmod.offers_left(e, neg)
@@ -708,20 +723,21 @@ class Game:
         my = state.my_team_id
         ctx = self._contract_ctx()
         entries = [e for e in proc.negotiations.values() if e["team_id"] == my]
-        counts = {"pending": 0, "refused": 0, "accepted": 0, "released": 0}
+        counts = {"pending": 0, "refused": 0, "accepted": 0, "released": 0, "declared": 0}
         for e in entries:
-            counts["accepted" if e["status"] == "accepted" else "released" if e["status"] == "released" else "refused" if e["offers"] else "pending"] += 1
+            counts[e["status"] if e["status"] in ("accepted", "released", "declared") else "refused" if e["offers"] else "pending"] += 1
         team = self._team(my)
         cap = ctx.cap(my)
         return {
-            "counts": counts, "total": len(entries), "open": counts["pending"] + counts["refused"],
+            "counts": counts, "total": len(entries), "open": counts["pending"] + counts["refused"], "fa_required": int(famod.fa_settings(state.negotiation_settings)["seasons_required"]),
             "unoffered": counts["pending"],
             "salary_editable": state.money_rule != "none", "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years,
             "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding, "max_offers": state.negotiation_settings.max_offers,
             "projected_total": draftmod.projected_total(team, proc), "projected_text": f"{draftmod.projected_total(team, proc):,} 万円", "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
             "released": [self._renewal_public(e) for e in entries if e["status"] == "released"],
+            "declared": [self._renewal_public(e) for e in entries if e["status"] == "declared"],
             "axes": [{"key": k, "label": state.negotiation_settings.label(k), "reason": state.negotiation_settings.reason(k)} for k in state.negotiation_settings.axes],
-            "note": "自動案は 1 年契約・算定した年俸です。選手は志望(年俸・出場機会・勝利の重み。隠し情報)で受けるか断るかを決め、断ったら理由が出ます。"
+            "note": "FA 権のある選手(一軍に 7 シーズン登録)は、提示を断るとその場で FA を宣言して球団を離れます(止められません。FA 権のある選手は断りやすい)。自動案は 1 年契約・算定した年俸です。選手は志望(年俸・出場機会・勝利の重み。隠し情報)で受けるか断るかを決め、断ったら理由が出ます。"
             + "選手を押すと、年数(1〜5 年)" + ("と年俸" if state.money_rule != "none" else "") + f"を指定して提示できます(1 人 {state.negotiation_settings.max_offers} 回まで。使い切ると自由契約)。"
             + ("お金のルール「なし」では年俸は算定どおりで変えられません。" if state.money_rule == "none" else "")
             + ("算定より高い年俸は、見込みの総年俸が予算の上限を超えない範囲だけ提示できます。" if ctx.hard() else "")
@@ -737,6 +753,7 @@ class Game:
             {"key": "auto", "label": "自動案の年俸", "description": "自動案(1 年)の年俸(万円)。見込みの WAR から算定", "type": "count", "better": "high"},
             {"key": "status", "label": "状態", "description": "未提示・断られた(残りの回数)・更改済", "type": "text", "better": "low"},
             {"key": "reason", "label": "理由", "description": "最後に断られた理由", "type": "text", "better": "low"},
+            {"key": "fa", "label": "FA 権", "description": "一軍に登録されたシーズンの数。7 シーズンで FA 権。FA 権がある選手は断ると FA を宣言する", "type": "count", "better": "high"},
         ]
         extra = {}
         for e in proc.negotiations.values():
@@ -744,7 +761,9 @@ class Game:
                 continue
             o, status, reason = self._renewal_status(e)
             old = e["old_salary"]
-            extra[e["player_id"]] = {"salary": (None, "—") if old is None else (int(old), f"{int(old):,}"), "auto": (int(e["auto_salary"]), f"{int(e['auto_salary']):,}"), "status": (o, status), "reason": (reason or "~", reason or "")}
+            pl = next((q for q in self._my_team().players if q.id == e["player_id"]), None)
+            seasons = famod.seasons_of(pl) if pl is not None else 0
+            extra[e["player_id"]] = {"salary": (None, "—") if old is None else (int(old), f"{int(old):,}"), "auto": (int(e["auto_salary"]), f"{int(e['auto_salary']):,}"), "status": (o, status), "reason": (reason or "~", reason or ""), "fa": (seasons, f"あり({seasons})" if e["context"].get("fa_holder") else str(seasons))}
         if not sort:
             sort, order = "status", "asc"
         table = self.roster_table(self.offseason_players("renewal"), role, kind, sort, order, season, base_columns=cols, extra_values=extra)
@@ -828,6 +847,137 @@ class Game:
         ctx = self._contract_ctx()
         return ctx.hard() and draftmod.over_cap(team, ctx) > 0
 
+    # ---- FA(F3-2c。D-258〜D-264) ----
+
+    def _fa_row_status(self, pid: str, info: dict, names: dict) -> tuple[int, str]:
+        proc = self._proc()
+        if info["status"] == "signed":
+            return 3, f"契約({names.get(info['team_id'], '')}・{info['years']} 年・{int(info['salary']):,})"
+        if info["status"] == "unsigned":
+            return 4, "未契約(市場へ)"
+        mine = proc.fa_offers.get(pid)
+        if mine:
+            return 0, f"提示中({mine['years']} 年・{int(mine['salary']):,})"
+        return 1, "未契約"
+
+    def _fa_info(self, proc) -> dict:
+        """FA の段階の情報(公開用)。"""
+        state = self.state
+        names = self._team_names()
+        fa = famod.fa_settings(state.negotiation_settings)
+        my = state.my_team_id
+        ctx = self._contract_ctx()
+        team = self._team(my) if my else None
+        committed = sum(int(o["salary"]) for o in proc.fa_offers.values())
+        cap = ctx.cap(my) if my else None
+        results = [{**x, "former_team_name": names.get(x["former_team"], ""), "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "salary_text": f"{int(x['salary']):,} 万円", "is_mine": x["team_id"] == my or x["former_team"] == my, "stayed": x["team_id"] == x["former_team"]} for x in proc.fa_results]
+        counts = {"declared": len(proc.fa_info), "signed": len(proc.fa_results), "open": sum(1 for x in proc.fa_info.values() if x["status"] == "open"), "unsigned": sum(1 for x in proc.fa_info.values() if x["status"] == "unsigned")}
+        return {
+            "round": min(int(proc.fa_round), int(fa["rounds"])), "rounds": int(fa["rounds"]), "done": bool(proc.fa_done), "counts": counts,
+            "offers": [{"player_id": pid, "name": proc.fa_info[pid]["name"], "years": o["years"], "salary": o["salary"], "salary_text": f"{int(o['salary']):,} 万円"} for pid, o in proc.fa_offers.items()],
+            "committed": committed, "committed_text": f"{committed:,} 万円",
+            "space": None if team is None else famod.MAX_ROSTER - len(team.players) - len(proc.fa_offers),
+            "total": None if team is None else team_salary(team), "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
+            "salary_editable": state.money_rule != "none", "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years, "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding,
+            "results": results,
+            "note": f"FA を宣言した選手に、年数(1〜5 年)" + ("と年俸" if state.money_rule != "none" else "") + f"を提示できます。全 {int(fa['rounds'])} ラウンドで、各ラウンドの終わりに選手が受けた提示の中から志望(年俸・出場機会・勝利。出場機会と勝利は提示した球団での見込み)で一番よいものを選びます。"
+            + "決まらなければ次のラウンドへ、最後のラウンドでも決まらなければ自由契約市場に回ります。元の球団も同じ立場で提示します。補償はありません。"
+            + ("お金のルール「なし」では年俸は算定どおりです。" if state.money_rule == "none" else "")
+            + ("標準以上では、総年俸と提示中の年俸の合計が予算の上限を超える提示はできません。" if ctx.hard() else "")
+            + "「ラウンドを締める」で、AI 球団の提示と合わせて結果が出ます。「次の手続きへ」「おまかせ」は、残りのラウンドを AI と同じ方針で進めます。",
+        }
+
+    def _fa_table(self, role: str, kind: str, sort: str | None, order: str | None, season: str | None) -> dict:
+        proc = self._proc()
+        names = self._team_names()
+        cols = [
+            ROSTER_BASE_COLUMNS[role][0], ROSTER_BASE_COLUMNS[role][1], ROSTER_BASE_COLUMNS[role][2],
+            {"key": "former", "label": "前の所属", "description": "FA を宣言した球団", "type": "text", "better": "low"},
+            {"key": "calc", "label": "算定年俸", "description": "見込みの WAR から算定した年俸(万円)", "type": "count", "better": "high"},
+            {"key": "status", "label": "状態", "description": "未契約・提示中・契約(球団・年数・年俸)・未契約(市場へ)", "type": "text", "better": "low"},
+        ]
+        players = self.offseason_players("fa")
+        extra = {}
+        for p in players:
+            info = proc.fa_info[p.id]
+            o, status = self._fa_row_status(p.id, info, names)
+            extra[p.id] = {"former": (names.get(info["former_team"], ""), names.get(info["former_team"], "")), "calc": (int(info["calc_salary"]), f"{int(info['calc_salary']):,}"), "status": (o, status)}
+        if not sort:
+            sort, order = "calc", "desc"
+        table = self.roster_table(players, role, kind, sort, order, season, base_columns=cols, extra_values=extra)
+        for r in table["rows"]:
+            info = proc.fa_info[r["player_id"]]
+            mine = proc.fa_offers.get(r["player_id"])
+            r["fa"] = {"status": info["status"], "former_team": info["former_team"], "former_team_name": names.get(info["former_team"], ""), "calc_salary": int(info["calc_salary"]), "calc_text": f"{int(info['calc_salary']):,} 万円", "expected": round(float(info["expected"]), 2), "offer": mine}
+        table["phase"] = "fa"
+        return table
+
+    def _fa_open_player(self, player_id: str):
+        proc = self._proc()
+        if proc.phase != "fa" or proc.fa_done:
+            raise ValueError("今は FA の段階ではありません")
+        info = proc.fa_info.get(str(player_id))
+        if info is None or info["status"] != "open":
+            raise ValueError("その選手は、FA で交渉できる選手ではありません")
+        return proc, info
+
+    def offseason_fa_offer(self, player_id: str, years: int, salary: int | None = None) -> dict:
+        """あなたの球団の FA の提示(今のラウンド。出し直しは上書き)。"""
+        state = self.state
+        proc, info = self._fa_open_player(player_id)
+        team = self._my_team()
+        cs = state.contract_settings
+        try:
+            years = int(years)
+        except (TypeError, ValueError):
+            raise ValueError("年数は整数で入れてください") from None
+        if not cs.min_years <= years <= cs.max_years:
+            raise ValueError(f"年数は {cs.min_years}〜{cs.max_years} 年にしてください(値: {years})")
+        calc = int(info["calc_salary"])
+        if state.money_rule == "none" or salary in (None, ""):
+            if state.money_rule == "none" and salary not in (None, "") and int(salary) != calc:
+                raise ValueError("お金のルール「なし」では、年俸は算定どおりで変えられません")
+            salary = calc
+        else:
+            try:
+                salary = int(salary)
+            except (TypeError, ValueError):
+                raise ValueError("年俸は整数(万円)で入れてください") from None
+            if salary < cs.minimum:
+                raise ValueError(f"年俸は最低年俸({cs.minimum:,} 万円)以上にしてください")
+            if salary > cs.base_budget:
+                raise ValueError(f"年俸が大きすぎます({cs.base_budget:,} 万円まで)")
+        others = {pid: o for pid, o in proc.fa_offers.items() if pid != str(player_id)}
+        if len(team.players) + len(others) + 1 > famod.MAX_ROSTER:
+            raise ValueError("空き枠が足りません(70 人。提示中の選手も数えます)")
+        ctx = self._contract_ctx()
+        cap = ctx.cap(team.id)
+        if ctx.hard() and cap is not None and team_salary(team) + sum(int(o["salary"]) for o in others.values()) + salary > cap:
+            room = cap - team_salary(team) - sum(int(o["salary"]) for o in others.values())
+            raise ValueError(f"総年俸と提示中の年俸の合計が予算の上限を超えます(この選手に出せるのは {max(0, room):,} 万円まで)")
+        proc.fa_offers[str(player_id)] = {"years": years, "salary": int(salary)}
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_fa_cancel(self, player_id: str) -> dict:
+        proc, _ = self._fa_open_player(player_id)
+        proc.fa_offers.pop(str(player_id), None)
+        self.dirty = True
+        return self.offseason_view()
+
+    def offseason_fa_close(self) -> dict:
+        """ラウンドを締める:AI の提示と合わせて、選手が選ぶ。戻り値は画面の情報と、このラウンドの結果。"""
+        proc = self._proc()
+        if proc.phase != "fa" or proc.fa_done:
+            raise ValueError("今は FA の段階ではありません")
+        rnd = proc.fa_round
+        signed = famod.close_round(self.state.league, proc, self._contract_ctx(), self.state.my_team_id)
+        self.dirty = True
+        view = self.offseason_view()
+        names = self._team_names()
+        view["last_round"] = {"round": rnd, "signed": [{**x, "team_name": names.get(x["team_id"], ""), "former_team_name": names.get(x["former_team"], ""), "salary_text": f"{int(x['salary']):,} 万円", "is_mine": x["team_id"] == self.state.my_team_id} for x in signed]}
+        return view
+
     def offseason_release(self, player_ids: list[str]) -> dict:
         """操作する球団が選手を手放す(自由契約の段階)。最低人数を割る選び方は受け付けない(警告は画面側)。"""
         proc = self._proc()
@@ -859,6 +1009,11 @@ class Game:
             if state.my_team_id is not None and draftmod.open_entries(proc, state.my_team_id):
                 n = len(draftmod.open_entries(proc, state.my_team_id))
                 raise ValueError(f"更改が決まっていない選手が {n} 人います。全員を更改か自由契約にしてから進めてください(「おまかせ」なら AI と同じ方針で進めます)")
+            draftmod.next_phase(proc)
+            self.dirty = True
+            return self.offseason_view()
+        if proc.phase == "fa":
+            famod.run_all_rounds(state.league, proc, ctx, state.my_team_id, my_ai=True)  # 残りのラウンドは AI と同じ方針(D-261)
             draftmod.next_phase(proc)
             self.dirty = True
             return self.offseason_view()
@@ -1043,6 +1198,8 @@ class Game:
         if phase == "renewal":
             ids = {e["player_id"] for e in proc.negotiations.values() if e["team_id"] == self.state.my_team_id and e["status"] != "released"}
             return [p for p in self._my_team().players if p.id in ids]
+        if phase == "fa":
+            return list(proc.fa_pool) + [p for t in self.state.league.teams for p in t.players if p.id in proc.fa_info] + [p for p in proc.market if p.id in proc.fa_info]
         if phase == "release":
             return list(self._my_team().players)
         if phase == "market":
@@ -1056,10 +1213,13 @@ class Game:
         proc = self._proc()
         if phase == "renewal":
             return self._renewal_table(role, kind, sort, order, season)
+        if phase == "fa":
+            return self._fa_table(role, kind, sort, order, season)
         table = self.roster_table(self.offseason_players(phase), role, kind, sort, order, season)
         if phase != "release":
             names = self._team_names()
             former = {x["player_id"]: names.get(x["team_id"], "") for x in proc.released}
+            former.update({pid: names.get(x["former_team"], "") for pid, x in proc.fa_info.items()})
             ctx = self._contract_ctx()
             my = self.state.my_team_id
             team = self._team(my) if my else None
@@ -1243,6 +1403,7 @@ class Game:
         settings = load_baseline_settings()
         prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
         season = Season(league, seed if season_seed is None else season_seed)
+        famod.initialize_seasons(league, season.actives, league.seed, negotiation_settings)  # 初期選手の FA 権の年数(D-264)
         my_team_id = None if my_team_index is None else league.teams[my_team_index].id
         state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings, money_rule=rule, budget_tiers=tiers, contract_settings=contract_settings, negotiation_settings=negotiation_settings)
         state.contract_rates["1"] = float(contract_info.get("rate", 0.0))  # 新規開始時の単価(初期選手の契約の算定で求めた値)

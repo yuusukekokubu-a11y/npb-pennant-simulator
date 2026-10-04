@@ -46,10 +46,10 @@ const state = {
   warKeys: { batter: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
   playerKind: "basic",
   gamesDay: null,
-  proc: { selected: new Set(), sort: "overall", position: "", open: null, renewalOpen: null, renewalFilter: "open", phase: null, lastOffer: null }, // オフの手続きの画面の状態(F3-1。更改の開いた行・絞り込み・直前の提示の答えは F3-2b)
+  proc: { selected: new Set(), sort: "overall", position: "", open: null, renewalOpen: null, renewalFilter: "open", phase: null, lastOffer: null, faOpen: null, faFilter: "open", lastRound: null }, // オフの手続きの画面の状態(F3-1。更改の開いた行・絞り込み・直前の提示の答えは F3-2b)
   review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
   // 自由契約・市場の表の状態(D-222)。手続きの画面を行き来しても保つ。sortBy / shownSort は個人成績と同じ仕組み(D-131)
-  rosterTable: { role: "batter", kinds: { renewal: "war", release: "basic", market: "war" }, season: "current", group: "", sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } }, shownSort: { batter: null, pitcher: null } }, // 成績の種類は段階ごと(市場の初期値は WAR。D-240)
+  rosterTable: { role: "batter", kinds: { renewal: "war", release: "basic", fa: "war", market: "war" }, season: "current", group: "", sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } }, shownSort: { batter: null, pitcher: null } }, // 成績の種類は段階ごと(市場の初期値は WAR。D-240)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 
@@ -745,6 +745,7 @@ function renderPlayerContract(data) {
       { label: "年俸", description: "架空の「万円」。見込みの WAR(直近 3 シーズンの WAR の加重平均。履歴がなければスカウト評価)から算定した値", values: [c.salary_text] },
       { label: "契約年数", description: "今の契約の年数(年齢と見込みの WAR で決まる)", values: [years ? `${years} 年` : "-"] },
       { label: "残り年数", description: "今シーズンを含めた残り。0 なら今シーズンの終わりで満了", values: [`${c.remaining} 年(${c.until}シーズン目まで)`] },
+      { label: "FA 権", description: "一軍に登録されたシーズン(シーズンの最初に選ばれる一軍 29 人に入ったシーズン)の数。7 シーズンで FA 権。宣言すると 0 から数え直す", values: [c.fa_text] },
     ]),
     el("details", { id: "player-contract-history" }, el("summary", {}, "年俸と更改の履歴"), table({ firstLabel: "シーズン", columns: [{ key: "salary", label: "年俸" }, { key: "years", label: "年数" }, { key: "reason", label: "きっかけ" }, { key: "offers", label: "提示", description: "更改で受けるまでに提示された回数" }], rows: [...c.history].reverse().map((h) => ({ ...h, values: { salary: h.salary_text, years: `${h.years} 年`, reason: h.reason_label, offers: h.offers ? `${h.offers} 回` : "-" } })), first: (h) => [el("span", {}, `${h.year}シーズン目〜`)] })),
   );
@@ -919,6 +920,7 @@ async function renderProcedure(token) {
   const body = $("proc-body");
   let parts = [];
   if (v.phase === "renewal") parts = await renewalSection(v, token);
+  else if (v.phase === "fa") parts = await faSection(v, token);
   else if (v.phase === "release") parts = await releaseSection(v, truth, token);
   else if (v.phase === "draft") parts = poolSection(v, truth);
   else if (v.phase === "market") parts = await marketSection(v, truth, token);
@@ -1054,7 +1056,7 @@ function remainingText(v) {
 
 function renewalCounts(rn) {
   const c = rn.counts;
-  return `更改の対象 ${rn.total} 人:未提示 ${c.pending}・断られた ${c.refused}・更改済 ${c.accepted}・自由契約 ${c.released}`;
+  return `更改の対象 ${rn.total} 人:未提示 ${c.pending}・断られた ${c.refused}・更改済 ${c.accepted}・自由契約 ${c.released}・FA 宣言 ${c.declared || 0}`;
 }
 
 async function renewalSection(v, token) {
@@ -1095,6 +1097,11 @@ async function renewalSection(v, token) {
       : el("p", { className: "muted", id: "renewal-empty" }, rn.open ? "この絞り込みに合う選手はいません。" : "全員の更改が決まりました。「次の手続きへ」で自由契約の段階に進みます。"),
     rosterSortLine(data),
   ];
+  if (rn.declared && rn.declared.length) {
+    out.push(el("details", { id: "renewal-declared", open: true }, el("summary", {}, `FA を宣言した選手(${rn.declared.length} 人)`),
+      el("p", { className: "muted small" }, "FA 権のある選手は、提示を断るとその場で FA を宣言して球団を離れます。FA の段階で、ほかの球団と同じ立場で提示できます。"),
+      table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "old", label: "前の年俸" }, { key: "reason", label: "理由" }], rows: rn.declared.map((r) => ({ ...r, values: { position: r.position_label, age: `${r.age}歳`, old: r.old_text, reason: r.offers.length ? r.offers[r.offers.length - 1].reason || "-" : "-" } })), first: (r) => [el("span", {}, r.name)], fluid: true })));
+  }
   if (rn.released.length) {
     out.push(el("details", { id: "renewal-released" }, el("summary", {}, `交渉が決裂して自由契約になった選手(${rn.released.length} 人)`),
       table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "old", label: "前の年俸" }, { key: "reason", label: "最後の理由" }], rows: rn.released.map((r) => ({ ...r, values: { position: r.position_label, age: `${r.age}歳`, old: r.old_text, reason: r.offers.length ? r.offers[r.offers.length - 1].reason || "-" : "(提示せず)" } })), first: (r) => [el("span", {}, r.name)], fluid: true })));
@@ -1102,6 +1109,18 @@ async function renewalSection(v, token) {
   out.push(el("p", { className: "muted small", id: "renewal-note" }, `${rn.note}名前を押すと提示のパネルが開きます。${data.season_label}の成績です。初期の並び順は状態(断られた選手が上)。`));
   if (data.terms) out.push(el("details", {}, el("summary", {}, "WAR の用語の解説"), el("dl", { className: "terms" }, ...data.terms.flatMap((c) => [el("dt", {}, c.label), el("dd", {}, c.description)]))));
   return out;
+}
+
+// 年俸の入力欄と「+5%」「+10%」「−5%」のボタン(更改と FA の提示のパネルで共通。D-257)。基準は今の入力値、丸めは step 万円
+function salaryInput(value, min, step) {
+  const input = el("input", { id: "offer-salary", type: "number", inputMode: "numeric", min: String(min), step: String(step), value: String(value), "aria-label": "年俸(万円)" });
+  const bump = (rate) => {
+    const now = Number(input.value) || value;
+    input.value = String(Math.max(min, Math.round((now * (1 + rate)) / step) * step));
+  };
+  const btn = (label, rate, id) => el("button", { type: "button", className: "secondary pct", id, onclick: () => bump(rate) }, label);
+  const wrap = el("span", { className: "salary-input" }, el("label", {}, "年俸 ", input, " 万円"), btn("+5%", 0.05, "offer-plus5"), btn("+10%", 0.1, "offer-plus10"), btn("−5%", -0.05, "offer-minus5"));
+  return { wrap, input };
 }
 
 // 選手を押して出る提示のパネル:年数(1〜5)、年俸(ゆるい以上)、残りの回数、提示・自由契約にする
@@ -1120,8 +1139,9 @@ function offerPanel(p, rn, prefs) {
   const fields = el("div", { className: "offer-fields" }, el("label", {}, "年数 ", years));
   let salary = null;
   if (rn.salary_editable) {
-    salary = el("input", { id: "offer-salary", type: "number", inputMode: "numeric", min: String(rn.minimum_salary), step: String(rn.rounding), value: String(r.auto_salary), "aria-label": "年俸(万円)" });
-    fields.append(el("label", {}, "年俸 ", salary, " 万円"));
+    const si = salaryInput(r.auto_salary, rn.minimum_salary, rn.rounding);
+    salary = si.input;
+    fields.append(si.wrap);
   } else {
     fields.append(el("span", { className: "small" }, `年俸 ${r.auto_text}(お金のルール「なし」では算定どおり)`));
   }
@@ -1162,6 +1182,105 @@ async function renewRelease(p) {
   state.proc.lastOffer = null;
   state.proc.renewalOpen = null;
   await runProc("renew_release", { player_id: p.player_id });
+}
+
+// ---- FA(F3-2c。D-258〜D-264):提示ラウンド制。表・提示のパネル・ラウンドの表示・結果の一覧 ----
+
+async function faSection(v, token) {
+  const ps = state.proc;
+  const rt = state.rosterTable;
+  const fa = v.fa;
+  if (!fa) return [el("p", { className: "muted" }, "FA の情報がありません。")];
+  const data = await fetchRosterTable("fa");
+  if (token !== state.token) return null;
+  let prefs = null;
+  if (state.answerLevel > 0) {
+    prefs = await answer("fa_answers", {});
+    if (token !== state.token) return null;
+  }
+  const c = fa.counts;
+  const head = [el("p", { className: "info", id: "fa-round" }, fa.done ? `FA は終わりました(宣言 ${c.declared} 人・契約 ${c.signed} 人・市場へ ${c.unsigned} 人)。「次の手続きへ」でドラフトに進みます。` : `ラウンド ${fa.round}/${fa.rounds}:宣言 ${c.declared} 人・契約 ${c.signed} 人・残り ${c.open} 人`)];
+  if (ps.lastRound) {
+    const lr = ps.lastRound;
+    head.push(el("p", { className: "message ok", id: "fa-last" }, lr.signed.length ? `ラウンド ${lr.round} の結果:${lr.signed.map((x) => `${x.name} → ${x.team_name}(${x.years} 年・${x.salary_text})`).join("、")}` : `ラウンド ${lr.round} の結果:成立した契約はありません。`));
+  }
+  if (v.my_team && !fa.done) {
+    const mine = fa.offers.length ? `提示中 ${fa.offers.length} 人(合計 ${fa.committed_text})` : "まだ提示していません";
+    const budget = fa.hard && fa.cap ? `。総年俸 ${fa.total.toLocaleString()} 万円 / 上限 ${fa.cap_text}` : "";
+    head.push(el("p", { className: "small", id: "fa-mine" }, `${mine}${budget}。空き枠 ${fa.space} 人。`));
+    head.push(el("div", { className: "row" }, el("button", { id: "fa-close", type: "button", disabled: state.running, onclick: () => faClose() }, `ラウンド ${fa.round} を締める(結果を見る)`)));
+  }
+  const filter = el("select", { id: "fa-filter", "aria-label": "表示する選手", onchange: (e) => { ps.faFilter = e.target.value; renderCurrent(); } },
+    el("option", { value: "open", selected: ps.faFilter !== "all" }, "未契約の選手だけ"),
+    el("option", { value: "all", selected: ps.faFilter === "all" }, "契約した選手も表示"));
+  const controls = rosterControls(data);
+  controls[controls.length - 1].prepend(filter);
+  const rows = data.rows.filter((r) => inGroup(r.position, rt.group) && (ps.faFilter === "all" || r.fa.status === "open"));
+  const first = (p) => [link(p.name, () => { ps.faOpen = ps.faOpen === p.player_id ? null : p.player_id; renderCurrent(); }), el("span", { className: "sub" }, p.hand || "")];
+  const detail = (p) => (ps.faOpen === p.player_id && p.fa && p.fa.status === "open" && v.my_team && !fa.done ? faPanel(p, fa, prefs) : null);
+  const out = [
+    ...head,
+    ...controls,
+    rows.length
+      ? table({ firstLabel: "選手", columns: data.columns, rows, first, sort: data.sort.key, order: data.order, onSort: rosterSort, rowClass: (p) => (p.fa && p.fa.offer ? "selected" : ""), extra: data.extra_column, fluid: true, detail })
+      : el("p", { className: "muted", id: "fa-empty" }, "この絞り込みに合う選手はいません。"),
+    rosterSortLine(data),
+  ];
+  if (fa.results.length) {
+    out.push(el("details", { id: "fa-results", open: true }, el("summary", {}, `FA の結果(契約 ${fa.results.length} 人)`),
+      table({ firstLabel: "選手", columns: [{ key: "round", label: "ラウンド" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "former", label: "前の所属" }, { key: "team", label: "契約した球団" }, { key: "years", label: "年数" }, { key: "salary", label: "年俸" }, { key: "offers", label: "提示の数" }],
+        rows: fa.results.map((x) => ({ ...x, values: { round: String(x.round), position: x.position_label, age: `${x.age}歳`, former: x.former_team_name, team: x.stayed ? `${x.team_name}(残留)` : x.team_name, years: `${x.years} 年`, salary: x.salary_text, offers: `${x.offers} 球団` } })), first: (x) => [playerLink(x.name, x.player_id)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })));
+  }
+  out.push(el("p", { className: "muted small", id: "fa-note" }, `${fa.note}名前を押すと提示のパネルが開きます。${data.season_label}の成績です。初期の並び順は算定年俸の高い順。`));
+  if (data.terms) out.push(el("details", {}, el("summary", {}, "WAR の用語の解説"), el("dl", { className: "terms" }, ...data.terms.flatMap((t) => [el("dt", {}, t.label), el("dd", {}, t.description)]))));
+  return out;
+}
+
+function faPanel(p, fa, prefs) {
+  const f = p.fa;
+  const box = el("div", { className: "offer-panel", id: "fa-panel", dataset: { playerId: p.player_id } });
+  box.append(el("p", {}, `前の所属 ${f.former_team_name}。算定年俸 ${f.calc_text}。見込みの WAR ${Number(f.expected).toFixed(2)}。`));
+  if (f.offer) box.append(el("p", { className: "small" }, `提示中:${f.offer.years} 年・${Number(f.offer.salary).toLocaleString()} 万円(出し直すと上書き)`));
+  const years = el("select", { id: "fa-years", "aria-label": "契約年数" }, ...Array.from({ length: fa.max_years - fa.min_years + 1 }, (_, i) => fa.min_years + i).map((y) => el("option", { value: String(y), selected: f.offer ? f.offer.years === y : y === 1 }, `${y} 年`)));
+  const fields = el("div", { className: "offer-fields" }, el("label", {}, "年数 ", years));
+  let salary = null;
+  if (fa.salary_editable) {
+    const si = salaryInput(f.offer ? f.offer.salary : f.calc_salary, fa.minimum_salary, fa.rounding);
+    salary = si.input;
+    fields.append(si.wrap);
+  } else {
+    fields.append(el("span", { className: "small" }, `年俸 ${f.calc_text}(お金のルール「なし」では算定どおり)`));
+  }
+  box.append(fields);
+  if (prefs && prefs.players && prefs.players[p.player_id]) {
+    const w = prefs.players[p.player_id];
+    box.append(el("p", { className: "small answer" }, `志望(答え合わせ):${w.map((x) => `${x.label} ${x.text}${x.active ? "" : "(効かない)"}`).join("・")}`));
+  }
+  const send = el("button", { id: "fa-send", type: "button", disabled: state.running, onclick: () => faSend(p, years, salary) }, f.offer ? "提示を出し直す" : "提示する");
+  const row = el("div", { className: "row" }, send);
+  if (f.offer) row.append(el("button", { id: "fa-cancel", type: "button", className: "secondary", disabled: state.running, onclick: () => runProc("fa_cancel", { player_id: p.player_id }) }, "提示を取り消す"));
+  box.append(row);
+  return box;
+}
+
+async function faSend(p, yearsEl, salaryEl) {
+  const args = { player_id: p.player_id, years: Number(yearsEl.value) };
+  if (salaryEl) {
+    const val = salaryEl.value.trim();
+    if (!/^\d+$/.test(val)) {
+      $("proc-message").className = "message ng";
+      $("proc-message").textContent = "年俸は整数(万円)で入れてください。";
+      return;
+    }
+    args.salary = Number(val);
+  }
+  state.proc.lastRound = null;
+  await runProc("fa_offer", args);
+}
+
+async function faClose() {
+  state.proc.faOpen = null;
+  await runProc("fa_close", {}, (view) => { state.proc.lastRound = view.last_round || null; });
 }
 
 async function releaseSection(v, truth, token) {
@@ -1435,7 +1554,7 @@ async function yearEnd() {
       // 操作する球団があるときは、オフの手続き(自由契約 → ドラフト → 市場)へ(F3-1)
       $("progress-message").className = "message ok";
       $("progress-message").textContent = `${s.year}シーズン目を確定しました(引退 ${s.counts.retired}人)。オフの手続きを進めてください。`;
-      state.proc = { selected: new Set(), sort: "overall", position: "", open: null, renewalOpen: null, renewalFilter: "open", phase: null, lastOffer: null };
+      state.proc = { selected: new Set(), sort: "overall", position: "", open: null, renewalOpen: null, renewalFilter: "open", phase: null, lastOffer: null, faOpen: null, faFilter: "open", lastRound: null };
       openPage("procedure");
     } else {
       $("progress-message").className = "message ok";

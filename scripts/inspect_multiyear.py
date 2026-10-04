@@ -133,6 +133,7 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
         row["tiers"] = dict(g.state.budget_tiers)
         row["released"] = 0
         if year < years:
+            actives = {p.id for a in g.state.season.actives.values() for p in a.players}  # このシーズンの一軍(FA の宣言に主力が含まれるか。F3-2c)
             t0 = time.perf_counter()
             summary = g.year_end()
             if my_team:  # 自球団:自動案でまとめて提示 → 集計 → おまかせ(AI と同じ方針)
@@ -154,6 +155,16 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
                         fills[x["team_id"]] = fills.get(x["team_id"], 0) + int(x.get("salary") or 0)
                 row["over_cap_excl_fill"] = max([team_salary(t) - fills.get(t.id, 0) - caps_now[t.id] for t in g.state.league.teams if caps_now[t.id]] or [0])
             row["year_end_seconds"] = time.perf_counter() - t0
+            fa = g.last_fa or {"info": {}, "results": [], "ranks": {}, "budget_releases": []}  # FA(F3-2c)
+            row["fa_declared"] = len(fa["info"])
+            row["fa_signed"] = len(fa["results"])
+            row["fa_moved"] = sum(1 for x in fa["results"] if x["team_id"] != x["former_team"])
+            row["fa_declared_exp"] = [round(float(x["expected"]), 2) for x in fa["info"].values()]
+            row["fa_declared_regular"] = sum(1 for pid in fa["info"] if pid in actives)
+            row["fa_signed_rank"] = [fa["ranks"].get(x["team_id"]) for x in fa["results"]]
+            row["fa_signed_team"] = [x["team_id"] for x in fa["results"]]
+            row["fa_signed_exp"] = [round(float(fa["info"][x["player_id"]]["expected"]), 2) for x in fa["results"]]
+            row["budget_release_exp"] = [x.get("expected") for x in fa["budget_releases"]]
             row["retired"] = summary["counts"]["retired"]
             row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release")  # 確定の後に数える(そのオフの自由契約)
             row["budget_releases"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release" and x.get("note") == "budget")
