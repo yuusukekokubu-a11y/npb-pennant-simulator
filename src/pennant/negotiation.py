@@ -122,6 +122,9 @@ def validate_negotiation_settings(root, source: str = "negotiation.json") -> Neg
             c.add(f"ai.{key}", "0 以上の数の一覧(提示の回ごと)にしてください")
         elif v is not None and max_offers is not None and len(v) < max_offers:
             c.add(f"ai.{key}", f"提示の回数({max_offers})以上の長さにしてください")
+    from .fa import validate_fa
+
+    validate_fa(c, root)
     if c.problems:
         raise ConfigError(source, c.problems)
     return NegotiationSettings(copy.deepcopy(root), source)
@@ -235,6 +238,7 @@ def judge(settings: NegotiationSettings, preference: dict[str, float], years: in
         s = satisfaction(axis, settings, salary, auto_salary, context)
         values[axis] = s
         weighted[axis] = float(preference.get(axis, 0.0)) * float(settings.axes[axis]["strength"]) * s
+    threshold += float(context.get("threshold_add", 0.0))  # FA 権保持者の更改は厳しい(F3-2c。D-259)
     score = sum(weighted.values()) - threshold + noise + multi_year_bonus(years, age, settings)
     reason = min(weighted, key=lambda k: (weighted[k], list(settings.axes).index(k))) if weighted else None
     return {"accepted": score >= 0.0, "reason": reason, "score": score, "values": values}

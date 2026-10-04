@@ -179,6 +179,8 @@ def test_renewal_and_hard_rules_flow(games):
         assert all(x.get("salary") is not None for x in proc.released)  # 手放した選手の年俸は履歴に残り、契約は消える
         assert all(p.contract is None for p in proc.market)
         v = g.offseason_next()
+        if v["phase"] == "fa":  # FA の段階(F3-2c)は残りを AI と同じ方針で
+            v = g.offseason_next()
         assert v["phase"] == "draft"
         v = g.offseason_advance()
         pick = v["pool"][0]["player_id"]
@@ -243,7 +245,7 @@ def test_save_round_trip_and_v9_migration(games):
     g.year_end()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 11 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
+    assert SAVE_FORMAT_VERSION == 12 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
     assert all(p.contract == q.contract for p, q in zip(g.state.league.all_players(), again.league.all_players()))
     assert again.procedure.rate == g.state.procedure.rate and len(again.procedure.renewals) == len(g.state.procedure.renewals)
     # 版 9(契約なし)として読む:ルールは「なし」、契約は算定で補い、残りは 1〜3 年

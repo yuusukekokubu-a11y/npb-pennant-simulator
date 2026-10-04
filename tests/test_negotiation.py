@@ -147,7 +147,7 @@ def test_renewal_phase_auto_offer_and_gate(renewal_games):
             g.offseason_next()
         v = g.offseason_renew_auto()
         c = v["renewal"]["counts"]
-        assert c["pending"] == 0 and c["refused"] + c["accepted"] == v["renewal"]["total"] and 0 < c["refused"] < 20
+        assert c["pending"] == 0 and c["refused"] + c["accepted"] + c["declared"] == v["renewal"]["total"] and 0 < c["refused"] + c["declared"] < 25  # FA 権保持者は断ると宣言する(F3-2c)
         t = g.offseason_table("renewal", "batter", "war")
         assert [c2["label"] for c2 in t["columns"][:7]] == ["ポジション", "年齢", "打席", "現在の年俸", "自動案の年俸", "状態", "理由"]
         refused = [r for r in t["rows"] if r["renewal"]["status"] == "refused"]
@@ -256,7 +256,7 @@ def test_save_v11_and_v10_with_procedure_in_progress(renewal_games):
     g.offseason_renew_auto()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 11 and again.procedure.phase == "renewal"
+    assert SAVE_FORMAT_VERSION == 12 and again.procedure.phase == "renewal"
     assert again.procedure.negotiations == g.state.procedure.negotiations and again.procedure.ranks == g.state.procedure.ranks
     assert [p.preference for p in again.league.all_players()] == [p.preference for p in g.state.league.all_players()]
     # 版 10 の進行中の手続き(更改は済んでいて、自由契約の段階):志望はシードから補い、自由契約の段階から続ける

@@ -102,6 +102,9 @@ _OFFSEASON = {
     "renew_auto": lambda a: _game.offseason_renew_auto(),
     "offer": lambda a: _game.offseason_offer(str(a["player_id"]), a.get("years", 1), a.get("salary")),
     "renew_release": lambda a: _game.offseason_renew_release(str(a["player_id"])),
+    "fa_offer": lambda a: _game.offseason_fa_offer(str(a["player_id"]), a.get("years", 1), a.get("salary")),
+    "fa_cancel": lambda a: _game.offseason_fa_cancel(str(a["player_id"])),
+    "fa_close": lambda a: _game.offseason_fa_close(),
     "next": lambda a: _game.offseason_next(),
     "advance": lambda a: _game.offseason_advance(),
     "pick": lambda a: _game.offseason_pick(str(a["player_id"])),
@@ -155,6 +158,7 @@ _ANSWERS = {
     "scouting_answers": lambda a: answers.scouting_answers(_game, a["player_id"], int(a.get("level", 1))),
     "procedure_answers": lambda a: answers.procedure_answers(_game, int(a.get("level", 1))),
     "negotiation_answers": lambda a: answers.negotiation_answers(_game, int(a.get("level", 1))),
+    "fa_answers": lambda a: answers.fa_answers(_game, int(a.get("level", 1))),
     "offseason_ability_table": lambda a: answers.roster_ability_table(_game, a.get("phase", "release"), a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order"), a.get("season")),
     "draft_review_answers": lambda a: answers.draft_review_answers(_game, a.get("team_id"), a.get("year"), int(a.get("level", 1))),
 }

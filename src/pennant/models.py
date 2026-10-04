@@ -64,6 +64,7 @@ class Player:
     scouting: dict | None = None  # 入団時のスカウト評価(獲得した球団の評価。F3-1。D-199)。初期選手・自動補充の前の選手は None
     contract: dict | None = None  # 契約({salary: 年俸(万円), until: 満了シーズン, history: [{year, salary, years, reason, offers?}]}。F3-2a。D-232)。所属がなければ None でもよい
     preference: dict | None = None  # 志望の重み(軸 → 重み。合計 1。隠し情報。F3-2b。D-245)。付ける前は None
+    fa_seasons: int | None = 0  # 一軍に登録されたシーズンの通算(FA 権の年数。宣言したら 0。F3-2c。D-258)。None は旧版で、読み込みのときに補う
 
     @property
     def name(self) -> str:

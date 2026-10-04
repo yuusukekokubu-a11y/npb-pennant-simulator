@@ -62,5 +62,24 @@
       1,
       2
     ]
+  },
+  "fa": {
+    "seasons_required": 7,
+    "threshold_add": 0.3,
+    "rounds": 3,
+    "round_multipliers": [
+      1.0,
+      1.1,
+      1.2
+    ],
+    "ai_max_offers": 3,
+    "ai_min_expected": 0.5,
+    "noise_sd": 0.1,
+    "init": {
+      "start_age": 21,
+      "p_active": 0.7,
+      "p_other": 0.25
+    },
+    "compensation": null
   }
 }

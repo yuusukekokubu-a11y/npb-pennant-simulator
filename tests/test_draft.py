@@ -51,6 +51,12 @@ def finish_renewal(g):
         g.offseason_next()
 
 
+def skip_fa(g):
+    """FA の段階(F3-2c)に入っていたら、残りのラウンドを AI と同じ方針で済ませてドラフトへ。戻り値は画面の情報。"""
+    v = g.offseason_view()
+    return g.offseason_next() if v["phase"] == "fa" else v
+
+
 # ---- 設定 ----
 
 
@@ -262,14 +268,15 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     before = v["counts"]["released"]  # 更改の交渉で自由契約になった選手(F3-2b)を含む
     v = g.offseason_release(ok)
     assert v["my_release_done"] and v["counts"]["released"] == before + 2
-    v = g.offseason_next()
+    g.offseason_next()
+    v = skip_fa(g)
     assert v["phase"] == "draft" and v["counts"]["released"] >= before + 2 and v["counts"]["candidates"] == 108
     v = g.offseason_advance()
     assert v["is_my_turn"] and v["round"] == 1
     # 保存して読み込むと、途中から再開できる(版 9)
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 11 and again.state.procedure.method == 2
+    assert SAVE_FORMAT_VERSION == 12 and again.state.procedure.method == 2
     v2 = again.offseason_view()
     assert v2["phase"] == "draft" and v2["round"] == v["round"] and v2["is_my_turn"] and [p["player_id"] for p in v2["pool"]] == [p["player_id"] for p in v["pool"]]
     assert v2["pool"][0]["scouting"] == v["pool"][0]["scouting"]  # 評価も同じ(シードから導く)
@@ -358,7 +365,7 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
     assert prerun_ids and not any(pid in prerun_ids for y in (2, 3) for t in g.state.league.teams for pid in {r["player_id"] for r in g.draft_review(t.id, y)["rows"]})
     v2 = g.draft_review("T05", 2)
     assert v2["team_id"] == "T05" and v2["year"] == 2 and v2["rows"] and all(r["route_label"].startswith(("ドラフト", "市場", "自動補充")) for r in v2["rows"])
-    assert sum(len(g.draft_review(t.id, 2)["rows"]) for t in g.state.league.teams) == sum(1 for x in g.state.transactions if x["player_id"] and x["year"] == 1 and x["phase"] != "release")
+    assert sum(len(g.draft_review(t.id, 2)["rows"]) for t in g.state.league.teams) == sum(1 for x in g.state.transactions if x["player_id"] and x["year"] == 1 and x["phase"] not in ("release", "fa_declare", "fa"))  # FA の宣言・契約は入団ではない(F3-2c)
     with pytest.raises(ValueError):
         g.draft_review("T01", 9)
     with pytest.raises(ValueError):
@@ -394,6 +401,7 @@ def test_v8_save_loads_with_old_method_and_converted_sd():
     g.year_end()
     finish_renewal(g)
     g.offseason_next()
+    skip_fa(g)
     g.offseason_advance()
     before = g.offseason_view()
     data = save_game(g.state)
@@ -437,7 +445,8 @@ def test_v8_save_loads_with_old_method_and_converted_sd():
     old.year_end()
     finish_renewal(old)
     assert old.state.procedure.method == 2
-    assert all(p["scouting"]["method"] == 2 for p in old.offseason_next()["pool"])
+    old.offseason_next()
+    assert all(p["scouting"]["method"] == 2 for p in skip_fa(old)["pool"])
     assert answers.draft_review_answers(old, "T02", 2)["available"]  # 版 8 の入団(区切りなし)でも実際の天井が出る
 
 
@@ -523,6 +532,7 @@ def test_market_table_marks_candidates_without_stats(release_game):
     assert v["minimums"]["positions"]["C"] == 2 and v["minimums"]["batters"] == 15 and v["minimums"]["labels"]["SP"] == "先発"
     g.offseason_release([next(r["player_id"] for r in v["roster"] if r["can_release"])])
     g.offseason_next()
+    skip_fa(g)
     g.offseason_advance()
     g.offseason_next()
     m = g.offseason_table("market", "batter", "basic")

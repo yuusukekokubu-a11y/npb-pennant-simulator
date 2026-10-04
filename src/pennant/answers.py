@@ -358,3 +358,13 @@ def negotiation_answers(game: Game, level: int = 1) -> dict:
     team = game._team(game.state.my_team_id)
     ids = {e["player_id"] for e in proc.negotiations.values() if e["team_id"] == team.id}
     return {"available": True, "level": level, "players": {p.id: preference_rows(game, p) for p in team.players if p.id in ids}, "note": "志望の重み(合計 100%)。断られた理由は、重み × 満足度が最も低い軸から出ます。「なし」では年俸の軸は効きません。"}
+
+
+def fa_answers(game: Game, level: int = 1) -> dict:
+    """FA の段階の選手の志望の重み(答え合わせ用。F3-2c)。"""
+    _check_level(level)
+    proc = game.state.procedure
+    if proc is None or not proc.fa_info:
+        return {"available": False, "players": {}}
+    players = {p.id: p for p in game.offseason_players("fa")}
+    return {"available": True, "level": level, "players": {pid: preference_rows(game, p) for pid, p in players.items()}, "note": "志望の重み(合計 100%)。選手は、受けた提示の中から重み × 満足度の合計が一番大きい提示を選びます。"}

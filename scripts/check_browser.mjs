@@ -632,6 +632,18 @@ if g.state.procedure is not None and g.state.procedure.phase == "renewal":
     g.offseason_next()`;
 }
 
+// FA(F3-2c):画面で行った操作(1 人に年数 2 で提示 → ラウンド 1 を締める → 残りは「次の手続きへ」)を、Python 側でも同じように行う
+const faOps = { offer: null, close: false };
+function faPy(next = true) {
+  return `fops = json.loads(${JSON.stringify(JSON.stringify(faOps))})
+if g.state.procedure.phase == "fa":
+    if fops.get("offer"):
+        g.offseason_fa_offer(fops["offer"]["player_id"], fops["offer"]["years"])
+    if fops.get("close"):
+        last_round = g.offseason_fa_close()["last_round"]
+${next ? "    g.offseason_next()" : ""}`;
+}
+
 // market=true なら、市場の段階(自分の 1 巡目の前)で止めて code を実行する
 function pyProc(code, market, ...args) {
   return JSON.parse(python(`
@@ -645,6 +657,7 @@ ${renewPy()}
 t = g.offseason_table("release", "pitcher", "saber")  # 投手の表は投手の既定の並び順(WAR(失点版)の低い順)
 g.offseason_release([next(r["player_id"] for r in t["rows"] if r["can_release"] and r["position"] == "RP")])
 g.offseason_next()
+${faPy()}
 v = g.offseason_advance()
 g.offseason_pick(v["pool"][0]["player_id"])
 g.offseason_next()
@@ -673,7 +686,7 @@ await page.click("#yearend-go");
 // 操作する球団があるので、オフの手続き(自由契約 → ドラフト → 市場)の画面になる(F3-1。D-201)
 await page.waitForFunction(() => !document.querySelector("#screen-procedure").hidden && document.querySelector("#renewal-counts"), null, { timeout: 120000 });
 const yeSeconds = (Date.now() - ye0) / 1000;
-check((await page.textContent("#proc-info")).includes("契約更改") && (await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent))).join("・") === "契約更改・自由契約・ドラフト・自由契約市場・完了" && (await page.isDisabled("#proc-next")), `年度を確定すると、オフの手続きの画面(契約更改の段階)になる。全員が決まるまで「次の手続きへ」は押せない(${yeSeconds.toFixed(1)} 秒。F3-2b)`);
+check((await page.textContent("#proc-info")).includes("契約更改") && (await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent))).join("・") === "契約更改・自由契約・FA・ドラフト・自由契約市場・完了" && (await page.isDisabled("#proc-next")), `年度を確定すると、オフの手続きの画面(契約更改の段階)になる。全員が決まるまで「次の手続きへ」は押せない(${yeSeconds.toFixed(1)} 秒。F3-2b)`);
 // 契約更改の画面(F3-2b。D-244):自動案でまとめて提示 → 断った選手だけが残る(理由つき)
 const rosterHeads = async () => page.$$eval("#proc-body thead th", (ths) => ths.map((t) => t.textContent.replace(/ [▲▼]$/, "")));
 const renewHead = await rosterHeads();
@@ -818,7 +831,55 @@ await page.click("#proc-release");
 await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("済んでいます"));
 check(true, "選手に印を付けて「自由契約にする」を押すと、確認のあと手放せる");
 await page.click("#proc-next");
-await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("ドラフト"));
+// FA(F3-2c。D-260):宣言した選手の表 → 1 人に年数 2 で提示 → ラウンド 1 を締める → 結果が計算本体と同じ → 「次の手続きへ」でドラフト
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("FA") && document.querySelector("#fa-round"), null, { timeout: 60000 });
+const faStart = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+g.year_end()
+${renewPy()}
+t = g.offseason_table("release", "pitcher", "saber")
+g.offseason_release([next(r["player_id"] for r in t["rows"] if r["can_release"] and r["position"] == "RP")])
+g.offseason_next()
+v = g.offseason_view()
+print(json.dumps([v["phase"], v["fa"]["counts"]], ensure_ascii=False))`, last.path));
+const faRoundText = await page.textContent("#fa-round");
+check(faStart[0] === "fa" && faRoundText.includes(`ラウンド 1/3:宣言 ${faStart[1].declared} 人`) && (await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent))).join("・").includes("自由契約・FA・ドラフト"), `「次の手続きへ」で FA に進み、「ラウンド 1/3」と宣言した人数(${faStart[1].declared} 人)が計算本体と同じ`);
+await page.selectOption("#roster-group", "");
+await page.waitForFunction(() => document.querySelector("#roster-group").value === "");
+const faHead = await rosterHeads();
+check(["ポジション", "年齢", "前の所属", "算定年俸", "状態"].every((h) => faHead.includes(h)) && (await page.textContent("#roster-sort-line")).includes("算定年俸"), `FA の表に ポジション・年齢・前の所属・算定年俸・状態 と成績の列があり、初期の並び順は算定年俸(列:${faHead.join("・")})`);
+check(!(await page.textContent("#proc-body")).includes("志望(答え合わせ)"), "答え合わせモードがオフのとき、FA の画面に志望の重みは出ない(D-245)");
+await page.click("#proc-body tbody tr td .link >> nth=0");
+await page.waitForSelector("#fa-panel");
+const faPid = await page.getAttribute("#fa-panel", "data-player-id");
+check(!(await page.$("#offer-plus10")) && (await page.textContent("#fa-panel")).includes("算定どおり"), "名前を押すと提示のパネルが開く。お金のルール「なし」では年俸は算定どおりで、±% のボタンは出ない");
+await page.selectOption("#fa-years", "2");
+await page.click("#fa-send");
+await page.waitForFunction(() => document.querySelector("#fa-mine") && document.querySelector("#fa-mine").textContent.includes("提示中 1 人"), null, { timeout: 30000 });
+faOps.offer = { player_id: faPid, years: 2 };
+check(true, "年数 2 で「提示する」を押すと、「提示中 1 人」になる");
+await page.click("#fa-close");
+await page.waitForSelector("#fa-last", { timeout: 60000 });
+faOps.close = true;
+const faLastUi = await page.textContent("#fa-last");
+const faLastPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+g.year_end()
+${renewPy()}
+t = g.offseason_table("release", "pitcher", "saber")
+g.offseason_release([next(r["player_id"] for r in t["rows"] if r["can_release"] and r["position"] == "RP")])
+g.offseason_next()
+${faPy(false)}
+print(json.dumps([[x["name"], x["team_name"], x["years"], x["salary_text"]] for x in last_round["signed"]] + [g.offseason_view()["fa"]["round"]], ensure_ascii=False))`, last.path));
+const faSignedPy = faLastPy.slice(0, -1);
+check(faLastUi.includes("ラウンド 1 の結果") && faSignedPy.every((x) => faLastUi.includes(`${x[0]} → ${x[1]}(${x[2]} 年・${x[3]})`)) && (faSignedPy.length > 0 || faLastUi.includes("ありません")) && (await page.textContent("#fa-round")).includes(`ラウンド ${faLastPy[faLastPy.length - 1]}/3`), `「ラウンド 1 を締める」で、ラウンド 1 の結果(契約 ${faSignedPy.length} 人)が計算本体と同じ。次のラウンドに進む`);
+if (faSignedPy.length) check((await page.$$eval("#fa-results tbody tr", (trs) => trs.length)) === faSignedPy.length, "FA の結果の一覧に、成立した契約が並ぶ");
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("ドラフト"), null, { timeout: 60000 });
 const draftHead = await page.textContent("#proc-body");
 check(draftHead.includes("1 / 6 巡目") && draftHead.includes("候補 108 人"), "「次の手続きへ」でドラフトに進み、1 / 6 巡目と候補 108 人が出る");
 await page.locator("#proc-body button", { hasText: "次の自分の番まで進める" }).click();
@@ -832,6 +893,7 @@ ${renewPy()}
 t = g.offseason_table("release", "pitcher", "saber")  # 投手の表は投手の既定の並び順(WAR(失点版)の低い順)
 g.offseason_release([next(r["player_id"] for r in t["rows"] if r["can_release"] and r["position"] == "RP")])
 g.offseason_next()
+${faPy()}
 v = g.offseason_advance()
 print(json.dumps([[p["name"], p["scouting"]["overall_text"], p["scouting"]["ceiling"]] for p in v["pool"][:10]] + [v["round"], v["is_my_turn"]], ensure_ascii=False))`, last.path));
 const poolRows = await page.$$eval("#proc-body tbody tr:not(.detail)", (trs) => trs.slice(0, 10).map((tr) => [tr.querySelector("td .link").textContent, [...tr.children][3].textContent, [...tr.children][4].textContent.slice(0, 1)]));
