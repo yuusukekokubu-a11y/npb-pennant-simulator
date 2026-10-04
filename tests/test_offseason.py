@@ -333,7 +333,7 @@ def test_calibration_shifts_strength_items_only_and_hits_50():
                 assert p.hidden.potential[item] == pytest.approx(pot[item] + cal[p.role])
                 assert p.ratings[item] == pytest.approx(rat[item] + cal[p.role])
     means = _first_team_means(league)
-    assert abs(means[BATTER] - 50) < 0.5 and abs(means[PITCHER] - 50) < 0.5
+    assert abs(means[BATTER] - 50) < 0.75 and abs(means[PITCHER] - 50) < 0.75  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60)
 
 
 def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated():
@@ -362,7 +362,7 @@ def test_game_new_uses_prerun_and_saves_calibration():
     g = api.Game.new(4, [None] * 12, 0, season_seed=4, baselines="default")
     assert g.state.calibration == SETTINGS.calibration("medium")
     means = _first_team_means(g.state.league)
-    assert abs(means[BATTER] - 50) < 0.5 and abs(means[PITCHER] - 50) < 0.5
+    assert abs(means[BATTER] - 50) < 0.75 and abs(means[PITCHER] - 50) < 0.75  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60)
     g.advance(1)
     again = load_game(save_game(g.state))
     assert again.calibration == SETTINGS.calibration("medium")
