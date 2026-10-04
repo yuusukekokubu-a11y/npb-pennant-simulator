@@ -140,7 +140,7 @@
   .contract-box.over { background: var(--warn-bg); border-left: 4px solid var(--warn-line); }
   .contract-box dl { margin: var(--space-1) 0 0; font-size: var(--font-tiny); color: var(--muted); }
   /* 契約更改(F3-2b):提示のパネル。色・文字・余白は変数で指定(D-239) */
-  .offer-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); font-size: var(--font-small); white-space: normal; }
+  .offer-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); font-size: var(--font-small); white-space: normal; text-align: left; position: sticky; left: 0; max-width: min(36em, calc(100vw - 4 * var(--space-3))); box-sizing: border-box; }
   .offer-panel p { margin: var(--space-1) 0; }
   .offer-fields { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: var(--space-1) 0; }
   .offer-fields input[type=number] { width: 8em; }
