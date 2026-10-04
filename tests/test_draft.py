@@ -443,3 +443,85 @@ def test_finalize_makes_room_when_full_team_lacks_minimum():
     room = [x for x in proc.released if x.get("note") == "room"]
     assert len(room) == 2 and all(x["team_id"] == team.id for x in room) and sum(1 for n in filled if n.team_id == team.id and n.position == "C") == 2
     assert all(len(t.players) == MAX_ROSTER for t in league.teams)
+
+
+# ---- 自由契約・市場の、成績つきの選手の一覧(D-222) ----
+
+@pytest.fixture(scope="module")
+def release_game():
+    g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    g.advance(125)
+    g.year_end()
+    return g
+
+
+def test_roster_table_columns_sort_and_missing_stats(release_game):
+    g = release_game
+    t = g.offseason_table("release", "batter", "basic")
+    keys = [c["key"] for c in t["columns"]]
+    assert keys[:3] == ["pos", "age", "usage"] and "PA" not in keys and "avg" in keys  # 基本の列 + 選んだ種類の列(打席は重ねない)
+    assert t["sort"]["key"] == "war" and t["order"] == "asc" and t["extra_column"]["key"] == "war"  # 初期は WAR の低い順(表にないので固定列)
+    wars = [float(r["values"]["war"]) for r in t["rows"] if r["values"]["war"] != "—"]
+    assert wars == sorted(wars) and all(r["values"]["war"] == "—" for r in t["rows"][len(wars):])  # 成績のない選手は最後
+    assert all(r["can_release"] in (True, False) and r["role"] == "batter" for r in t["rows"])
+    assert len(t["rows"]) == sum(1 for p in g._team("T01").players if p.role == "batter")
+    text = json.dumps(t, ensure_ascii=False)
+    assert '"ratings"' not in text and '"potential"' not in text
+    # 全部の列で並べ替え:ポジション・年齢・打席・成績の列・WAR の列・表にない指標(固定列)
+    for key, kind in (("pos", "basic"), ("age", "basic"), ("usage", "saber"), ("avg", "basic"), ("war_ra", "basic"), ("obp", "war")):
+        role = "pitcher" if key == "war_ra" else "batter"
+        t2 = g.offseason_table("release", role, kind, key, "desc")
+        assert t2["sort"]["key"] == key and t2["order"] == "desc"
+        if key not in [c["key"] for c in t2["columns"]]:
+            assert t2["extra_column"]["key"] == key and all(key in r["values"] for r in t2["rows"])
+    ages = [r["age"] for r in g.offseason_table("release", "batter", "basic", "age", "asc")["rows"]]
+    assert ages == sorted(ages)
+    w = g.offseason_table("release", "pitcher", "war")
+    assert [c["key"] for c in w["columns"]][:3] == ["pos", "age", "usage"] and "innings" not in [c["key"] for c in w["columns"]] and w["extra_column"] is None
+    assert w["seasons"] == [{"key": "current", "label": "今シーズン(1シーズン目)"}]  # 1 シーズン目は通算を選べない
+    with pytest.raises(ValueError):
+        g.offseason_table("release", "batter", "basic", "contact")  # 能力の項目は公開用の表では使えない
+    with pytest.raises(ValueError):
+        g.offseason_table("release", "batter", "basic", season="career")
+
+
+def test_roster_ability_table_only_through_answers(release_game):
+    g = release_game
+    a = answers.roster_ability_table(g, "release", "batter", 1, "avg")
+    assert [c["key"] for c in a["columns"]][:3] == ["pos", "age", "usage"] and "contact" in [c["key"] for c in a["columns"]]
+    assert a["extra_column"]["key"] == "avg" and a["order"] == "desc"
+    avgs = [float(r["values"]["avg"]) for r in a["rows"] if r["values"]["avg"] != "—"]
+    assert avgs == sorted(avgs, reverse=True)
+    a2 = answers.roster_ability_table(g, "release", "pitcher", 2, "usage", "asc")
+    assert a2["sort"]["key"] == "usage" and a2["extra_column"] is None and "growth_type" in a2["rows"][0]["values"]
+    a3 = answers.roster_ability_table(g, "release", "batter", 1)
+    assert a3["sort"]["key"] == "contact" and a3["order"] == "desc"
+    with pytest.raises(ValueError):
+        answers.roster_ability_table(g, "release", "batter", 3)
+
+
+def test_market_table_marks_candidates_without_stats(release_game):
+    g = api.Game(copy.deepcopy(release_game.state), dirty=False)
+    v = g.offseason_view()
+    assert v["minimums"]["positions"]["C"] == 2 and v["minimums"]["batters"] == 15 and v["minimums"]["labels"]["SP"] == "先発"
+    g.offseason_release([next(r["player_id"] for r in v["roster"] if r["can_release"])])
+    g.offseason_next()
+    g.offseason_advance()
+    g.offseason_next()
+    m = g.offseason_table("market", "batter", "basic")
+    assert m["phase"] == "market" and len(m["rows"]) == sum(1 for p in g.state.procedure.market if p.role == "batter")
+    with_stats = [r for r in m["rows"] if r["has_stats"]]
+    without = [r for r in m["rows"] if not r["has_stats"]]
+    candidates = [r for r in without if r["player_id"].startswith("D")]  # 指名されなかった候補(成績なし)
+    assert with_stats and candidates and all(r["former_team"] for r in with_stats) and all(r["values"]["avg"] == "—" and r["former_team"] == "" for r in candidates)
+    assert all(r["values"]["avg"] == "—" for r in without)
+    assert m["rows"].index(without[0]) > m["rows"].index(with_stats[-1])  # 成績のない選手は最後
+    g.offseason_auto()
+    assert g.status()["year"] == 2
+    g.advance(3)
+    t = g.offseason_table if g.state.procedure else None
+    assert t is None
+    g.advance(122)
+    g.year_end()
+    c = g.offseason_table("release", "batter", "basic", season="career")
+    assert c["season"] == "career" and [x["key"] for x in c["seasons"]] == ["current", "career"]

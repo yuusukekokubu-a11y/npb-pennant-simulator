@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from .abilities import ITEM_LABELS, items_for
+from .abilities import ITEM_LABELS, POSITION_LABELS, items_for
 from .api import Game
 
 LEVELS = (1, 2)
@@ -165,6 +165,57 @@ def scouting_answers(game: Game, player_id: str, level: int = 1) -> dict:
             row["potential"] = scale(p.hidden.potential[item])["text"]
         items.append(row)
     return {"player_id": player_id, "available": True, "level": level, "entry_year": p.scouting.get("year"), "items": items, "note": "入団時の推定値と、今の真の能力の差。入団後の成長・衰退も含まれます。"}
+
+
+def roster_ability_table(game: Game, phase: str, role: str = "batter", level: int = 1, sort: str | None = None, order: str | None = None, season: str | None = None) -> dict:
+    """自由契約・市場の画面の「能力」の表(答え合わせ用。D-222):基本の列(ポジション・年齢・打席か投球回)+ 能力の項目。
+    並び順は基本の列・能力の項目のほか、成績の指標・WAR の列も使える(そのときは extra_column で名前の隣に出す)。"""
+    from .api import ROSTER_BASE_COLUMNS
+
+    _check_level(level)
+    players = game.offseason_players(phase)
+    cols = columns(role, level)
+    keys = [c["key"] for c in cols]
+    base_keys = [c["key"] for c in ROSTER_BASE_COLUMNS[role]]
+    stats_sort = sort if sort and sort not in keys and sort not in ("pos", "age") else None  # 成績・打席(投球回)で並べるときは、成績の表の順を使う
+    base = game.roster_table(players, role, "basic", stats_sort, order, season)  # 基本の列の値(と、成績で並べるときの固定列)
+    base_rows = {r["player_id"]: r for r in base["rows"]}
+    extra = (base["extra_column"] or next(c for c in base["columns"] if c["key"] == stats_sort)) if stats_sort and stats_sort not in base_keys else None
+    sort = sort or keys[0]
+    if order not in ("asc", "desc"):
+        order = base["order"] if stats_sort else ("desc" if sort in keys else "asc")
+    growth, arche = _labels(game)
+    rows = []
+    for p in players:
+        if p.role != role:
+            continue
+        b = base_rows[p.id]
+        row = {k: v for k, v in b.items() if k != "values"}
+        row["values"] = {k: b["values"][k] for k in base_keys}
+        row["values"].update({item: scale(p.ratings[item])["text"] for item in items_for(role)})
+        if level == 2:
+            row["values"]["growth_type"] = growth.get(p.hidden.growth_type, p.hidden.growth_type)
+            row["values"]["archetype"] = arche.get(p.hidden.archetype, p.hidden.archetype)
+        if extra:
+            row["values"][sort] = b["values"][sort]
+        if sort in keys:
+            key = row["values"][sort] if sort in ("growth_type", "archetype") else p.ratings.get(sort)
+        elif sort in ("pos", "age"):
+            key = list(POSITION_LABELS).index(p.position) if sort == "pos" else p.age
+        else:
+            key = base["rows"].index(b)  # 成績の指標で並べたときの順
+        row["_sort"] = key
+        rows.append(row)
+    present = [r for r in rows if r["_sort"] is not None]
+    missing = [r for r in rows if r["_sort"] is None]
+    present.sort(key=lambda r: r["player_id"])
+    reverse = order == "desc" if (sort in keys or sort in ("pos", "age")) else False  # 成績の順は base が向きを含めて並べている
+    present.sort(key=lambda r: r["_sort"], reverse=reverse)
+    rows = present + missing
+    for r in rows:
+        r.pop("_sort")
+    sort_col = extra or next((c for c in cols if c["key"] == sort), None) or next(c for c in ROSTER_BASE_COLUMNS[role] if c["key"] == sort)
+    return {"phase": phase, "role": role, "kind": "ability", "level": level, "note": LEVEL_NOTE[level], "columns": ROSTER_BASE_COLUMNS[role] + cols, "sort": sort_col, "order": order, "extra_column": extra, "rows": rows, "season": base["season"], "season_label": base["season_label"], "seasons": base["seasons"]}
 
 
 def draft_review_answers(game: Game, team_id: str | None = None, year: int | None = None, level: int = 1) -> dict:

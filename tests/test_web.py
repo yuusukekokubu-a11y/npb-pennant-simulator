@@ -264,6 +264,7 @@ def test_bridge_queries_and_answers_are_separate(bridge):
     # 答え合わせ用の関数は、query からは呼べない
     assert json.loads(bridge.query("ability_table", "{}"))["ok"] is False
     assert json.loads(bridge.query("draft_review_answers", "{}"))["ok"] is False
+    assert json.loads(bridge.query("offseason_ability_table", "{}"))["ok"] is False and json.loads(bridge.query("offseason_table", "{}"))["ok"] is False  # 手続き中でなければ表示できない
     assert _ok(bridge.answer("draft_review_answers", json.dumps({"level": 1})))["available"] is False  # まだドラフトがない
     table = _ok(bridge.answer("ability_table", json.dumps({"level": 2, "qualified": False})))
     assert table["rows"] and "growth_type" in table["rows"][0]["values"]

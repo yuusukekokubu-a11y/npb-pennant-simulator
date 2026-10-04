@@ -128,6 +128,7 @@ _QUERIES = {
     "year_end_preview": lambda a: _game.year_end_preview(),
     "offseason_summary": lambda a: _game.offseason_summary(a.get("year")),
     "offseason_view": lambda a: _game.offseason_view(),
+    "offseason_table": lambda a: _game.offseason_table(a.get("phase", "release"), a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), a.get("season")),
     "transactions": lambda a: _game.transactions(a.get("year")),
     "draft_review": lambda a: _game.draft_review(a.get("team_id"), a.get("year")),
     "player": lambda a: _game.player(a["player_id"]),
@@ -149,6 +150,7 @@ _ANSWERS = {
     "offseason_answers": lambda a: answers.offseason_answers(_game, a.get("year"), int(a.get("level", 1))),
     "scouting_answers": lambda a: answers.scouting_answers(_game, a["player_id"], int(a.get("level", 1))),
     "procedure_answers": lambda a: answers.procedure_answers(_game, int(a.get("level", 1))),
+    "offseason_ability_table": lambda a: answers.roster_ability_table(_game, a.get("phase", "release"), a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order"), a.get("season")),
     "draft_review_answers": lambda a: answers.draft_review_answers(_game, a.get("team_id"), a.get("year"), int(a.get("level", 1))),
 }
 
