@@ -423,3 +423,23 @@ def test_v8_save_loads_with_old_method_and_converted_sd():
     assert old.state.procedure.method == 2
     assert all(p["scouting"]["method"] == 2 for p in old.offseason_next()["pool"])
     assert answers.draft_review_answers(old, "T02", 2)["available"]  # 版 8 の入団(区切りなし)でも実際の天井が出る
+
+
+def test_finalize_makes_room_when_full_team_lacks_minimum():
+    """70 人のまま最低人数が足りない球団は、評価の低い選手を外して補充し、70 人と最低人数の両方を守る(D-203)。"""
+    from pennant.draft import finalize, start_procedure
+
+    league = generate_league(6, CONFIG, PARTS)
+    team = league.teams[10]
+    catchers = [p for p in team.players if p.position == "C"]
+    for p in catchers:  # 捕手を全員、一塁手に変えて「70 人なのに捕手 0 人」にする
+        p.position = "1B"
+    assert len(team.players) == MAX_ROSTER and shortages(team.players, MINS, MIN_BATTERS) == {"C": 2}
+    proc = start_procedure(league, 31, CONFIG, PARTS, DS, 1, None, None)
+    proc.phase = "market"
+    sd = {t.id: SD5 for t in league.teams}
+    filled = finalize(league, proc, CONFIG, PARTS, DS, sd, None, MINS, MIN_BATTERS)
+    assert len(team.players) == MAX_ROSTER and not shortages(team.players, MINS, MIN_BATTERS)
+    room = [x for x in proc.released if x.get("note") == "room"]
+    assert len(room) == 2 and all(x["team_id"] == team.id for x in room) and sum(1 for n in filled if n.team_id == team.id and n.position == "C") == 2
+    assert all(len(t.players) == MAX_ROSTER for t in league.teams)

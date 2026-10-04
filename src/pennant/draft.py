@@ -462,6 +462,20 @@ def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, d
     return False
 
 
+def make_room(team: Team, count: int, proc: OffseasonProcedure, sd: dict, mins: dict[str, int], min_batters: int) -> list[Player]:
+    """最低人数を満たす補充のために、空き枠が足りない分だけ、自球団の評価が低い順に選手を外す(不足を増やさない選手だけ)。
+    外した選手はそのオフの終わりにリーグを去る(履歴には自由契約として残る)。"""
+    out: list[Player] = []
+    for p in sorted(team.players, key=lambda p: (cached_value(proc, p, team.id, sd)[0], p.id)):
+        if len(out) >= count:
+            break
+        if can_release(team.players, p, mins, min_batters):
+            release_players(team, [p], proc)
+            proc.released[-1]["note"] = "room"
+            out.append(p)
+    return out
+
+
 def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y") -> list[PlayerNote]:
     """完了:70 人に満たない球団を自動補充(最低人数を満たすポジションから、次に人数の目安との差が大きいポジション)。市場の残りはリーグを去る。"""
     rng = random.Random(derive_seed(proc.seed, "fill"))
@@ -474,10 +488,20 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
         slots: list[tuple[str, str]] = []
         current = position_counts(team.players)
         for pos, n in shortages(team.players, mins, min_batters).items():
-            if pos == "batter":
+            if pos == "batter":  # 野手の合計が足りないときは、人数の目安との差が大きい野手のポジションで埋める
+                for _ in range(n):
+                    fill_pos = max(FIELDER_POSITIONS, key=lambda k: (target[k] - current.get(k, 0), -list(target).index(k)))
+                    slots.append((BATTER, fill_pos))
+                    current[fill_pos] = current.get(fill_pos, 0) + 1
                 continue
             slots += [(PITCHER if pos in PITCHER_POSITIONS else BATTER, pos)] * n
             current[pos] += n
+        excess = len(team.players) + len(slots) - MAX_ROSTER
+        if excess > 0:  # 70 人のまま最低人数が足りない球団は、評価の低い選手を外して枠を空ける(上限 70 人と最低人数の両方を守る。D-203)
+            make_room(team, excess, proc, scout_sd[team.id], mins, min_batters)
+            current = position_counts(team.players)
+            for _, pos in slots:
+                current[pos] = current.get(pos, 0) + 1
         while len(team.players) + len(slots) < MAX_ROSTER:
             pos = max(target, key=lambda k: (target[k] - current.get(k, 0), -list(target).index(k)))
             slots.append((PITCHER if pos in PITCHER_POSITIONS else BATTER, pos))
