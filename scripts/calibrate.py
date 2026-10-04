@@ -50,7 +50,7 @@ def main(argv=None):
     levels = [args.level] if args.level else list(draft_settings.levels)
     for level in levels:
         sd = draft_settings.level_sd(level)
-        print(f"\n## ずれの段階 {level}(標準偏差 {sd:g})\n")
+        print(f"\n## ずれの段階 {level}(共通 {sd['common']:g}・項目ごと {sd['item']:g})\n")
         if args.check:
             rows = []
             for seed in range(args.seed_start, args.seed_start + args.seeds):

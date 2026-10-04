@@ -25,9 +25,18 @@
   "scouting": {
     "default_level": "medium",
     "levels": {
-      "small": 3,
-      "medium": 5,
-      "large": 8
+      "small": {
+        "common": 2.0,
+        "item": 2.24
+      },
+      "medium": {
+        "common": 4.0,
+        "item": 3.0
+      },
+      "large": {
+        "common": 6.0,
+        "item": 5.29
+      }
     },
     "margin_z": 1.28,
     "ceiling_shares": {

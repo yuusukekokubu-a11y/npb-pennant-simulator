@@ -213,7 +213,7 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
 
 # ---- 事前運転と校正(D-034 の完成形。D-190、D-197) ----
 
-def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: float | None = None) -> int:
+def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None) -> int:
     """新規開始のとき、試合をせずに年度の確定の処理だけを years 回回す(事前運転)。履歴は作らない。
     F3-1 からは、オフの手続き(自由契約・ドラフト・市場・自動補充。全球団 AI)を使う(D-210)。
     乱数は derive_seed(seed, "prerun:<年>")。戻り値は回した年数。progress には (終わった年数, 全年数) を知らせる。"""

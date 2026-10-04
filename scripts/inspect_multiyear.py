@@ -92,13 +92,15 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
         row = measure(g, config, war_settings)
         row["year"] = year
         row["seed"] = seed
-        row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release") if year < years else 0
+        row["released"] = 0
         if year < years:
             t0 = time.perf_counter()
             summary = g.year_end()
             row["year_end_seconds"] = time.perf_counter() - t0
             row["retired"] = summary["counts"]["retired"]
-            assert {t.id: len(t.players) for t in g.state.league.teams} == sizes, "選手の数が変わった"
+            row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release")  # 確定の後に数える(そのオフの自由契約)
+            now = {t.id: len(t.players) for t in g.state.league.teams}
+            assert now == sizes, f"選手の数が変わった(リーグ {seed}、{year} 年目の確定の後:{ {k: v for k, v in now.items() if v != sizes[k]} })"
             from pennant.draft import minimum_batters, minimum_positions, shortages
 
             assert all(not shortages(t.players, minimum_positions(), minimum_batters()) for t in g.state.league.teams), "最低人数を割った"  # F3-1:ポジションの構成は最低人数だけ守る(D-203)

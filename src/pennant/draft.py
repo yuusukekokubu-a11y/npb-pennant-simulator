@@ -5,7 +5,8 @@
   - ドラフト(draft):ウェーバー方式(前年の勝率が低い順。巡ごとに往復)。空き枠がない球団はパス。AI は ai_choose
   - 市場(market):手放された選手 + 指名されなかった候補。同じ順番で数巡。残った選手はリーグを去る
   - 完了(done):70 人に満たない球団を自動補充(offseason.replenish。F2 の穴埋め)
-AI の判断は、真の能力ではなく、球団ごとのスカウト評価(scouting.quick_overall)を使う(D-205)。判断の関数は差し替え可能。
+AI の判断は、真の能力ではなく、球団ごとのスカウト評価(scouting.quick_value)を使う(D-205)。判断の関数は差し替え可能。
+評価のずれ(sd)は {"common", "item"} の 2 層(D-212)。手続きは評価方式の版(method)を持つ(D-215)。
 操作する球団がないとき(観戦のみ)は、run_ai_offseason で一気に進める。事前運転も同じ関数を使う(D-210)。
 """
 
@@ -24,7 +25,7 @@ from .generate import make_rookie
 from .models import League, Player, Team
 from .names import NameGenerator
 from .offseason import OffseasonSettings, PlayerNote, replenish
-from .scouting import GRADES, ScoutReport, ceiling_cuts, quick_overall, quick_value, report
+from .scouting import GRADES, SCOUT_METHOD, ScoutReport, ceiling_cuts, quick_value, report
 from .season import derive_seed
 
 SUPPORTED_FORMAT_VERSION = 1
@@ -60,8 +61,10 @@ class DraftSettings:
     def default_level(self) -> str:
         return str(self.data["scouting"]["default_level"])
 
-    def level_sd(self, level: str) -> float:
-        return float(self.data["scouting"]["levels"][level])
+    def level_sd(self, level: str) -> dict[str, float]:
+        """ずれの段階 → {"common": 共通の見誤り, "item": 項目ごとの見誤り}(標準偏差。D-212)。"""
+        v = self.data["scouting"]["levels"][level]
+        return {"common": float(v["common"]), "item": float(v["item"])}
 
     @property
     def levels(self) -> tuple[str, ...]:
@@ -107,7 +110,9 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
     s = c.section(c.get(root, "scouting", ""), "scouting")
     levels = c.section(c.get(s, "levels", "scouting"), "scouting.levels")
     for level in ("small", "medium", "large"):
-        c.number(c.get(levels, level, "scouting.levels"), f"scouting.levels.{level}", 0, 30)
+        lv = c.section(c.get(levels, level, "scouting.levels"), f"scouting.levels.{level}")
+        for key in ("common", "item"):
+            c.number(c.get(lv, key, f"scouting.levels.{level}"), f"scouting.levels.{level}.{key}", 0, 30)
     default = c.get(s, "default_level", "scouting")
     if default not in ("small", "medium", "large"):
         c.add("scouting.default_level", f"small / medium / large のどれかにしてください(値: {default!r})")
@@ -180,14 +185,17 @@ class OffseasonProcedure:
     market_rounds: int
     cuts: list[float]  # 天井の段階の境目
     phase: str = "release"
+    method: int = SCOUT_METHOD  # 評価方式の版(D-215。版 8 の手続きは 1)
     round: int = 1  # 今の巡(1 から)
     index: int = 0  # 今の巡の中の何番目か(0 から。往復は current_team で解決)
     candidates: list[Player] = field(default_factory=list)  # ドラフトの候補(まだ指名されていない)
     market: list[Player] = field(default_factory=list)  # 自由契約市場
     picks: list[dict] = field(default_factory=list)  # 指名・獲得の履歴({phase, round, team_id, player_id, name, position, age})
     released: list[dict] = field(default_factory=list)  # 手放した選手({team_id, player_id, name, position, age})
+    filled: list[dict] = field(default_factory=list)  # 自動補充で入った選手(履歴に残すため。D-216。保存しない:完了と同時に履歴へ移る)
     my_release_done: bool = False
     ai_release_done: bool = False
+    prerun: bool = False  # 事前運転の手続き(入団時の評価に年を持たせない。保存しない)
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 天井)。保存しない
 
     def current_team(self) -> str | None:
@@ -203,7 +211,7 @@ class OffseasonProcedure:
     def to_dict(self, plain) -> dict:
         return {
             "year": self.year, "seed": self.seed, "order": list(self.order), "rounds": self.rounds, "market_rounds": self.market_rounds,
-            "cuts": [round(c, 4) for c in self.cuts], "phase": self.phase, "round": self.round, "index": self.index,
+            "cuts": [round(c, 4) for c in self.cuts], "phase": self.phase, "method": self.method, "round": self.round, "index": self.index,
             "candidates": [plain(p) for p in self.candidates], "market": [plain(p) for p in self.market],
             "picks": [dict(x) for x in self.picks], "released": [dict(x) for x in self.released],
             "my_release_done": self.my_release_done, "ai_release_done": self.ai_release_done,
@@ -213,6 +221,7 @@ class OffseasonProcedure:
     def from_dict(cls, d: dict, player_from) -> "OffseasonProcedure":
         proc = cls(int(d["year"]), int(d["seed"]), [str(t) for t in d["order"]], int(d["rounds"]), int(d["market_rounds"]), [float(c) for c in d["cuts"]])
         proc.phase = str(d["phase"])
+        proc.method = int(d.get("method", 1))
         proc.round = int(d["round"])
         proc.index = int(d["index"])
         proc.candidates = [player_from(x) for x in d["candidates"]]
@@ -277,23 +286,23 @@ def start_procedure(league: League, seed: int, config: GenerationConfig, parts: 
 
 # ---- 評価 ----
 
-def scout_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: float, settings: DraftSettings) -> ScoutReport:
-    return report(player, team_id, proc.seed, sd, proc.cuts, settings.margin_z)
+def scout_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> ScoutReport:
+    return report(player, team_id, proc.seed, sd, proc.cuts, settings.margin_z, proc.method)
 
 
-def cached_value(proc: OffseasonProcedure, player: Player, team_id: str, sd: float) -> tuple[float, str]:
+def cached_value(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict) -> tuple[float, str]:
     """総合の推定値と天井(手続きの間は使い回す。同じ入力なら同じ値)。"""
     key = (team_id, player.id)
     v = proc._cache.get(key)
     if v is None:
-        v = quick_value(player, team_id, proc.seed, sd, proc.cuts)
+        v = quick_value(player, team_id, proc.seed, sd, proc.cuts, proc.method)
         proc._cache[key] = v
     return v
 
 
 # ---- AI の判断(差し替え可能。D-205) ----
 
-def ai_release(team: Team, proc: OffseasonProcedure, sd: float, settings: DraftSettings, mins: dict[str, int], min_batters: int) -> list[Player]:
+def ai_release(team: Team, proc: OffseasonProcedure, sd: dict, settings: DraftSettings, mins: dict[str, int], min_batters: int) -> list[Player]:
     """手放す選手:年齢が下限以上で、自球団の評価(総合の推定値)が基準より低い順に、上限まで。最低人数は守る。"""
     limit = int(settings.ai("release_max"))
     if limit <= 0:
@@ -313,7 +322,7 @@ def ai_release(team: Team, proc: OffseasonProcedure, sd: float, settings: DraftS
     return out
 
 
-def ai_value(player: Player, team: Team, proc: OffseasonProcedure, sd: float, settings: DraftSettings, need: dict[str, int], surplus: set[str] | None = None) -> float:
+def ai_value(player: Player, team: Team, proc: OffseasonProcedure, sd: dict, settings: DraftSettings, need: dict[str, int], surplus: set[str] | None = None) -> float:
     """AI が候補につける点数:総合の推定値 + 天井の加点 + 足りないポジションなら加点 − 人数の目安を超えているポジションなら減点。"""
     est, ceiling = cached_value(proc, player, team.id, sd)
     v = est + float(settings.ai("ceiling_bonus")[ceiling])
@@ -332,7 +341,7 @@ def surplus_positions(team: Team, config: GenerationConfig) -> set[str]:
     return {pos for pos, n in target.items() if counts.get(pos, 0) >= n}
 
 
-def ai_choose(team: Team, pool: list[Player], proc: OffseasonProcedure, sd: float, settings: DraftSettings, mins: dict[str, int], min_batters: int, phase: str) -> Player | None:
+def ai_choose(team: Team, pool: list[Player], proc: OffseasonProcedure, sd: dict, settings: DraftSettings, mins: dict[str, int], min_batters: int, phase: str) -> Player | None:
     """指名(獲得)する選手。空き枠がなければ None。市場では、自球団の最低の推定値より十分よい選手がいなければ見送る。"""
     if len(team.players) >= MAX_ROSTER or not pool:
         return None
@@ -348,13 +357,22 @@ def ai_choose(team: Team, pool: list[Player], proc: OffseasonProcedure, sd: floa
 
 # ---- 手続きを進める ----
 
-def _entry_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: float, settings: DraftSettings) -> dict:
+def _entry_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> dict:
     d = scout_report(proc, player, team_id, sd, settings).to_dict()
-    d["year"] = proc.year + 1
+    d["year"] = None if proc.prerun else proc.year + 1  # 事前運転の入団は年を持たない(ゲーム開始前。振り返りには出ない。D-216)
     return d
 
 
-def join(team: Team, player: Player, proc: OffseasonProcedure, sd: float, settings: DraftSettings) -> None:
+def entry_summary(scouting: dict | None) -> dict:
+    """入団時の評価の要約(履歴に残す公開用の値:総合の推定値・ふれ幅・天井・方式の版。D-216)。"""
+    if not scouting:
+        return {}
+    r = ScoutReport.from_dict(scouting)
+    pub = r.to_public()
+    return {"overall": pub["overall"], "margin": pub["margin"], "ceiling": pub["ceiling"], "method": r.method}
+
+
+def join(team: Team, player: Player, proc: OffseasonProcedure, sd: dict, settings: DraftSettings) -> None:
     player.team_id = team.id
     player.scouting = _entry_report(proc, player, team.id, sd, settings)
     player.state.fatigue = 0.0
@@ -370,7 +388,7 @@ def release_players(team: Team, players: list[Player], proc: OffseasonProcedure)
         proc.released.append({"team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age})
 
 
-def apply_ai_releases(league: League, proc: OffseasonProcedure, scout_sd: dict[str, float], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_release) -> None:
+def apply_ai_releases(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_release) -> None:
     if proc.ai_release_done:
         return
     for team in league.teams:
@@ -384,12 +402,12 @@ def pool_of(proc: OffseasonProcedure) -> list[Player]:
     return proc.candidates if proc.phase == "draft" else proc.market
 
 
-def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, float], settings: DraftSettings) -> None:
+def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, dict], settings: DraftSettings) -> None:
     """今の球団が選手を指名(獲得)して、次の順番へ。"""
     pool = pool_of(proc)
     pool.remove(player)
     join(team, player, proc, scout_sd[team.id], settings)
-    proc.picks.append({"phase": proc.phase, "round": proc.round, "team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age})
+    proc.picks.append({"phase": proc.phase, "round": proc.round, "team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age, **entry_summary(player.scouting)})
     advance_turn(proc)
 
 
@@ -419,7 +437,7 @@ def next_phase(proc: OffseasonProcedure) -> None:
         proc.candidates = []
 
 
-def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, float], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose) -> bool:
+def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose) -> bool:
     """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。"""
     teams = {t.id: t for t in league.teams}
     while not phase_finished(proc):
@@ -444,7 +462,21 @@ def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, f
     return False
 
 
-def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, float], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y") -> list[PlayerNote]:
+def make_room(team: Team, count: int, proc: OffseasonProcedure, sd: dict, mins: dict[str, int], min_batters: int) -> list[Player]:
+    """最低人数を満たす補充のために、空き枠が足りない分だけ、自球団の評価が低い順に選手を外す(不足を増やさない選手だけ)。
+    外した選手はそのオフの終わりにリーグを去る(履歴には自由契約として残る)。"""
+    out: list[Player] = []
+    for p in sorted(team.players, key=lambda p: (cached_value(proc, p, team.id, sd)[0], p.id)):
+        if len(out) >= count:
+            break
+        if can_release(team.players, p, mins, min_batters):
+            release_players(team, [p], proc)
+            proc.released[-1]["note"] = "room"
+            out.append(p)
+    return out
+
+
+def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y") -> list[PlayerNote]:
     """完了:70 人に満たない球団を自動補充(最低人数を満たすポジションから、次に人数の目安との差が大きいポジション)。市場の残りはリーグを去る。"""
     rng = random.Random(derive_seed(proc.seed, "fill"))
     names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players()})
@@ -456,10 +488,20 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
         slots: list[tuple[str, str]] = []
         current = position_counts(team.players)
         for pos, n in shortages(team.players, mins, min_batters).items():
-            if pos == "batter":
+            if pos == "batter":  # 野手の合計が足りないときは、人数の目安との差が大きい野手のポジションで埋める
+                for _ in range(n):
+                    fill_pos = max(FIELDER_POSITIONS, key=lambda k: (target[k] - current.get(k, 0), -list(target).index(k)))
+                    slots.append((BATTER, fill_pos))
+                    current[fill_pos] = current.get(fill_pos, 0) + 1
                 continue
             slots += [(PITCHER if pos in PITCHER_POSITIONS else BATTER, pos)] * n
             current[pos] += n
+        excess = len(team.players) + len(slots) - MAX_ROSTER
+        if excess > 0:  # 70 人のまま最低人数が足りない球団は、評価の低い選手を外して枠を空ける(上限 70 人と最低人数の両方を守る。D-203)
+            make_room(team, excess, proc, scout_sd[team.id], mins, min_batters)
+            current = position_counts(team.players)
+            for _, pos in slots:
+                current[pos] = current.get(pos, 0) + 1
         while len(team.players) + len(slots) < MAX_ROSTER:
             pos = max(target, key=lambda k: (target[k] - current.get(k, 0), -list(target).index(k)))
             slots.append((PITCHER if pos in PITCHER_POSITIONS else BATTER, pos))
@@ -467,13 +509,14 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
         for p in replenish(team, slots, config, names, rng, proc.year, counter, calibration, id_prefix):
             p.scouting = _entry_report(proc, p, team.id, scout_sd[team.id], settings)
             added.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
+            proc.filled.append({"phase": "fill", "round": 0, "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, **entry_summary(p.scouting)})
     proc.market = []
     proc.candidates = []
     proc.phase = "done"
     return added
 
 
-def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, offseason_settings: OffseasonSettings, settings: DraftSettings, year: int, calibration: dict[str, float] | None, scout_sd: dict[str, float], records_or_order, id_prefix: str = "D", game_config=None) -> tuple[OffseasonProcedure, list[PlayerNote]]:
+def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, offseason_settings: OffseasonSettings, settings: DraftSettings, year: int, calibration: dict[str, float] | None, scout_sd: dict[str, dict], records_or_order, id_prefix: str = "D", game_config=None) -> tuple[OffseasonProcedure, list[PlayerNote]]:
     """観戦のみ(全球団 AI)の手続きを一気に進める(事前運転・指紋 (n)・観戦のみの年度の確定で使う)。
     records_or_order は 球団 → (勝, 敗) か、1 巡目の順番の一覧。戻り値は手続きと、入団した全選手。"""
     mins = minimum_positions(game_config)
@@ -483,6 +526,7 @@ def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts:
         proc.order = list(records_or_order)
     else:
         proc = start_procedure(league, seed, config, parts, settings, year, calibration, records_or_order, id_prefix)
+    proc.prerun = id_prefix == "B"
     filled = complete(league, proc, config, parts, settings, scout_sd, calibration, None, mins, min_batters, "Y" if id_prefix == "D" else id_prefix)
     return proc, joined_players(proc) + filled
 
@@ -491,7 +535,7 @@ def joined_players(proc: OffseasonProcedure) -> list[PlayerNote]:
     return [PlayerNote(x["player_id"], x["name"], x["team_id"], x["role"], x["position"], x["age"]) for x in proc.picks if x["player_id"]]
 
 
-def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, float], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y") -> list[PlayerNote]:
+def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y") -> list[PlayerNote]:
     """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針)。戻り値は自動補充で入った選手。"""
     while proc.phase != "done":
         if proc.phase == "release":
