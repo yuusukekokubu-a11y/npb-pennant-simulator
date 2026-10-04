@@ -68,6 +68,7 @@ src/pennant/
   draft.py            オフの手続き(自由契約・ドラフト・市場・自動補充。AI の判断。F3-1。D-201〜D-205)
   contracts.py        契約と年俸(見込みの WAR・年俸の算定・契約年数・単価・予算・お金のルール。F3-2a。D-230〜D-236)
   negotiation.py      契約更改と志望の判定(志望の重み・満足度・受諾の判定・理由・AI の更改の方針。F3-2b。D-243〜D-252)
+  fa.py               FA(一軍登録のシーズンの数え方・FA 権・宣言・提示ラウンド制の FA 市場・AI の提示。F3-2c。D-258〜D-264)
   data/contracts.json         契約の設定(最低年俸・基準予算・上限の倍率・格差・重み・年齢の割引・巡ごとの年俸・評価と WAR の対応。9 章)
   data/negotiation.json       交渉の設定(志望の軸の定義・重みの分布・しきい値・乱数の大きさ・複数年の加点・提示の回数・AI の方針。9 章)
   data/draft.json             オフの手続きの設定(巡数、候補の数、市場の巡数、ずれの大きさ、天井の割合、AI の自由契約の上限。仮置き。9 章)
@@ -267,6 +268,7 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **ドラフトの振り返り**(D-216。`api.draft_review(team_id, year)` / `answers.draft_review_answers`):入団の経路は `GameState.transactions`(指名・市場・自動補充(`phase="fill"`)・自由契約)から引き、各行に入団時の総合の推定値・ふれ幅・天井を持たせる(引退・退団した選手の行も出せる)。今の所属は選手の有無で判定し、出場と WAR の累計は履歴(`SeasonArchive.war`・`records`)と今シーズンの値を足す。答え合わせ側は、今の真の総合、差、実際の天井(`scouting["cuts"]` があればそれで、なければその年の入団者全体の分位点で判定)、球団ごとの差の平均と標準偏差。事前運転の入団(履歴に残さない)は出ない。
 - **選手の一覧の表(自由契約・市場。D-222。`api.roster_table(player_ids, role, kind, sort, order, season)` / `answers.roster_ability_table`)**:個人成績の表(`stats`)と同じ列・値の作り方で、任意の選手の一覧(自球団の全選手、市場の選手)を表にする。基本の列は ポジション・年齢・打席(投手は投球回)で、選んだ種類(基本・セイバー・WAR)の列を続ける。並び順は全部の列(基本の列・成績の全指標・WAR の列。答え合わせ側は能力の項目も)から選べ、表にない指標で並べたときは `extra_column`(名前の隣の固定列)で返す(D-131 と同じ)。成績のない選手(指名されなかった候補)の値は「—」で、並び順によらず最後。手続きの画面は `offseason_table`(公開用)と `offseason_ability_table`(答え合わせ用)で呼ぶ。
 - **契約と年俸**(F3-2a。D-230〜D-237。`contracts.py`):選手は `Player.contract`({salary: 年俸(万円)、until: 満了シーズン、history: [{year, salary, years, reason}]})を持つ。`ContractSettings`(`data/contracts.json`)。見込みの WAR `expected_war(age, role, season_wars, scouting, settings)`(`draft.ContractContext.expected` が選手 × 球団ごとに引く):履歴(`SeasonArchive.war` の直近 3 シーズン)があれば、重み(新しい順の設定値)× 出場の係数(打席か投球回 ÷ 設定値。上限 1)の加重平均。なければ、所属球団の評価(`scouting.quick_value` を乱数系列 `contract:<年>:<球団>:<選手>` で引いた総合の推定値と天井)から設定の表(役割ごとの傾きと切片、天井の加点)で求める。30 歳以上は年齢で割り引く。年俸 `salary_for(expected_war, rate)` = 最低年俸 + 単価 × max(0, 見込み)を丸めたもの。契約年数 `contract_years(age, expected_war)` は年齢と見込みで決める(9 章)。単価 `rate_for(expected_list, teams, players, settings)` は毎年のオフに、(基準予算 × 球団数 − 最低年俸 × 選手数)÷ Σ max(0, 見込み) で求め、`GameState.contract_rates`(年 → 単価)に残す。お金のルール `money_rule`(none / loose / standard / strict)と球団ごとの格差 `budget_tiers`(strict のとき、新規開始のシードから `derive_seed(seed, "budget-tiers")` で大 3・中 6・小 3)。予算 `budget_of(team)` = 基準予算 × 格差、上限 = 予算 × 1.10。契約の乱数はすべて別の系列(`contract:…`)で、AI の判断には使わない(D-237)。
+- **FA**(F3-2c。D-258〜D-264。`fa.py`):設定は `data/negotiation.json` の `fa`(必要なシーズン数・保持者のしきい値の上げ幅・ラウンド数・AI の倍率と提示数・選手の判定の乱数・初期値の補い方・補償(空))。`Player.fa_seasons` は年度の確定(`api.year_end`)で、そのシーズンの一軍(`Season.actives`。シーズンの最初に決まり、シーズン中は変わらない)の選手に 1 を足す。更改の判定(`negotiation.judge`)は、文脈に `fa_holder` があればしきい値を上げる。`draft.make_offer` は、断った選手が FA 権保持者なら `fa.declare`(球団を離れ、契約は終わり、年数を 0 に戻して `OffseasonProcedure.fa_pool` へ)。手続きの段階 `fa` は自由契約の後。`fa.close_round` が 1 ラウンドを締める:AI の提示を作り(`ai_offers`)、あなたの提示(`fa_offers`)と合わせ、見込みの WAR の高い選手から順に、空き枠と予算を満たす提示の中で満足度が最も高いものを選ぶ(`judge` に提示した球団での出場機会・順位と、`derive_seed(手続きのシード, "fa:<選手>:<球団>:<ラウンド>")` の小さな乱数)。成立したら `set_contract(..., "fa")`、結果は `fa_results`。最後のラウンドの後、残った選手は市場へ。補償は `fa.compensation`(初期は何もしない)の差し替え口。将来の「愛着」の軸は、`negotiation` の軸の種類を足して、提示した球団が元の球団かを文脈に入れれば足せる。
 - **予算超過の解消の順**(F3-2b で変更。D-255):`resolve_overrun` は「(年俸 − 最低年俸)÷ 見込みの WAR」の大きい選手から外し、最低人数を守ったままでは解消できなければ最低人数を割っても外す(不足は `finalize` が最低年俸で補充)。あなたの球団は、上限を超えている間は最低人数の選手も外せる(`offseason_release`)。事前運転では志望の判定を行わない(`offseason.PRERUN_NEGOTIATION = "none"`。D-254)。
 - **契約更改と志望**(F3-2b。D-243〜D-253。`negotiation.py`):`NegotiationSettings`(`data/negotiation.json`)。軸は設定の `axes`(キー → 名前・理由の文・満足度の種類 `kind`(salary_ratio / depth / standing)・重みの分布の形・軸の強さ・お金のルールが必要か)で、種類ごとの満足度は `satisfaction` が kind で分けるので、軸を足すときは設定を書くだけ(新しい種類のときだけ関数を足す)。選手の志望 `Player.preference`({軸: 重み}。隠し情報)は `draw_preference(選手 ID, リーグのシード, 設定)` が `derive_seed(リーグのシード, "preference:<選手 ID>")` から引く(選手 ID だけで決まるので、付ける時期によらず同じ値。`ensure_preferences` を新規開始・手続きの開始・自動補充・読み込みで呼ぶ)。判定 `judge(設定, 志望, 年数, 年俸, 自動案の年俸, 年齢, 文脈, お金のルール, 乱数)` は 受ける/断る・理由の軸・点数・満足度を返す(点数と満足度は画面に出さない)。出場機会軸の評価は契約と同じ評価(`ContractContext.scout`)で、`depth_ranks` が手続きの最初に数えて交渉の文脈に保存する(保存・再開しても同じ答え)。勝利軸の順位は `OffseasonProcedure.ranks`(年度の確定で公式の順位を入れる。事前運転では空で 0)。乱数は `noise_for` の `derive_seed(手続きのシード, "negotiation:<選手 ID>")` の 1 つだけで、同じ提示には同じ答え。手続きは `OffseasonProcedure.negotiations`(選手 ID → {球団・名前・前の年俸・自動案の年俸・AI の年数・見込み・文脈・状態(pending / accepted / released)・提示の履歴 [{年数・年俸・受けたか・理由}]})を持つ。`draft.apply_contracts_start` が満了者全員の交渉を作り、AI 球団は `ai_negotiate_entry`(D-251)で最後まで進める。あなたの球団は `make_offer`・`release_entry` で 1 人ずつ(`api.offseason_offer` などが入口)、「自動案でまとめて更改」は未提示の全員に自動案。標準以上で算定より高い年俸は `projected_total`(見込みの総年俸)で上限を確かめる。受けた選手は `set_contract(..., "renew", offers=提示回数)`、自由契約は `release_players`(履歴の印 note="negotiation")。終わった手続きの交渉は `Game.last_negotiations` に残す(保存しない。指紋 (p) と集計用)。
 - **オフの流れへの組み込み**(D-235):`start_procedure` の直後に `draft.apply_contracts_start`(単価を求め、全球団の満了者を算定で更改。結果は `OffseasonProcedure.renewals`。標準以上なら AI 球団の `resolve_overrun`(AI 球団:見込みの WAR あたりの年俸が高い順に、最低人数を守って自由契約。`proc.budget_releases`)。あなたの球団の超過は、自由契約の段階で手動(`offseason_next` は超過中は拒む。`offseason_auto` は AI と同じ)。ドラフトの指名は巡ごとの年俸(標準以上で上限を超えるならパス。note="budget")、市場の獲得は算定した年俸(上限を超えるなら AI は選ばない、あなたは拒まれる)、自動補充は最低年俸(予算に関わらず)。手放した選手の契約は消える。標準・きびしいでは事前運転も同じ流れ(履歴がないので評価から算定。超過の解消が AI の判断に入る)。なし・ゆるいでは事前運転は契約を扱わず(AI の判断が変わらない。D-237。時間も短い)、新規開始の最後に `initialize_contracts` が全選手の契約を評価から算定して付ける(残り年数は `contract:init-years` の乱数で 1〜契約年数。標準以上は上限に収まるよう最低年俸より上の分を比例で縮める)。
@@ -513,6 +515,18 @@ F2 の実測(`scripts/inspect_multiyear.py`。世界 5 × 30 年、リーグ 1�
 | 提示の回数 | 3 回 | D-244 |
 | AI の複数年 | 28 歳以下で見込み 3.0 以上は 3 年、2.0 以上は 2 年 | D-251 |
 | AI の再提示 | 見込み 1.0 以上だけ。2 回目 1.15 倍・年数 +1、3 回目 1.3 倍・+2 | D-251 |
+
+### FA(`src/pennant/data/negotiation.json` の `fa`。F3-2c)
+| 項目 | 仮置きの値 | 理由 |
+| --- | --- | --- |
+| FA 権 | 一軍に登録されたシーズン 7 | D-249、D-258 |
+| 保持者の更改のしきい値 | 通常より +0.3 | 宣言が年 10〜30 人になるように合わせる(実測は 9 章の末尾) |
+| ラウンド数 | 3 | D-260 |
+| AI の年俸の倍率 | 1.0・1.1・1.2 倍 | 依頼の仮置き |
+| AI の 1 ラウンドの提示 | 3 人まで | 依頼の仮置き |
+| AI が狙う見込みの WAR | 0.5 以上 | 控え選手には提示しない |
+| 選手の判定の乱数 | 標準偏差 0.1(提示ごと) | 同じくらいの提示の間で決めるため |
+| 初期値の補い方 | 21 歳から数えて、一軍の選手は 0.7、ほかは 0.25 の確率 | D-264 |
 
 ### オフの手続きとスカウト評価(`src/pennant/data/draft.json`。F3-1)
 | 項目 | 仮置きの値 | 理由 |
