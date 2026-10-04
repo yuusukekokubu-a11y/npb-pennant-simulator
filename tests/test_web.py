@@ -254,7 +254,7 @@ def test_bridge_queries_and_answers_are_separate(bridge):
     _ok(bridge.new_game(3, 4, json.dumps([""] * 12), 0, "default"))
     _ok(bridge.advance(3))
     words = hidden_words()
-    for name, args in (("stats", {}), ("stats", {"role": "pitcher", "kind": "saber", "qualified": False}), ("games_on", {"day": 2}), ("game", {"game_no": 0}), ("team", {"team_id": "T01"}), ("teams", {}), ("draft_review", {})):
+    for name, args in (("stats", {}), ("stats", {"role": "pitcher", "kind": "saber", "qualified": False}), ("games_on", {"day": 2}), ("game", {"game_no": 0}), ("team", {"team_id": "T01"}), ("teams", {}), ("draft_review", {}), ("budget_info", {"team_id": "T01"})):
         text = bridge.query(name, json.dumps(args))
         assert json.loads(text)["ok"], text
         assert not any(w in text for w in words) and not any(f'"{k}"' in text for k in HIDDEN_KEYS), name

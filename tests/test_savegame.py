@@ -82,7 +82,7 @@ def test_file_layout(saved):
     assert manifest["format_version"] == savegame.SAVE_FORMAT_VERSION and manifest["saved_at"].startswith("2026-10-02")
     state = json.loads(files["state.json"])
     assert {"seed", "rng", "configs", "league", "season"} <= set(state)
-    assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season", "baselines", "offseason", "draft"}
+    assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season", "baselines", "offseason", "draft", "contracts"}
     assert state["baselines"]["source"] == "default" and len(state["baselines"]["re24"]) == 24  # 第2弾①の基準値(版 3)
     assert "potential" in state["league"]["teams"][0]["players"][0]["hidden"]
 
@@ -234,16 +234,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 10)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 9: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 11)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 10: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 11)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 9: lambda b: b})
-    _assert_error(saved[1], "バージョン 10 から 11 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 12)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 10: lambda b: b})
+    _assert_error(saved[1], "バージョン 11 から 12 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----

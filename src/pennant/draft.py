@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .abilities import BATTER, FIELDER_POSITIONS, PITCHER, PITCHER_POSITIONS
 from .config import ConfigError, GenerationConfig, NameParts, _Checker, _read_json
+from .contracts import ContractSettings, cap_of, contract_years, expected_war, is_hard, rate_for, salary_for, set_contract, team_salary
 from .game_config import load_game_config
 from .generate import make_rookie
 from .models import League, Player, Team
@@ -196,6 +197,10 @@ class OffseasonProcedure:
     my_release_done: bool = False
     ai_release_done: bool = False
     prerun: bool = False  # 事前運転の手続き(入団時の評価に年を持たせない。保存しない)
+    rate: float = 0.0  # このオフの年俸の単価(1 WAR あたりの万円。D-234)
+    renewals: list[dict] = field(default_factory=list)  # 契約満了の自動更改({team_id, player_id, name, old_salary, salary, years, expected})
+    budget_releases: list[dict] = field(default_factory=list)  # 予算超過の解消で自由契約になった選手({team_id, player_id, name, salary})
+    contracts_done: bool = False  # 更改と AI の超過の解消を済ませたか
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 天井)。保存しない
 
     def current_team(self) -> str | None:
@@ -215,6 +220,7 @@ class OffseasonProcedure:
             "candidates": [plain(p) for p in self.candidates], "market": [plain(p) for p in self.market],
             "picks": [dict(x) for x in self.picks], "released": [dict(x) for x in self.released],
             "my_release_done": self.my_release_done, "ai_release_done": self.ai_release_done,
+            "rate": round(float(self.rate), 4), "renewals": [dict(x) for x in self.renewals], "budget_releases": [dict(x) for x in self.budget_releases], "contracts_done": self.contracts_done,
         }
 
     @classmethod
@@ -230,6 +236,10 @@ class OffseasonProcedure:
         proc.released = [dict(x) for x in d["released"]]
         proc.my_release_done = bool(d.get("my_release_done", False))
         proc.ai_release_done = bool(d.get("ai_release_done", False))
+        proc.rate = float(d.get("rate", 0.0))
+        proc.renewals = [dict(x) for x in d.get("renewals", [])]
+        proc.budget_releases = [dict(x) for x in d.get("budget_releases", [])]
+        proc.contracts_done = bool(d.get("contracts_done", False))
         return proc
 
 
@@ -355,6 +365,218 @@ def ai_choose(team: Team, pool: list[Player], proc: OffseasonProcedure, sd: dict
     return best
 
 
+# ---- 契約(F3-2a。D-232〜D-237) ----
+
+@dataclass
+class ContractContext:
+    """手続きの中で契約を扱うための材料。war_history(選手 ID, 役割) → [(WAR, 出場), ...](新しい順)。scout(選手, 球団) → (総合の推定値, 天井)。
+    乱数はすべて契約の系列(contract:…)で、AI の判断には使わない(D-237)。"""
+
+    settings: ContractSettings
+    rule: str  # none / loose / standard / strict
+    tiers: dict  # 球団 → large / medium / small(きびしいのとき)
+    war_history: object  # (選手 ID, 役割) → [(WAR, 出場), ...]
+    sd_of: object  # 球団 ID → ずれ({common, item})
+    scout: object = None  # (選手, 球団) → (総合の推定値, 天井)。bind(proc) で手続きのシードと区切りから作る
+    rate: float = 0.0
+    _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (選手, 球団) → 見込み(手続きの間は年齢も能力も変わらないので使い回す)
+
+    def bind(self, proc: "OffseasonProcedure") -> "ContractContext":
+        if self.scout is None:
+            self.scout = contract_scout(proc.seed, self.sd_of, proc.cuts)
+        return self
+
+    def cap(self, team_id: str) -> int | None:
+        return cap_of(self.rule, self.tiers.get(team_id), self.settings)
+
+    def hard(self) -> bool:
+        return is_hard(self.rule)
+
+    def expected(self, player: Player, team_id: str) -> tuple[float, str]:
+        key = (player.id, team_id)
+        v = self._cache.get(key)
+        if v is None:
+            v = expected_war(player.age, player.role, self.war_history(player.id, player.role), self.scout(player, team_id), self.settings)
+            self._cache[key] = v
+        return v
+
+    def salary(self, player: Player, team_id: str) -> tuple[int, int, float]:
+        """算定した (年俸, 契約年数, 見込みの WAR)。"""
+        exp, _ = self.expected(player, team_id)
+        return salary_for(exp, self.rate, self.settings), contract_years(player.age, exp, self.settings), exp
+
+
+def contract_scout(seed: int, sd_of, cuts: list[float]):
+    """所属球団の評価(契約用。乱数は contract の系列)を返す関数を作る。"""
+
+    def scout(player: Player, team_id: str) -> tuple[float, str]:
+        return quick_value(player, team_id, derive_seed(seed, "contract"), sd_of(team_id), cuts)
+
+    return scout
+
+
+def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: ContractContext, my_team_id: str | None, mins, min_batters) -> None:
+    """手続きの最初の契約の処理(D-235):単価を求め直す → 契約満了の自動更改(全球団)→ 標準以上なら AI 球団の予算超過の解消。
+    あなたの球団の超過は自由契約の段階で手動(complete では AI と同じ処理)。"""
+    if proc.contracts_done:
+        return
+    ctx.bind(proc)
+    year = proc.year + 1  # 次のシーズン(新しい契約の始まり)
+    expected = {}
+    for team in league.teams:
+        for p in team.players:
+            expected[p.id] = ctx.expected(p, team.id)[0]
+    ctx.rate = round(rate_for(list(expected.values()), len(league.teams), len(expected), ctx.settings), 4)
+    proc.rate = ctx.rate
+    for team in league.teams:
+        for p in team.players:
+            c = p.contract
+            if c is not None and int(c["until"]) > proc.year:
+                continue  # 契約が残っている
+            exp = expected[p.id]
+            salary = salary_for(exp, ctx.rate, ctx.settings)
+            years = contract_years(p.age, exp, ctx.settings)
+            old = int(c["salary"]) if c else None
+            set_contract(p, salary, years, year, "renew" if c else "initial")
+            proc.renewals.append({"team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, "old_salary": old, "salary": salary, "years": years, "expected": round(exp, 2)})
+    if ctx.hard():
+        for team in league.teams:
+            if team.id == my_team_id:
+                continue
+            resolve_overrun(team, proc, ctx, mins, min_batters)
+    proc.contracts_done = True
+
+
+def initialize_contracts(league: League, seed: int, ctx: ContractContext, prerun_years: int) -> float:
+    """新規開始のとき、初期選手の契約を作り直す(D-232):年俸は所属球団の評価から算定(校正の後の能力で)、残りの年数は事前運転の契約から引き継ぐ
+    (事前運転で契約を扱わなかったときは、年齢と見込みで決めた年数のうち、残りを契約の乱数系列で 1〜年数 の間から決める)。
+    1 シーズン目から数えた満了シーズンに付け替える。戻り値は単価。"""
+    all_players = league.all_players()
+    ctx.scout = contract_scout(derive_seed(seed, "contract:init"), ctx.sd_of, ceiling_cuts(all_players, {"S": 0.05, "A": 0.15, "B": 0.30, "C": 0.30, "D": 0.20}))
+    expected = {}
+    for team in league.teams:
+        for p in team.players:
+            expected[p.id] = ctx.expected(p, team.id)[0]
+    ctx.rate = round(rate_for(list(expected.values()), len(league.teams), len(expected), ctx.settings), 4)
+    rng = random.Random(derive_seed(seed, "contract:init-years"))
+    for team in league.teams:
+        salaries = {p.id: salary_for(expected[p.id], ctx.rate, ctx.settings) for p in team.players}
+        cap = ctx.cap(team.id)
+        if ctx.hard() and cap is not None and sum(salaries.values()) > cap:
+            # 標準以上で上限を超える球団は、最低年俸を超える分を同じ割合で縮めて、開始時に上限の中に収める(開始直後に選手を手放さなくて済むように)
+            mn = ctx.settings.minimum
+            excess = sum(v - mn for v in salaries.values())
+            room = cap - mn * len(salaries)
+            scale = max(0.0, room / excess) if excess > 0 else 0.0
+            step = ctx.settings.rounding
+            salaries = {pid: max(mn, int((mn + (v - mn) * scale) // step) * step) for pid, v in salaries.items()}
+        for p in team.players:
+            exp = expected[p.id]
+            remaining = max(1, int(p.contract["until"]) - prerun_years) if p.contract else rng.randint(1, contract_years(p.age, exp, ctx.settings))
+            p.contract = None
+            set_contract(p, salaries[p.id], remaining, 1, "initial")
+    return ctx.rate
+
+
+def state_war_history(state):
+    """セーブデータの状態から、(選手 ID, 役割) → 直近 3 シーズンの [(WAR, 出場)](新しい順)を返す関数(履歴の集計から)。"""
+    archives = list(state.history)[-3:][::-1]
+
+    def war_history(pid: str, role: str) -> list[tuple[float, float]]:
+        out = []
+        for a in archives:
+            line = a.war.get(pid)
+            if line is None:
+                continue
+            if role == "batter":
+                usage = float(a.records.batters.get(pid, {}).get("PA", 0))
+                out.append((float(line.war), usage))
+            else:
+                usage = float(a.records.pitchers.get(pid, {}).get("OUTS", 0)) / 3.0
+                out.append((float(line.war_ra), usage))
+        return out
+
+    return war_history
+
+
+def state_context(state, proc: "OffseasonProcedure | None" = None) -> ContractContext:
+    """セーブデータの状態から契約の文脈を作る(手続きがあればそのシードと区切りで評価を引く)。"""
+    ctx = ContractContext(state.contract_settings, state.money_rule, dict(state.budget_tiers), state_war_history(state), state.scout_sd_of)
+    if proc is not None:
+        ctx.bind(proc)
+        ctx.rate = float(proc.rate)
+    return ctx
+
+
+def fill_missing_contracts(state) -> None:
+    """版9以前のセーブデータ:契約のない選手に、算定した年俸と 1〜3 年の残り(別の乱数系列)を付ける(D-235)。"""
+    league = state.league
+    seed = derive_seed(league.seed, "contract:migrate")
+    rng = random.Random(seed)
+    ctx = ContractContext(state.contract_settings, state.money_rule, dict(state.budget_tiers), state_war_history(state), state.scout_sd_of)
+    ctx.scout = contract_scout(seed, state.scout_sd_of, ceiling_cuts(league.all_players(), {"S": 0.05, "A": 0.15, "B": 0.30, "C": 0.30, "D": 0.20}))
+    expected = {p.id: ctx.expected(p, t.id)[0] for t in league.teams for p in t.players}
+    rate = rate_for(list(expected.values()), len(league.teams), len(expected), ctx.settings)
+    year = int(state.year)
+    for team in league.teams:
+        for p in sorted(team.players, key=lambda p: p.id):
+            if p.contract is not None:
+                continue
+            years = rng.randint(1, 3)
+            set_contract(p, salary_for(expected[p.id], rate, ctx.settings), years, year, "migrate")
+    state.contract_rates.setdefault(str(year), rate)
+
+
+def over_cap(team: Team, ctx: ContractContext) -> int:
+    """上限(標準以上)か目安(ゆるい)を超えている額(超えていなければ 0)。なしは常に 0。"""
+    cap = ctx.cap(team.id)
+    if cap is None:
+        return 0
+    return max(0, team_salary(team) - cap)
+
+
+def resolve_overrun(team: Team, proc: OffseasonProcedure, ctx: ContractContext, mins, min_batters) -> list[Player]:
+    """予算超過の解消(AI と同じ方針):見込みの WAR あたりの年俸が高い選手から、超過が解消するまで自由契約(最低人数は守る)。"""
+    out: list[Player] = []
+    if not ctx.hard():
+        return out
+    while over_cap(team, ctx) > 0:
+        candidates = [p for p in team.players if can_release(team.players, p, mins, min_batters)]
+        if not candidates:
+            break
+
+        def cost(p: Player) -> float:
+            exp = max(0.05, ctx.expected(p, team.id)[0])
+            return int(p.contract["salary"]) / exp if p.contract else 0.0
+
+        worst = max(candidates, key=lambda p: (cost(p), int(p.contract["salary"]) if p.contract else 0, p.id))
+        salary = int(worst.contract["salary"]) if worst.contract else 0
+        release_players(team, [worst], proc)
+        proc.released[-1]["note"] = "budget"
+        proc.budget_releases.append({"team_id": team.id, "player_id": worst.id, "name": worst.name, "role": worst.role, "position": worst.position, "age": worst.age, "salary": salary})
+        out.append(worst)
+    return out
+
+
+def can_afford(team: Team, salary: int, ctx: ContractContext | None, total: int | None = None) -> bool:
+    """標準以上で、この年俸の契約を結んでも上限を超えないか(なし・ゆるいは常に可)。total は今の総年俸(省略時は数える)。"""
+    if ctx is None or not ctx.hard():
+        return True
+    cap = ctx.cap(team.id)
+    if cap is None:
+        return True
+    return (team_salary(team) if total is None else total) + int(salary) <= cap
+
+
+def offer_for(team: Team, player: Player, proc: OffseasonProcedure, ctx: ContractContext | None) -> tuple[int, int, float] | None:
+    """指名(獲得)したときの契約 (年俸, 年数, 見込み)。ドラフトは巡ごとの表、市場は算定。契約の文脈がなければ None。"""
+    if ctx is None:
+        return None
+    if proc.phase == "draft":
+        return ctx.settings.rookie_salary(proc.round), ctx.settings.rookie_years, 0.0
+    return ctx.salary(player, team.id)
+
+
 # ---- 手続きを進める ----
 
 def _entry_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> dict:
@@ -384,8 +606,10 @@ def release_players(team: Team, players: list[Player], proc: OffseasonProcedure)
     team.players = [p for p in team.players if p.id not in ids]
     for p in players:
         p.team_id = None
+        salary = int(p.contract["salary"]) if p.contract else None
+        p.contract = None  # 残りの契約は消える(違約金なし。D-236)
         proc.market.append(p)
-        proc.released.append({"team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age})
+        proc.released.append({"team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, "salary": salary})
 
 
 def apply_ai_releases(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_release) -> None:
@@ -402,12 +626,17 @@ def pool_of(proc: OffseasonProcedure) -> list[Player]:
     return proc.candidates if proc.phase == "draft" else proc.market
 
 
-def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, dict], settings: DraftSettings) -> None:
-    """今の球団が選手を指名(獲得)して、次の順番へ。"""
+def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, dict], settings: DraftSettings, ctx: ContractContext | None = None) -> None:
+    """今の球団が選手を指名(獲得)して契約し、次の順番へ。ドラフトは巡ごとの年俸、市場は算定した年俸(D-235)。"""
     pool = pool_of(proc)
+    offer = offer_for(team, player, proc, ctx)
     pool.remove(player)
     join(team, player, proc, scout_sd[team.id], settings)
-    proc.picks.append({"phase": proc.phase, "round": proc.round, "team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age, **entry_summary(player.scouting)})
+    salary = None
+    if offer is not None:
+        salary, years, _ = offer
+        set_contract(player, salary, years, proc.year + 1, proc.phase)
+    proc.picks.append({"phase": proc.phase, "round": proc.round, "team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age, "salary": salary, **entry_summary(player.scouting)})
     advance_turn(proc)
 
 
@@ -437,8 +666,20 @@ def next_phase(proc: OffseasonProcedure) -> None:
         proc.candidates = []
 
 
-def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose) -> bool:
-    """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。"""
+def affordable_pool(team: Team, proc: OffseasonProcedure, ctx: ContractContext | None) -> list[Player]:
+    """標準以上で、上限の中で結べる選手だけ(ドラフトは巡ごとの年俸、市場は算定)。なし・ゆるいは全員。"""
+    pool = pool_of(proc)
+    if ctx is None or not ctx.hard():
+        return pool
+    total = team_salary(team)
+    if proc.phase == "draft":
+        return pool if can_afford(team, ctx.settings.rookie_salary(proc.round), ctx, total) else []
+    return [p for p in pool if can_afford(team, ctx.salary(p, team.id)[0], ctx, total)]
+
+
+def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose, ctx: ContractContext | None = None) -> bool:
+    """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。
+    標準以上では、予算が足りない球団はパスする(note="budget")。"""
     teams = {t.id: t for t in league.teams}
     while not phase_finished(proc):
         tid = proc.current_team()
@@ -449,16 +690,23 @@ def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, d
             if len(teams[tid].players) >= MAX_ROSTER:
                 pass_turn(proc, tid, "full")  # 空き枠がなければ自動でパス(D-203)
                 continue
+            if proc.phase == "draft" and not affordable_pool(teams[tid], proc, ctx):
+                pass_turn(proc, tid, "budget")  # 予算が足りなければ自動でパス(D-235)
+                continue
             return True
         team = teams[tid]
         if len(team.players) >= MAX_ROSTER:
             pass_turn(proc, tid, "full")
             continue
-        choice = policy(team, pool_of(proc), proc, scout_sd[tid], settings, mins, min_batters, proc.phase)
+        pool = affordable_pool(team, proc, ctx)
+        if not pool:
+            pass_turn(proc, tid, "budget" if pool_of(proc) else "skip")
+            continue
+        choice = policy(team, pool, proc, scout_sd[tid], settings, mins, min_batters, proc.phase)
         if choice is None:
             pass_turn(proc, tid, "skip")
         else:
-            take(proc, team, choice, scout_sd, settings)
+            take(proc, team, choice, scout_sd, settings, ctx)
     return False
 
 
@@ -476,7 +724,7 @@ def make_room(team: Team, count: int, proc: OffseasonProcedure, sd: dict, mins: 
     return out
 
 
-def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y") -> list[PlayerNote]:
+def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
     """完了:70 人に満たない球団を自動補充(最低人数を満たすポジションから、次に人数の目安との差が大きいポジション)。市場の残りはリーグを去る。"""
     rng = random.Random(derive_seed(proc.seed, "fill"))
     names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players()})
@@ -508,15 +756,19 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
             current[pos] = current.get(pos, 0) + 1
         for p in replenish(team, slots, config, names, rng, proc.year, counter, calibration, id_prefix):
             p.scouting = _entry_report(proc, p, team.id, scout_sd[team.id], settings)
+            salary = None
+            if ctx is not None:  # 自動補充は最低年俸(予算に関わらず結べる。D-235)
+                salary = ctx.settings.minimum
+                set_contract(p, salary, contract_years(p.age, 0.0, ctx.settings), proc.year + 1, "fill")
             added.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
-            proc.filled.append({"phase": "fill", "round": 0, "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, **entry_summary(p.scouting)})
+            proc.filled.append({"phase": "fill", "round": 0, "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, "salary": salary, **entry_summary(p.scouting)})
     proc.market = []
     proc.candidates = []
     proc.phase = "done"
     return added
 
 
-def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, offseason_settings: OffseasonSettings, settings: DraftSettings, year: int, calibration: dict[str, float] | None, scout_sd: dict[str, dict], records_or_order, id_prefix: str = "D", game_config=None) -> tuple[OffseasonProcedure, list[PlayerNote]]:
+def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, offseason_settings: OffseasonSettings, settings: DraftSettings, year: int, calibration: dict[str, float] | None, scout_sd: dict[str, dict], records_or_order, id_prefix: str = "D", game_config=None, ctx: ContractContext | None = None) -> tuple[OffseasonProcedure, list[PlayerNote]]:
     """観戦のみ(全球団 AI)の手続きを一気に進める(事前運転・指紋 (n)・観戦のみの年度の確定で使う)。
     records_or_order は 球団 → (勝, 敗) か、1 巡目の順番の一覧。戻り値は手続きと、入団した全選手。"""
     mins = minimum_positions(game_config)
@@ -527,7 +779,9 @@ def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts:
     else:
         proc = start_procedure(league, seed, config, parts, settings, year, calibration, records_or_order, id_prefix)
     proc.prerun = id_prefix == "B"
-    filled = complete(league, proc, config, parts, settings, scout_sd, calibration, None, mins, min_batters, "Y" if id_prefix == "D" else id_prefix)
+    if ctx is not None:
+        apply_contracts_start(league, proc, ctx, None, mins, min_batters)
+    filled = complete(league, proc, config, parts, settings, scout_sd, calibration, None, mins, min_batters, "Y" if id_prefix == "D" else id_prefix, ctx)
     return proc, joined_players(proc) + filled
 
 
@@ -535,10 +789,12 @@ def joined_players(proc: OffseasonProcedure) -> list[PlayerNote]:
     return [PlayerNote(x["player_id"], x["name"], x["team_id"], x["role"], x["position"], x["age"]) for x in proc.picks if x["player_id"]]
 
 
-def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y") -> list[PlayerNote]:
-    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針)。戻り値は自動補充で入った選手。"""
+def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
+    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。予算超過の解消も AI と同じ)。戻り値は自動補充で入った選手。"""
     while proc.phase != "done":
         if proc.phase == "release":
+            if my_team_id is not None and ctx is not None:
+                resolve_overrun(next(t for t in league.teams if t.id == my_team_id), proc, ctx, mins, min_batters)
             apply_ai_releases(league, proc, scout_sd, settings, my_team_id, mins, min_batters)
             if my_team_id is not None and not proc.my_release_done:
                 team = next(t for t in league.teams if t.id == my_team_id)
@@ -546,8 +802,8 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
                 proc.my_release_done = True
             next_phase(proc)
         elif proc.phase in ("draft", "market"):
-            run_ai_turns(league, proc, scout_sd, settings, None, mins, min_batters)
+            run_ai_turns(league, proc, scout_sd, settings, None, mins, min_batters, ctx=ctx)
             next_phase(proc)
         else:
             break
-    return finalize(league, proc, config, parts, settings, scout_sd, calibration, mins, min_batters, fill_prefix)
+    return finalize(league, proc, config, parts, settings, scout_sd, calibration, mins, min_batters, fill_prefix, ctx)

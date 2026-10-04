@@ -33,6 +33,7 @@ from .offseason import OffseasonResult, age_update_retire, load_offseason_settin
 from . import draft as draftmod
 from .draft import PHASE_LABELS, PHASES, load_draft_settings
 from .scouting import ScoutReport
+from .contracts import MONEY_RULES, RULE_LABELS, RULE_NOTES, TIER_LABELS, assign_tiers, budget_of, cap_of, is_hard, load_contract_settings, remaining_years, team_salary
 from .season import derive_seed
 from .records import (
     Records,
@@ -158,17 +159,22 @@ WAR_COLUMNS = {
     ],
 }
 _WAR_SORT_KEYS = {role: [c["key"] for c in cols] for role, cols in WAR_COLUMNS.items()}
+CONTRACT_REASONS = {"initial": "開始時", "renew": "更改", "draft": "ドラフト", "market": "市場", "fill": "自動補充", "migrate": "旧版から"}
 # 選手の一覧の表(自由契約・市場。D-222)の基本の列
 ROSTER_BASE_COLUMNS = {
     "batter": [
         {"key": "pos", "label": "ポジション", "description": "守備位置", "type": "text", "better": "low"},
         {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
         {"key": "usage", "label": "打席", "description": "選んだシーズンの打席数", "type": "count", "better": "high"},
+        {"key": "salary", "label": "年俸", "description": "年俸(万円)。手続き中は次のシーズンの契約", "type": "count", "better": "high"},
+        {"key": "years", "label": "残り", "description": "残りの契約年数(次のシーズンを含む)", "type": "count", "better": "high"},
     ],
     "pitcher": [
         {"key": "pos", "label": "ポジション", "description": "先発か救援か", "type": "text", "better": "low"},
         {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
         {"key": "usage", "label": "投球回", "description": "選んだシーズンの投球回(アウト 3 つで 1 回)", "type": "count", "better": "high"},
+        {"key": "salary", "label": "年俸", "description": "年俸(万円)。手続き中は次のシーズンの契約", "type": "count", "better": "high"},
+        {"key": "years", "label": "残り", "description": "残りの契約年数(次のシーズンを含む)", "type": "count", "better": "high"},
     ],
 }
 
@@ -497,11 +503,63 @@ class Game:
         result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration)
         state.offseasons.append(result)
         state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records)
+        ctx = self._contract_ctx()
+        draftmod.apply_contracts_start(state.league, state.procedure, ctx, state.my_team_id, *self._mins())  # 契約満了の更改と AI の超過の解消(D-235)
+        state.contract_rates[str(state.year + 1)] = state.procedure.rate
         self.dirty = True
         if state.my_team_id is None:  # 観戦のみ:手続きはすべて自動(D-198)
-            filled = draftmod.complete(state.league, state.procedure, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, None, *self._mins())
+            filled = draftmod.complete(state.league, state.procedure, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, None, *self._mins(), ctx=ctx)
             self._finish_offseason(filled)
         return self.offseason_summary(result.year)
+
+    def budget_info(self, team_id: str) -> dict:
+        """球団の総年俸・予算・上限・使用率(公開情報。なしのときは総年俸だけ)。"""
+        state = self.state
+        team = self._team(team_id)
+        total = team_salary(team)
+        tier = state.budget_tiers.get(team_id)
+        budget = budget_of(state.money_rule, tier, state.contract_settings)
+        cap = cap_of(state.money_rule, tier, state.contract_settings)
+        return {
+            "team_id": team_id, "rule": state.money_rule, "rule_label": RULE_LABELS[state.money_rule], "total": total, "total_text": f"{total:,} 万円",
+            "budget": budget, "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "tier": tier, "tier_label": TIER_LABELS.get(tier) if tier else None,
+            "usage": None if cap is None else round(100.0 * total / cap, 1), "over": None if cap is None else max(0, total - cap), "hard": is_hard(state.money_rule),
+            "rate": state.contract_rates.get(str(state.year)) or (max(state.contract_rates.values()) if state.contract_rates else None),
+        }
+
+    def _contract_public(self, p, year: int | None = None) -> dict | None:
+        c = p.contract
+        if not c:
+            return None
+        y = self.state.year if year is None else year
+        return {"salary": int(c["salary"]), "salary_text": f"{int(c['salary']):,} 万円", "until": int(c["until"]), "remaining": remaining_years(c, y), "history": [{"year": h["year"], "salary": h["salary"], "salary_text": f"{int(h['salary']):,} 万円", "years": h["years"], "reason": h["reason"], "reason_label": CONTRACT_REASONS.get(h["reason"], h["reason"])} for h in c.get("history", [])]}
+
+    def _procedure_contracts(self, proc) -> dict:
+        """手続きの画面に出す契約の情報:ルール、自球団の総年俸と予算、更改の結果、予算超過で自由契約になった選手。"""
+        state = self.state
+        names = self._team_names()
+        my = state.my_team_id
+        ctx = draftmod.state_context(state, proc)
+        mine = None
+        if my is not None:
+            info = self.budget_info(my)
+            info["over_now"] = draftmod.over_cap(self._team(my), ctx)
+            info["blocked"] = ctx.hard() and info["over_now"] > 0
+            mine = info
+        renew = lambda x: {**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my, "old_text": None if x.get("old_salary") is None else f"{x['old_salary']:,} 万円", "salary_text": f"{x['salary']:,} 万円", "change": None if x.get("old_salary") is None else x["salary"] - x["old_salary"]}
+        return {
+            "rule": state.money_rule, "rule_label": RULE_LABELS[state.money_rule], "rule_note": RULE_NOTES[state.money_rule], "hard": ctx.hard(),
+            "rate": proc.rate, "rate_text": f"{proc.rate / 10000:.2f} 億円 / WAR" if proc.rate else "-",
+            "mine": mine,
+            "renewals": [renew(x) for x in proc.renewals],
+            "budget_releases": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my, "salary_text": f"{x['salary']:,} 万円"} for x in proc.budget_releases],
+            "teams": [{"team_id": t.id, "team_name": t.name, "is_mine": t.id == my, **{k: v for k, v in self.budget_info(t.id).items() if k in ("total", "total_text", "cap", "cap_text", "usage", "tier_label")}} for t in state.league.teams],
+            "note": "契約が満了した選手は、見込みの WAR(直近 3 シーズンの加重平均。履歴がなければスカウト評価)から算定した年俸で自動で更改しました。" + ("標準以上では、予算の上限を超える球団は、見込みの WAR あたりの年俸が高い選手から自由契約にして超過を解消します(あなたの球団は自由契約の画面で自分で選びます)。" if ctx.hard() else ""),
+        }
+
+    def _contract_ctx(self):
+        """進行中の手続きの契約の文脈(評価は手続きのシードと区切りで引く)。"""
+        return draftmod.state_context(self.state, self.state.procedure)
 
     def _mins(self):
         return draftmod.minimum_positions(self.state.season.game_config), draftmod.minimum_batters(self.state.season.game_config)
@@ -568,6 +626,7 @@ class Game:
             "phase_finished": draftmod.phase_finished(proc) if proc.phase in ("draft", "market") else proc.phase == "done",
             "my_team": None if my is None else {"team_id": my, "team_name": names[my], "players": len(self._team(my).players), "max": draftmod.MAX_ROSTER, "shortages": self._shortage_text(self._team(my).players, mins, min_batters)},
             "my_release_done": proc.my_release_done,
+            "contracts": self._procedure_contracts(proc),
             "minimums": {"positions": dict(mins), "batters": min_batters, "labels": {pos: POSITION_LABELS[pos] for pos in mins}},
             "seasons": self.roster_seasons(),
             "scout_level": state.scout_level,
@@ -632,15 +691,18 @@ class Game:
         proc = self._proc()
         mins, min_batters = self._mins()
         sd = state.scout_sd_map()
+        ctx = self._contract_ctx()
         if proc.phase == "release":
+            if state.my_team_id is not None and ctx.hard() and draftmod.over_cap(self._my_team(), ctx) > 0:
+                raise ValueError(f"総年俸が予算の上限を {draftmod.over_cap(self._my_team(), ctx):,} 万円超えています。自由契約で減らしてから進めてください(「おまかせ」なら自動で減らします)")
             draftmod.apply_ai_releases(state.league, proc, sd, state.draft_settings, state.my_team_id, mins, min_batters)
             proc.my_release_done = True
             draftmod.next_phase(proc)
         elif proc.phase in ("draft", "market"):
-            draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, None, mins, min_batters)  # 自分の残りの番も AI の方針
+            draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, None, mins, min_batters, ctx=ctx)  # 自分の残りの番も AI の方針
             draftmod.next_phase(proc)
         if proc.phase == "done":
-            filled = draftmod.finalize(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, sd, state.calibration, mins, min_batters)
+            filled = draftmod.finalize(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, sd, state.calibration, mins, min_batters, ctx=ctx)
             self._finish_offseason(filled)
             self.dirty = True
             return {"finished": True, "summary": self.offseason_summary(), "status": self.status()}
@@ -654,7 +716,7 @@ class Game:
         if proc.phase not in ("draft", "market"):
             raise ValueError("今は指名の段階ではありません")
         mins, min_batters = self._mins()
-        draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, state.my_team_id, mins, min_batters)
+        draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, state.my_team_id, mins, min_batters, ctx=self._contract_ctx())
         self.dirty = True
         return self.offseason_view()
 
@@ -672,8 +734,12 @@ class Game:
             raise ValueError("その選手は一覧にいません")
         if len(team.players) >= draftmod.MAX_ROSTER:
             raise ValueError("空き枠がありません(70 人)")
-        draftmod.take(proc, team, player, sd, state.draft_settings)
-        draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, team.id, mins, min_batters)
+        ctx = self._contract_ctx()
+        offer = draftmod.offer_for(team, player, proc, ctx)
+        if offer is not None and not draftmod.can_afford(team, offer[0], ctx):
+            raise ValueError(f"この契約(年俸 {offer[0]:,} 万円)を結ぶと、予算の上限を超えます")
+        draftmod.take(proc, team, player, sd, state.draft_settings, ctx)
+        draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, team.id, mins, min_batters, ctx=ctx)
         self.dirty = True
         return self.offseason_view()
 
@@ -685,7 +751,7 @@ class Game:
         if proc.phase not in ("draft", "market") or proc.current_team() != team.id or draftmod.phase_finished(proc):
             raise ValueError("今は自分の番ではありません")
         draftmod.pass_turn(proc, team.id, "pass")
-        draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters)
+        draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters, ctx=self._contract_ctx())
         self.dirty = True
         return self.offseason_view()
 
@@ -694,7 +760,7 @@ class Game:
         state = self.state
         proc = self._proc()
         mins, min_batters = self._mins()
-        filled = draftmod.complete(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, state.my_team_id, mins, min_batters)
+        filled = draftmod.complete(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, state.my_team_id, mins, min_batters, ctx=self._contract_ctx())
         self._finish_offseason(filled)
         return {"finished": True, "summary": self.offseason_summary(), "status": self.status()}
 
@@ -767,6 +833,12 @@ class Game:
             else:
                 usage = (Fraction(int(counts.get("OUTS", 0))), innings_text(int(counts.get("OUTS", 0))))
             base = {"pos": (positions.index(p.position), POSITION_LABELS[p.position]), "age": (p.age, f"{p.age}歳"), "usage": usage}
+            if p.contract:
+                base["salary"] = (int(p.contract["salary"]), f"{int(p.contract['salary']):,}")
+                base["years"] = (remaining_years(p.contract, self.state.year + (1 if self.state.procedure is not None else 0)), str(remaining_years(p.contract, self.state.year + (1 if self.state.procedure is not None else 0))))
+            else:
+                base["salary"] = (None, "—")
+                base["years"] = (None, "—")
             cell = {}
             for k in keys:
                 v = base.get(k) or metrics.get(k) or war.get(k)
@@ -812,8 +884,17 @@ class Game:
         if phase != "release":
             names = self._team_names()
             former = {x["player_id"]: names.get(x["team_id"], "") for x in proc.released}
+            ctx = self._contract_ctx()
+            my = self.state.my_team_id
+            team = self._team(my) if my else None
+            pool = {p.id: p for p in self.offseason_players(phase)}
             for r in table["rows"]:
                 r["former_team"] = former.get(r["player_id"], "")
+                if team is not None:  # 自球団が獲得したときの契約(ドラフトは巡ごとの表、市場は算定)
+                    offer = draftmod.offer_for(team, pool[r["player_id"]], proc, ctx)
+                    r["offer"] = None if offer is None else {"salary": offer[0], "years": offer[1], "affordable": draftmod.can_afford(team, offer[0], ctx)}
+                    r["values"]["salary"] = f"{offer[0]:,}" if offer else "—"
+                    r["values"]["years"] = str(offer[1]) if offer else "—"
         else:
             mins, min_batters = self._mins()
             team = self._my_team()
@@ -954,6 +1035,7 @@ class Game:
         progress=None,
         prerun_progress=None,
         scout_level: str | None = None,
+        money_rule: str | None = None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -969,14 +1051,22 @@ class Game:
         level = draft_settings.default_level if scout_level is None else str(scout_level)
         if level not in draft_settings.levels:
             raise ValueError(f"スカウト評価のずれの大きさは small / medium / large です(値: {scout_level!r})")
-        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level))
+        contract_settings = load_contract_settings()
+        rule = contract_settings.default_rule if money_rule is None else str(money_rule)
+        if rule not in MONEY_RULES:
+            raise ValueError(f"お金のルールは none / loose / standard / strict です(値: {money_rule!r})")
+        tiers = assign_tiers([f"T{i:02d}" for i in range(1, 13)], seed, contract_settings) if rule == "strict" else {}
+        contract_info: dict = {}
+        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), money_rule=rule, tiers=tiers, contract_settings=contract_settings, contract_info=contract_info)
+        tiers = {tid: t for tid, t in tiers.items() if any(team.id == tid for team in league.teams)}
         if my_team_index is not None and (isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams)):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
         settings = load_baseline_settings()
         prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
         season = Season(league, seed if season_seed is None else season_seed)
         my_team_id = None if my_team_index is None else league.teams[my_team_index].id
-        state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings)
+        state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings, money_rule=rule, budget_tiers=tiers, contract_settings=contract_settings)
+        state.contract_rates["1"] = float(contract_info.get("rate", 0.0))  # 新規開始時の単価(初期選手の契約の算定で求めた値)
         return cls(state, dirty=True)
 
     @classmethod
@@ -1042,6 +1132,8 @@ class Game:
             "seasons": self.season_choices(),
             "offseason": None if self.state.procedure is None else {"active": True, "phase": self.state.procedure.phase, "phase_label": PHASE_LABELS[self.state.procedure.phase], "year": self.state.procedure.year},
             "scout_level": self.state.scout_level,
+            "money_rule": self.state.money_rule,
+            "money_rule_label": RULE_LABELS[self.state.money_rule],
         }
 
     def season_choices(self) -> list[dict]:
@@ -1393,6 +1485,7 @@ class Game:
                 is_mine=team.id == self.state.my_team_id,
                 retired=False,
                 scouting=None if p.scouting is None else {**ScoutReport.from_dict(p.scouting).to_public(), "year": p.scouting.get("year"), "team_name": self._team(p.scouting["team_id"]).name},
+                contract=self._contract_public(p),
             )
             role = p.role
         else:  # 引退した選手(過去シーズンの写しから。F2)
@@ -1563,9 +1656,12 @@ class Game:
             )
         lines = {pid: v for pid, v in self.war_lines().items() if v.team_id == team_id}
         totals = war_totals(lines)
+        salaries = sorted(({"player_id": p.id, "name": p.name, "position": POSITION_LABELS[p.position], "age": p.age, "salary": int(p.contract["salary"]), "salary_text": f"{int(p.contract['salary']):,}", "remaining": remaining_years(p.contract, self.state.year)} for p in team.players if p.contract), key=lambda r: (-r["salary"], r["player_id"]))
         return {
             "team_id": team_id,
             "name": team.name,
+            "budget": self.budget_info(team_id),
+            "salaries": salaries,
             "stadium": team.stadium,
             "league_name": self.state.league.league_names[team.league_index],
             "is_mine": team_id == self.state.my_team_id,

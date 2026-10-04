@@ -256,7 +256,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     # 保存して読み込むと、途中から再開できる(版 9)
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 9 and again.state.procedure.method == 2
+    assert SAVE_FORMAT_VERSION == 10 and again.state.procedure.method == 2
     v2 = again.offseason_view()
     assert v2["phase"] == "draft" and v2["round"] == v["round"] and v2["is_my_turn"] and [p["player_id"] for p in v2["pool"]] == [p["player_id"] for p in v["pool"]]
     assert v2["pool"][0]["scouting"] == v["pool"][0]["scouting"]  # 評価も同じ(シードから導く)

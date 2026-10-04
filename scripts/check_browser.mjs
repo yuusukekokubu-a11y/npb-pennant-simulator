@@ -145,6 +145,7 @@ const placeholder7 = await page.getAttribute("#team-7", "placeholder");
 await page.check("input[name=my-team][value='7']");
 await page.click("#season-seed"); // 欄を移っても(変更の知らせが出ても)、選んだ自球団が変わらないこと
 check(await page.isChecked("input[name=baseline-mode][value=trial]"), "基準値の求め方は、最初は「試運転で求める」");
+check((await page.$$("input[name=money-rule]")).length === 4 && (await page.isChecked("input[name=money-rule][value=none]")), "お金のルールは 4 段階(なし・ゆるい・標準・きびしい)で、最初は「なし」(F3-2a。D-230)");
 let prerunSeen = false;
 const prerunWatch = page.waitForFunction(() => document.querySelector("#trial-text").textContent.includes("リーグの歴史を作っています"), null, { timeout: 60000 }).then(() => (prerunSeen = true)).catch(() => {});
 const trialStart = Date.now();
@@ -383,12 +384,25 @@ const warPid = pyGame(`print(json.dumps(g.stats("pitcher", "war")["rows"][0]["pl
 const pyWarPlayer = pyGame(`d = g.player(a["id"])["season"]["war"]
 print(json.dumps([d["values"][c["key"]] for c in d["columns"]], ensure_ascii=False))`, JSON.stringify({ id: warPid }));
 check(JSON.stringify(await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent))) === JSON.stringify(pyWarPlayer), `選手のページの WAR(投球回・失点版・FIP 版)が、計算本体と同じ`);
+const pyContract = pyGame(`c = g.player(a["id"])["player"]["contract"]
+print(json.dumps([c["salary_text"], c["remaining"], c["history"][-1]["years"]], ensure_ascii=False))`, JSON.stringify({ id: warPid }));
+const contractOnScreen = await page.$$eval("#player-contract td", (tds) => tds.map((td) => td.textContent));
+check(!(await page.isHidden("#player-contract-box")) && contractOnScreen[0] === pyContract[0] && contractOnScreen[1] === `${pyContract[2]} 年` && contractOnScreen[2].startsWith(`${pyContract[1]} 年`), `選手のページに契約(年俸・契約年数・残り年数)が出て、計算本体と同じ(${contractOnScreen.join(" / ")})`);
+const contractBoxText = await page.textContent("#player-contract-box");
+check(!HIDDEN.keys.some((k) => contractBoxText.includes(k)) && contractBoxText.includes("真の能力は使っていません"), "契約の箱に真の能力の項目名はなく、見える情報だけで決まる注記が出る");
 await page.click("#player-info .link");
 await page.waitForFunction(() => document.querySelectorAll("#team-war td").length === 4);
 const warTid = pyGame(`print(json.dumps(g.player(a["id"])["player"]["team_id"]))`, JSON.stringify({ id: warPid }));
 const pyTeamWar = pyGame(`w = g.team(a["id"])["war"]
 print(json.dumps([w["batters"], w["pitchers_ra"], w["pitchers_fip"], w["total_ra"]]))`, JSON.stringify({ id: warTid }));
 check(JSON.stringify(await page.$$eval("#team-war td", (tds) => tds.map((td) => td.textContent))) === JSON.stringify(pyTeamWar), `チームのページの WAR の合計(野手・投手別)が、計算本体と同じ(合計 ${pyTeamWar[3]})`);
+const pyBudget = pyGame(`b = g.budget_info(a["id"])
+d = g.team(a["id"])
+print(json.dumps([b["total_text"], b["cap"], b["rule_label"], [r["salary_text"] for r in d["salaries"][:3]]], ensure_ascii=False))`, JSON.stringify({ id: warTid }));
+const budgetText = await page.textContent("#team-budget");
+const salaryCells = await page.$$eval("#team-salaries tbody tr", (trs) => trs.slice(0, 3).map((tr) => tr.children[3].textContent));
+check(budgetText.includes(`総年俸 ${pyBudget[0]}`) && budgetText.includes(`お金のルール:${pyBudget[2]}`) && pyBudget[1] === null && !budgetText.includes("上限") && !budgetText.includes("null"), `チームのページに総年俸とお金のルールが出る(なしなので予算の上限は出ない。「${budgetText.slice(0, 40)}…」)`);
+check(JSON.stringify(salaryCells) === JSON.stringify(pyBudget[3]) && (await page.$$eval("#team-salaries thead th", (ths) => ths.map((t) => t.textContent))).join("|").includes("年俸(万円)|残り"), `チームのページの年俸の表(高い順。年俸・残りの列)が、計算本体と同じ(上位 ${salaryCells.join("・")})`);
 await page.click("#screen-team .back");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden);
 await page.click("#player-kind button[data-value=basic]"); // 後の確認は「基本」を前提にしている
@@ -654,6 +668,18 @@ let rosterPy = pyRelease({ role: "batter", kind: "basic" });
 let rosterHead = await rosterHeads();
 let rosterRows = await rosterCells(["WAR", "ポジション", "年齢", "打席"]);
 check(rosterHead.slice(0, 5).join("|") === "選手|WAR|ポジション|年齢|打席" && rosterPy.at(-1)[2].every((l) => rosterHead.includes(l)), `自由契約の表の列は 名前・WAR(固定列)・ポジション・年齢・打席・基本の成績(${rosterHead.length} 列)`);
+check(rosterHead.includes("年俸") && rosterHead.includes("残り") && (await page.$$eval("#proc-body tbody tr", (trs) => { const heads = [...document.querySelectorAll("#proc-body thead th")].map((t) => t.textContent.replace(/ [▲▼]$/, "")); return trs.every((tr) => /^[\d,]+$/.test(tr.children[heads.indexOf("年俸")].textContent) && /^\d+$/.test(tr.children[heads.indexOf("残り")].textContent)); })), "自由契約の表に、年俸と残り(契約年数)の列がある(F3-2a。D-234)");
+const procContracts = await page.textContent("#proc-contracts");
+const pyRenew = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+g.year_end()
+c = g.offseason_view()["contracts"]
+print(json.dumps([len(c["renewals"]), c["mine"]["total_text"], c["rate_text"], c["mine"]["blocked"]], ensure_ascii=False))`, last.path));
+check(procContracts.includes(`契約更改の結果(更改 ${pyRenew[0]} 人)`) && procContracts.includes(`総年俸 ${pyRenew[1]}`) && procContracts.includes(`単価は ${pyRenew[2]}`) && !pyRenew[3] && !(await page.isDisabled("#proc-next")), `自由契約の段階の最初に、自球団の総年俸と契約更改の結果(更改 ${pyRenew[0]} 人。単価 ${pyRenew[2]})が出る。なしなので「次の手続きへ」は押せる(D-235)`);
+await page.click("#proc-contracts details summary");
+check((await page.$$eval("#proc-contracts tbody tr", (trs) => trs.length)) > 0 && (await page.$$eval("#proc-contracts thead th", (ths) => ths.map((t) => t.textContent))).join("|").includes("前の年俸|新しい年俸|増減|年数"), "契約更改の結果を開くと、更改した選手の表(前の年俸・新しい年俸・増減・年数)が出る");
 check(rosterRows.length === rosterPy.length - 1 && rosterRows.every((r, i) => r.join("|") === rosterPy[i].join("|")) && rosterPy.at(-1)[1] === "asc", `自球団の野手(${rosterRows.length}人)が WAR の低い順に出て、計算本体と同じ(先頭 ${rosterRows[0][0]} ${rosterRows[0][1]})`);
 check((await page.textContent("#roster-sort-line")).includes("並び順:WAR(低い順)") && (await page.textContent("#proc-remaining")).includes("残り人数 / 最低人数") && (await page.textContent("#proc-remaining")).includes("先発"), "並び順の表示と、ポジション別の残り人数 / 最低人数が出る");
 check(!HIDDEN.keys.some((k) => JSON.stringify(rosterRows).includes(`"${k}"`)) && (await page.$$("#roster-kind button[data-value=ability]")).length === 0, "オフのとき、自由契約の表に「能力」の切り替えはなく、真の能力の項目名もない");
@@ -737,15 +763,18 @@ await page.click("#proc-next");
 await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("自由契約市場"), null, { timeout: 60000 });
 await page.waitForFunction(() => document.querySelectorAll("#proc-body tbody tr").length > 0);
 const marketHead = await rosterHeads();
-check(marketHead.includes("総合(推定 ± 幅)") && marketHead.includes("天井") && marketHead.includes("前の球団") && marketHead.includes("投球回"), `ドラフトの残りを自動で進めて市場へ。市場の表には入団時の評価(総合・天井)・前の球団と、成績の列がある(投手の表のまま)`);
+check(marketHead.includes("総合(推定 ± 幅)") && marketHead.includes("天井") && marketHead.includes("前の球団") && marketHead.includes("投球回") && marketHead.includes("WAR(失点版)") && !marketHead.includes("FIP"), `ドラフトの残りを自動で進めて市場へ。市場の表には入団時の評価(総合・天井)・前の球団と、成績の列がある(投手の表のまま。成績の種類の初期値は WAR。D-240)`);
 await page.selectOption("#roster-group", ""); // 自由契約で選んだ絞り込み(救援)は市場でも保たれているので、全投手に戻してから比べる
 await page.waitForFunction(() => document.querySelector("#roster-group").value === "" && [...document.querySelectorAll("#proc-body tbody tr")].some((tr) => tr.textContent.includes("先発")));
-const marketPy = pyProc(`t = g.offseason_table("market", "pitcher", "saber")\nprint(json.dumps([[r["name"], r["former_team"] or "-", r["values"]["usage"], r["values"]["fip"]] for r in t["rows"]], ensure_ascii=False))`, true);
-const marketRows = await rosterCells(["前の球団", "投球回", "FIP"]);
+const marketPy = pyProc(`t = g.offseason_table("market", "pitcher", "war")\nprint(json.dumps([[r["name"], r["former_team"] or "-", r["values"]["usage"], r["values"]["war_ra"]] for r in t["rows"]], ensure_ascii=False))`, true);
+const marketRows = await rosterCells(["前の球団", "投球回", "WAR(失点版)"]);
 check(marketRows.length === marketPy.length && marketRows.every((r, i) => r.join("|") === marketPy[i].join("|")) && marketRows.some((r) => r[2] === "—" && r[1] === "-") && marketRows.some((r) => r[2] !== "—"), `市場の投手(${marketRows.length}人)が計算本体と同じ。指名されなかった候補の成績は「—」、手放された選手には成績が出る`);
 await page.click("#proc-body thead th button:has-text('総合')");
 await page.waitForFunction(() => document.querySelector("#roster-sort-line").textContent.includes("並び順:総合"));
 check(true, "市場の表は、入団時の評価(総合)でも並べ替えられる");
+const marketPickRows = await page.$$eval("#proc-body tbody tr", (trs) => trs.filter((tr) => tr.querySelector("td .link")).map((tr) => !!tr.querySelector(".pick-btn")));
+const marketSalaries = await page.$$eval("#proc-body tbody tr", (trs) => { const heads = [...document.querySelectorAll("#proc-body thead th")].map((t) => t.textContent.replace(/ [▲▼]$/, "")); return trs.filter((tr) => tr.querySelector("td .link")).map((tr) => tr.children[heads.indexOf("年俸")].textContent); });
+check(marketHead.includes("年俸") && marketSalaries.length > 0 && marketSalaries.every((x) => /^[\d,]+$/.test(x)) && (!marketPickRows.some((x) => x) || marketPickRows.every((x) => x)) && !(await page.textContent("#proc-body")).includes("予算不足"), `市場の表に年俸(獲得したときの年俸)の列があり、なしなので「予算不足」は出ない(D-236。年俸 ${marketSalaries.slice(0, 3).join("・")})`);
 const au0 = Date.now();
 await page.click("#proc-auto");
 await page.waitForFunction(() => !document.querySelector("#screen-offseason").hidden && document.querySelectorAll("#offseason-retired tbody tr").length > 0, null, { timeout: 120000 });

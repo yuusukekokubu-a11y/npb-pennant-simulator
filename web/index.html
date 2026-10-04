@@ -13,6 +13,8 @@
   :root {
     --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --accent: #0969da; --accent-fg: #ffffff;
     --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; --mine: #fff8c5; --mine-line: #d4a72c; --warn-bg: #fff1e5; --warn-line: #e16f24;
+    /* 余白・文字の大きさ・角丸(F3-2a から新しく作る部分で使う。既存の画面はデザインの見直しで置き換える。D-239) */
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --font-small: 0.9rem; --font-tiny: 0.8rem; --radius: 10px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -129,6 +131,14 @@
   .wide .table-wrap.fluid td.name-cell { max-width: none; }
   .wide .table-wrap.fluid tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
   .warn { color: var(--warn-line); font-weight: bold; }
+  /* 契約・予算(F3-2a。色・余白・文字は変数で指定。D-239) */
+  .contract-box { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); }
+  .contract-box .big { font-size: 1.05rem; font-weight: bold; }
+  .budget-bar { height: var(--space-2); background: var(--line); border-radius: var(--radius); overflow: hidden; margin: var(--space-1) 0; }
+  .budget-bar span { display: block; height: 100%; background: var(--accent); }
+  .budget-bar.over span { background: var(--warn-line); }
+  .contract-box.over { background: var(--warn-bg); border-left: 4px solid var(--warn-line); }
+  .contract-box dl { margin: var(--space-1) 0 0; font-size: var(--font-tiny); color: var(--muted); }
   select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-height: 40px; max-width: 100%; }
   .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
   .check input { width: 20px; height: 20px; }
@@ -238,6 +248,11 @@
     <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong><br><span class="muted small">推定値のずれの標準偏差 3。ほぼ正確。</span></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)<br><span class="muted small">標準偏差 5。</span></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong><br><span class="muted small">標準偏差 8。当たり外れが大きい。</span></span></label>
+    <p class="small"><strong>お金のルール</strong>:年俸と予算の厳しさです。途中では変えられません。</p>
+    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)<br><span class="muted small">予算の機能なし。年俸と契約年数は表示されるだけで、契約満了者は全員更改します。</span></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="loose"><span><strong>ゆるい</strong><br><span class="muted small">予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。</span></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="standard"><span><strong>標準</strong><br><span class="muted small">予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。</span></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="strict"><span><strong>きびしい</strong><br><span class="muted small">標準に加えて、球団ごとの予算の格差(大・中・小)があります。</span></span></label>
   </details>
 
   <div class="card" id="trial-box" hidden>
@@ -380,6 +395,11 @@
     <div id="player-scouting"></div>
     <p class="muted small" id="player-scouting-note"></p>
   </div>
+  <div id="player-contract-box" class="contract-box" hidden>
+    <h2>契約</h2>
+    <div id="player-contract"></div>
+    <p class="muted small" id="player-contract-note"></p>
+  </div>
   <div id="player-history-box" hidden>
     <h2>年度別の成績</h2>
     <div id="player-history"></div>
@@ -426,6 +446,7 @@
     <button id="proc-auto" class="danger">おまかせ(残りを自動で)</button>
   </div>
   <p class="message" id="proc-message" role="status" aria-live="polite"></p>
+  <div id="proc-contracts"></div>
   <div id="proc-body"></div>
   <details id="proc-history-box"><summary>指名・自由契約の履歴</summary><div id="proc-history"></div></details>
   <p class="muted small" id="proc-note"></p>
@@ -454,6 +475,10 @@
   <div id="team-war"></div>
   <p class="muted small" id="team-war-note"></p>
   <details><summary>WAR の用語の解説</summary><dl class="terms" id="team-war-terms"></dl></details>
+  <h2>総年俸と契約</h2>
+  <div id="team-budget" class="contract-box"></div>
+  <div id="team-salaries"></div>
+  <p class="muted small" id="team-salaries-note"></p>
   <p><button id="team-review" class="secondary" type="button">ドラフトの振り返り(この球団に入った選手の当たり外れ)</button></p>
   <h2>投手</h2>
   <div id="team-pitchers"></div>

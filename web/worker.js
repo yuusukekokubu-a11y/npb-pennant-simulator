@@ -43,11 +43,11 @@ const handlers = {
     return parse(bridge.check(seed, JSON.stringify(names)));
   },
 
-  newGame({ seed, seasonSeed, names, myTeamIndex, baselines, scoutLevel }) {
+  newGame({ seed, seasonSeed, names, myTeamIndex, baselines, scoutLevel, moneyRule }) {
     // 試運転の進み具合は、計算の途中でも画面に知らせる(D-121)
     const progress = (day, total) => self.postMessage({ trial: { day, total } });
     const prerun = (year, total) => self.postMessage({ prerun: { year, total } });
-    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress, prerun, scoutLevel || "medium"));
+    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress, prerun, scoutLevel || "medium", moneyRule || "none"));
   },
 
   // オフの手続き(F3-1):自由契約・ドラフト・市場の操作

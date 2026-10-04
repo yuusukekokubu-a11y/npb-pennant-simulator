@@ -36,14 +36,14 @@ def check(seed: int, names_json: str) -> str:
     return _ok(api.check_team_names(int(seed), json.loads(names_json)))
 
 
-def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baselines: str = "trial", progress=None, prerun_progress=None, scout_level: str = "medium") -> str:
+def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baselines: str = "trial", progress=None, prerun_progress=None, scout_level: str = "medium", money_rule: str = "none") -> str:
     """新規開始。baselines は基準値の求め方(trial:試運転で求める / default:既定値)。
     progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。prerun_progress は事前運転の (終わった年数, 全年数)。"""
     global _game
     try:
         mine = None if my_team_index is None or int(my_team_index) < 0 else int(my_team_index)
         game = api.Game.new(
-            int(seed), json.loads(names_json), mine, season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress, scout_level=str(scout_level)
+            int(seed), json.loads(names_json), mine, season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress, scout_level=str(scout_level), money_rule=str(money_rule)
         )
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)
@@ -131,6 +131,7 @@ _QUERIES = {
     "offseason_table": lambda a: _game.offseason_table(a.get("phase", "release"), a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), a.get("season")),
     "transactions": lambda a: _game.transactions(a.get("year")),
     "draft_review": lambda a: _game.draft_review(a.get("team_id"), a.get("year")),
+    "budget_info": lambda a: _game.budget_info(a["team_id"]),
     "player": lambda a: _game.player(a["player_id"]),
     "games_on": lambda a: _game.games_on(int(a["day"])),
     "game": lambda a: _game.game(int(a["game_no"])),

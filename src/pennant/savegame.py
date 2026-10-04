@@ -30,6 +30,7 @@ from .baselines import STATES, VALUE_NAMES, Baselines, BaselineSettings, load_ba
 from .history import SeasonArchive
 from .offseason import OffseasonResult, OffseasonSettings, load_offseason_settings, validate_offseason_settings
 from .parkfactors import COUNT_KEYS, ParkTally, history_from_dict, history_to_dict
+from .contracts import MONEY_RULES, TIERS, load_contract_settings, validate_contract_settings
 from .draft import OffseasonProcedure, load_draft_settings, validate_draft_settings
 from .baserunning import RunnerMove
 from .config import (
@@ -52,7 +53,7 @@ from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 9  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)
+SAVE_FORMAT_VERSION = 10  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -149,7 +150,20 @@ def _v8_to_v9(bundle: dict) -> dict:
     return bundle
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9}
+def _v9_to_v10(bundle: dict) -> dict:
+    """版9には契約がない。ルールは「なし」、格差なし、契約は読み込みの後に算定で補う(残りの年数は別の乱数系列で 1〜3 年。D-235)。"""
+    state = bundle["state"]
+    state.setdefault("money_rule", "none")
+    state.setdefault("budget_tiers", {})
+    state.setdefault("contract_rates", {})
+    for team in state.get("league", {}).get("teams", []):
+        for pd in team.get("players", []):
+            if isinstance(pd, dict):
+                pd.setdefault("contract", None)
+    return bundle
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9, 9: _v9_to_v10}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -185,12 +199,18 @@ class GameState:
     procedure: object | None = None  # 進行中のオフの手続き(draft.OffseasonProcedure)。None なら手続き中でない(F3-1)
     transactions: list = field(default_factory=list)  # 指名・獲得・自由契約の履歴({year, phase, round, team_id, player_id, name, ...})
     draft_settings: object | None = None  # オフの手続きの設定(None は設定ファイル)
+    money_rule: str = "none"  # お金のルール(none / loose / standard / strict。新規開始で選ぶ。D-230)
+    budget_tiers: dict = field(default_factory=dict)  # きびしいの格差(球団 → large / medium / small。D-231)
+    contract_rates: dict = field(default_factory=dict)  # 年俸の単価の推移(シーズン番号(文字)→ 1 WAR あたりの万円。D-234)
+    contract_settings: object | None = None  # 契約の設定(None は設定ファイル)
 
     def __post_init__(self) -> None:
         from .draft import load_draft_settings
 
         if self.draft_settings is None:
             self.draft_settings = load_draft_settings()
+        if self.contract_settings is None:
+            self.contract_settings = load_contract_settings()
         if self.baseline_settings is None:
             self.baseline_settings = load_baseline_settings()
         if self.baselines is None:
@@ -264,6 +284,7 @@ def build_state(state: GameState) -> dict:
             "baselines": copy.deepcopy(state.baseline_settings.data),
             "offseason": copy.deepcopy(state.offseason_settings.data),
             "draft": copy.deepcopy(state.draft_settings.data),
+            "contracts": copy.deepcopy(state.contract_settings.data),
         },
         "league": {
             "seed": s.league.seed,
@@ -279,6 +300,9 @@ def build_state(state: GameState) -> dict:
         "scout_sd": {tid: {k: float(x) for k, x in v.items()} for tid, v in state.scout_sd.items()},
         "procedure": None if state.procedure is None else state.procedure.to_dict(_plain),
         "transactions": [dict(x) for x in state.transactions],
+        "money_rule": state.money_rule,
+        "budget_tiers": {tid: str(t) for tid, t in state.budget_tiers.items()},
+        "contract_rates": {str(k): round(float(v), 4) for k, v in state.contract_rates.items()},
         "history": [a.to_dict() for a in state.history],
         "offseasons": [o.to_dict() for o in state.offseasons],
         "season": {
@@ -379,6 +403,9 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     sc = pd.get("scouting")
     if sc is not None and not (isinstance(sc, dict) and isinstance(sc.get("items"), dict) and isinstance(sc.get("ceiling"), str)):
         p.add(f"{where}.scouting", "入団時のスカウト評価の形が違います")
+    ct = pd.get("contract")
+    if ct is not None and not (isinstance(ct, dict) and isinstance(ct.get("salary"), int) and not isinstance(ct.get("salary"), bool) and ct["salary"] >= 0 and isinstance(ct.get("until"), int) and isinstance(ct.get("history", []), list)):
+        p.add(f"{where}.contract", "契約の形が違います(年俸は 0 以上の整数、満了シーズンは整数)")
     items = items_for(role)
     for group in ("ratings",):
         ratings = _need(pd, group, dict, where, p)
@@ -429,6 +456,7 @@ def _player_from(pd: dict) -> Player:
         team_id=pd.get("team_id"),
         origin=pd.get("origin"),
         scouting=copy.deepcopy(pd.get("scouting")),
+        contract=copy.deepcopy(pd.get("contract")),
     )
 
 
@@ -535,11 +563,14 @@ def load_game(data: bytes) -> GameState:
         "season": validate_season_config,
         "offseason": validate_offseason_settings,
         "draft": validate_draft_settings,
+        "contracts": validate_contract_settings,
     }
     if "offseason" not in configs:
         configs["offseason"] = load_offseason_settings().data  # 版5以前は設定ファイルの値
     if "draft" not in configs:
         configs["draft"] = load_draft_settings().data  # 版7以前は設定ファイルの値
+    if "contracts" not in configs:
+        configs["contracts"] = load_contract_settings().data  # 版9以前は設定ファイルの値
     cfg = {}
     for key, validate in validators.items():
         if key not in configs:
@@ -635,6 +666,18 @@ def load_game(data: bytes) -> GameState:
             if isinstance(x, bool) or not isinstance(x, (int, float)) or not 0 <= x <= 30:
                 p.add(f"state.json.scout_sd.{tid}.{key}", f"0〜30 の数が必要です(値: {x!r})")
                 scout_sd_d[tid] = {"common": 0.0, "item": 0.0}
+    money_rule = state.get("money_rule", "none")
+    if money_rule not in MONEY_RULES:
+        p.add("state.json.money_rule", f"none / loose / standard / strict のどれかが必要です(値: {money_rule!r})")
+        money_rule = "none"
+    tiers_d = state.get("budget_tiers", {})
+    if not isinstance(tiers_d, dict) or any(v not in TIERS for v in tiers_d.values()):
+        p.add("state.json.budget_tiers", "球団 → large / medium / small のまとまりが必要です")
+        tiers_d = {}
+    rates_d = state.get("contract_rates", {})
+    if not isinstance(rates_d, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 for v in rates_d.values()):
+        p.add("state.json.contract_rates", "シーズン → 単価(0 以上の数)のまとまりが必要です")
+        rates_d = {}
     transactions_d = state.get("transactions", [])
     if not isinstance(transactions_d, list) or not all(isinstance(x, dict) for x in transactions_d):
         p.add("state.json.transactions", "履歴の一覧が必要です")
@@ -734,10 +777,18 @@ def load_game(data: bytes) -> GameState:
     for tid in scout_sd_d:
         if tid not in team_ids:
             p.add(f"state.json.scout_sd.{tid}", "球団の一覧にない ID です")
+    for tid in tiers_d:
+        if tid not in team_ids:
+            p.add(f"state.json.budget_tiers.{tid}", "球団の一覧にない ID です")
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    return GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"])
+    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], money_rule=str(money_rule), budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"])
+    if any(p_.contract is None for p_ in out.league.all_players()):
+        from .draft import fill_missing_contracts
+
+        fill_missing_contracts(out)  # 版9以前のセーブデータ:契約を算定で補う(D-235)
+    return out
 
 
 def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):

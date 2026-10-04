@@ -87,6 +87,13 @@ def items_for(role: str) -> tuple[str, ...]:
     return PITCHER_ITEMS if role == PITCHER else BATTER_ITEMS
 
 
+_STRENGTH_ITEMS: dict[str, tuple[str, ...]] = {}
+
+
 def strength_items_for(role: str) -> tuple[str, ...]:
-    """強弱を表す項目(「型」の項目を除いたもの)。"""
-    return tuple(i for i in items_for(role) if i not in STYLE_ITEMS)
+    """強弱を表す項目(「型」の項目を除いたもの)。役割ごとに覚えておく(何度も呼ばれるため)。"""
+    out = _STRENGTH_ITEMS.get(role)
+    if out is None:
+        out = tuple(i for i in items_for(role) if i not in STYLE_ITEMS)
+        _STRENGTH_ITEMS[role] = out
+    return out

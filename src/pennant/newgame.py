@@ -82,6 +82,10 @@ def new_league(
     draft_settings=None,
     scout_sd: dict | None = None,
     calibration: dict | None = None,
+    money_rule: str = "none",
+    tiers: dict | None = None,
+    contract_settings=None,
+    contract_info: dict | None = None,
 ) -> League:
     """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。
 
@@ -98,8 +102,17 @@ def new_league(
 
         settings = offseason_settings or load_offseason_settings()
         draft_settings = draft_settings or load_draft_settings()
-        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress, draft_settings=draft_settings, scout_sd=scout_sd)
+        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress, draft_settings=draft_settings, scout_sd=scout_sd, money_rule=money_rule, tiers=tiers, contract_settings=contract_settings)
         apply_calibration(league, calibration if calibration is not None else settings.calibration(draft_settings.default_level), gen_config)
+        # 初期選手の契約(校正の後の能力を所属球団が評価して算定。残りの年数は事前運転から。D-232)
+        from .contracts import load_contract_settings
+        from .draft import ContractContext, initialize_contracts, load_draft_settings
+
+        ds = draft_settings or load_draft_settings()
+        sd = scout_sd if scout_sd is not None else ds.level_sd(ds.default_level)
+        rate = initialize_contracts(league, seed, ContractContext(contract_settings or load_contract_settings(), money_rule, tiers or {}, lambda pid, role: [], lambda tid: sd), settings.prerun_years)
+        if contract_info is not None:
+            contract_info["rate"] = rate
     if team_names is not None:
         for team, name in zip(league.teams, resolve_team_names(league, team_names)):
             team.display_name = name
