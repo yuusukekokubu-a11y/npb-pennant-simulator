@@ -30,6 +30,7 @@
     }
   },
   "threshold": -0.6,
+  "threshold_without_money": -0.55,
   "noise_sd": 0.25,
   "multi_year": {
     "per_year": 0.03,

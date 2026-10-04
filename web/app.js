@@ -1200,7 +1200,8 @@ function updateReleaseButton(v) {
   const line = $("proc-remaining");
   if (line && v.minimums) {
     const r = remainingText(v);
-    line.textContent = r.short ? `${r.text}(最低人数を割っています)` : r.text;
+    const blocked = v.contracts && v.contracts.mine && v.contracts.mine.blocked;
+    line.textContent = r.short ? `${r.text}(最低人数を割っています${blocked ? "。予算の上限を超えている間は外せます。不足は完了のときに最低年俸で自動補充します" : ""})` : r.text;
     line.className = r.short ? "small warn" : "small";
   }
 }

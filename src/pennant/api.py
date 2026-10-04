@@ -653,7 +653,7 @@ class Game:
                 for p in sorted(team.players, key=lambda p: (list(POSITION_LABELS).index(p.position), p.id)):
                     row = self._player_brief(p, my, names)
                     row["scouting"] = self._report_public(p, my)
-                    row["can_release"] = draftmod.can_release(team.players, p, mins, min_batters)
+                    row["can_release"] = draftmod.can_release(team.players, p, mins, min_batters) or self._over_hard_cap(team)
                     rows.append(row)
                 view["roster"] = rows
             elif proc.phase in ("draft", "market"):
@@ -824,6 +824,10 @@ class Game:
         self.dirty = True
         return self.offseason_view()
 
+    def _over_hard_cap(self, team) -> bool:
+        ctx = self._contract_ctx()
+        return ctx.hard() and draftmod.over_cap(team, ctx) > 0
+
     def offseason_release(self, player_ids: list[str]) -> dict:
         """操作する球団が選手を手放す(自由契約の段階)。最低人数を割る選び方は受け付けない(警告は画面側)。"""
         proc = self._proc()
@@ -837,7 +841,7 @@ class Game:
             raise ValueError("自分の球団にいない選手が含まれています")
         rest = [p for p in team.players if p.id not in ids]
         worse = draftmod.new_shortages(team.players, rest, mins, min_batters)
-        if worse:
+        if worse and not self._over_hard_cap(team):  # 予算の上限を超えている間は、最低人数を割っても外せる(不足は完了のときに最低年俸で自動補充。F3-2b)
             raise ValueError("最低人数を割ってしまいます:" + "、".join(f"{'野手' if pos == 'batter' else POSITION_LABELS[pos]} があと {n} 人足りなくなります" for pos, n in worse.items()))
         draftmod.release_players(team, chosen, proc)
         proc.my_release_done = True
@@ -1070,8 +1074,10 @@ class Game:
         else:
             mins, min_batters = self._mins()
             team = self._my_team()
+            ok = draftmod.releasable(team.players, mins, min_batters)
+            over = self._over_hard_cap(team)
             for r in table["rows"]:
-                r["can_release"] = draftmod.can_release(team.players, next(p for p in team.players if p.id == r["player_id"]), mins, min_batters)
+                r["can_release"] = r["player_id"] in ok or over  # 上限を超えている間は、最低人数の選手も外せる
         table["phase"] = phase
         return table
 

@@ -302,3 +302,51 @@ def test_web_bridge_renewal_actions():
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
     assert {"renew_auto", "offer", "renew_release"} <= set(bridge._OFFSEASON) and "negotiation_answers" in bridge._ANSWERS
+
+
+def test_threshold_without_money():
+    pref = {"salary": 0.3, "playing_time": 0.4, "winning": 0.3}
+    ctx = {"rank": 3, "slots": 2.0, "standing": 4, "league_size": 6}
+    none = judge(NEG, pref, 1, 1000, 1000, 25, ctx, "none", 0.0)
+    loose = judge(NEG, pref, 1, 1000, 1000, 25, ctx, "loose", 0.0)
+    base = sum(pref[a] * NEG.axes[a]["strength"] * none["values"][a] for a in none["values"])
+    assert none["score"] == pytest.approx(base - NEG.threshold_without_money) and NEG.threshold_without_money > NEG.threshold
+    assert loose["score"] == pytest.approx(base + pref["salary"] * NEG.axes["salary"]["offset"] - NEG.threshold)
+
+
+def test_overrun_can_break_minimums_as_last_resort():
+    """標準以上で上限を大きく超えたとき、最低人数を守ったままでは解消できなければ、最低人数を割っても外す(不足は自動補充)。
+    あなたの球団も、上限を超えている間は最低人数の選手を外せる(F3-2b)。"""
+    from pennant.contracts import team_salary
+    from pennant.draft import minimum_batters, minimum_positions, resolve_overrun
+
+    g = api.Game.new(4, [None] * 12, 0, season_seed=9, baselines="default", money_rule="standard")
+    g.advance(125)
+    g.year_end()
+    proc = g.state.procedure
+    g.offseason_renew_auto()
+    for e in [e for e in proc.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
+        g.offseason_renew_release(e["player_id"])
+    g.offseason_next()
+    team = g._team("T01")
+    catchers = [p for p in team.players if p.position == "C"]
+    for p in catchers:  # 捕手の年俸を大きくして、上限を超えさせる
+        p.contract["salary"] = 200000
+    assert g.offseason_view()["contracts"]["mine"]["blocked"]
+    t = g.offseason_table("release", "batter", "basic")
+    assert all(r["can_release"] for r in t["rows"])  # 上限を超えている間は全員外せる
+    g.offseason_release([p.id for p in catchers])  # 捕手を全員外す(最低人数を割る)
+    assert not [p for p in team.players if p.position == "C"] and not g.offseason_view()["contracts"]["mine"]["blocked"]
+    g.offseason_auto()
+    assert len([p for p in g._team("T01").players if p.position == "C"]) >= minimum_positions()["C"]  # 完了のときに自動補充
+    # AI の方針も同じ:最低人数の選手しか高くなければ、それでも外す
+    g2 = api.Game.new(4, [None] * 12, None, season_seed=9, baselines="default", money_rule="standard")
+    t2 = g2.state.league.teams[1]
+    for p in [p for p in t2.players if p.position == "C"]:
+        p.contract["salary"] = 200000
+    from pennant.draft import OffseasonProcedure, state_context
+
+    proc2 = OffseasonProcedure(1, 1, [t.id for t in g2.state.league.teams], 6, 3, [70.0, 60.0, 50.0, 40.0])
+    ctx = state_context(g2.state, proc2)
+    out = resolve_overrun(t2, proc2, ctx, minimum_positions(), minimum_batters())
+    assert out and team_salary(t2) <= ctx.cap(t2.id) and any(p.position == "C" for p in out)

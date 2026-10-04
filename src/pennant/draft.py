@@ -661,19 +661,19 @@ def over_cap(team: Team, ctx: ContractContext) -> int:
 
 
 def resolve_overrun(team: Team, proc: OffseasonProcedure, ctx: ContractContext, mins, min_batters) -> list[Player]:
-    """予算超過の解消(AI と同じ方針):見込みの WAR あたりの年俸が高い選手から、超過が解消するまで自由契約(最低人数は守る)。"""
+    """予算超過の解消(AI と同じ方針):見込みの WAR あたりの年俸(最低年俸を超える分)が高い選手から、超過が解消するまで自由契約。
+    最低人数は守るが、守ったままでは解消できないときは最低人数を割っても外す(1 年契約で年俸が毎年算定し直されるため、予算の小さい強い球団で起こる。
+    不足は完了のときに最低年俸で自動補充される。F3-2b)。"""
     out: list[Player] = []
     if not ctx.hard():
         return out
-    while over_cap(team, ctx) > 0:
+    while over_cap(team, ctx) > 0 and team.players:
         ok = releasable(team.players, mins, min_batters)
-        candidates = [p for p in team.players if p.id in ok]
-        if not candidates:
-            break
+        candidates = [p for p in team.players if p.id in ok] or list(team.players)  # 最低人数の選手しか残っていなければ、最低人数を割っても外す(不足は完了のときに最低年俸で自動補充。F3-2b)
 
-        def cost(p: Player) -> float:
+        def cost(p: Player) -> float:  # 最低年俸を超える分 ÷ 見込みの WAR(最低年俸の選手は外しても補充と同じ額なので最後。F3-2b)
             exp = max(0.05, ctx.expected(p, team.id)[0])
-            return int(p.contract["salary"]) / exp if p.contract else 0.0
+            return (int(p.contract["salary"]) - ctx.settings.minimum) / exp if p.contract else 0.0
 
         worst = max(candidates, key=lambda p: (cost(p), int(p.contract["salary"]) if p.contract else 0, p.id))
         salary = int(worst.contract["salary"]) if worst.contract else 0

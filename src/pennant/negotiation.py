@@ -7,7 +7,7 @@
   - salary_ratio(年俸):傾き ×(提示年俸 ÷ 算定年俸 − 1)+ 基準のずれ。お金のルール「なし」では判定に効かない(D-246)
   - depth(出場機会):1 − r ÷ k。r は自球団の同じポジションで自分より評価の高い選手の数、k はそのポジションの一軍の枠の目安
   - standing(勝利):前年のリーグ内の順位(1 位 +1 〜 最下位 −1。順位がなければ 0)
-- 受ける条件:Σ 重み × 軸の強さ × 満足度 − しきい値 + 乱数 + 複数年の加点 ≧ 0(D-250)。軸の強さは設定値(勝利軸を弱めにして、球団の順位で断る人数が偏りすぎないようにする)。乱数は選手ごと・オフごとに 1 つで、同じ提示には同じ答え。
+- 受ける条件:Σ 重み × 軸の強さ × 満足度 − しきい値 + 乱数 + 複数年の加点 ≧ 0(D-250)。年俸の軸が効かない「なし」では、しきい値は threshold_without_money。軸の強さは設定値(勝利軸を弱めにして、球団の順位で断る人数が偏りすぎないようにする)。乱数は選手ごと・オフごとに 1 つで、同じ提示には同じ答え。
 - 断った理由は、重み × 満足度が最も低い軸の文。
 - 年俸の算定(contracts.py)は志望に依存しない。
 """
@@ -48,6 +48,11 @@ class NegotiationSettings:
     @property
     def threshold(self) -> float:
         return float(self.data["threshold"])
+
+    @property
+    def threshold_without_money(self) -> float:
+        """お金のルール「なし」で年俸の軸が効かないときのしきい値(年俸の軸の基準のずれがなくなる分、断る人数が減るのを補う。D-247)。"""
+        return float(self.data.get("threshold_without_money", self.data["threshold"]))
 
     @property
     def noise_sd(self) -> float:
@@ -96,6 +101,8 @@ def validate_negotiation_settings(root, source: str = "negotiation.json") -> Neg
                 c.number(c.get(a, "slope", f"axes.{key}"), f"axes.{key}.slope", 0, 100)
                 c.number(c.get(a, "offset", f"axes.{key}"), f"axes.{key}.offset", -1, 1)
     c.number(c.get(root, "threshold", ""), "threshold", -5, 5)
+    if "threshold_without_money" in root:
+        c.number(root["threshold_without_money"], "threshold_without_money", -5, 5)
     c.number(c.get(root, "noise_sd", ""), "noise_sd", 0, 5)
     my = c.section(c.get(root, "multi_year", ""), "multi_year")
     c.number(c.get(my, "per_year", "multi_year"), "multi_year.per_year", 0, 1)
@@ -220,13 +227,15 @@ def judge(settings: NegotiationSettings, preference: dict[str, float], years: in
     """提示への答え:{accepted, reason(軸のキー), score, values(軸 → 満足度)}。score と values は隠し情報(画面には出さない)。"""
     values = {}
     weighted = {}
+    threshold = settings.threshold
     for axis in settings.axes:
         if not axis_enabled(axis, settings, money_rule):
+            threshold = settings.threshold_without_money
             continue
         s = satisfaction(axis, settings, salary, auto_salary, context)
         values[axis] = s
         weighted[axis] = float(preference.get(axis, 0.0)) * float(settings.axes[axis]["strength"]) * s
-    score = sum(weighted.values()) - settings.threshold + noise + multi_year_bonus(years, age, settings)
+    score = sum(weighted.values()) - threshold + noise + multi_year_bonus(years, age, settings)
     reason = min(weighted, key=lambda k: (weighted[k], list(settings.axes).index(k))) if weighted else None
     return {"accepted": score >= 0.0, "reason": reason, "score": score, "values": values}
 
