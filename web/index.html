@@ -206,8 +206,9 @@
   .guide-item .better { font-size: var(--font-small); color: var(--muted); margin: var(--space-1) 0; }
   .compact-filters input[type=search] { flex: 1 1 0; min-width: 0; font-size: var(--font-small); padding: var(--space-1); min-height: 36px; }
   /* 新規開始の説明バー(D-313):選んでいる設定の説明。画面の下に貼り付く(ボタンの行より前に置くので「始める」は隠さない) */
-  .help-bar { position: sticky; bottom: 0; z-index: 5; background: var(--box); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.12); }
+  .help-bar { position: sticky; bottom: 0; z-index: 5; background: var(--box); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.12); min-height: calc(3em + 2 * var(--space-2)); line-height: 1.5; }
   .help-bar strong { margin-right: var(--space-1); }
+  html:has(#new-help:not([hidden])) { scroll-padding-bottom: 8rem; } /* バーを出している間は、選んだ項目がバーの下に隠れない位置までずらす */
   .back { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 12px; }
   .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
   .game-card.mine { border-color: var(--mine-line); background: var(--mine); }

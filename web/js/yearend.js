@@ -17,7 +17,7 @@ export async function renderYearEnd(token) {
   $("yearend-title").textContent = `${d.year}シーズン目を終えて、${d.year + 1}シーズン目に進みます。`;
   $("yearend-champions").replaceChildren(...d.champions.map((c) => el("p", {}, `${c.league_name} 優勝:${c.teams.join("・")}`)));
   $("yearend-note").textContent = "確定すると戻せません。";
-  $("yearend-dirty").textContent = d.dirty ? "未保存の変更があります(確定の前の状態を残すなら、先に保存)。" : "";
+  $("yearend-dirty").textContent = d.dirty ? "未保存の変更があります(確定の前の状態を残すなら、先に保存)。" : "保存済みです。";
   $("yearend-go").disabled = !d.is_over || state.running;
   $("yearend-message").textContent = "";
 }

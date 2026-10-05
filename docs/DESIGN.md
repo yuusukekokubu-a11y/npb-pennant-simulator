@@ -57,6 +57,7 @@ src/pennant/
   storage.py          保存の差し替え口(ファイルの読み書きはここだけ。D-101)
   newgame.py          新規リーグの作成・球団名の入力の検証・画面用の選手情報
   savegame.py         セーブデータ(.sav)の書き出しと、検証つきの読み込み(読み込みの順序と、旧版の変換の呼び出し)
+  glossary.py         用語集のデータの読み込み・検証と、名前での引き当て(②。D-311)
   save_checks.py      読み込みの点検と組み立ての部品(問題を集めて場所と理由を示す。保守②で savegame.py から分けた)
   save_migrations/    旧版の変換。版ごとに 1 ファイル(v01_to_v02.py 〜 v12_to_v13.py)。__init__.py の MIGRATIONS に並べる(保守②)
   api/                画面から呼ぶ操作の関数(公開用の情報だけを返す。D-107、D-108)。保守②で分野ごとに分けた(D-291):
@@ -100,7 +101,8 @@ src/pennant/
   data/plate_appearance.json  打席の計算に使う数値(仮置き値。9 章)
   data/game.json              1試合の進行に使う数値(仮置き値。9 章)
   data/season.json            シーズンに使う数値(仮置き値。9 章)
-  data/metrics.json           指標の定義(表示名・解説・計算式・区分(基本/セイバー)など。D-097、D-109)
+  data/metrics.json           指標の定義(表示名・計算式・区分(基本/セイバー)・良い向きなど。D-097、D-109。解説の文は glossary.json に)
+  data/glossary.json          用語集(説明の文の 1 か所。分類・名前・略語の正式名・意味・式・良い向き・別名・設定の id。②。D-306〜D-312)
 scripts/inspect_league.py            生成したリーグの分布を表で出す確認用スクリプト(操作画面ではない)
 scripts/inspect_plate_appearance.py  打席を多数回まわして結果の割合を表で出す確認用スクリプト
 scripts/inspect_game.py              試合を多数回まわした集計表と、1試合の流れを出す確認用スクリプト
@@ -118,11 +120,11 @@ web/                                 遊ぶための画面(index.html・app.js�
 web/app.js                           画面の入口(閉じる前の警告・ボタンのつなぎ・起動)。保守②で画面ごとに js/ へ分けた(D-291)
 web/js/                              画面の処理(ES モジュール:import と export でつなぐ JavaScript のファイル。準備の作業なしでそのまま公開できる):
   core.js 定数・画面の状態(state)・$ / backend.js 裏の Python とのやり取り・問い合わせの使い回し・待ち時間の表示 /
-  screens.js 画面の切り替え / parts.js 共通の部品(表・リンク・試合のカード・並べ替えの向き)/ progress.js 進行・順位表・進める /
+  screens.js 画面の切り替え / parts.js 共通の部品(表・リンク・試合のカード)/ glossary.js 用語集の引き当て(見出しの解説・注意書き。②)/ progress.js 進行・順位表・進める /
   stats.js 成績 / games.js 試合 / player.js 選手のページ / team.js チームと球場 / review.js ドラフトの振り返り /
   procedure.js オフの手続きの枠(段階・状態バー・おまかせ)/ decision.js 判断の画面の共通の部品(①b)/ contract.js 契約 / fa.js FA /
   draft.js ドラフト / market.js 市場(①b で draft.js と分けた)/
-  yearend.js 年度の確定とオフの結果 / menu.js メニュー(解説・答え合わせモード)/ newgame.js 新規開始 / files.js 保存と読み込み
+  yearend.js 年度の確定とオフの結果 / menu.js メニュー(用語集のページ・答え合わせモード)/ newgame.js 新規開始(説明バーを含む)/ files.js 保存と読み込み
 web/dev/                             開発者向けの測定ページ(技術検証。index.html・app.js・worker.js・bench.py。D-111)
 .github/workflows/pages.yml          _site/ を GitHub Pages に公開する自動処理
 ```
@@ -134,6 +136,7 @@ web/dev/                             開発者向けの測定ページ(技術検
 - 画面から呼ぶ関数を足すときは、`src/pennant/api/` の分野の合うファイルの Mixin(機能ごとに分けたクラスの部品)に足す。合うファイルがなければ、ファイルを足して `api/__init__.py` の `Game` の部品の並びと説明の一覧に加える。答え合わせ用の関数は今までどおり `answers.py`。
 - 画面の処理は、画面ごとの `web/js/*.js` に書く。2 つ以上の画面で使う部品は `parts.js`(判断の画面の表・絞り込み・提示のパネルは `decision.js`)、画面の状態の初期値は `core.js` の `state`、裏とのやり取りは `backend.js`。ボタンと処理のつなぎは入口の `app.js`。新しいファイルは `app.js` か使う側から import し、`scripts/build_web.py` は `web/js/` の全部を写す。
 - 保存形式を新しくするときは、`save_migrations/` に `vNN_to_vMM.py` を足して `MIGRATIONS` に加え、点検は `save_checks.py`、読み込みの順序は `savegame.py` に書く。
+- **指標や用語(表の列・設定の項目・ゲームのルール)を足すときは、用語集(`src/pennant/data/glossary.json`)にも 1 項目足す**(D-312)。説明の文は用語集にだけ書き、画面のコード・`metrics.json`・画面から呼ぶ関数の列には書かない(表の見出しの title と見出しを押すと出る解説は、画面が列の名前で用語集を引く。D-311)。列の名前が用語集にないと `tests/test_glossary.py` が落ちる。名前が違うだけなら別名(`aliases`)に、末尾のかっこ書き(例:「年俸(万円)」)は外して引くので足さなくてよい。指標の式と良い向きは `metrics` に指標の ID を書けば `metrics.json` から作る。画面に残すのは、読み違いを防ぐ 1 行の注意書きだけ(D-310)。
 
 800 行を超えるファイル(src・web):①b の後はない(保守②で残した `src/pennant/draft.py` は、①b で手続きの土台・契約の段階・市場・指名と完了に分けた。D-302)。
 
@@ -309,6 +312,7 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **オフの流れへの組み込み**(D-235):`start_procedure` の直後に `draft.apply_contracts_start`(単価を求め、全球団の満了者を算定で更改。結果は `OffseasonProcedure.renewals`。標準以上なら AI 球団の `resolve_overrun`(AI 球団:見込みの WAR あたりの年俸が高い順に、最低人数を守って自由契約。`proc.budget_releases`)。あなたの球団の超過は、自由契約の段階で手動(`offseason_next` は超過中は拒む。`offseason_auto` は AI と同じ)。ドラフトの指名は巡ごとの年俸(標準以上で上限を超えるならパス。note="budget")、市場の獲得は算定した年俸(上限を超えるなら AI は選ばない、あなたは拒まれる)、自動補充は最低年俸(予算に関わらず)。手放した選手の契約は消える。標準・きびしいでは事前運転も同じ流れ(履歴がないので評価から算定。超過の解消が AI の判断に入る)。なし・ゆるいでは事前運転は契約を扱わず(AI の判断が変わらない。D-237。時間も短い)、新規開始の最後に `initialize_contracts` が全選手の契約を評価から算定して付ける(残り年数は `contract:init-years` の乱数で 1〜契約年数。標準以上は上限に収まるよう最低年俸より上の分を比例で縮める)。
 - **オフの手続きの段階と、おまかせ(UI の整理①a。D-271・D-272)**:内部の段階 `PHASES`(renewal・release・fa・draft・market・done)は保存形式のため残し、画面の段階 `STAGES`(contract・fa・draft・market・done)に `stage_of` で対応させる(renewal と release はどちらも「契約」)。`draft.apply_contracts_start` は交渉までにし、AI 球団の予算超過の解消と自由契約は `draft.finish_contract_stage`(契約の段階の終わり。`my_ai` なら自球団の残りの交渉・超過の解消・自由契約も AI と同じ方針)で行う。AI 球団の処理の順序(交渉 → 超過の解消 → 自由契約)は変わらないので、全球団 AI の指紋 (m)〜(q) はこの移動では変わらない。`api.Game.offseason_next` は自分の操作を終えて進む(契約:未決定と上限超過を拒む → `finish_contract_stage(my_ai=False)`。FA:`run_all_rounds(my_ai=False)` で自球団は追加の提示をしない。ドラフト・市場:`_run_turns(my_ai=False)` で自分の番はパス)。`offseason_stage_auto` は今の段階だけを AI の方針で(自球団も)進め、自球団の分の行動の一覧(`auto_log`)を返す。`offseason_auto` は全部(「全部おまかせ」。メニューの中)。契約の画面の表は `api.Game.contract_table(group, kind, sort, order, season, status)`(自球団の今の選手と、この手続きで離れた選手。列は 選んだ指標・ポジション・年齢・今の契約・今回の提示・状態・出場。「全員」は共通の列だけ、ポジションを選ぶと種類の成績の列も)。「自由契約にする」は `offseason_contract_release`(交渉中なら交渉をやめる、契約が残るなら残りの契約を消す)。画面は状態バー(要約・予算・主ボタン)、段階のタブ 5 つ(折り返さない)、説明ブロックなし(D-270)。
 - **市場の提示の方式と判断の画面(UI の整理①b。D-296〜D-305)**:市場は `market.close_market`(FA の `fa.close_round` と同じ考え方で 1 ラウンド)。あなたの提示は `OffseasonProcedure.market_offers`、AI は `market.ai_market_offers`(FA と共通の `fa.choose_offers`:見込みの WAR が設定値以上・一軍に入る見込み・1 球団 3 人まで・空き枠と予算)。算定年俸と見込みは提示する球団の評価(`market.offer_terms` = `ContractContext.salary`)。選手は受けた提示の年俸の高い順に、`negotiation.judge`(出場機会と勝利は提示した球団での見込み。乱数は `derive_seed(手続きのシード, "market:<選手>:<球団>")`)で最も点の高い提示を選び、0 以上なら `procedure.join` で入団して `set_contract(..., "market")`。成立は `picks`(phase="market"・round=1)と `market_results` に残す。`market.uses_offers(ctx)`(志望の設定があるか)が偽の手続き(事前運転)は、今までの順番の方式(`draft.run_ai_turns`)。画面の表は `api.Game.decision_table(stage, group, kind, sort, order, season, show)`:列は段階ごと(`api/decisions.py` の `STAGE_COLUMNS`)、「全員」は WAR(野手は WAR、投手は失点版)と共通の列、ポジションを選ぶと種類の指標の列も。並べ替えは列のキー(見出しのタップ)で、値のない行は下。加入後の序列 `_depth` は志望の出場機会の軸と同じ数え方(`fa._context` の rank + 1)。手薄なポジション `_thin_positions`(D-303)。自球団の状況は `team_outlook`。画面は `web/js/decision.js`(絞り込みの 1 行・名前と並べ替えた列を固定する表・自球団の状況のパネル・提示のパネル・結果の一覧)を、`fa.js`・`draft.js`・`market.js` が使う。状態バー(`procedure.js`)に段階の操作を置き、要約を押すと自球団の状況のパネルが開く。
+- **説明と用語集(UI の整理②。D-306〜D-313)**:説明の文は `src/pennant/data/glossary.json` に 1 か所で持つ(分類 8 つ:指標の打撃・投球・守備と走塁・WAR、契約とお金、ドラフトとスカウト、試合と球場、画面の見方)。1 項目は `name`・`category`・`meaning`(必須)と、`full`(略語の正式名)・`formula`・`better`・`aliases`(表の列での別の名前)・`id`(新規開始の設定から引く名前。`setting.money_rule.none` など)・`metric`(指標の ID。式と良い向きは `metrics.json` の式から `metrics.formula_text` で作る)。`pennant/glossary.py` が読み込みと検証(必須の欄・分類・名前の重なり・`metrics.json` の指標の漏れ)をし、`find(label)` が列の名前から項目を引く(名前・別名で見つからなければ、末尾のかっこ書きを外してもう一度)。画面は起動のときに `glossary_view()` を 1 回受け取り(`web/js/glossary.js` の `setGlossary`)、同じ決まりで引く:表の見出しの title(`parts.table`)、見出しを押すと出る解説(`parts.kvTable`)、最初からある表の見出し(順位表。`applyStaticTitles`)、用語集のページ(`menu.js`。分類の絞り込みと、名前・別名・正式名・意味の文字の検索。全角半角と大文字小文字はそろえて比べる)、新規開始の説明バー(`newgame.js`。入力欄は選んだとき、選択肢は選び終わったときに、その項目の `id` で引く。押している途中に中身が変わって画面がずれないよう、選択肢の focusin では変えない)。説明バーは新規開始の画面の、ボタンの行の前に置いた `position: sticky; bottom: 0` の帯で、画面の下に貼り付くが、ボタンの行が見えるところまで来るとその上で止まる(「始める」を隠さない)。バーを出している間は `scroll-padding-bottom` で、選んだ項目がバーの下に隠れないようにする。画面に残す 1 行の注意書きは `glossary.js` の `seasonCaution`(シーズン途中・通算)と、各画面の短い文。`metrics.json` と画面から呼ぶ関数の列からは解説の文を消した(列は `key`・`label` など)。列の名前がすべて用語集に載っていることは `tests/test_glossary.py` が、画面のコード・画面から呼ぶ関数・`index.html` の見出し・`metrics.json`・能力の項目の名前を読んで確かめる。
 - **表の部品(`web/js/parts.js` ほか。D-223)**:個人成績の表の仕組み(見出しの並べ替え、固定列、並べ替えた指標の固定表示、並び順の保持 `sortToggle`)を `statsTable()` に切り出し、個人成績・自由契約・市場・ドラフトの振り返りで共有する。幅に応じた表示は `fluid` の印を付けた表だけに適用する:画面の幅が `WIDE_MIN_WIDTH`(仮置き。9 章)以上なら `<html>` に `wide` の印が付き、`fluid` の表は横スクロールなしで全列を出す(固定列も解除)。既存の表(個人成績・チーム・順位)には付けない(デザインの見直しの第 2 段階で扱う)。固定列の幅と位置(D-267・D-268):名前の列の幅と、その右に固定する指標の列の位置は、CSS の変数 `--table-name-w` の 1 つの値で決め、見出しと本体で同じ値を使う(`box-sizing: border-box` で、余白を含めた幅)。以前は `9em` と書いていたため、文字の大きさが違う見出し(0.8rem)と本体(0.92rem)で幅が 115px と 132px に分かれ、横にずらすと固定列の線が 17px ずれていた。並べ替えた列は、見出しの ▲▼ を別の要素(`.arrow`)にして列の右の余白(`--table-sort-mark-w`)に置き、本体の同じ列にも `sorted` の印を付けて同じ余白にする(▲▼ を除いた見出しの文字の右端と、数値の右端がそろう)。固定列のすぐ右の列は、左の余白を `--table-first-scroll-gap` にする(固定しない広い画面の `fluid` の表では、ほかの列と同じ)。そろいは `scripts/check_table_align.mjs` がブラウザで要素の位置を測って確かめる(幅 360・390・412・768・1280。固定列の線 1px 以内、見出しと数値の右端 2px 以内、余白 8px 以上)。修正後の画面の写し(架空のデータ)は `docs/design/table-align-*.png`。
 - 指紋 (n):固定のシードで、観戦のみ(全球団 AI)のオフの手続きを 2 回行った後の、選手(年齢・能力)、入団時の評価、指名・自由契約の履歴。形式 15(2 層の評価。D-212)で (a)〜(m) も変わった(事前運転が評価を使うため。(i) 球場の倍率だけ同じ)。
 - **事前運転と校正**(D-034 の完成形。D-190、D-197。`newgame.new_league(prerun=True)`):初期選手の生成 → `offseason.prerun(league, seed, ...)`(`run_offseason` を `prerun_years` 回。乱数は `derive_seed(リーグのシード, "prerun:<年>")`。新人の ID は `B<年>R<番号>`。履歴は作らない)→ `offseason.apply_calibration(league, calibration)`(強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を年齢カーブで出し直す)→ 試運転の基準値 → 1 シーズン目。校正の定数は `data/offseason.json` の `calibration`(`scripts/calibrate.py` で求める)。`GameState.calibration` に新規開始時の定数を持ち、その後の新人(`make_rookie(potential_shift=…)`)にも足す。引退の判定(能力の分)は、総合値から定数を引いた校正前の目盛りで行う。旧版のセーブデータは定数 0(校正なし)で続ける。保存形式は版 7。版 8(F3-1):`scout_level`(ずれの段階)、`scout_sd`(球団ごとの値)、`procedure`(オフの手続きの状態)、`transactions`(指名・自由契約の履歴)、選手の `scouting`(入団時の評価)。版 7 以前は、段階「中」・手続きなしとして読み、次の年度の確定から新しい手続きで進む。版 9(D-215):ずれの段階の設定が `{common, item}` の 2 つの値になり、球団ごとの値 `scout_sd` も同じ形。版 8 の 1 つの数 v は共通 0.8v・項目ごと 0.6v(合計は v のまま)として読み、設定の段階の値は今の設定ファイルに置き換える。版 8 の手続きと入団時の評価は方式の版 1 として読む(進行中の手続きは旧方式のまま終える)。

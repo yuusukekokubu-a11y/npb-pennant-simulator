@@ -111,6 +111,18 @@ def test_game_rules_and_new_game_settings_are_terms():
         assert g.by_id(i) is not None, i
 
 
+def test_glossary_has_no_hidden_words():
+    """用語集は答え合わせモードがオフでも画面に届くので、隠し情報の言葉(成長タイプ・生成時の型・球質・役割の名前)を書かない(D-108)。"""
+    from pennant.config import load_generation_config
+
+    c = load_generation_config()
+    words = {v["label"] for v in c["aging"]["growth_types"].values()} | {v["label"] for v in c["batter_archetypes"].values()}
+    words |= {v["label"] for v in c["pitcher_qualities"].values()} | {v["label"] for v in c["pitcher_roles"].values()}
+    words -= {"標準"}
+    text = json.dumps(api.glossary_view(), ensure_ascii=False)
+    assert words and not [w for w in words if w in text]
+
+
 def test_glossary_view_for_the_screen():
     v = api.glossary_view()
     assert [c["label"] for c in v["categories"]] == CATEGORIES

@@ -205,4 +205,7 @@ function showHelp(event) {
   $("new-help").hidden = false;
 }
 
-for (const type of ["focusin", "change", "click"]) $("screen-new").addEventListener(type, showHelp);
+// 入力欄は選んだとき(focusin)、選択肢は選び終わったとき(change)に出す。押している途中にバーの中身が変わって
+// 画面がずれ、押した場所がずれないように(選択肢の focusin では変えない)
+$("screen-new").addEventListener("focusin", (e) => { if (e.target.type !== "radio") showHelp(e); });
+$("screen-new").addEventListener("change", showHelp);

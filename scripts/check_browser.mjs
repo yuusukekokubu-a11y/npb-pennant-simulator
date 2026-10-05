@@ -82,7 +82,7 @@ async function findBlocks() {
   const f = await page.evaluate(() => {
     const scr = [...document.querySelectorAll("main.screen")].find((m) => !m.hidden);
     if (!scr) return null;
-    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions";
+    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions, #mine-card";
     const blocks = [...scr.querySelectorAll("p, dl, dd, .info, .notice, .card")].filter((e) => e.offsetParent && !e.closest(skip) && !e.classList.contains("message") && e.textContent.trim().length > 50).map((e) => e.textContent.trim().slice(0, 30));
     return { screen: scr.id, blocks };
   });
@@ -282,7 +282,9 @@ async function waitStats(text, timeout = 30000) {
   await page.waitForFunction((t) => {
     const s = document.querySelector("#stats-sort");
     const o = document.querySelector("#stats-order button[aria-pressed=true]");
-    return document.querySelector("#stats-loading").hidden && `${s.selectedOptions[0] ? s.selectedOptions[0].textContent : ""}(${o ? o.textContent : ""})`.includes(t);
+    const th = document.querySelector("#stats-table th.sorted");
+    const name = t.split("(")[0];
+    return document.querySelector("#stats-loading").hidden && th && th.textContent.startsWith(name) && `${s.selectedOptions[0] ? s.selectedOptions[0].textContent : ""}(${o ? o.textContent : ""})`.includes(t);
   }, text, { timeout });
   return statsOnScreen();
 }
@@ -451,7 +453,7 @@ print(json.dumps([c["salary_text"], c["remaining"], c["history"][-1]["years"]], 
 const contractOnScreen = await page.$$eval("#player-contract td", (tds) => tds.map((td) => td.textContent));
 check(!(await page.isHidden("#player-contract-box")) && contractOnScreen[0] === pyContract[0] && contractOnScreen[1] === `${pyContract[2]} 年` && contractOnScreen[2].startsWith(`${pyContract[1]} 年`), `選手のページに契約(年俸・契約年数・残り年数)が出て、計算本体と同じ(${contractOnScreen.join(" / ")})`);
 const contractBoxText = await page.textContent("#player-contract-box");
-check(!HIDDEN.keys.some((k) => contractBoxText.includes(k)) && contractBoxText.includes("真の能力は使っていません"), "契約の箱に真の能力の項目名はなく、見える情報だけで決まる注記が出る");
+check(!HIDDEN.keys.some((k) => contractBoxText.includes(k)) && !contractBoxText.includes("真の能力は使っていません"), "契約の箱に真の能力の項目名はなく、説明の注記もない(年俸の決まり方は用語集に)");
 await page.click("#player-info .link");
 await page.waitForFunction(() => document.querySelectorAll("#team-war td").length === 4);
 const warTid = pyGame(`print(json.dumps(g.player(a["id"])["player"]["team_id"]))`, JSON.stringify({ id: warPid }));
@@ -1122,7 +1124,7 @@ await page.click("#standings-body tr:first-child .link");
 await page.waitForFunction(() => document.querySelector("#team-info .link") !== null);
 await page.click("#team-info .link");
 await page.waitForFunction(() => document.querySelectorAll("#stadium-estimate td").length > 0);
-check((await page.textContent("#stadium-estimate-note")).includes("前のシーズンまで(1シーズン分)") && /\d\.\d{3}/.test(await page.textContent("#stadium-estimate")), "2シーズン目の球場のページに、1シーズン分の結果から推定した球場補正が出る");
+check(/\d\.\d{3}/.test(await page.textContent("#stadium-estimate")), "2シーズン目の球場のページに、前のシーズンの結果から推定した球場補正が出る");
 await page.click("#screen-stadium .back");
 await page.click("#screen-team .back");
 // 保存 → 計算本体で読む:2シーズン目・履歴1つ・打席ログは今シーズンの分だけ(D-189)。1シーズン目の成績は確定した値のまま
@@ -1215,8 +1217,8 @@ await page.click(".adv[data-days='1']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 1日目"));
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=saber]");
-await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("設定ファイルの既定値"));
-check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 25 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)。注記も「設定ファイルの既定値」になる`);
+await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent === "シーズン途中の値(ここまで)。");
+check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 25 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)`);
 await grab();
 
 // ---- 7. 隠し情報・通信・保存領域 ----
