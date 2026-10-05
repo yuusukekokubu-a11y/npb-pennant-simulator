@@ -16,6 +16,7 @@ import { renderGuide, renderSettings } from "./menu.js";
 
 export function showScreen(name) {
   for (const id of SCREENS) $(`screen-${id}`).hidden = id !== name;
+  if (name !== "new") $("new-help").hidden = true; // 新規開始の説明バーは、設定の画面から離れると消す(D-313)
   const inGame = !["start", "new"].includes(name);
   $("topbar").hidden = !inGame;
   $("tabs").hidden = !inGame;
@@ -59,7 +60,7 @@ export function renderCurrent() {
     team: () => renderTeam(args, token),
     game: () => renderGame(args, token),
     settings: () => renderSettings(),
-    guide: () => renderGuide(token),
+    guide: () => renderGuide(),
     stadium: () => renderStadium(args, token),
     yearend: () => renderYearEnd(token),
     offseason: () => renderOffseason(args, token),

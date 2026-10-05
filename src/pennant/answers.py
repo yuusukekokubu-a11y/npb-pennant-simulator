@@ -16,25 +16,6 @@ from .api import Game
 LEVELS = (1, 2)
 LOW, HIGH, STEP = 20, 80, 5
 
-ITEM_DESCRIPTIONS = {
-    "contact": "バットにボールを当てる力。高いほど三振が少ない",
-    "eye": "ボール球を見きわめる力。高いほど四球が多い",
-    "power": "打球を遠くへ飛ばす力。高いほど本塁打が多い",
-    "batted_ball_quality": "打球の強さ・鋭さ。高いほどヒットになりやすい",
-    "gb_fb": "打球(投手は打たせる打球)がゴロ寄りかフライ寄りか。強い・弱いではなく「型」。高いほどゴロ寄り",
-    "speed": "足の速さ。ゴロのヒットや、走塁に効く",
-    "baserunning": "走塁の判断のうまさ",
-    "range": "守備で打球に追いつく範囲の広さ",
-    "arm": "守備で投げる力(肩の強さ)",
-    "fielding": "打球を確実に捕る力。高いほど失策が少ない",
-    "strikeout": "三振を奪う力",
-    "control": "狙ったところに投げる力。高いほど四球が少ない",
-    "stuff": "球の力強さ。高いほど本塁打を打たれにくい",
-    "contact_suppression": "打たれた打球をヒットにさせにくい力(効果は小さめ)",
-    "stamina": "長いイニングを投げる体力",
-    "recovery": "登板の疲れから回復する速さ",
-    "holding": "走者を塁にくぎ付けにする力",
-}
 LEVEL_NOTE = {
     1: "現在の能力(20〜80。50 が一軍の平均、10点の差が「標準偏差1つ分」。5刻みで表示)",
     2: "現在の能力に加えて、潜在能力(伸びきったときの能力)・成長タイプ・生成時の型",
@@ -64,11 +45,11 @@ def _labels(game: Game) -> tuple[dict, dict]:
 
 def columns(role: str, level: int) -> list[dict]:
     """能力の表の列(見出しと解説)。"""
-    cols = [{"key": item, "label": ITEM_LABELS[item], "description": ITEM_DESCRIPTIONS[item], "type": "ability"} for item in items_for(role)]
+    cols = [{"key": item, "label": ITEM_LABELS[item], "type": "ability"} for item in items_for(role)]
     if _check_level(level) == 2:
         cols += [
-            {"key": "growth_type", "label": "成長タイプ", "description": "伸び方の違い。早熟(若くしてピーク)・標準・晩成(遅れてピーク)", "type": "text"},
-            {"key": "archetype", "label": "生成時の型", "description": "選手を作ったときの型(長距離砲・技巧派など)。年齢で変わらない", "type": "text"},
+            {"key": "growth_type", "label": "成長タイプ", "type": "text"},
+            {"key": "archetype", "label": "生成時の型", "type": "text"},
         ]
     return cols
 
@@ -328,7 +309,7 @@ def player_answers(game: Game, player_id: str, level: int = 1) -> dict:
     p = game.state.season.players[player_id]
     items = []
     for item in items_for(p.role):
-        row = {"key": item, "label": ITEM_LABELS[item], "description": ITEM_DESCRIPTIONS[item], "current": scale(p.ratings[item])["text"]}
+        row = {"key": item, "label": ITEM_LABELS[item], "current": scale(p.ratings[item])["text"]}
         if level == 2:
             row["potential"] = scale(p.hidden.potential[item])["text"]
         items.append(row)

@@ -9,7 +9,8 @@ from typing import Mapping
 
 from ..baselines import Baselines, RunTally, tally_game
 from ..decisions import Decisions, decide
-from ..metrics import MetricsConfig, compute, format_value, formula_text, innings_text, load_metrics_config
+from ..glossary import default_glossary
+from ..metrics import MetricsConfig, compute, format_value, innings_text, load_metrics_config
 from ..parkfactors import ParkTally, add_game
 from ..records import Records, game_records
 from ..season import Season
@@ -62,13 +63,12 @@ def metrics_config() -> MetricsConfig:
 
 
 def column_info(config: MetricsConfig, role: str, key: str) -> dict:
-    """表の列の見出しと解説(指標の定義データから。D-119)。"""
+    """表の列の見出し(指標の定義データから。D-119)。解説の文は用語集から画面が引く(D-311)。"""
     if key in config.metrics:
         m = config.metrics[key]
-        text = m["description"] + "".join(f"。{m[k]}" for k in ("note", "better_note") if m.get(k))
-        return {"key": key, "label": m["name"], "description": text, "type": "metric", "category": m["category"], "better": m["better"][role]}
+        return {"key": key, "label": m["name"], "type": "metric", "category": m["category"], "better": m["better"][role]}
     label = config["counts"][role][key].split("(")[0]
-    return {"key": key, "label": label, "description": config["count_descriptions"][role][key], "type": "count", "category": None, "better": "high"}
+    return {"key": key, "label": label, "type": "count", "category": None, "better": "high"}
 
 
 BASELINE_MODES = ("trial", "default")  # 新規開始の基準値:試運転で求める / 設定ファイルの既定値(D-121、D-122)
@@ -83,30 +83,20 @@ _BASELINE_METRICS = {"woba", "wrc_plus", "ops_plus", "fip"}  # 基準値を使�
 WAR_KIND = "war"  # 個人成績の「WAR」の切り替え(第3弾③b。D-179)。指標の式ではないので、列は metrics.json でなくここで持つ
 
 
-WAR_TERMS = [
-    {"key": "war", "label": "WAR", "description": "Wins Above Replacement の略。控え水準の選手に比べて、何勝分多く勝ちに貢献したか。打者は(打撃 + 走塁 + 守備 + ポジション補正 + 控え水準)÷ 1勝あたりの得点。高いほどよい"},
-    {"key": "replacement", "label": "控え水準", "description": "いつでも補充できる控え選手の水準。その選手と同じ出場量を控え選手が担ったときに比べて、どれだけ得点(失点)を増減させたかを測る土台。設定値(野手は1打席あたり、投手は9イニングあたり)"},
-    {"key": "position", "label": "ポジション補正", "description": "守備の負担が重いポジションほど加点し、軽いポジション(一塁・指名打者など)は減点する調整(設定値。点/125試合を、守備に就いた量で按分)"},
-    {"key": "runs_per_win", "label": "1勝あたりの得点", "description": "得点(失点)を勝ち数に直す換算。2 × 1チーム1試合あたりの得点(今の得点環境で約 9 点)"},
-    {"key": "war_ra", "label": "失点版", "description": "投手の WAR のうち、実際の失点から求めたもの。チームの野手の守備の得点を投球回で按分して差し引き、球場補正(前のシーズンまでの推定)を入れる"},
-    {"key": "war_fip", "label": "FIP 版", "description": "投手の WAR のうち、FIP(本塁打・四死球・三振だけで見た失点のしにくさ)から求めたもの。守備と運の影響を受けにくい。球場補正はしない"},
-]
-
-
 WAR_COLUMNS = {
     "batter": [
-        {"key": "plate_appearances", "label": "打席", "description": "打数 + 四球 + 死球 + 犠飛(wOBA の分母)", "type": "count", "category": "war", "better": "high"},
-        {"key": "war", "label": "WAR", "description": WAR_TERMS[0]["description"], "type": "metric", "category": "war", "better": "high"},
-        {"key": "batting", "label": "打撃", "description": "打撃の得点:wOBA から求めた、平均的な打者に比べた得点の増減(球場補正つき)", "type": "metric", "category": "war", "better": "high"},
-        {"key": "baserunning", "label": "走塁", "description": "走塁の得点:走者としての進塁(安打での追加の進塁、タッチアップ、併殺の回避など)の価値を、同じ状況の平均と比べたもの", "type": "metric", "category": "war", "better": "high"},
-        {"key": "fielding", "label": "守備", "description": "守備の得点:担当した打球をアウトにした数と、同じポジション・打球の種類のリーグ平均との差を得点に直したもの", "type": "metric", "category": "war", "better": "high"},
-        {"key": "position", "label": "ポジション補正", "description": WAR_TERMS[2]["description"], "type": "metric", "category": "war", "better": "high"},
-        {"key": "replacement", "label": "控え水準", "description": "控え水準の得点:出場量 × 設定値。多く出るほど大きい", "type": "metric", "category": "war", "better": "high"},
+        {"key": "plate_appearances", "label": "打席", "type": "count", "category": "war", "better": "high"},
+        {"key": "war", "label": "WAR", "type": "metric", "category": "war", "better": "high"},
+        {"key": "batting", "label": "打撃", "type": "metric", "category": "war", "better": "high"},
+        {"key": "baserunning", "label": "走塁", "type": "metric", "category": "war", "better": "high"},
+        {"key": "fielding", "label": "守備", "type": "metric", "category": "war", "better": "high"},
+        {"key": "position", "label": "ポジション補正", "type": "metric", "category": "war", "better": "high"},
+        {"key": "replacement", "label": "控え水準", "type": "metric", "category": "war", "better": "high"},
     ],
     "pitcher": [
-        {"key": "innings", "label": "投球回", "description": "投げたイニング(アウト 3 つで 1 回)", "type": "count", "category": "war", "better": "high"},
-        {"key": "war_ra", "label": "WAR(失点版)", "description": WAR_TERMS[4]["description"], "type": "metric", "category": "war", "better": "high"},
-        {"key": "war_fip", "label": "WAR(FIP 版)", "description": WAR_TERMS[5]["description"], "type": "metric", "category": "war", "better": "high"},
+        {"key": "innings", "label": "投球回", "type": "count", "category": "war", "better": "high"},
+        {"key": "war_ra", "label": "WAR(失点版)", "type": "metric", "category": "war", "better": "high"},
+        {"key": "war_fip", "label": "WAR(FIP 版)", "type": "metric", "category": "war", "better": "high"},
     ],
 }
 
@@ -122,12 +112,12 @@ CONTRACT_GROUPS = {"all": ("全員", None), "pitcher": ("投手", ("SP", "RP")),
 
 
 CONTRACT_COLUMNS = [  # 「状態」と「今回の提示」を指標のすぐ右に(D-284)
-    {"key": "status", "label": "状態", "description": "未提示・保留(断られた)・更改済・FA 宣言・自由契約・契約中(複数年契約の途中)", "type": "text", "better": "low"},
-    {"key": "offer", "label": "今回の提示", "description": "今回の更改の提示(年俸・年数)。未提示は自動案", "type": "count", "better": "high"},
-    {"key": "pos", "label": "ポジション", "description": "守備位置", "type": "text", "better": "low"},
-    {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
-    {"key": "contract", "label": "今の契約", "description": "今の契約の年俸(万円)と、次のシーズンからの残り年数(満了は更改の対象)", "type": "count", "better": "high"},
-    {"key": "usage", "label": "出場", "description": "選んだシーズンの打席数(投手は投球回)", "type": "count", "better": "high"},
+    {"key": "status", "label": "状態", "type": "text", "better": "low"},
+    {"key": "offer", "label": "今回の提示", "type": "count", "better": "high"},
+    {"key": "pos", "label": "ポジション", "type": "text", "better": "low"},
+    {"key": "age", "label": "年齢", "type": "metric", "better": "low"},
+    {"key": "contract", "label": "今の契約", "type": "count", "better": "high"},
+    {"key": "usage", "label": "出場", "type": "count", "better": "high"},
 ]
 
 
@@ -137,18 +127,18 @@ CONTRACT_REASONS = {"initial": "開始時", "renew": "更改", "draft": "ドラ�
 # 選手の一覧の表(自由契約・市場。D-222)の基本の列
 ROSTER_BASE_COLUMNS = {
     "batter": [
-        {"key": "pos", "label": "ポジション", "description": "守備位置", "type": "text", "better": "low"},
-        {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
-        {"key": "usage", "label": "打席", "description": "選んだシーズンの打席数", "type": "count", "better": "high"},
-        {"key": "salary", "label": "年俸", "description": "年俸(万円)。手続き中は次のシーズンの契約", "type": "count", "better": "high"},
-        {"key": "years", "label": "残り", "description": "残りの契約年数(次のシーズンを含む)", "type": "count", "better": "high"},
+        {"key": "pos", "label": "ポジション", "type": "text", "better": "low"},
+        {"key": "age", "label": "年齢", "type": "metric", "better": "low"},
+        {"key": "usage", "label": "打席", "type": "count", "better": "high"},
+        {"key": "salary", "label": "年俸", "type": "count", "better": "high"},
+        {"key": "years", "label": "残り", "type": "count", "better": "high"},
     ],
     "pitcher": [
-        {"key": "pos", "label": "ポジション", "description": "先発か救援か", "type": "text", "better": "low"},
-        {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
-        {"key": "usage", "label": "投球回", "description": "選んだシーズンの投球回(アウト 3 つで 1 回)", "type": "count", "better": "high"},
-        {"key": "salary", "label": "年俸", "description": "年俸(万円)。手続き中は次のシーズンの契約", "type": "count", "better": "high"},
-        {"key": "years", "label": "残り", "description": "残りの契約年数(次のシーズンを含む)", "type": "count", "better": "high"},
+        {"key": "pos", "label": "ポジション", "type": "text", "better": "low"},
+        {"key": "age", "label": "年齢", "type": "metric", "better": "low"},
+        {"key": "usage", "label": "投球回", "type": "count", "better": "high"},
+        {"key": "salary", "label": "年俸", "type": "count", "better": "high"},
+        {"key": "years", "label": "残り", "type": "count", "better": "high"},
     ],
 }
 
@@ -192,28 +182,10 @@ def is_sortable(config: MetricsConfig, role: str, key: str) -> bool:
     return key in config["counts"][role] or (key in config.metrics and role in config.metrics[key]["formulas"])
 
 
-def metrics_guide() -> dict:
-    """指標の解説のページ:すべての指標を区分別に、式・解説・見るときの注意つきで(指標の定義データから)。"""
-    config = metrics_config()
-    groups = []
-    for cat, label in (("basic", "基本"), ("saber", "セイバー")):
-        items = []
-        for mid in config.in_category(cat):
-            m = config.metrics[mid]
-            items.append(
-                {
-                    "key": mid,
-                    "name": m["name"],
-                    "description": m["description"],
-                    "formulas": [{"role": ROLE_LABELS[r], "text": formula_text(config, r, e)} for r, e in m["formulas"].items()],
-                    "better": [f"{ROLE_LABELS[r]}:{'高いほどよい' if b == 'high' else '低いほどよい'}" for r, b in m["better"].items()],
-                    "notes": [m[k] for k in ("note", "better_note") if m.get(k)],
-                    "stage": m["stage"],
-                }
-            )
-        groups.append({"category": cat, "label": label, "metrics": items})
-    names = config.data.get("baseline_names", {})
-    return {"groups": groups, "baseline_names": [{"key": k, "label": v} for k, v in names.items()]}
+def glossary_view() -> dict:
+    """用語集のページ(UI の整理②。D-307〜D-311):分類と項目。表の見出しの title・説明バーも、画面がここから引く。"""
+    g = default_glossary()
+    return {"categories": list(g.categories), "terms": [dict(t) for t in g.terms]}
 
 
 def raw_rate(c, key: str) -> Fraction | None:

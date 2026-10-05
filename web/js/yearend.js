@@ -16,8 +16,8 @@ export async function renderYearEnd(token) {
   const d = r.value;
   $("yearend-title").textContent = `${d.year}シーズン目を終えて、${d.year + 1}シーズン目に進みます。`;
   $("yearend-champions").replaceChildren(...d.champions.map((c) => el("p", {}, `${c.league_name} 優勝:${c.teams.join("・")}`)));
-  $("yearend-note").textContent = d.note;
-  $("yearend-dirty").textContent = d.dirty ? "今のゲームには、未保存の変更があります。確定の前の状態を残しておきたいときは、先に保存してください(確定したあとの保存とは、別のファイルになります)。" : "今のゲームは保存済みです(確定したあとに保存すると、別のファイルになります)。";
+  $("yearend-note").textContent = "確定すると戻せません。";
+  $("yearend-dirty").textContent = d.dirty ? "未保存の変更があります(確定の前の状態を残すなら、先に保存)。" : "保存済みです。";
   $("yearend-go").disabled = !d.is_over || state.running;
   $("yearend-message").textContent = "";
 }
@@ -76,25 +76,23 @@ export async function renderOffseason(args, token) {
   const d = await query("offseason_summary", { year: args.year ?? null });
   if (token !== state.token) return;
   if (!d.available) {
-    $("offseason-note").textContent = "まだ年度を確定していません。";
+    $("offseason-counts").textContent = "まだ年度を確定していません。";
     for (const id of ["offseason-retired", "offseason-rookies", "offseason-answers"]) $(id).replaceChildren();
     return;
   }
   $("offseason-title").textContent = `オフの結果(${d.year}シーズン目の終わり)`;
-  $("offseason-note").textContent = d.note;
   $("offseason-counts").textContent = `引退 ${d.counts.retired}人 / 新人 ${d.counts.rookies}人 / 選手の数 ${d.counts.players}人(変わりません)`;
   $("offseason-retired").replaceChildren(d.retired.length ? playerTable(d.retired, false) : el("p", { className: "muted" }, "引退した選手はいません。"));
   $("offseason-rookies").replaceChildren(d.rookies.length ? playerTable(d.rookies, true) : el("p", { className: "muted" }, "入団した新人はいません。"));
   const box = $("offseason-answers");
   if (state.answerLevel === 0) {
-    box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると、残った選手の能力の増減が見られます(上の「メニュー」から)。"));
+    box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると見られます(上の「メニュー」から)。"));
     return;
   }
   const a = await answer("offseason_answers", { year: d.year });
   if (token !== state.token || state.answerLevel === 0) return;
-  const columns = [{ key: "age", label: "年齢" }, { key: "mean_change", label: "平均の増減", description: "能力の項目ごとの増減の平均" }, { key: "items", label: "項目ごと", description: "項目名と増減" }];
+  const columns = [{ key: "age", label: "年齢" }, { key: "mean_change", label: "平均の増減" }, { key: "items", label: "項目ごと" }];
   box.replaceChildren(
-    el("p", { className: "muted small" }, a.note),
     table({
       firstLabel: "選手",
       columns,

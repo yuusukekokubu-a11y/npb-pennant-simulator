@@ -317,7 +317,7 @@ def test_qualifying_outs():
 
 def test_metrics_config_is_valid_and_complete(mconfig):
     for mid, m in mconfig.metrics.items():
-        assert m["name"].strip() and m["description"].strip(), mid
+        assert m["name"].strip() and "description" not in m, mid  # 解説の文は用語集に(D-311)
     assert set(mconfig.for_role("batter", stage=1)) == {"avg", "obp", "slg", "ops", "iso", "babip", "k_pct", "bb_pct"}
     assert set(mconfig.for_role("pitcher", stage=1)) == {"k_pct", "bb_pct", "era"}
 
@@ -328,25 +328,20 @@ def test_metric_categories(mconfig):
     assert mconfig.in_category("saber") == ["iso", "babip", "k_pct", "bb_pct", "woba", "wrc_plus", "ops_plus", "fip"]
 
 
-def test_spec_glossary_matches_metric_descriptions(mconfig):
-    """SPEC.md の用語集の文章が、指標の定義データの解説と同じであること(D-097)。"""
+def test_spec_glossary_points_to_the_game_glossary(mconfig):
+    """指標とゲームのルールの用語は、ゲームの用語集(glossary.json)が正本。SPEC の用語集には、指標の文を重ねて書かない(D-311)。"""
     spec = (ROOT / "docs" / "SPEC.md").read_text(encoding="utf-8")
     glossary = spec[spec.index("## 3. 用語集") : spec.index("## 4.")]
     rows = dict(re.findall(r"^\| (.+?) \| (.+?) \|$", glossary, flags=re.M))
+    assert "glossary.json" in glossary
     for mid, m in mconfig.metrics.items():
-        assert rows.get(m["name"]) == m["description"], f"{m['name']} の用語集の文章が、metrics.json と違います"
-
-
-def test_walkoff_note_on_extra_base_metrics(mconfig):
-    for mid in ("slg", "ops", "iso"):
-        assert "サヨナラ" in mconfig.metrics[mid]["note"]
-    assert "運" in mconfig.metrics["babip"]["better_note"]
+        assert m["name"] not in rows, f"{m['name']} は用語集(glossary.json)にだけ書きます"
 
 
 @pytest.mark.parametrize(
     "change, message",
     [
-        (lambda d: d["metrics"]["avg"].update(description=""), "metrics.avg.description"),
+        (lambda d: d["metrics"]["avg"].update(name=""), "metrics.avg.name"),
         (lambda d: d["metrics"]["avg"]["formulas"].update(batter="H / XYZ"), "XYZ"),
         (lambda d: d["metrics"]["avg"]["formulas"].update(batter="__import__('os')"), "使えない書き方"),
         (lambda d: d["metrics"]["avg"]["formulas"].update(batter="H / 0.5"), "整数"),

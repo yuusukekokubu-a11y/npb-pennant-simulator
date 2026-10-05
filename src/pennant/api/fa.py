@@ -55,9 +55,9 @@ class FaMixin:
         names = self._team_names()
         cols = [
             ROSTER_BASE_COLUMNS[role][0], ROSTER_BASE_COLUMNS[role][1], ROSTER_BASE_COLUMNS[role][2],
-            {"key": "former", "label": "前の所属", "description": "FA を宣言した球団", "type": "text", "better": "low"},
-            {"key": "calc", "label": "算定年俸", "description": "見込みの WAR から算定した年俸(万円)", "type": "count", "better": "high"},
-            {"key": "status", "label": "状態", "description": "未契約・提示中・契約(球団・年数・年俸)・未契約(市場へ)", "type": "text", "better": "low"},
+            {"key": "former", "label": "前の所属", "type": "text", "better": "low"},
+            {"key": "calc", "label": "算定年俸", "type": "count", "better": "high"},
+            {"key": "status", "label": "状態", "type": "text", "better": "low"},
         ]
         players = self.offseason_players("fa")
         extra = {}

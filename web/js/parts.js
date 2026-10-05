@@ -1,7 +1,8 @@
-// 共通の部品(要素の作成・リンク・表・用語・試合のカード・並べ替えの向き・項目と値の表)(web/app.js から分けた。保守②。D-291)
+// 共通の部品(要素の作成・リンク・表・試合のカード・並べ替えの向き・項目と値の表)(web/app.js から分けた。保守②。D-291)
 
 import { $ } from "./core.js";
 import { openPage } from "./screens.js";
+import { titleFor } from "./glossary.js";
 
 // ---- 部品 ----
 
@@ -28,7 +29,7 @@ export function setPressed(groupId, value) {
   for (const b of $(groupId).children) b.setAttribute("aria-pressed", String(b.dataset.value === value));
 }
 
-// 表を作る。columns は { key, label, description }、rows の値は row.values[key]。
+// 表を作る。columns は { key, label }、rows の値は row.values[key]。見出しの title は用語集から引く(D-311)。
 // first は左端(固定)の列の中身を作る関数。onSort があれば、見出しを押して並べ替えられる。
 // extra は、名前の隣に固定して出す列(並び順の指標が表にないとき。D-131)
 // fluid は、広い画面で横スクロールなしに全列を出す表(新しく作る表だけ。D-223)。detail(row) が要素を返せば、その行の下に 1 行足す
@@ -38,7 +39,7 @@ export function table({ firstLabel, columns, rows, first, sort, order, onSort, r
     const arrow = sort === c.key ? el("span", { className: "arrow" }, order === "desc" ? " ▼" : " ▲") : null;
     const text = arrow ? [c.label, arrow] : [c.label];
     const label = onSort ? el("button", { className: "sort", type: "button", onclick: () => onSort(c.key) }, ...text) : el("span", {}, ...text);
-    return el("th", { scope: "col", className: `${className} ${sort === c.key ? "sorted" : ""}`.trim(), title: c.description || "" }, label);
+    return el("th", { scope: "col", className: `${className} ${sort === c.key ? "sorted" : ""}`.trim(), title: titleFor(c.label) }, label);
   };
   const nameClass = extra ? "sticky name-fixed" : "sticky";
   const head = el("tr", {}, el("th", { className: nameClass, scope: "col" }, firstLabel));
@@ -59,15 +60,6 @@ export function table({ firstLabel, columns, rows, first, sort, order, onSort, r
     wrap.append(el("button", { className: "secondary more", type: "button", onclick: more }, `もっと見る(あと ${rows.length - limit} 件)`));
   }
   return wrap;
-}
-
-export function terms(listId, columns) {
-  $(listId).replaceChildren(...columns.flatMap((c) => [el("dt", {}, c.label), el("dd", {}, c.description)]));
-}
-
-export function sortWord(col, order) {
-  if (col.type === "count") return order === "desc" ? "多い順" : "少ない順";
-  return order === "desc" ? "高い順" : "低い順";
 }
 
 // 試合の結果のカード(押すと試合のページへ)
@@ -98,11 +90,12 @@ export function sortToggle(sortBy, shown, key) {
 // ---- 選手のページ ----
 
 export function kvTable(rows) {
-  // rows: [{ label, description, values: [..] }]。見出しを押すと解説を出す
+  // rows: [{ label, values: [..] }]。見出しを押すと、用語集の解説を出す(D-311)
   const body = el("tbody");
   for (const r of rows) {
-    const desc = el("span", { className: "desc", hidden: true }, r.description || "");
-    const head = r.description ? el("th", { scope: "row" }, link(r.label, () => (desc.hidden = !desc.hidden)), desc) : el("th", { scope: "row" }, r.label);
+    const text = titleFor(r.label);
+    const desc = el("span", { className: "desc", hidden: true }, text);
+    const head = text ? el("th", { scope: "row" }, link(r.label, () => (desc.hidden = !desc.hidden)), desc) : el("th", { scope: "row" }, r.label);
     body.append(el("tr", {}, head, ...r.values.map((v) => el("td", {}, v))));
   }
   return el("div", { className: "table-wrap" }, el("table", { className: "kv" }, body));

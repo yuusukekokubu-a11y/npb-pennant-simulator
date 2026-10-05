@@ -79,7 +79,7 @@
 
   /* 順位表 */
   .seg { display: flex; border: 1px solid var(--accent); border-radius: 10px; overflow: hidden; margin: 8px 0; }
-  .seg button { flex: 1 1 0; border: none; border-radius: 0; background: transparent; color: var(--accent); }
+  .seg button { flex: 1 1 0; border: none; border-radius: 0; background: transparent; color: var(--accent); padding-left: var(--space-1); padding-right: var(--space-1); white-space: nowrap; }
   .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-fg); }
   .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
   table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.92rem; }
@@ -94,9 +94,6 @@
   tr.mine td { background: var(--mine); }
   tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
   .you { color: var(--mine-line); margin-left: 2px; }
-  dl.terms { font-size: 0.9rem; margin: 12px 0; }
-  dl.terms dt { font-weight: bold; margin-top: 8px; }
-  dl.terms dd { margin: 0; color: var(--muted); }
 
   /* 新規開始 */
   fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 12px; margin: 12px 0; }
@@ -192,13 +189,26 @@
   .check input { width: 20px; height: 20px; }
   .info { border-left: 4px solid var(--accent); background: var(--box); border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 0.9rem; }
   .info strong { display: block; }
+  .info:empty { display: none; }
+  /* 個人成績の絞り込みと並び順の行(UI の整理②):判断の画面の絞り込み(compact-filters)と同じ高さに詰めて、表を上げる(D-310) */
+  #screen-stats .filters { gap: var(--space-1); margin: var(--space-1) 0; flex-wrap: wrap; }
+  #screen-stats .filters select { flex: 1 1 0; min-width: 5.5em; min-height: 36px; padding: var(--space-1); font-size: var(--font-small); }
+  #screen-stats .filters .check { min-height: 36px; font-size: var(--font-small); flex: 0 0 auto; }
+  #screen-stats .seg.small-seg button { min-height: 36px; }
   .more { width: 100%; margin: 8px 0; }
   .page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
   .page-head h1 { flex: 1 1 auto; margin: 0; font-size: 1.2rem; }
   .guide-item { border-bottom: 1px solid var(--line); padding: 10px 0; }
   .guide-item h3 { font-size: 1.05rem; margin: 0 0 4px; }
   .guide-item .formula { font-size: 0.88rem; background: var(--box); border-radius: 6px; padding: 6px 8px; margin: 4px 0; }
-  .guide-item ul { margin: 4px 0; padding-left: 1.2em; font-size: 0.88rem; color: var(--muted); }
+  .guide-item .full { font-weight: normal; font-size: var(--font-tiny); color: var(--muted); margin-left: var(--space-2); }
+  .guide-item .description { margin: var(--space-1) 0; }
+  .guide-item .better { font-size: var(--font-small); color: var(--muted); margin: var(--space-1) 0; }
+  .compact-filters input[type=search] { flex: 1 1 0; min-width: 0; font-size: var(--font-small); padding: var(--space-1); min-height: 36px; }
+  /* 新規開始の説明バー(D-313):選んでいる設定の説明。画面の下に貼り付く(ボタンの行より前に置くので「始める」は隠さない) */
+  .help-bar { position: sticky; bottom: 0; z-index: 5; background: var(--box); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.12); min-height: calc(3em + 2 * var(--space-2)); line-height: 1.5; }
+  .help-bar strong { margin-right: var(--space-1); }
+  html:has(#new-help:not([hidden])) { scroll-padding-bottom: 8rem; } /* バーを出している間は、選んだ項目がバーの下に隠れない位置までずらす */
   .back { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 12px; }
   .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
   .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
@@ -248,10 +258,10 @@
 <!-- スタート -->
 <main class="screen" id="screen-start">
   <h1>ペナントレース シミュレーター</h1>
-  <p>架空の12球団で、プロ野球のペナントレース(1シーズンの順位争い)を、試合ごとに計算して進めます。好きな球団を「自球団」に選んで、応援しながら見守ってください。</p>
+  <p>架空の12球団のペナントレースを、試合ごとに計算して進めます。</p>
 
   <div class="boot" id="boot">
-    <p class="small"><strong>初回は約12MBをダウンロードします</strong>(ブラウザの中で計算を動かすための、Python 一式です)。2回目からは、ブラウザに残った分を使うので速くなります。Wi-Fi でのご利用をおすすめします。</p>
+    <p class="small"><strong>初回は約12MBをダウンロードします</strong>(Wi-Fi をおすすめします)。</p>
     <progress id="boot-progress" max="3" value="0"></progress>
     <p class="muted" id="boot-text" role="status" aria-live="polite">準備を始めています…</p>
   </div>
@@ -262,45 +272,39 @@
   </div>
   <p class="message" id="start-message" role="alert"></p>
 
-  <div class="card small">
-    <p><strong>セーブデータ</strong>:ゲームの途中の状態を保存したファイル(名前の終わりが <code>.sav</code>)です。自動では保存しません。「保存」を押すと、端末にダウンロードされます。続きから遊ぶときは「セーブデータを開く」で選びます。</p>
-    <p>入力した球団名や進み具合は、このブラウザに記録されることも、外部に送られることもありません。保存したファイルの中にだけ入ります。</p>
-  </div>
+  <p class="muted small" id="start-note">自動では保存しません(「保存」で端末にファイルを残します)。</p>
 </main>
 
 <!-- 新規開始 -->
 <main class="screen" id="screen-new" hidden>
   <h1>新しく始める</h1>
   <div class="notice" id="real-name-notice">
-    <strong>ご注意</strong>:実在の球団名や選手名を入れたセーブデータは、ほかの人と共有しないでください(SNS への投稿や、共有リンクで渡すことも含みます)。名前を入れたファイルは、自分で遊ぶためだけに使ってください。
+    <strong>ご注意</strong>:実在の名前を入れたセーブデータは、ほかの人と共有しないでください。
   </div>
-  <p>12球団の名前を決めます。<strong>空欄のままにすると、薄く表示されている架空の名前</strong>になります。名前は24文字まで、同じ名前は使えません。</p>
-  <p>「自球団にする」で、操作する球団(GM として、オフにドラフトや自由契約の判断をする球団)を1つ選べます。順位表でも目立つように表示します。選ばない場合は<strong>観戦のみ</strong>で、オフの手続きは自動で進みます。</p>
   <label class="pick"><input type="radio" name="my-team" value="-1" id="my-team-none" checked>観戦のみ(球団を操作しない)</label>
 
   <div id="league-fields"></div>
 
   <details>
-    <summary>詳しい設定(同じ結果を再現したいとき)</summary>
-    <p class="small">シードは、乱数(サイコロのような、でたらめな数)の出方を決める初期値です。同じシードなら、同じ選手・同じ試合結果になります。空欄なら、毎回ちがう値を使います。0 〜 4294967295 の整数を入れてください。</p>
-    <label class="small" for="league-seed">リーグのシード(選手の顔ぶれが決まります)</label>
+    <summary>詳しい設定</summary>
+    <label class="small" for="league-seed">リーグのシード</label>
     <input id="league-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
     <p class="error" id="league-seed-error"></p>
-    <label class="small" for="season-seed">シーズンのシード(日程と試合の結果が決まります)</label>
+    <label class="small" for="season-seed">シーズンのシード</label>
     <input id="season-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
     <p class="error" id="season-seed-error"></p>
-    <p class="small"><strong>指標の基準値の求め方</strong>:wOBA・FIP などの指標は、リーグ全体の結果から求める「基準値」(重み・リーグ平均)を使います。1年目の基準値は、始める前に、画面に出ない練習のシーズン(試運転)を1回回して求めます。</p>
-    <label class="radio"><input type="radio" name="baseline-mode" value="trial" checked><span><strong>試運転で求める</strong>(おすすめ)<br><span class="muted small">このリーグに合った値になります。スマホで数秒かかります。</span></span></label>
-    <label class="radio"><input type="radio" name="baseline-mode" value="default"><span><strong>既定値を使う</strong>(速い)<br><span class="muted small">あらかじめ用意した、一般的な値を使います。シーズンが進むと、今シーズンの値に近づいていきます。</span></span></label>
-    <p class="small"><strong>スカウト評価のずれの大きさ</strong>:ドラフトや自由契約で見る選手の評価は、真の能力とずれています。ずれが大きいほど「見る目」が試されます。</p>
-    <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong><br><span class="muted small">推定値のずれの標準偏差 3。ほぼ正確。</span></span></label>
-    <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)<br><span class="muted small">標準偏差 5。</span></span></label>
-    <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong><br><span class="muted small">標準偏差 8。当たり外れが大きい。</span></span></label>
-    <p class="small"><strong>お金のルール</strong>:年俸と予算の厳しさです。途中では変えられません。</p>
-    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)<br><span class="muted small">予算の機能なし。更改と FA では、年俸を算定の 1.0〜1.3 倍で提示できます。</span></span></label>
-    <label class="radio"><input type="radio" name="money-rule" value="loose"><span><strong>ゆるい</strong><br><span class="muted small">予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。</span></span></label>
-    <label class="radio"><input type="radio" name="money-rule" value="standard"><span><strong>標準</strong><br><span class="muted small">予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。</span></span></label>
-    <label class="radio"><input type="radio" name="money-rule" value="strict"><span><strong>きびしい</strong><br><span class="muted small">標準に加えて、球団ごとの予算の格差(大・中・小)があります。</span></span></label>
+    <p class="small setting-head"><strong>指標の基準値の求め方</strong></p>
+    <label class="radio"><input type="radio" name="baseline-mode" value="trial" checked><span><strong>試運転で求める</strong>(おすすめ)</span></label>
+    <label class="radio"><input type="radio" name="baseline-mode" value="default"><span><strong>既定値を使う</strong>(速い)</span></label>
+    <p class="small setting-head"><strong>スカウト評価のずれの大きさ</strong></p>
+    <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong></span></label>
+    <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)</span></label>
+    <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong></span></label>
+    <p class="small setting-head"><strong>お金のルール</strong></p>
+    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)</span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="loose"><span><strong>ゆるい</strong></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="standard"><span><strong>標準</strong></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="strict"><span><strong>きびしい</strong></span></label>
   </details>
 
   <div class="card" id="trial-box" hidden>
@@ -309,6 +313,8 @@
     <p class="muted small" id="trial-text" role="status" aria-live="polite"></p>
   </div>
 
+  <!-- 説明バー(D-313):設定の項目を選んでいる間だけ、その項目の説明を 1〜2 行で出す。下に貼り付くが、ボタンの行より前に置くので「始める」を隠さない -->
+  <div class="help-bar" id="new-help" role="status" aria-live="polite" hidden><strong id="new-help-name"></strong> <span id="new-help-text"></span></div>
   <p class="message ng" id="new-message" role="alert"></p>
   <div class="row">
     <button id="new-back" class="secondary">戻る</button>
@@ -334,7 +340,7 @@
   </div>
   <p class="message" id="progress-message" role="status" aria-live="polite"></p>
   <div class="card" id="year-end-box" hidden>
-    <p class="small">シーズンが終わりました。年度を確定すると、今シーズンの集計を履歴に残して、オフ(選手の入れ替わり)に進みます。</p>
+    <p class="small">シーズンが終わりました。</p>
     <button id="year-end" class="secondary">年度を確定する…</button>
   </div>
   <div class="card" id="offseason-box" hidden>
@@ -355,7 +361,7 @@
 
   <h2>自球団の直近の試合</h2>
   <ul class="games" id="recent"></ul>
-  <p class="muted small" id="recent-empty">まだ試合がありません。「1日」を押すと、1日分(6試合)を進めます。</p>
+  <p class="muted small" id="recent-empty">まだ試合がありません。</p>
 </main>
 
 <!-- 順位表 -->
@@ -379,12 +385,6 @@
       <tbody id="standings-body"></tbody>
     </table>
   </div>
-  <p class="muted small"><span class="you">★</span> と色の付いた行が自球団です。表は横にずらせます。左端のチーム名は、ずらしても見えたままです。</p>
-  <dl class="terms">
-    <dt>勝率</dt><dd>勝 ÷(勝 + 敗)。引き分けは数えません。試合がまだないときは「-」です。</dd>
-    <dt>ゲーム差</dt><dd>首位(1位)のチームとの差。(首位の勝 − 勝 + 敗 − 首位の敗)÷ 2。1ゲーム差は、直接対決1試合で追いつける差です。首位は「-」です。</dd>
-    <dt>順位の決め方</dt><dd>勝率の高い順。同じときは、勝の多い順、直接対決の成績、の順で決め、それでも同じなら抽選です。</dd>
-  </dl>
 </main>
 
 <!-- 成績 -->
@@ -407,13 +407,10 @@
     <select id="stats-sort" aria-label="並び順に使う指標"></select>
     <div class="seg small-seg" id="stats-order" role="group" aria-label="並び順の向き"><button data-value="desc">高い順</button><button data-value="asc">低い順</button></div>
   </div>
-  <p class="muted small" id="stats-kind-note"></p>
   <p class="muted small" id="stats-baseline" hidden></p>
   <div class="info" id="stats-info" role="status" aria-live="polite"></div>
   <p class="loading" id="stats-loading" hidden>集計しています…</p>
   <div id="stats-table"></div>
-  <p class="muted small" id="stats-rule"></p>
-  <details id="stats-terms"><summary>この表の用語の解説</summary><dl class="terms" id="stats-terms-list"></dl></details>
 </main>
 
 <!-- 試合 -->
@@ -441,18 +438,15 @@
   <div id="player-scouting-box" hidden>
     <h2>入団時のスカウト評価</h2>
     <div id="player-scouting"></div>
-    <p class="muted small" id="player-scouting-note"></p>
-  </div>
+    </div>
   <div id="player-contract-box" class="contract-box" hidden>
     <h2>契約</h2>
     <div id="player-contract"></div>
-    <p class="muted small" id="player-contract-note"></p>
-  </div>
+    </div>
   <div id="player-history-box" hidden>
     <h2>年度別の成績</h2>
     <div id="player-history"></div>
-    <p class="muted small" id="player-history-note"></p>
-  </div>
+    </div>
   <h2>試合ごとの成績(新しい順)</h2>
   <div id="player-games"></div>
 </main>
@@ -474,7 +468,6 @@
 <!-- オフの結果(F2) -->
 <main class="screen" id="screen-offseason" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="offseason-title">オフの結果</h1></div>
-  <p class="small" id="offseason-note"></p>
   <p id="offseason-counts"></p>
   <h2>引退した選手</h2>
   <div id="offseason-retired"></div>
@@ -526,17 +519,14 @@
   <h2>チームの WAR(ここまで)</h2>
   <div id="team-war"></div>
   <p class="muted small" id="team-war-note"></p>
-  <details><summary>WAR の用語の解説</summary><dl class="terms" id="team-war-terms"></dl></details>
   <h2>総年俸と契約</h2>
   <div id="team-budget" class="contract-box"></div>
   <div id="team-salaries"></div>
-  <p class="muted small" id="team-salaries-note"></p>
   <p><button id="team-review" class="secondary" type="button">ドラフトの振り返り(この球団に入った選手の当たり外れ)</button></p>
   <h2>投手</h2>
   <div id="team-pitchers"></div>
   <h2>野手</h2>
   <div id="team-batters"></div>
-  <p class="muted small">選手名を押すと、その選手のページを開きます。「出場」は、試合に出た数(投手は登板した数)です。</p>
 </main>
 
 <!-- 球場のページ -->
@@ -545,13 +535,11 @@
   <p id="stadium-info"></p>
   <h2>本拠地での実際の結果</h2>
   <div id="stadium-record"></div>
-  <p class="muted small" id="stadium-note"></p>
   <h2>本拠地とアウェイの比較(今シーズン)</h2>
   <div id="stadium-compare"></div>
-  <p class="muted small">「本拠地」はこの球場で行った試合、「アウェイ」は同じチームが相手の球場で行った試合(どちらも両チームの合計)。本塁打は1打席あたり、得点は1打席あたり、BABIP はインプレーの打球のうち安打になった割合。「比」が 1.0 より大きければ、この球場のほうが出やすいことを示します(1シーズンでは運のぶれが大きいので、目安です)。</p>
+  <p class="muted small">1 シーズンでは運のぶれが大きいので、目安です。</p>
   <h2>推定した球場補正</h2>
   <div id="stadium-estimate"></div>
-  <p class="muted small" id="stadium-estimate-note"></p>
   <h2>真の倍率</h2>
   <div id="stadium-answers"></div>
 </main>
@@ -564,35 +552,37 @@
   <div id="game-line"></div>
   <h2>投手の成績</h2>
   <div id="game-pitchers"></div>
-  <p class="muted small">結果:勝=勝利投手、敗=敗戦投手、S=セーブ、H=ホールド。自責点は、失点のうち失策が関わらないもの(簡易な定義)。</p>
   <details><summary>先発メンバー</summary><div id="game-lineups"></div></details>
   <h2>試合の流れ</h2>
-  <p class="muted small">[ ] の中は、打席の前のアウトの数と走者。「中安」は中堅手の前へのヒット、「遊ゴロ」は遊撃手へのゴロのように、守備位置の1文字と結果で書きます。</p>
   <div class="log" id="game-log"></div>
 </main>
 
 <!-- メニュー(設定) -->
 <main class="screen" id="screen-settings" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1>メニュー</h1></div>
-  <button class="secondary" id="open-guide" style="width:100%">指標の解説を見る</button>
   <h2>答え合わせモード</h2>
-  <p>選手の本当の実力(能力)は、ふだんは隠れています。成績から実力を推理するのが、このゲームの楽しみの一つです。答え合わせモードをオンにすると、「成績」と選手のページの「能力」で見られるようになります。</p>
   <div id="answer-options">
-    <label class="radio"><input type="radio" name="answer-level" value="0" checked><span><strong>オフ</strong>(おすすめ)<br><span class="muted small">能力は見せません。</span></span></label>
-    <label class="radio"><input type="radio" name="answer-level" value="1"><span><strong>1段階目</strong>:今の能力<br><span class="muted small">20〜80 の数値(50 が一軍の平均)を、5刻みで見せます。</span></span></label>
-    <label class="radio"><input type="radio" name="answer-level" value="2"><span><strong>2段階目</strong>:今の能力 + 潜在能力・成長タイプ・生成時の型<br><span class="muted small">伸びきったときの能力や、伸び方の違いまで見せます。</span></span></label>
+    <label class="radio"><input type="radio" name="answer-level" value="0" checked><span><strong>オフ</strong>(おすすめ)</span></label>
+    <label class="radio"><input type="radio" name="answer-level" value="1"><span><strong>1段階目</strong>:今の能力</span></label>
+    <label class="radio"><input type="radio" name="answer-level" value="2"><span><strong>2段階目</strong>:今の能力 + 潜在能力・成長タイプ・生成時の型</span></label>
   </div>
-  <p class="muted small">この設定は、どこにも保存しません(セーブデータにも入りません)。ページを開き直すと、オフに戻ります。</p>
+  <p class="muted small">この設定は保存しません(開き直すとオフ)。</p>
   <div id="menu-offseason" hidden>
     <h2>オフの手続き</h2>
     <button class="danger" id="proc-auto">全部おまかせ</button>
   </div>
+  <h2>用語集</h2>
+  <button class="secondary" id="open-guide" style="width:100%">用語集を見る</button>
 </main>
 
-<!-- 指標の解説 -->
+<!-- 用語集(UI の整理②。D-307):分類と検索の 1 行、項目の一覧 -->
 <main class="screen" id="screen-guide" hidden>
-  <div class="page-head"><button class="secondary back">戻る</button><h1>指標の解説</h1></div>
-  <p class="small">成績の画面に出るすべての指標を、区分(基本・セイバー)別に、式と解説つきで並べています(指標の定義データから作っています)。</p>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>用語集</h1></div>
+  <div class="compact-filters" id="guide-filters">
+    <select id="guide-category" aria-label="分類の絞り込み"></select>
+    <input id="guide-search" type="search" placeholder="検索(例:wRC、年俸)" aria-label="用語の検索" autocomplete="off">
+  </div>
+  <p class="muted small" id="guide-count" role="status" aria-live="polite"></p>
   <div id="guide-body"></div>
 </main>
 

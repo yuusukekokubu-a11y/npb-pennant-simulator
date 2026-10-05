@@ -3,7 +3,8 @@
 import { $, STATS_PAGE, state } from "./core.js";
 import { answer, query, withLoading } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, setPressed, sortToggle, sortWord, table, terms } from "./parts.js";
+import { el, playerLink, setPressed, sortToggle, table } from "./parts.js";
+import { seasonCaution } from "./glossary.js";
 
 // ---- 成績(個人成績。D-114〜D-116) ----
 
@@ -17,7 +18,7 @@ export function buildStatsFilters() {
   $("stats-league").replaceChildren(el("option", { value: "" }, "両リーグ"), ...leagues.map((lg) => el("option", { value: String(lg.index) }, lg.name)));
   $("stats-league").value = state.stats.league;
   const teams = leagues.filter((lg) => state.stats.league === "" || String(lg.index) === state.stats.league).flatMap((lg) => lg.rows);
-  $("stats-team").replaceChildren(el("option", { value: "" }, "すべてのチーム"), ...teams.map((r) => el("option", { value: r.team_id }, r.name)));
+  $("stats-team").replaceChildren(el("option", { value: "" }, "全チーム"), ...teams.map((r) => el("option", { value: r.team_id }, r.name)));
   if (!teams.some((r) => r.team_id === state.stats.team)) state.stats.team = "";
   $("stats-team").value = state.stats.team;
   $("stats-qualified").checked = state.stats.qualified;
@@ -87,20 +88,13 @@ function showSortState(sortCol, order) {
     b.textContent = b.dataset.value === "desc" ? (counts ? "多い順" : "高い順") : counts ? "少ない順" : "低い順";
     b.setAttribute("aria-pressed", String(b.dataset.value === order));
   }
-  $("stats-info").replaceChildren(el("strong", {}, `並び順:${sortCol.label}(${sortWord(sortCol, order)})`), sortCol.description);
 }
 
 export async function renderStats(token) {
   const s = state.stats;
   setPressed("stats-role", s.role);
   setPressed("stats-kind", s.kind);
-  const note = {
-    basic: "基本:打率・防御率など、昔からよく使われる成績です。",
-    saber: "セイバー:セイバーメトリクス(統計で選手の実力を測る考え方)の指標です。運に左右されにくく、実力が出やすい数を集めています。",
-    war: "WAR:控え水準の選手に比べて、何勝分多く勝ちに貢献したか(打撃・走塁・守備・ポジション補正をまとめた値)。用語の解説は表の下にあります。",
-    ability: "能力:選手の本当の実力の数値です(答え合わせモードのときだけ)。",
-  }[s.kind];
-  $("stats-kind-note").textContent = note;
+  $("stats-info").replaceChildren();
   if (s.kind === "ability") {
     $("stats-baseline").hidden = true;
     return renderAbilityTable(token);
@@ -132,15 +126,12 @@ export async function renderStats(token) {
           more: () => { s.shown += STATS_PAGE; renderCurrent(); },
           extra: data.extra_column,
         })
-      : el("p", { className: "muted" }, s.qualified ? "条件に合う選手がいません(規定到達者がまだいないときは、「規定到達者だけ」を外してください)。" : "条件に合う選手がいません。"),
+      : el("p", { className: "muted" }, s.qualified ? "条件に合う選手がいません(「規定到達者だけ」を外すと出ます)。" : "条件に合う選手がいません。"),
   );
-  $("stats-baseline").hidden = !data.baseline_note;
-  $("stats-baseline").textContent = data.baseline_note || "";
-  const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」はこの表にない指標なので、名前の隣に固定して出しています。` : "";
-  const seasonNote = data.season && data.season !== "current" ? `${data.season_label}の成績です。` : "";
-  $("stats-rule").textContent = `${seasonNote}${data.qualify_rule}。${s.qualified ? "今は、規定に届いた選手だけを出しています。" : "今は、試合に出た全員を出しています。"} ${extraNote}表は横にずらせます。列の見出しを押すと並べ替え、もう一度押すと逆の順になります。上の「並び順」の欄からも選べます。`;
-  terms("stats-terms-list", (data.extra_column ? [data.extra_column, ...data.columns] : data.columns).concat(data.terms || []));
-  $("stats-terms").open = Boolean(data.terms); // WAR の表は、用語の解説を表の下に開いて出す(D-179)
+  // 読み違いを防ぐ 1 行の注意書きだけを残す(D-310)。詳しい理由は用語集に
+  const caution = data.baseline_note ? seasonCaution(data.season) : "";
+  $("stats-baseline").hidden = !caution;
+  $("stats-baseline").textContent = caution;
 }
 
 function sortStats(key) {
@@ -154,10 +145,8 @@ async function renderAbilityTable(token) {
   if (state.answerLevel === 0) {
     await buildSortSelect(currentSort().key);
     if (token !== state.token) return;
-    $("stats-info").replaceChildren(el("strong", {}, "答え合わせモードをオンにすると見られます"), "上の「メニュー」から、答え合わせモードをオンにしてください。");
+    $("stats-info").replaceChildren(el("strong", {}, "答え合わせモードをオンにすると見られます"), "(上の「メニュー」から)");
     $("stats-table").replaceChildren();
-    $("stats-rule").textContent = "";
-    $("stats-terms-list").replaceChildren();
     return;
   }
   const sort = currentSort();
@@ -181,7 +170,4 @@ async function renderAbilityTable(token) {
       extra: data.extra_column,
     }),
   );
-  const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」は成績の指標なので、名前の隣に固定して出しています。` : "";
-  $("stats-rule").textContent = `${data.note}。「+」は 80 より上、「-」は 20 より下の値を、端にそろえて表示しています。${extraNote}`;
-  terms("stats-terms-list", data.extra_column ? [data.extra_column, ...data.columns] : data.columns);
 }

@@ -30,7 +30,7 @@ export function renderProgress() {
   $("year-end").disabled = state.running;
   const off = s.offseason;
   $("offseason-box").hidden = !off;
-  if (off) $("offseason-box-text").textContent = `${off.year}シーズン目のオフの手続きが進行中です(今の段階:${off.phase_label})。手続きを終えると、${off.year + 1}シーズン目が始まります。`;
+  if (off) $("offseason-box-text").textContent = `${off.year}シーズン目のオフの手続き(今の段階:${off.phase_label})`;
   $("games-text").textContent = `${s.games_played} / ${s.total_games} 試合`;
   const m = s.my_team;
   $("mine-card").hidden = !m;
