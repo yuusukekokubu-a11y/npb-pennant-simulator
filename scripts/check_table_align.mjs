@@ -2,7 +2,7 @@
 //   1. 見出しの行と本体の行で、固定列(名前の列・並べ替えた指標の固定列)の右端の線が一致する(許容 1px)。横にずらした状態でも測る
 //   2. 並べ替えた列の見出し(▲▼ を除いた文字)の右端と、数値の右端が合う(許容 2px)
 //   3. 本体の最初のスクロール列(固定列のすぐ右の列)の値の左に、余白がある
-// 対象:個人成績(打者・投手 × 基本・セイバー・WAR・能力 × 並べ替えの指標 × シーズン)、チーム、順位、オフの手続き(契約更改・自由契約・FA・ドラフト・市場)、ドラフトの振り返り。
+// 対象:個人成績(打者・投手 × 基本・セイバー・WAR・能力 × 並べ替えの指標 × シーズン)、チーム、順位、オフの手続き(契約・FA・ドラフト・市場。①a)、ドラフトの振り返り。
 //
 // 使い方(計算本体を含むサイトを build_web.py で作り、http.server で配ってから):
 //   WIDTH=390 PLAYWRIGHT_MODULE=.../playwright/index.mjs node scripts/check_table_align.mjs "http://127.0.0.1:8765/?pyodide=local"
@@ -234,50 +234,33 @@ for (const width of WIDTHS) {
   // ---- オフの手続き ----
   await openSave(page, saves.offseason);
   if (await page.isHidden("#screen-procedure")) await page.click("#open-offseason");
-  await page.waitForSelector("#renewal-counts", { timeout: 60000 });
-  await measure(page, "契約更改");
-  await page.locator("#proc-body button", { hasText: "自動案でまとめて更改" }).click();
-  await page.waitForFunction(() => document.querySelector("#renewal-counts").textContent.includes("未提示 0"), null, { timeout: 60000 });
-  await measure(page, "契約更改(提示の後)");
-  // 断った選手は自由契約にして進む
-  for (let i = 0; i < 40 && !(await page.isEnabled("#proc-next")); i++) {
-    if (!(await page.$("#proc-body tbody tr td.sticky .link"))) {
-      const other = (await page.$("#roster-role button[data-value=batter][aria-pressed=true]")) ? "pitcher" : "batter";
-      await page.click(`#roster-role button[data-value=${other}]`);
-      await page.waitForFunction((o) => document.querySelector(`#roster-role button[data-value=${o}][aria-pressed=true]`), other);
-      await page.waitForTimeout(200);
-      continue;
-    }
-    await tap(page, "#proc-body tbody tr td.sticky .link");
-    await page.waitForSelector("#offer-release");
-    const before = await page.textContent("#renewal-counts");
-    await page.click("#offer-release");
-    await page.waitForFunction((b) => document.querySelector("#renewal-counts").textContent !== b, before);
-  }
-  await page.click("#proc-next");
-  await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("自由契約"), null, { timeout: 60000 });
-  await page.waitForSelector("#proc-body tbody tr");
-  await measure(page, "自由契約(野手)");
-  await page.click("#roster-role button[data-value=pitcher]");
-  await page.waitForFunction(() => document.querySelector("#roster-role button[data-value=pitcher][aria-pressed=true]"));
-  await measure(page, "自由契約(投手)");
+  await page.waitForSelector("#proc-body tbody tr", { timeout: 60000 });
+  await measure(page, "契約(全員)");
+  await page.click("#renew-auto");
+  await page.waitForFunction(() => !document.querySelector("#proc-info").textContent.includes("未提示"), null, { timeout: 60000 });
+  await measure(page, "契約(提示の後)");
+  await page.selectOption("#contract-group", "pitcher");
+  await page.waitForSelector("#contract-kind");
+  await page.selectOption("#contract-kind", "saber");
+  await page.waitForFunction(() => document.querySelector("#proc-body thead") && document.querySelector("#proc-body thead").textContent.includes("FIP"));
+  await measure(page, "契約(投手・セイバー)");
   await page.$$eval("#proc-body thead th button.sort", (bs) => bs.find((b) => b.textContent.startsWith("年齢")).click()); // 上の帯の下に隠れることがあるので、要素を直接押す
-  await page.waitForFunction(() => document.querySelector("#roster-sort-line").textContent.includes("年齢"));
-  await measure(page, "自由契約(投手・年齢で並べ替え)");
-  await page.click("#proc-next");
-  await page.waitForFunction(() => /FA|ドラフト/.test(document.querySelector("#proc-info").textContent), null, { timeout: 60000 });
-  if ((await page.textContent("#proc-info")).includes("FA")) {
+  await page.waitForFunction(() => document.querySelector("#proc-body thead th.sorted") && document.querySelector("#proc-body thead th.sorted").textContent.startsWith("年齢"));
+  await measure(page, "契約(投手・年齢で並べ替え)");
+  await page.click("#proc-stage-auto"); // この段階をおまかせ(D-271)
+  await page.waitForFunction(() => /FA|ドラフト/.test(document.querySelector("#proc-title").textContent), null, { timeout: 60000 });
+  if ((await page.textContent("#proc-title")) === "FA") {
     await page.waitForSelector("#fa-round");
     await measure(page, "FA");
     await shot(page, `align-${width}-fa.png`, "#proc-body");
-    await page.click("#proc-next");
-    await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("ドラフト"), null, { timeout: 60000 });
+    await page.click("#proc-stage-auto");
+    await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "ドラフト", null, { timeout: 60000 });
   }
   await page.locator("#proc-body button", { hasText: "次の自分の番まで進める" }).click();
   await page.waitForFunction(() => document.querySelector("#proc-body").textContent.includes("あなたの番"), null, { timeout: 60000 });
   await measure(page, "ドラフト");
-  await page.click("#proc-next");
-  await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("自由契約市場"), null, { timeout: 60000 });
+  await page.click("#proc-stage-auto");
+  await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "市場", null, { timeout: 60000 });
   await page.waitForSelector("#proc-body tbody tr");
   await measure(page, "自由契約市場");
   await page.close();

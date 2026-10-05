@@ -1246,7 +1246,7 @@ function faPanel(p, fa, prefs) {
   const fields = el("div", { className: "offer-fields" }, el("label", {}, "年数 ", years));
   let salary = null;
   if (fa.salary_editable) {
-    const si = salaryInput(f.offer ? f.offer.salary : f.calc_salary, fa.minimum_salary, fa.rounding);
+    const si = salaryInput(f.offer ? f.offer.salary : f.calc_salary, fa.none_max_ratio ? f.calc_salary : fa.minimum_salary, fa.rounding, fa.none_max_ratio ? Math.floor(f.calc_salary * fa.none_max_ratio) : null);
     salary = si.input;
     fields.append(si.wrap);
   } else {
