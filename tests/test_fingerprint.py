@@ -31,6 +31,7 @@ def test_fingerprints_match_expected(fp):
     assert fp["counts"] == EXPECTED["counts"]
 
 
+@pytest.mark.slow
 def test_same_in_a_fresh_process_with_other_hash_seed():
     """文字列の並び順(Python を起動するたびに変わる)に、結果が左右されないこと。"""
     code = "import json; from pennant.fingerprint import fingerprints; print(json.dumps(fingerprints()))"
@@ -41,6 +42,7 @@ def test_same_in_a_fresh_process_with_other_hash_seed():
         assert other[key] == EXPECTED[key]
 
 
+@pytest.mark.slow
 def test_without_parks_matches_the_values_before_parks():
     """球場の倍率をすべて 1.0 にしたときの指紋 (a)〜(h) が、固定した値と完全に一致する(回帰の確認。D-137)。
 
@@ -72,6 +74,7 @@ def test_format_shows_all_three(fp):
         assert fp[key] in text
 
 
+@pytest.mark.slow
 def test_script_reports_match(capsys):
     spec = importlib.util.spec_from_file_location("fingerprint_script", ROOT / "scripts" / "fingerprint.py")
     module = importlib.util.module_from_spec(spec)

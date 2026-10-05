@@ -101,6 +101,7 @@ def test_home_holders_are_balanced():
 
 # ---- 受け入れ条件1:同じシードで同じシーズン ----
 
+@pytest.mark.slow
 def test_same_seed_same_season(league3, season_done):
     season, result = season_done
     again = Season(copy.deepcopy(league3), 21).play_to_end()

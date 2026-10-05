@@ -192,6 +192,7 @@ def test_defensive_outs_come_from_lineups(season):
 
 # ---- 受け入れ条件3・4・7:複数シーズンの相関、指紋 (k) ----
 
+@pytest.mark.slow
 def test_runs_correlate_with_true_abilities_over_three_seasons():
     cumulative: dict[str, PlayerRuns] = {}
     league_holder = {}

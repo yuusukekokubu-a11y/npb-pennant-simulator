@@ -98,6 +98,7 @@ def _fresh(g):
     return api.Game(copy.deepcopy(g.state), dirty=False)
 
 
+@pytest.mark.slow
 def test_declaration_on_refusal(season_end):
     g = _fresh(season_end["standard"])
     proc = g.state.procedure
@@ -117,6 +118,7 @@ def test_declaration_on_refusal(season_end):
     assert all(not e["context"].get("fa_holder") for e in proc.negotiations.values() if e["status"] == "released")
 
 
+@pytest.mark.slow
 def test_fa_market_rounds_offers_and_constraints(season_end):
     for rule in ("none", "standard"):
         g = _fresh(season_end[rule])
@@ -184,6 +186,7 @@ def test_player_prefers_better_offer():
     assert famod.round_salary(10000, 1.2, "none", 100, True) == 12000 and famod.round_salary(10000, 1.2, "none", 100, False) == 10000
 
 
+@pytest.mark.slow
 def test_ai_offers_respect_limits(season_end):
     g = _fresh(season_end["standard"])
     to_fa(g)
@@ -198,6 +201,7 @@ def test_ai_offers_respect_limits(season_end):
         assert all(s == proc.fa_info[pid]["calc_salary"] or abs(s - proc.fa_info[pid]["calc_salary"] * FA["round_multipliers"][0]) <= 100 for pid, (_, s) in offers.items())
 
 
+@pytest.mark.slow
 def test_fa_is_hidden_unless_answer_mode(season_end):
     g = _fresh(season_end["standard"])
     to_fa(g)
@@ -212,6 +216,7 @@ def test_fa_is_hidden_unless_answer_mode(season_end):
     assert "FA 権" in page["player"]["contract"]["fa_text"] or "一軍" in page["player"]["contract"]["fa_text"]
 
 
+@pytest.mark.slow
 def test_save_v12_and_v11_loads(season_end):
     g = _fresh(season_end["standard"])
     data = save_game(g.state)

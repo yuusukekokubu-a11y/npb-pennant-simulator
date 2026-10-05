@@ -29,6 +29,7 @@ def _picks(g, phase):
     return [x for x in g.state.procedure.picks if x["team_id"] == g.state.my_team_id and x["phase"] == phase and x["player_id"]]
 
 
+@pytest.mark.slow
 def test_stages_and_contract_table(contract_games):
     g = _fresh(contract_games["none"])
     v = g.offseason_view()
@@ -59,6 +60,7 @@ def test_stages_and_contract_table(contract_games):
         assert f'"{key}"' not in text
 
 
+@pytest.mark.slow
 def test_contract_stage_gate_release_and_ai_at_the_end(contract_games):
     g = _fresh(contract_games["standard"])
     proc = g.state.procedure
@@ -87,6 +89,7 @@ def test_contract_stage_gate_release_and_ai_at_the_end(contract_games):
     assert any(x["team_id"] != "T01" and x.get("note") not in ("negotiation", "budget") for x in proc.released)  # AI の自由契約
 
 
+@pytest.mark.slow
 def test_stage_auto_and_next_semantics(contract_games):
     g = _fresh(contract_games["standard"])
     v = g.offseason_stage_auto()  # 契約の段階だけを AI の方針で(自球団の分も)
@@ -114,6 +117,7 @@ def test_stage_auto_and_next_semantics(contract_games):
     assert [p.id for p in g2._team("T01").players] == [p.id for p in g._team("T01").players]
 
 
+@pytest.mark.slow
 def test_fa_next_makes_no_more_offers(contract_games):
     g = _fresh(contract_games["standard"])
     g.offseason_stage_auto()
@@ -124,6 +128,7 @@ def test_fa_next_makes_no_more_offers(contract_games):
     assert proc.fa_done and not any(x["team_id"] == "T01" for x in proc.fa_log)  # 自球団は提示しない
 
 
+@pytest.mark.slow
 def test_none_salary_range_and_reasons(contract_games):
     g = _fresh(contract_games["none"])
     proc = g.state.procedure
@@ -138,6 +143,7 @@ def test_none_salary_range_and_reasons(contract_games):
     assert "salary" in reasons  # 「なし」でも「年俸が低い」が出る(全球団の最初の提示。D-273)
 
 
+@pytest.mark.slow
 def test_old_release_phase_resumes_as_contract(contract_games):
     """旧版で「自由契約」の段階にいたセーブは、「契約」の段階として再開する(D-272)。保存形式は版 12 のまま。"""
     g = _fresh(contract_games["none"])

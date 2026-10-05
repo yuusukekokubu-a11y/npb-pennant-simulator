@@ -136,6 +136,7 @@ def _fresh(g):
     return api.Game(copy.deepcopy(g.state), dirty=False)
 
 
+@pytest.mark.slow
 def test_new_game_contracts_are_single_year_by_default(renewal_games):
     g = api.Game.new(4, [None] * 12, 0, season_seed=9, baselines="default")
     players = g.state.league.all_players()
@@ -144,6 +145,7 @@ def test_new_game_contracts_are_single_year_by_default(renewal_games):
     assert all(p.preference and set(p.preference) == set(NEG.axes) for p in players)
 
 
+@pytest.mark.slow
 def test_renewal_phase_auto_offer_and_gate(renewal_games):
     for rule, base in renewal_games.items():
         g = _fresh(base)
@@ -181,6 +183,7 @@ def _clear_overrun(g):
         g.offseason_contract_release(rows[0]["player_id"])
 
 
+@pytest.mark.slow
 def test_salary_editable_only_with_money_rules(renewal_games):
     g = _fresh(renewal_games["none"])
     e = next(e for e in g.state.procedure.negotiations.values() if e["team_id"] == "T01")
@@ -210,6 +213,7 @@ def test_salary_editable_only_with_money_rules(renewal_games):
         g.offseason_offer(e["player_id"], 1, e["auto_salary"] + max(0, room) + 100)  # すでに上限を超えていれば、算定より高い年俸は出せない
 
 
+@pytest.mark.slow
 def test_three_refusals_release_and_answers_are_stable(renewal_games):
     g = _fresh(renewal_games["none"])
     g.offseason_renew_auto()
@@ -229,6 +233,7 @@ def test_three_refusals_release_and_answers_are_stable(renewal_games):
     assert any(r["player_id"] == pid for r in v["renewal"]["released"])
 
 
+@pytest.mark.slow
 def test_multi_year_contract_is_fixed_and_skipped_until_expiry(renewal_games):
     g = _fresh(renewal_games["loose"])
     proc = g.state.procedure
@@ -253,6 +258,7 @@ def test_multi_year_contract_is_fixed_and_skipped_until_expiry(renewal_games):
         assert pid in g.state.procedure.negotiations
 
 
+@pytest.mark.slow
 def test_preference_is_hidden_unless_answer_mode(renewal_games):
     g = _fresh(renewal_games["loose"])
     g.offseason_renew_auto()
@@ -268,6 +274,7 @@ def test_preference_is_hidden_unless_answer_mode(renewal_games):
     assert na["available"] and e["player_id"] in na["players"]
 
 
+@pytest.mark.slow
 def test_save_v11_and_v10_with_procedure_in_progress(renewal_games):
     g = _fresh(renewal_games["standard"])
     g.offseason_renew_auto()
@@ -336,6 +343,7 @@ def test_threshold_without_money():
     assert loose["score"] == pytest.approx(base + pref["salary"] * NEG.axes["salary"]["offset"] - NEG.threshold)
 
 
+@pytest.mark.slow
 def test_overrun_can_break_minimums_as_last_resort():
     """標準以上で上限を大きく超えたとき、最低人数を守ったままでは解消できなければ、最低人数を割っても外す(不足は自動補充)。
     あなたの球団も、上限を超えている間は最低人数の選手を外せる(F3-2b)。"""

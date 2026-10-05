@@ -131,6 +131,7 @@ def test_first_season_uses_no_park_factor():
         g.finish_season()
 
 
+@pytest.mark.slow
 def test_second_season_uses_previous_estimates_and_keeps_mean_about_100(second_season):
     g = second_season
     assert g.season_number() == 2 and g.park_estimates() is not None
@@ -156,6 +157,7 @@ def test_second_season_uses_previous_estimates_and_keeps_mean_about_100(second_s
     assert d["estimate"]["seasons"] == 1 and all(k in d["estimate"] for k in FACTOR_KEYS)
 
 
+@pytest.mark.slow
 def test_history_is_saved_and_old_saves_have_none(second_season):
     g = second_season
     data = save_game(g.state)
@@ -239,6 +241,7 @@ def _corr_at(snaps, league, key, k, truth):
     return _corr([snaps[k][i][key] for i in ids], [truth[i] for i in ids])
 
 
+@pytest.mark.slow
 def test_home_run_estimates_improve_with_seasons(ten_seasons):
     """10シーズンで、本塁打の推定と真の倍率の相関が高く、1シーズン目より良い(3リーグの平均)。
 
@@ -265,6 +268,7 @@ def _rmse_at(snaps, league, key, k, truth):
     return _rmse([snaps[k][i][key] for i in ids], [truth[i] for i in ids])
 
 
+@pytest.mark.slow
 def test_runs_estimates_beat_assuming_all_one(ten_seasons):
     """10シーズン時点の得点の推定(本塁打と BABIP から組み立てたもの)の誤差が、「全部 1.0 と推定した場合」の誤差より小さい(3リーグの平均。D-147、D-150)。"""
     est_err, one_err, c10 = [], [], []
@@ -277,6 +281,7 @@ def test_runs_estimates_beat_assuming_all_one(ten_seasons):
     assert sum(c10) / 3 > 0.7, c10  # 参考値:②b の直接推定(0.65)より良い
 
 
+@pytest.mark.slow
 def test_home_run_estimates_beat_assuming_all_one(ten_seasons):
     for snaps, _, league, _ in ten_seasons.values():
         truth = {t.id: t.park.home_run / 1000 for t in league.teams}
@@ -284,6 +289,7 @@ def test_home_run_estimates_beat_assuming_all_one(ten_seasons):
         assert _rmse_at(snaps, league, "home_run", 10, truth) < _rmse([1.0] * len(ids), [truth[i] for i in ids])
 
 
+@pytest.mark.slow
 def test_league_means_are_exactly_one(ten_seasons):
     for _, est, league, _ in ten_seasons.values():
         for k in FACTOR_KEYS:
@@ -292,6 +298,7 @@ def test_league_means_are_exactly_one(ten_seasons):
                 assert sum(est[i].estimate[k] for i in members) == len(members)
 
 
+@pytest.mark.slow
 def test_home_advantage_does_not_bias_the_ratio():
     """ホームの有利は本拠地とアウェイの両方に同じだけ効くので、倍率なしの球場の生の比は 1.0 付近(受け入れ条件3。D-093)。"""
     from pennant.pa_config import load_pa_config, validate_pa_config

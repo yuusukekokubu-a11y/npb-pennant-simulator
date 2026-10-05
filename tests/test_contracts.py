@@ -93,6 +93,7 @@ def games():
     return out
 
 
+@pytest.mark.slow
 def test_new_game_has_contracts_within_budget(games):
     for rule, g in games.items():
         state = g.state
@@ -138,6 +139,7 @@ def test_salary_ignores_hidden_info(games):
     assert ctx2.salary(p2, "T01") == before
 
 
+@pytest.mark.slow
 def test_renewal_and_hard_rules_flow(games):
     for rule in ("none", "standard", "strict"):
         g = api.Game(copy.deepcopy(games[rule].state), dirty=False)
@@ -238,6 +240,7 @@ def test_contract_pages_are_public_and_without_hidden_info(games):
 
 # ---- 保存形式(版 10。F3-2b で版 11)と旧版 ----
 
+@pytest.mark.slow
 def test_save_round_trip_and_v9_migration(games):
     g = api.Game(copy.deepcopy(games["strict"].state), dirty=False)
     g.advance(125)

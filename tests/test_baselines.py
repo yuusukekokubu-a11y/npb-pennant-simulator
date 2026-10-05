@@ -47,6 +47,7 @@ def trial(game):
 
 # ---- 受け入れ条件1:試運転は、実際のリーグに影響しない。同じシードなら同じ基準値 ----
 
+@pytest.mark.slow
 def test_trial_does_not_touch_league_and_is_reproducible(trial):
     league = new_league(1)
     before = json.dumps(league.to_dict(), sort_keys=True)
@@ -199,6 +200,7 @@ def test_blend_uses_prior_when_current_is_missing(trial):
 
 # ---- 受け入れ条件6:セーブデータ ----
 
+@pytest.mark.slow
 def test_baselines_are_saved_and_loaded(game):
     loaded = load_game(save_game(game.state))
     assert loaded.baselines.to_dict() == game.state.baselines.to_dict()

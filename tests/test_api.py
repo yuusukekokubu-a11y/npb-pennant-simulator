@@ -49,6 +49,7 @@ def test_check_team_names_gives_reason_per_field():
     assert api.check_team_names(5, ["新しい名前"] + [""] * 11) == [None] * 12
 
 
+@pytest.mark.slow
 def test_new_game_rejects_bad_input():
     with pytest.raises(api.TeamNameError):
         api.Game.new(5, ["  "] + [None] * 11, 0, baselines="default")
@@ -113,6 +114,7 @@ def test_broken_save_gives_japanese_error():
         api.Game.load(b"not a zip file")
 
 
+@pytest.mark.slow
 def test_advance_stops_at_end_and_matches_fingerprint_d():
     """画面と同じ流れ(新規開始 → 進める → 保存 → 読み込み → 最後まで)で、指紋 (d) と同じ結果になる。
     自球団は指紋の元に入らない。"""
