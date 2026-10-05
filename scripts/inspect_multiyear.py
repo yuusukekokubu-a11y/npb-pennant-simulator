@@ -164,6 +164,12 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
             row["fa_signed_rank"] = [fa["ranks"].get(x["team_id"]) for x in fa["results"]]
             row["fa_signed_team"] = [x["team_id"] for x in fa["results"]]
             row["fa_signed_exp"] = [round(float(fa["info"][x["player_id"]]["expected"]), 2) for x in fa["results"]]
+            # 主力級(見込みの WAR 2.0 以上)の行き先(主力級の FA の調整。D-322〜D-325):残留・移籍・市場・リーグを去る
+            market_ids = {x["player_id"] for x in (g.last_market or {}).get("results", [])}
+            row["fa_star_outcomes"] = [
+                ("stay" if x["team_id"] == x["former_team"] else "move") if x["status"] == "signed" else ("market" if pid in market_ids else "left")
+                for pid, x in fa["info"].items() if float(x["expected"]) >= 2.0
+            ]
             row["budget_release_exp"] = [x.get("expected") for x in fa["budget_releases"]]
             row["retired"] = summary["counts"]["retired"]
             row["released"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "release")  # 確定の後に数える(そのオフの自由契約)

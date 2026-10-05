@@ -11,6 +11,7 @@
   - きびしいの大・中・小別の平均順位・勝率・FA の獲得数
   - 最強・最弱チームの勝率(30 年の平均)
   - 予算超過の解消で外れる人数と、その選手の見込みの WAR
+  - 主力級(見込みの WAR 2.0 以上)の宣言の人数(1 年の分布)と、行き先(残留・移籍・市場・リーグを去る)(主力級の FA の調整。D-322〜D-325)
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from pennant.config import load_generation_config  # noqa: E402
 from pennant.war import load_war_settings  # noqa: E402
 
 DECLARE_RANGE = (10, 30)
+STAR_RANGE = (2, 4)  # 主力級の宣言の目標(リーグ全体・年平均。仮置き。D-322)
+STAR_WAR = 2.0
 MOVE_RANGE = (5, 15)
 
 
@@ -57,6 +60,10 @@ def summarize(label: str, worlds: dict[str, list[dict]]) -> dict:
     out["signed_exp"] = [x for r in rows for x in r.get("fa_signed_exp", [])]
     ranks = [x for r in rows for x in r["fa_signed_rank"] if x]
     out["by_rank"] = {"上位(1〜2 位)": sum(1 for x in ranks if x <= 2), "中位(3〜4 位)": sum(1 for x in ranks if 3 <= x <= 4), "下位(5〜6 位)": sum(1 for x in ranks if x >= 5)}
+    out["stars"] = [sum(1 for x in r["fa_declared_exp"] if x >= STAR_WAR) for r in rows]
+    outs = [o for r in rows for o in r.get("fa_star_outcomes", [])]
+    out["star_outcomes"] = {k: outs.count(k) for k in ("stay", "move", "market", "left")}
+    out["my_refusals"] = [r["my_first_refusals"] for r in rows if r.get("my_first_refusals") is not None]
     out["budget_release_exp"] = [x for r in rows for x in r.get("budget_release_exp", []) if x is not None]
     out["budget_releases"] = [len(r.get("budget_release_exp", [])) for r in rows]
     # 最強・最弱チームの勝率(全年の平均)、きびしいの格差ごと
@@ -96,6 +103,18 @@ def print_tables(sums: list[dict]) -> None:
         g = s["signed_exp"]
         rows.append([s["label"], len(e), f"{statistics.fmean(e):.2f}" if e else "-", f"{_q(e, 0.5):.2f}" if e else "-", f"{_q(e, 0.9):.2f}" if e else "-", f"{100 * sum(1 for x in e if x >= 2.0) / len(e):.0f}%" if e else "-", f"{100 * s['regular'] / len(e):.0f}%" if e else "-", f"{statistics.fmean(g):.2f}" if g else "-"])
     print(_table(["お金のルール", "宣言した人数(合計)", "見込みの平均", "中央", "90%", "見込み 2.0 以上", "そのシーズンの一軍(主力)", "成立した選手の見込みの平均"], rows))
+    print("\n## 主力級(見込みの WAR 2.0 以上)の宣言と行き先(D-322〜D-325)\n")
+    rows = []
+    for s in sums:
+        st = s["stars"]
+        dist = "・".join(f"{n} 人 {sum(1 for x in st if x == n)}" for n in range(0, max(st or [0]) + 1))
+        o = s["star_outcomes"]
+        total = sum(o.values()) or 1
+        rows.append([s["label"], f"{statistics.fmean(st):.2f}" if st else "-", _share(st, *STAR_RANGE), dist] + [f"{o[k]}({100 * o[k] / total:.0f}%)" for k in ("stay", "move", "market", "left")] + [f"{o['left'] / max(1, len(st)):.2f}"])
+    print(_table(["お金のルール", "主力級の宣言(年平均)", f"{STAR_RANGE[0]}〜{STAR_RANGE[1]} 人の年", "1 年の人数の分布(人数 年数)", "残留", "移籍", "市場で契約", "リーグを去る", "去る(年あたり)"], rows))
+    rows = [[s["label"], f"{statistics.fmean(s['my_refusals']):.2f}" if s["my_refusals"] else "-", _share(s["my_refusals"], 3, 8)] for s in sums]
+    print("\n自球団で自動案を断る人数(1 年):\n")
+    print(_table(["お金のルール", "平均", "3〜8 人の年"], rows))
     print("\n## 獲得数と前年順位(成立した契約の、獲得した球団の前年順位)\n")
     rows = []
     for s in sums:

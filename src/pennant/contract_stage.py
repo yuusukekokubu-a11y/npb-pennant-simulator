@@ -8,7 +8,7 @@ import random
 from dataclasses import dataclass, field
 
 from .contracts import ContractSettings, cap_of, contract_years, expected_war, is_hard, rate_for, salary_for, set_contract, team_salary
-from .fa import declare, fa_settings, is_holder
+from .fa import declare, fa_settings, is_holder, star_multiplier
 from .models import League, Player, Team
 from .negotiation import NegotiationSettings, ai_offer, ai_years, depth_ranks, depth_slots, ensure_preferences, judge, noise_for
 from .scouting import ceiling_cuts, quick_value
@@ -176,8 +176,14 @@ def make_offer(team: Team, entry: dict, years: int, salary: int, proc: Offseason
     if neg is None:
         rec = {"years": int(years), "salary": int(salary), "accepted": True, "reason": None}
     else:
-        r = judge(neg, player.preference or {}, int(years), int(salary), int(entry["auto_salary"]), player.age, entry["context"], ctx.rule, noise_for(proc.seed, player.id, neg))
+        context = entry["context"]
+        expect = star_multiplier(neg, entry["expected"]) if context.get("fa_holder") else 1.0  # 主力級の期待(D-322)。保存はしない(見込みの WAR から毎回求める)
+        if expect > 1.0:
+            context = {**context, "salary_expect": expect}
+        r = judge(neg, player.preference or {}, int(years), int(salary), int(entry["auto_salary"]), player.age, context, ctx.rule, noise_for(proc.seed, player.id, neg))
         rec = {"years": int(years), "salary": int(salary), "accepted": bool(r["accepted"]), "reason": None if r["accepted"] else r["reason"]}
+        if not r["accepted"] and r["reason"] == "salary" and expect > 1.0:
+            rec["star"] = True  # 断られた理由の文に、主力としての評価を望んでいることを足す(D-322)
     entry["offers"].append(rec)
     if rec["accepted"]:
         set_contract(player, int(salary), int(years), proc.year + 1, "renew" if player.contract else "initial", offers=len(entry["offers"]))

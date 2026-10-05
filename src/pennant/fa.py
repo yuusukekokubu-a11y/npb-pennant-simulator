@@ -9,6 +9,8 @@
 - 元の球団も他球団と同じ立場(優遇なし)。補償は `compensation`(初期は何もしない)の差し替え口。
 - AI(`ai_offers`。D-261):自球団の評価で一軍に入る見込みがあり、見込みの WAR が設定値以上の選手を、見込みの高い順に 1 ラウンド設定値まで、
   空き枠と予算の範囲で。年俸は算定 × ラウンドの倍率(「なし」は算定どおり)、年数は更改と同じ方針。
+- 主力級の期待(`star_multiplier`。D-322〜D-325):FA 権を持つ選手は、見込みの WAR が高いほど年俸の軸の基準を 算定 × 期待の倍率 にする
+  (更改の判定と FA 市場の判定)。FA 市場の AI は、期待の倍率も掛けた年俸で提示する(「なし」は上限の倍率まで)。
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ DEFAULT_FA = {
     "noise_sd": 0.1,
     "init": {"start_age": 21, "p_active": 0.7, "p_other": 0.25},
     "compensation": None,
+    "star": None,  # 主力級の期待(D-322)。設定にない旧版のセーブデータは期待なし
 }
 
 
@@ -62,6 +65,19 @@ def validate_fa(c, root: dict) -> None:
     c.integer(fa.get("ai_max_offers"), "fa.ai_max_offers", 0, 30)
     c.number(fa.get("ai_min_expected"), "fa.ai_min_expected", -10, 20)
     c.number(fa.get("noise_sd"), "fa.noise_sd", 0, 5)
+    star = fa.get("star")
+    if star is not None:
+        if not isinstance(star, dict):
+            c.add("fa.star", "まとまり({ })にしてください")
+        else:
+            c.number(star.get("start"), "fa.star.start", -5, 20)
+            c.number(star.get("per_war"), "fa.star.per_war", 0, 5)
+            c.number(star.get("max_multiplier"), "fa.star.max_multiplier", 1, 3)
+            if not isinstance(star.get("reason"), str) or not star.get("reason", "").strip():
+                c.add("fa.star.reason", "断られた理由に足す文を書いてください")
+            limit = (root.get("money_none") or {}).get("max_ratio", 1.3)
+            if isinstance(star.get("max_multiplier"), (int, float)) and isinstance(limit, (int, float)) and star["max_multiplier"] >= limit:
+                c.add("fa.star.max_multiplier", f"「なし」の年俸の上限({limit} 倍)より小さくしてください(上限の中で引き留め・獲得ができるように。D-325)")
     init = fa.get("init")
     if not isinstance(init, dict):
         c.add("fa.init", "まとまり({ })にしてください")
@@ -118,6 +134,18 @@ def initialize_seasons(league: League, actives, league_seed: int, neg: Negotiati
         p.fa_seasons = estimate_seasons(p, league_seed, p.id in active_ids, counted, len(archives), neg)
 
 
+# ---- 主力級の期待(D-322〜D-325) ----
+
+def star_multiplier(neg: NegotiationSettings | None, expected: float) -> float:
+    """期待の倍率:FA 権を持つ(宣言した)選手は、見込みの WAR が高いほど自分の価値を算定より高く見る。
+    倍率 = min(上限, 1 + 1 WAR あたりの上げ幅 × max(0, 見込みの WAR − 始まり))。年俸の軸の満足度の基準が 算定 × 倍率 になる。設定がなければ 1。"""
+    star = fa_settings(neg).get("star")
+    if not star:
+        return 1.0
+    m = 1.0 + float(star["per_war"]) * max(0.0, float(expected) - float(star["start"]))
+    return min(float(star["max_multiplier"]), m)
+
+
 # ---- 宣言 ----
 
 def declare(team: Team, player: Player, entry: dict, proc, ctx) -> None:
@@ -145,6 +173,15 @@ def _context(player: Player, team: Team, proc, ctx, sizes: dict[int, int]) -> di
     return {"rank": rank, "slots": round((ctx.slots or {}).get(player.position, 1.0), 3), "standing": proc.ranks.get(team.id), "league_size": sizes.get(team.league_index, 6)}
 
 
+def round_salary_star(calc: int, multiplier: float, expect: float, ctx) -> int:
+    """FA 市場の AI の提示の年俸:算定 × ラウンドの倍率 × 期待の倍率(D-325)。「なし」は算定の上限の倍率まで。"""
+    salary = round_salary(calc, multiplier * expect, ctx.rule, ctx.settings.rounding, money_axis_active(ctx.negotiation, ctx.rule))
+    if ctx.rule == "none" and ctx.negotiation is not None:
+        top = int(calc * float(ctx.negotiation.money_none["max_ratio"]) // ctx.settings.rounding) * ctx.settings.rounding
+        salary = max(int(calc), min(salary, top))
+    return salary
+
+
 def round_salary(calc: int, multiplier: float, rule: str, rounding: int, money_axis: bool = False) -> int:
     """AI の提示の年俸 = 算定 × ラウンドの倍率(丸め)。「なし」で年俸の軸が効かないときは算定どおり(D-273)。"""
     if rule == "none" and not money_axis:
@@ -157,9 +194,10 @@ def round_multiplier(neg: NegotiationSettings | None, rnd: int) -> float:
     return float(fa["round_multipliers"][min(int(rnd), len(fa["round_multipliers"])) - 1])
 
 
-def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float) -> dict[str, tuple[int, int]]:
+def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float, expect=None) -> dict[str, tuple[int, int]]:
     """AI の方針で提示する選手を選ぶ(FA と市場で共通。D-261、D-300)。items は (選手, 見込みの WAR, 算定年俸, 年数) の並び。
-    自球団の評価で一軍に入る見込みがあり、見込みの WAR が設定値以上の選手を、見込みの高い順に設定値まで、空き枠と予算の範囲で。"""
+    自球団の評価で一軍に入る見込みがあり、見込みの WAR が設定値以上の選手を、見込みの高い順に設定値まで、空き枠と予算の範囲で。
+    expect(選手 ID → 期待の倍率)を渡すと(FA 市場)、主力級には期待の倍率を考えた年俸で提示する(D-325)。"""
     fa = fa_settings(ctx.negotiation)
     space = MAX_ROSTER - len(team.players)
     limit = min(int(fa["ai_max_offers"]), max(0, space))
@@ -180,7 +218,8 @@ def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mu
     for _, pid, calc, years in cands:
         if len(out) >= limit:
             break
-        salary = round_salary(calc, mult, ctx.rule, ctx.settings.rounding, money_axis_active(ctx.negotiation, ctx.rule))
+        e = expect(pid) if expect is not None else 1.0
+        salary = round_salary_star(calc, mult, e, ctx) if e > 1.0 else round_salary(calc, mult, ctx.rule, ctx.settings.rounding, money_axis_active(ctx.negotiation, ctx.rule))
         if ctx.hard() and cap is not None and total + sum(s for _, s in out.values()) + salary > cap:
             continue
         out[pid] = (years, salary)
@@ -190,7 +229,7 @@ def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mu
 def ai_offers(team: Team, proc, ctx, league_sizes: dict[int, int]) -> dict[str, tuple[int, int]]:
     """AI の 1 ラウンドの提示(選手 ID → (年数, 年俸))。D-261。"""
     items = [(p, proc.fa_info[p.id]["expected"], proc.fa_info[p.id]["calc_salary"], proc.fa_info[p.id]["ai_years"]) for p in proc.fa_pool if proc.fa_info[p.id]["status"] == "open"]
-    return choose_offers(team, items, proc, ctx, league_sizes, round_multiplier(ctx.negotiation, proc.fa_round))
+    return choose_offers(team, items, proc, ctx, league_sizes, round_multiplier(ctx.negotiation, proc.fa_round), lambda pid: star_multiplier(ctx.negotiation, proc.fa_info[pid]["expected"]))
 
 
 def compensation(proc, info: dict, team_id: str) -> None:
@@ -231,7 +270,8 @@ def close_round(league: League, proc, ctx, my_team_id: str | None, my_ai: bool =
             if ctx.hard() and cap is not None and team_salary(team) + salary > cap:
                 continue
             noise = random.Random(derive_seed(proc.seed, f"fa:{p.id}:{tid}:{rnd}")).gauss(0.0, float(fa["noise_sd"]))
-            r = judge(neg, p.preference or {}, years, salary, int(info["calc_salary"]), p.age, _context(p, team, proc, ctx, sizes), ctx.rule, noise) if neg is not None else {"score": 0.0}
+            context = {**_context(p, team, proc, ctx, sizes), "salary_expect": star_multiplier(neg, info["expected"])}  # 主力級の期待(D-322)
+            r = judge(neg, p.preference or {}, years, salary, int(info["calc_salary"]), p.age, context, ctx.rule, noise) if neg is not None else {"score": 0.0}
             if best is None or r["score"] > best[0]:
                 best = (r["score"], tid, years, salary)
         info["offers"] = info.get("offers", 0) + len(offers.get(p.id, {}))
