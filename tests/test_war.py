@@ -155,6 +155,7 @@ def test_war_correlates_with_true_ability(season):
 
 # ---- 画面(③b。D-179):画面の WAR が、確認用スクリプトの値と一致する。読み込んだ後も同じ ----
 
+@pytest.mark.slow
 def test_screen_war_matches_the_script_and_survives_save_load():
     import importlib.util
     import sys

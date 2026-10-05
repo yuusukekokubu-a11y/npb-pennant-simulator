@@ -257,6 +257,7 @@ def operated():
     return g
 
 
+@pytest.mark.slow
 def test_operated_team_goes_through_phases_and_can_resume(operated):
     g = operated
     assert g.status()["offseason"]["active"] and g.status()["offseason"]["phase_label"] == "契約" and not g.status()["can_year_end"]
@@ -351,6 +352,7 @@ def reviewed():
     return g
 
 
+@pytest.mark.slow
 def test_draft_review_is_public_and_excludes_prerun(reviewed):
     g = reviewed
     assert g.review_years() == [2, 3]
@@ -377,6 +379,7 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
         g.draft_review("T99")
 
 
+@pytest.mark.slow
 def test_draft_review_answers_show_truth_only_there(reviewed):
     g = reviewed
     a = answers.draft_review_answers(g, "T02", 2, 1)
@@ -399,6 +402,7 @@ def test_draft_review_answers_show_truth_only_there(reviewed):
         answers.draft_review_answers(g, "T02", 2, 3)
 
 
+@pytest.mark.slow
 def test_v8_save_loads_with_old_method_and_converted_sd():
     """版 8(評価が 1 層)のセーブデータ:ずれの値を 2 層に直し、進行中の手続きと入団時の評価は旧方式(版 1)のまま読む(D-215)。"""
     g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
@@ -531,6 +535,7 @@ def test_roster_ability_table_only_through_answers(release_game):
         answers.roster_ability_table(g, "release", "batter", 3)
 
 
+@pytest.mark.slow
 def test_market_table_marks_candidates_without_stats(release_game):
     g = api.Game(copy.deepcopy(release_game.state), dirty=False)
     v = g.offseason_view()

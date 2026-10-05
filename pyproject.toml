@@ -24,3 +24,6 @@ pennant = ["data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 何も指定しない pytest は速いテストだけ(D-280)。重いテストだけは pytest -m slow、全部は pytest -m ""
+addopts = ["-m", "not slow"]
+markers = ["slow: 重いテスト(1 つで 10 秒以上かかるもの。複数シーズンを回すか、作るのに 15 秒以上かかるモジュール単位の準備(フィクスチャ)を使うもの。指紋の一致の確認は除く。D-280)。GitHub では計算本体が変わった PR と手動の実行で回す"]

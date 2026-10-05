@@ -137,6 +137,7 @@ def test_test_name_field_is_not_autosaved():
     assert 'autocomplete="off"' in field
 
 
+@pytest.mark.slow
 def test_page_shows_the_same_fingerprints_as_the_script(bench_module):
     """ブラウザのページは、PC のスクリプトと同じ関数・同じ文章で指紋を出す(D-089)。"""
     import json
