@@ -673,6 +673,15 @@ check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] &
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
   const vp = page.viewportSize();
+  // 並べ替えた列の ▲▼ は、どの幅でもその見出しの中にある(広い画面で固定をやめた列も)
+  const arrow = await page.evaluate(() => {
+    const a = document.querySelector("#proc-body th.sorted .arrow");
+    if (!a) return null;
+    const r = a.getBoundingClientRect();
+    const t = a.closest("th").getBoundingClientRect();
+    return r.left >= t.left - 1 && r.right <= t.right + 1 && r.top >= t.top - 1 && r.bottom <= t.bottom + 1;
+  });
+  check(arrow === true, `幅 ${vp.width} で、${label}の表の並べ替えた列の ▲▼ が見出しの中にある`);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(400);
