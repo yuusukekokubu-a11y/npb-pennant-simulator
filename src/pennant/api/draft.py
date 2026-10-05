@@ -38,8 +38,8 @@ class DraftMixin:
         """AI の番を、自分の番か段階の終わりまで進める。"""
         state = self.state
         proc = self._proc()
-        if proc.phase not in ("draft", "market"):
-            raise ValueError("今は指名の段階ではありません")
+        if proc.phase != "draft":
+            raise ValueError("今はドラフトの段階ではありません")
         mins, min_batters = self._mins()
         draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, state.my_team_id, mins, min_batters, ctx=self._contract_ctx())
         self.dirty = True
@@ -52,7 +52,7 @@ class DraftMixin:
         team = self._my_team()
         mins, min_batters = self._mins()
         sd = state.scout_sd_map()
-        if proc.phase not in ("draft", "market") or proc.current_team() != team.id or draftmod.phase_finished(proc):
+        if proc.phase != "draft" or proc.current_team() != team.id or draftmod.phase_finished(proc):
             raise ValueError("今は自分の番ではありません(「次の自分の番まで進める」を押してください)")
         player = next((p for p in draftmod.pool_of(proc) if p.id == player_id), None)
         if player is None:
@@ -73,7 +73,7 @@ class DraftMixin:
         proc = self._proc()
         team = self._my_team()
         mins, min_batters = self._mins()
-        if proc.phase not in ("draft", "market") or proc.current_team() != team.id or draftmod.phase_finished(proc):
+        if proc.phase != "draft" or proc.current_team() != team.id or draftmod.phase_finished(proc):
             raise ValueError("今は自分の番ではありません")
         draftmod.pass_turn(proc, team.id, "pass")
         draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters, ctx=self._contract_ctx())

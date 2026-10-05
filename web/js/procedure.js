@@ -1,14 +1,16 @@
-// オフの手続きの枠(段階・状態バー・おまかせ・次の手続きへ・成績つきの選手の表の切り替え)(web/app.js から分けた。保守②。D-291)
+// オフの手続きの枠(段階・状態バー・自球団の状況のパネル・おまかせ・次の手続きへ・指名と入退団の記録)(web/app.js から分けた。保守②。D-291)
 
 import { $, state } from "./core.js";
-import { answer, call, query } from "./backend.js";
+import { call } from "./backend.js";
 import { back, current, openPage, renderCurrent, showScreen } from "./screens.js";
-import { el, playerLink, sortToggle, sortWord, table } from "./parts.js";
+import { el, playerLink, table } from "./parts.js";
 import { renderProgress, setDirty } from "./progress.js";
 import { buildStatsFilters } from "./stats.js";
 import { contractSection, renewAuto } from "./contract.js";
-import { faSection } from "./fa.js";
-import { historyTable, marketSection, poolSection } from "./market.js";
+import { faClose, faSection } from "./fa.js";
+import { draftSection } from "./draft.js";
+import { marketClose, marketSection } from "./market.js";
+import { outlookPanel } from "./decision.js";
 
 // ---- オフの手続き(F3-1。D-201〜D-207) ----
 
@@ -18,9 +20,7 @@ async function procCall(name, args = {}) {
   return r.value;
 }
 
-function scoutCell(sc) {
-  return `${sc.overall_text}`;
-}
+const DECISION_STAGES = ["fa", "draft", "market"]; // 判断の画面(①b):状態バーを押すと自球団の状況のパネルが開く(D-298)
 
 export async function renderProcedure(token) {
   const r = await call("query", { name: "offseason_view", args: {} });
@@ -40,20 +40,28 @@ export async function renderProcedure(token) {
     const o = ps.lastOffer;
     $("proc-message").className = o.accepted ? "message ok" : "message ng";
     $("proc-message").textContent = o.accepted ? `${o.name} は受けました(${o.years} 年・${o.salary.toLocaleString()} 万円)。` : `${o.name} に断られました:${o.reason}。${o.released ? "提示の回数を使い切ったので、自由契約になりました。" : ""}`;
+  } else if (ps.lastRound && v.stage === "fa") {
+    const lr = ps.lastRound;
+    $("proc-message").className = "message ok";
+    $("proc-message").textContent = lr.signed.length ? `ラウンド ${lr.round} の結果:${lr.signed.map((x) => `${x.name} → ${x.team_name}(${x.years} 年・${x.salary_text})`).join("、")}` : `ラウンド ${lr.round} の結果:成立した契約はありません。`;
+  } else if (ps.lastMarket && v.stage === "market") {
+    const mine = ps.lastMarket.signed.filter((x) => x.is_mine);
+    $("proc-message").className = "message ok";
+    $("proc-message").textContent = `市場の結果:契約 ${ps.lastMarket.signed.length} 人。自球団は ${mine.length ? mine.map((x) => `${x.name}(${x.years} 年・${x.salary_text})`).join("、") : "獲得なし"}。`;
   }
-  // 答え合わせモードがオンなら、真の総合値も出す(D-206)
-  let truth = null;
-  if (state.answerLevel > 0) {
-    truth = await answer("procedure_answers", {});
-    if (token !== state.token) return;
-    if (state.answerLevel === 0) truth = null;
+  const outlookBox = $("proc-outlook");
+  outlookBox.replaceChildren();
+  if (ps.outlookOpen && v.my_team && DECISION_STAGES.includes(v.stage)) {
+    const panel = await outlookPanel(token);
+    if (panel === null || token !== state.token) return;
+    outlookBox.replaceChildren(panel);
   }
   const body = $("proc-body");
   let parts = [];
   if (v.stage === "contract") parts = await contractSection(v, token);
   else if (v.phase === "fa") parts = await faSection(v, token);
-  else if (v.phase === "draft") parts = poolSection(v, truth);
-  else if (v.phase === "market") parts = await marketSection(v, truth, token);
+  else if (v.phase === "draft") parts = await draftSection(v, token);
+  else if (v.phase === "market") parts = await marketSection(v, token);
   if (parts === null || token !== state.token) return;
   body.replaceChildren(...parts);
   renderProcedureContracts(v);
@@ -62,8 +70,10 @@ export async function renderProcedure(token) {
   $("proc-history-box").open = false;
 }
 
-// 状態バー(D-271):段階ごとの要約・予算・主ボタン。説明の文は置かない(D-270)
+// 状態バー(D-271、①b):段階ごとの要約・予算・主ボタンと、段階の操作(ラウンドを締める・次の自分の番まで・パス・市場を締める)。
+// FA・ドラフト・市場では、要約を押すと自球団の状況のパネルが開く(D-298)。説明の文は置かない(D-270)
 function renderProcedureBar(v) {
+  const ps = state.proc;
   const mine = v.my_team;
   const c = v.contracts;
   let info = "";
@@ -75,12 +85,23 @@ function renderProcedureBar(v) {
     canNext = canNext && rn.can_next;
   } else if (v.stage === "fa" && v.fa) {
     const f = v.fa;
-    info = f.done ? `FA 終了:宣言 ${f.counts.declared}・契約 ${f.counts.signed}` : `ラウンド ${f.round}/${f.rounds}:宣言 ${f.counts.declared}・契約 ${f.counts.signed}・空き枠 ${f.space ?? "-"}`;
-  } else if (v.stage === "draft" || v.stage === "market") {
+    info = f.done ? `FA 終了:宣言 ${f.counts.declared}・契約 ${f.counts.signed}・市場へ ${f.counts.unsigned}` : `ラウンド ${f.round}/${f.rounds}:宣言 ${f.counts.declared}・契約 ${f.counts.signed}・残り ${f.counts.open}${mine ? `・提示 ${f.offers.length}・空き枠 ${f.space ?? "-"}` : ""}`;
+  } else if (v.stage === "draft") {
     const turn = v.phase_finished ? "終了" : v.is_my_turn ? "あなたの番" : `${(v.order.find((o) => o.team_id === v.current_team) || {}).team_name || ""} の番`;
-    info = `${Math.min(v.round, v.total_rounds)} / ${v.total_rounds} 巡・${turn}・${v.stage === "draft" ? "候補" : "市場"} ${v.stage === "draft" ? v.counts.candidates : v.counts.market} 人${mine ? `・${mine.players}/${mine.max} 人` : ""}`;
+    info = `${Math.min(v.round, v.total_rounds)}/${v.total_rounds} 巡・${turn}${mine ? `・${mine.players}/${mine.max} 人` : `・候補 ${v.counts.candidates} 人`}`;
+  } else if (v.stage === "market" && v.market) {
+    const m = v.market;
+    info = m.done ? `市場 終了:契約 ${m.counts.signed} 人(自球団 ${m.counts.mine})` : `市場 ${m.counts.pool} 人・提示 ${m.counts.offers}・空き枠 ${m.space ?? "-"}`;
   }
-  $("proc-info").textContent = info;
+  const canOutlook = Boolean(mine) && DECISION_STAGES.includes(v.stage);
+  const text = $("proc-info").parentElement;
+  text.classList.toggle("clickable", canOutlook);
+  text.onclick = canOutlook ? () => { ps.outlookOpen = !ps.outlookOpen; renderCurrent(); } : null;
+  text.setAttribute("role", canOutlook ? "button" : "status");
+  text.title = canOutlook ? "押すと自球団の状況(ポジション別の人数・主な選手・空き枠・予算)が開きます" : "";
+  if (canOutlook) text.setAttribute("aria-expanded", String(Boolean(ps.outlookOpen)));
+  else text.removeAttribute("aria-expanded");
+  $("proc-info").textContent = info + (canOutlook ? (ps.outlookOpen ? " ▴" : " ▾") : "");
   const b = c && c.mine;
   const budget = $("proc-budget");
   if (b) {
@@ -92,13 +113,23 @@ function renderProcedureBar(v) {
   }
   $("proc-next").disabled = !canNext;
   $("proc-stage-auto").disabled = state.running;
-  // 契約の段階は「自動案でまとめて更改」もバーに置く(D-272)
+  // 段階の操作もバーに置く(契約:自動案で更改。FA:ラウンドを締める。ドラフト:次の自分の番まで・パス。市場:市場を締める)
   const acts = $("proc-actions");
-  const old = $("renew-auto");
-  if (old) old.remove();
+  for (const id of ["renew-auto", "fa-close", "draft-advance", "draft-pass", "market-close"]) {
+    const old = $(id);
+    if (old) old.remove();
+  }
+  const btn = (id, label, title, onclick, disabled = false) => el("button", { id, type: "button", className: "secondary", title, disabled: disabled || state.running, onclick }, label);
   if (v.stage === "contract" && v.renewal) {
     const rn = v.renewal;
-    acts.prepend(el("button", { id: "renew-auto", type: "button", className: "secondary", title: "自動案でまとめて更改(未提示の全員に、1 年・算定した年俸で提示)", disabled: rn.unoffered === 0 || state.running, onclick: () => renewAuto() }, rn.unoffered ? `自動案で更改(${rn.unoffered})` : "自動案は提示済み"));
+    acts.prepend(btn("renew-auto", rn.unoffered ? `自動案で更改(${rn.unoffered})` : "自動案は提示済み", "自動案でまとめて更改(未提示の全員に、1 年・算定した年俸で提示)", () => renewAuto(), rn.unoffered === 0));
+  } else if (v.stage === "fa" && v.fa && mine && !v.fa.done) {
+    acts.prepend(btn("fa-close", `ラウンド${v.fa.round}を締める`, "AI 球団の提示と合わせて、選手が選びます(結果が出ます)", () => faClose()));
+  } else if (v.stage === "draft" && mine && !v.phase_finished) {
+    if (v.is_my_turn) acts.prepend(btn("draft-pass", "パス", "今の巡は指名しない", () => runProc("pass")));
+    else acts.prepend(btn("draft-advance", "自分の番まで", "次の自分の番まで、AI 球団の指名を進めます", () => runProc("advance")));
+  } else if (v.stage === "market" && v.market && mine && !v.market.done) {
+    acts.prepend(btn("market-close", "市場を締める", "AI 球団の提示と合わせて、選手が選びます(結果が出ます)", () => marketClose()));
   }
 }
 
@@ -133,71 +164,6 @@ function renderProcedureContracts(v) {
 
 export function ceilingText(g) {
   return { S: "S(上位 5%)", A: "A", B: "B", C: "C", D: "D" }[g] || g;
-}
-
-// ---- 自由契約・市場の、成績つきの選手の一覧(D-222)。表の部品(table・sortToggle)と個人成績と同じ並び順の仕組みを使う ----
-
-const POSITION_GROUPS = {
-  batter: [["", "すべての野手"], ["C", "捕手"], ["IF", "内野手"], ["OF", "外野手"]],
-  pitcher: [["", "すべての投手"], ["SP", "先発"], ["RP", "救援"]],
-};
-export const SCOUT_SORT_KEYS = ["overall", "ceiling"]; // 評価の列は計算本体の表にないので、画面側で並べる
-
-export function inGroup(position, group) {
-  if (!group) return true;
-  if (group === "IF") return ["1B", "2B", "3B", "SS"].includes(position);
-  if (group === "OF") return ["LF", "CF", "RF"].includes(position);
-  return position === group;
-}
-
-// 成績つきの表を計算本体から受け取る。能力(答え合わせモード)のときだけ answer を呼ぶ
-export async function fetchRosterTable(phase) {
-  const rt = state.rosterTable;
-  rt.phase = phase;
-  if (rt.kinds[phase] === "ability" && state.answerLevel === 0) rt.kinds[phase] = "basic";
-  const kind = rt.kinds[phase];
-  const sortBy = rt.sortBy[rt.role];
-  const abilityKeys = state.answerLevel > 0 ? (await answer("ability_columns", { role: rt.role })).map((c) => c.key) : [];
-  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(個人成績と同じ)。評価の列は画面側で並べる
-  const usable = sortBy.key && !SCOUT_SORT_KEYS.includes(sortBy.key) && (kind === "ability" || !abilityKeys.includes(sortBy.key));
-  const args = { phase, role: rt.role, kind, sort: usable ? sortBy.key : null, order: usable ? sortBy.order : null, season: rt.season };
-  const data = kind === "ability" ? await answer("offseason_ability_table", { ...args, level: state.answerLevel }) : await query("offseason_table", args);
-  rt.shownSort[rt.role] = { key: data.sort.key, order: data.order };
-  return data;
-}
-
-// 切り替え(野手・投手 / 基本・セイバー・WAR・能力 / シーズン / ポジション)
-export function rosterControls(data) {
-  const rt = state.rosterTable;
-  const seg = (id, items, value, onPick) => {
-    const box = el("div", { className: "seg", id, role: "group" });
-    for (const [k, label] of items) box.append(el("button", { type: "button", "aria-pressed": String(k === value), dataset: { value: k }, onclick: () => onPick(k) }, label));
-    return box;
-  };
-  const kinds = [["basic", "基本"], ["saber", "セイバー"], ["war", "WAR"]];
-  if (state.answerLevel > 0) kinds.push(["ability", "能力"]);
-  const out = [
-    seg("roster-role", [["batter", "野手"], ["pitcher", "投手"]], rt.role, (k) => { rt.role = k; rt.group = ""; renderCurrent(); }),
-    seg("roster-kind", kinds, rt.kinds[rt.phase], (k) => { rt.kinds[rt.phase] = k; renderCurrent(); }),
-  ];
-  const filters = el("div", { className: "filters" });
-  if (data.seasons.length > 1) {
-    filters.append(el("select", { id: "roster-season", "aria-label": "シーズンの選択", onchange: (e) => { rt.season = e.target.value; renderCurrent(); } }, ...data.seasons.map((x) => el("option", { value: x.key, selected: x.key === rt.season }, x.label))));
-  }
-  filters.append(el("select", { id: "roster-group", "aria-label": "ポジションの絞り込み", onchange: (e) => { rt.group = e.target.value; renderCurrent(); } }, ...POSITION_GROUPS[rt.role].map(([k, label]) => el("option", { value: k, selected: k === rt.group }, label))));
-  out.push(filters);
-  return out;
-}
-
-export function rosterSortLine(data) {
-  const extraNote = data.extra_column ? `並び順に使っている「${data.extra_column.label}」はこの表にない列なので、名前の隣に固定して出しています。` : "";
-  return el("p", { className: "muted small", id: "roster-sort-line" }, `並び順:${data.sort.label}(${sortWord(data.sort, data.order)})。見出しを押すと並べ替え、もう一度押すと逆の順になります。${extraNote}`);
-}
-
-export function rosterSort(key) {
-  const rt = state.rosterTable;
-  sortToggle(rt.sortBy[rt.role], rt.shownSort[rt.role], key);
-  renderCurrent();
 }
 
 export async function runProc(name, args = {}, onResult = null) {
@@ -245,6 +211,8 @@ export async function procAuto() {
 
 // 「この段階をおまかせ」(主ボタン。D-271):今の段階だけを AI の方針で進め、AI が自球団の分として行ったことの一覧を出して、次の段階の入口で止まる
 export async function procStageAuto() {
+  const ask = { draft: "ドラフトの残りの自球団の番を、AI の方針で指名します(やり直せません)。よろしいですか?", fa: "FA の残りのラウンドで、自球団も AI の方針で提示します(やり直せません)。よろしいですか?" }[state.proc.stage];
+  if (ask && !confirm(ask)) return; // 確認はドラフトと FA の段階だけ(D-284)
   state.proc.lastOffer = null;
   state.proc.renewalOpen = null;
   await runProc("stage_auto", {}, (r) => { state.proc.autoLog = r.auto_log || null; });
@@ -253,9 +221,21 @@ export async function procStageAuto() {
 // 「次の手続きへ」(D-271):自分の操作を終えて進む(AI の代行はしない)
 export async function procNext() {
   const stage = state.proc.stage;
-  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: "ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?", market: "市場の自球団の残りの番は、すべてパスして、手続きを完了します。よろしいですか?" }[stage];
+  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: "ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?", market: "市場を今の提示で締めて(提示していなければ、自球団は獲得なし)、手続きを完了します。よろしいですか?" }[stage];
   if (ask && !confirm(ask)) return;
   state.proc.lastOffer = null;
+  state.proc.lastRound = null;
+  state.proc.lastMarket = null;
   state.proc.autoLog = null;
   await runProc("next");
+}
+
+// 指名・自由契約・市場の履歴(閉じた形で、表の下に置く)
+function historyTable(picks, released) {
+  const rows = [];
+  for (const x of released) rows.push({ k: "自由契約", team: x.team_name, name: x.name, pos: x.position_label, age: x.age, mine: x.is_mine });
+  for (const x of picks) rows.push({ k: x.phase === "draft" ? `ドラフト ${x.round} 巡` : "市場", team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
+  if (!rows.length) return el("p", { className: "muted small" }, "まだありません。");
+  const body = el("tbody", {}, ...rows.map((r) => el("tr", { className: r.mine ? "mine" : "" }, el("td", {}, r.k), el("td", {}, r.team), el("td", {}, r.name), el("td", {}, r.pos || ""), el("td", {}, r.age ? `${r.age}歳` : ""))));
+  return el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "手続き"), el("th", {}, "球団"), el("th", {}, "選手"), el("th", {}, "ポジション"), el("th", {}, "年齢"))), body));
 }

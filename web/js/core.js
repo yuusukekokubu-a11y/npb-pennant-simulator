@@ -21,7 +21,7 @@ export const $ = (id) => document.getElementById(id);
 
 // オフの手続きの画面の状態の初期値(新規開始・読み込みのたびに作り直す)
 export function freshProc() {
-  return { selected: new Set(), sort: "overall", position: "", open: null, renewalOpen: null, phase: null, stage: null, lastOffer: null, faOpen: null, faFilter: "open", lastRound: null, autoLog: null, contract: { group: "all", kind: "war", status: "all", season: "current", sortBy: { key: null, order: null }, shown: null } };
+  return { selected: new Set(), open: null, renewalOpen: null, phase: null, stage: null, lastOffer: null, faOpen: null, lastRound: null, lastMarket: null, autoLog: null, outlookOpen: false, decision: {}, contract: { group: "all", kind: "war", status: "all", season: "current", sortBy: { key: null, order: null }, shown: null } };
 }
 
 export const state = {
@@ -46,8 +46,6 @@ export const state = {
   gamesDay: null,
   proc: freshProc(), // オフの手続きの画面の状態(F3-1。契約の画面の絞り込み・並び順・開いた行は D-272)
   review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
-  // 自由契約・市場の表の状態(D-222)。手続きの画面を行き来しても保つ。sortBy / shownSort は個人成績と同じ仕組み(D-131)
-  rosterTable: { role: "batter", kinds: { renewal: "war", release: "basic", fa: "war", market: "war" }, season: "current", group: "", sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } }, shownSort: { batter: null, pitcher: null } }, // 成績の種類は段階ごと(市場の初期値は WAR。D-240)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 

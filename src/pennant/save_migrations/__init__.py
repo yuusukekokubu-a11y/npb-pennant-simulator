@@ -20,5 +20,6 @@ from .v08_to_v09 import v8_to_v9
 from .v09_to_v10 import v9_to_v10
 from .v10_to_v11 import v10_to_v11
 from .v11_to_v12 import v11_to_v12
+from .v12_to_v13 import v12_to_v13
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: v1_to_v2, 2: v2_to_v3, 3: v3_to_v4, 4: v4_to_v5, 5: v5_to_v6, 6: v6_to_v7, 7: v7_to_v8, 8: v8_to_v9, 9: v9_to_v10, 10: v10_to_v11, 11: v11_to_v12}
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: v1_to_v2, 2: v2_to_v3, 3: v3_to_v4, 4: v4_to_v5, 5: v5_to_v6, 6: v6_to_v7, 7: v7_to_v8, 8: v8_to_v9, 9: v9_to_v10, 10: v10_to_v11, 11: v11_to_v12, 12: v12_to_v13}

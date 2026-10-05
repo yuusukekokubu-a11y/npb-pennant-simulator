@@ -273,7 +273,7 @@ def procedure_answers(game: Game, level: int = 1) -> dict:
     proc = game.state.procedure
     if proc is None:
         return {"available": False, "players": {}}
-    players = list(proc.candidates) + list(proc.market)
+    players = list(proc.candidates) + list(proc.market) + list(proc.fa_pool)
     if game.state.my_team_id:
         players += list(game._team(game.state.my_team_id).players)
     out = {}
@@ -361,9 +361,12 @@ def negotiation_answers(game: Game, level: int = 1) -> dict:
 
 
 def fa_answers(game: Game, level: int = 1) -> dict:
-    """FA の段階の選手の志望の重み(答え合わせ用。F3-2c)。"""
+    """FA と市場の段階の選手の志望の重み(答え合わせ用。F3-2c。市場は ①b の提示の方式。D-300)。"""
     _check_level(level)
     proc = game.state.procedure
+    if proc is not None and proc.phase == "market":
+        players = {p.id: p for p in proc.market}
+        return {"available": True, "level": level, "players": {pid: preference_rows(game, p) for pid, p in players.items()}, "note": "志望の重み(合計 100%)。"}
     if proc is None or not proc.fa_info:
         return {"available": False, "players": {}}
     players = {p.id: p for p in game.offseason_players("fa")}

@@ -330,7 +330,7 @@ class ContractMixin:
         return cells
 
     def contract_table(self, group: str = "all", kind: str = "war", sort: str | None = None, order: str | None = None, season: str | None = None, status: str = "all") -> dict:
-        """契約の画面の表(公開用。D-272):自球団の全選手。列は 名前・選んだ指標(既定は WAR)・ポジション・年齢・今の契約・今回の提示・状態・出場
+        """契約の画面の表(公開用。D-272):自球団の全選手。列は 名前・選んだ指標(既定は WAR)・状態・今回の提示・ポジション・年齢・今の契約・出場(D-284)
         (投手・捕手・内野手・外野手を選んだときは、選んだ種類の成績の列も)。初期は WAR の低い順。"""
         proc = self._proc()
         if stage_of(proc.phase) != "contract":

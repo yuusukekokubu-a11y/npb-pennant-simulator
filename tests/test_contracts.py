@@ -247,7 +247,7 @@ def test_save_round_trip_and_v9_migration(games):
     g.year_end()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 12 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
+    assert SAVE_FORMAT_VERSION == 13 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
     assert all(p.contract == q.contract for p, q in zip(g.state.league.all_players(), again.league.all_players()))
     assert again.procedure.rate == g.state.procedure.rate and len(again.procedure.renewals) == len(g.state.procedure.renewals)
     # 版 9(契約なし)として読む:ルールは「なし」、契約は算定で補い、残りは 1〜3 年
