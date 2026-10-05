@@ -157,7 +157,23 @@
   .status-bar .bar-text { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); font-size: var(--font-tiny); }
   .status-bar .bar-actions { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
   .status-bar .bar-actions button { flex: 1 1 auto; min-width: 0; padding: var(--space-2) var(--space-1); font-size: var(--font-tiny); min-height: 40px; white-space: nowrap; }
-  #proc-message:empty, #proc-autolog:empty { display: none; }
+  #proc-message:empty, #proc-autolog:empty, #proc-outlook:empty { display: none; }
+  /* 判断の画面(①b。D-296〜D-298):状態バーの要約は押すと自球団の状況のパネルを開く。手薄なポジション(◆)と一軍の枠の目安に入る序列(●)の印 */
+  .status-bar .bar-text.clickable { cursor: pointer; }
+  .status-bar .bar-text.clickable #proc-info { color: var(--accent); }
+  .outlook-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2); margin: var(--space-1) 0; font-size: var(--font-small); }
+  .outlook-panel p { margin: 0 0 var(--space-1); }
+  .thin { color: var(--warn-line); font-weight: bold; }
+  .depth-in { color: var(--ok); }
+  /* オフの手続きの画面は、表を上に寄せる(表の上端を最初の画面の 4 割以内に。D-270、①b) */
+  #screen-procedure .page-head { margin: 0 0 var(--space-1); }
+  #screen-procedure .steps { margin: var(--space-1) 0; }
+  #proc-autolog details { margin: 0; font-size: var(--font-small); line-height: 1.4; }
+  #proc-autolog summary { min-height: 32px; }
+  #proc-message { margin: var(--space-1) 0; font-size: var(--font-small); }
+  #screen-procedure .page-head .back { min-height: 40px; padding: var(--space-1) var(--space-3); }
+  #screen-procedure .steps li { padding: var(--space-1) 2px; }
+  #screen-procedure .status-bar .bar-actions button { min-height: 36px; }
   #screen-procedure .page-head h1 { font-size: 1.4rem; }
   .compact-filters { display: flex; gap: var(--space-1); margin: var(--space-1) 0; }
   .compact-filters select { flex: 1 1 0; min-width: 0; font-size: var(--font-small); padding: var(--space-1); min-height: 36px; }
@@ -479,6 +495,7 @@
       <button id="proc-next" class="secondary">次の手続きへ</button>
     </div>
   </div>
+  <div id="proc-outlook"></div>
   <p class="message" id="proc-message" role="status" aria-live="polite"></p>
   <div id="proc-autolog"></div>
   <div id="proc-body"></div>
