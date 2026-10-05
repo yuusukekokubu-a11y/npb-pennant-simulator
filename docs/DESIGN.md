@@ -58,7 +58,7 @@ src/pennant/
   newgame.py          新規リーグの作成・球団名の入力の検証・画面用の選手情報
   savegame.py         セーブデータ(.sav)の書き出しと、検証つきの読み込み(読み込みの順序と、旧版の変換の呼び出し)
   save_checks.py      読み込みの点検と組み立ての部品(問題を集めて場所と理由を示す。保守②で savegame.py から分けた)
-  save_migrations/    旧版の変換。版ごとに 1 ファイル(v01_to_v02.py 〜 v11_to_v12.py)。__init__.py の MIGRATIONS に並べる(保守②)
+  save_migrations/    旧版の変換。版ごとに 1 ファイル(v01_to_v02.py 〜 v12_to_v13.py)。__init__.py の MIGRATIONS に並べる(保守②)
   api/                画面から呼ぶ操作の関数(公開用の情報だけを返す。D-107、D-108)。保守②で分野ごとに分けた(D-291):
     __init__.py         Game(下の部品を合わせた 1 つのクラス)と、分ける前の api.py と同じ名前の入口
     common.py           共通の部品(表示用の名前・指標の列・成績の集計の使い回し・シーズンのまとまり)
@@ -70,7 +70,9 @@ src/pennant/
     players.py          選手のページ
     contract.py         契約(予算・契約更改・契約の画面の表・自由契約)
     fa.py               FA
-    draft.py            ドラフトと市場・ドラフトの振り返り・入退団の記録
+    draft.py            ドラフト(指名の番)・ドラフトの振り返り・入退団の記録
+    decisions.py        判断の画面の表(FA・ドラフト・市場)・加入後の序列・手薄なポジション・自球団の状況(①b。D-296〜D-299、D-303、D-304)
+    market.py           自由契約市場の提示・取り消し・締める(①b。D-300)
     offseason.py        オフの手続きの流れ(段階・次の手続きへ・おまかせ・オフの結果)
   answers.py          答え合わせ用の関数(能力の表・1人分・球場の真の倍率。公開用の関数とは別。D-108、D-114、D-138)
   parks.py            球場の倍率の割り当て(別の乱数。整数の千分率。D-136、D-137)
@@ -79,7 +81,10 @@ src/pennant/
   war.py              WAR の計算(第3弾③a。D-167〜D-173)
   offseason.py        年度の確定の処理(加齢・能力の更新・引退・補充。F2。D-184〜D-187)
   scouting.py         スカウト評価(推定値・ふれ幅・天井。球団ごとのずれ。2 層の見誤り。F3-1。D-199、D-200、D-212〜D-215)
-  draft.py            オフの手続き(自由契約・ドラフト・市場・自動補充。AI の判断。F3-1。D-201〜D-205)
+  procedure.py        オフの手続きの土台(段階・設定・人数の規則・手続きの状態・候補と順番・スカウト評価・AI の自由契約と選び方・入団と自由契約。①b で draft.py から分けた。D-302)
+  contract_stage.py   オフの手続きの契約の段階(契約の文脈・最初の契約の処理・更改の交渉・予算超過の解消・契約の段階の終わり。D-302)
+  market.py           自由契約市場の提示の方式(FA と同じ考え方で 1 ラウンド。①b。D-300)
+  draft.py            オフの手続きの指名と完了(指名の番・自動補充・全球団 AI の手続き。土台・契約の段階の名前もここから使える。D-302)
   contracts.py        契約と年俸(見込みの WAR・年俸の算定・契約年数・単価・予算・お金のルール。F3-2a。D-230〜D-236)
   negotiation.py      契約更改と志望の判定(志望の重み・満足度・受諾の判定・理由・AI の更改の方針。F3-2b。D-243〜D-252)
   fa.py               FA(一軍登録のシーズンの数え方・FA 権・宣言・提示ラウンド制の FA 市場・AI の提示。F3-2c。D-258〜D-264)
@@ -115,7 +120,8 @@ web/js/                              画面の処理(ES モジュール:import �
   core.js 定数・画面の状態(state)・$ / backend.js 裏の Python とのやり取り・問い合わせの使い回し・待ち時間の表示 /
   screens.js 画面の切り替え / parts.js 共通の部品(表・リンク・試合のカード・並べ替えの向き)/ progress.js 進行・順位表・進める /
   stats.js 成績 / games.js 試合 / player.js 選手のページ / team.js チームと球場 / review.js ドラフトの振り返り /
-  procedure.js オフの手続きの枠(段階・状態バー・おまかせ)/ contract.js 契約 / fa.js FA / market.js ドラフトと市場の候補 /
+  procedure.js オフの手続きの枠(段階・状態バー・おまかせ)/ decision.js 判断の画面の共通の部品(①b)/ contract.js 契約 / fa.js FA /
+  draft.js ドラフト / market.js 市場(①b で draft.js と分けた)/
   yearend.js 年度の確定とオフの結果 / menu.js メニュー(解説・答え合わせモード)/ newgame.js 新規開始 / files.js 保存と読み込み
 web/dev/                             開発者向けの測定ページ(技術検証。index.html・app.js・worker.js・bench.py。D-111)
 .github/workflows/pages.yml          _site/ を GitHub Pages に公開する自動処理
@@ -126,16 +132,10 @@ web/dev/                             開発者向けの測定ページ(技術検
 ### 2.1 ファイルの大きさと、どこに何を書くか(保守②。D-288、D-291)
 - src と web の 1 ファイルは 800 行以内を目安にする。超えたら分けるのを基本にし、分けないときは下の表に理由を書く(tests と scripts は目安の対象外)。
 - 画面から呼ぶ関数を足すときは、`src/pennant/api/` の分野の合うファイルの Mixin(機能ごとに分けたクラスの部品)に足す。合うファイルがなければ、ファイルを足して `api/__init__.py` の `Game` の部品の並びと説明の一覧に加える。答え合わせ用の関数は今までどおり `answers.py`。
-- 画面の処理は、画面ごとの `web/js/*.js` に書く。2 つ以上の画面で使う部品は `parts.js`、画面の状態の初期値は `core.js` の `state`、裏とのやり取りは `backend.js`。ボタンと処理のつなぎは入口の `app.js`。新しいファイルは `app.js` か使う側から import し、`scripts/build_web.py` は `web/js/` の全部を写す。
+- 画面の処理は、画面ごとの `web/js/*.js` に書く。2 つ以上の画面で使う部品は `parts.js`(判断の画面の表・絞り込み・提示のパネルは `decision.js`)、画面の状態の初期値は `core.js` の `state`、裏とのやり取りは `backend.js`。ボタンと処理のつなぎは入口の `app.js`。新しいファイルは `app.js` か使う側から import し、`scripts/build_web.py` は `web/js/` の全部を写す。
 - 保存形式を新しくするときは、`save_migrations/` に `vNN_to_vMM.py` を足して `MIGRATIONS` に加え、点検は `save_checks.py`、読み込みの順序は `savegame.py` に書く。
 
-800 行を超えるファイル(src・web。保守②の後):
-
-| ファイル | 行数 | 分けない理由 |
-| --- | --- | --- |
-| `src/pennant/draft.py` | 1029 | オフの手続きの計算本体。段階の進行・AI の判断・契約の扱いが互いに呼び合っていて、分けると互いを読み込み合う形(循環)になり、関数の置き場所を組み直す必要がある。超過は 29 行で、次の ①b・② は画面側の依頼なので、次に手続きの計算を変える依頼のときに分ける。 |
-- 乱数はすべて `random.Random(シード)` から取る。同じシードなら同じ結果になる(D-006)。
-- 依存ライブラリは使わない(Python 標準ライブラリのみ)。テストには pytest を使う。
+800 行を超えるファイル(src・web):①b の後はない(保守②で残した `src/pennant/draft.py` は、①b で手続きの土台・契約の段階・市場・指名と完了に分けた。D-302)。
 
 ## 3. データ設計
 
@@ -308,6 +308,7 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **契約更改と志望**(F3-2b。D-243〜D-253。`negotiation.py`):`NegotiationSettings`(`data/negotiation.json`)。軸は設定の `axes`(キー → 名前・理由の文・満足度の種類 `kind`(salary_ratio / depth / standing)・重みの分布の形・軸の強さ・お金のルールが必要か)で、種類ごとの満足度は `satisfaction` が kind で分けるので、軸を足すときは設定を書くだけ(新しい種類のときだけ関数を足す)。選手の志望 `Player.preference`({軸: 重み}。隠し情報)は `draw_preference(選手 ID, リーグのシード, 設定)` が `derive_seed(リーグのシード, "preference:<選手 ID>")` から引く(選手 ID だけで決まるので、付ける時期によらず同じ値。`ensure_preferences` を新規開始・手続きの開始・自動補充・読み込みで呼ぶ)。判定 `judge(設定, 志望, 年数, 年俸, 自動案の年俸, 年齢, 文脈, お金のルール, 乱数)` は 受ける/断る・理由の軸・点数・満足度を返す(点数と満足度は画面に出さない)。出場機会軸の評価は契約と同じ評価(`ContractContext.scout`)で、`depth_ranks` が手続きの最初に数えて交渉の文脈に保存する(保存・再開しても同じ答え)。勝利軸の順位は `OffseasonProcedure.ranks`(年度の確定で公式の順位を入れる。事前運転では空で 0)。乱数は `noise_for` の `derive_seed(手続きのシード, "negotiation:<選手 ID>")` の 1 つだけで、同じ提示には同じ答え。手続きは `OffseasonProcedure.negotiations`(選手 ID → {球団・名前・前の年俸・自動案の年俸・AI の年数・見込み・文脈・状態(pending / accepted / released)・提示の履歴 [{年数・年俸・受けたか・理由}]})を持つ。`draft.apply_contracts_start` が満了者全員の交渉を作り、AI 球団は `ai_negotiate_entry`(D-251)で最後まで進める。あなたの球団は `make_offer`・`release_entry` で 1 人ずつ(`api.offseason_offer` などが入口)、「自動案でまとめて更改」は未提示の全員に自動案。標準以上で算定より高い年俸は `projected_total`(見込みの総年俸)で上限を確かめる。受けた選手は `set_contract(..., "renew", offers=提示回数)`、自由契約は `release_players`(履歴の印 note="negotiation")。終わった手続きの交渉は `Game.last_negotiations` に残す(保存しない。指紋 (p) と集計用)。
 - **オフの流れへの組み込み**(D-235):`start_procedure` の直後に `draft.apply_contracts_start`(単価を求め、全球団の満了者を算定で更改。結果は `OffseasonProcedure.renewals`。標準以上なら AI 球団の `resolve_overrun`(AI 球団:見込みの WAR あたりの年俸が高い順に、最低人数を守って自由契約。`proc.budget_releases`)。あなたの球団の超過は、自由契約の段階で手動(`offseason_next` は超過中は拒む。`offseason_auto` は AI と同じ)。ドラフトの指名は巡ごとの年俸(標準以上で上限を超えるならパス。note="budget")、市場の獲得は算定した年俸(上限を超えるなら AI は選ばない、あなたは拒まれる)、自動補充は最低年俸(予算に関わらず)。手放した選手の契約は消える。標準・きびしいでは事前運転も同じ流れ(履歴がないので評価から算定。超過の解消が AI の判断に入る)。なし・ゆるいでは事前運転は契約を扱わず(AI の判断が変わらない。D-237。時間も短い)、新規開始の最後に `initialize_contracts` が全選手の契約を評価から算定して付ける(残り年数は `contract:init-years` の乱数で 1〜契約年数。標準以上は上限に収まるよう最低年俸より上の分を比例で縮める)。
 - **オフの手続きの段階と、おまかせ(UI の整理①a。D-271・D-272)**:内部の段階 `PHASES`(renewal・release・fa・draft・market・done)は保存形式のため残し、画面の段階 `STAGES`(contract・fa・draft・market・done)に `stage_of` で対応させる(renewal と release はどちらも「契約」)。`draft.apply_contracts_start` は交渉までにし、AI 球団の予算超過の解消と自由契約は `draft.finish_contract_stage`(契約の段階の終わり。`my_ai` なら自球団の残りの交渉・超過の解消・自由契約も AI と同じ方針)で行う。AI 球団の処理の順序(交渉 → 超過の解消 → 自由契約)は変わらないので、全球団 AI の指紋 (m)〜(q) はこの移動では変わらない。`api.Game.offseason_next` は自分の操作を終えて進む(契約:未決定と上限超過を拒む → `finish_contract_stage(my_ai=False)`。FA:`run_all_rounds(my_ai=False)` で自球団は追加の提示をしない。ドラフト・市場:`_run_turns(my_ai=False)` で自分の番はパス)。`offseason_stage_auto` は今の段階だけを AI の方針で(自球団も)進め、自球団の分の行動の一覧(`auto_log`)を返す。`offseason_auto` は全部(「全部おまかせ」。メニューの中)。契約の画面の表は `api.Game.contract_table(group, kind, sort, order, season, status)`(自球団の今の選手と、この手続きで離れた選手。列は 選んだ指標・ポジション・年齢・今の契約・今回の提示・状態・出場。「全員」は共通の列だけ、ポジションを選ぶと種類の成績の列も)。「自由契約にする」は `offseason_contract_release`(交渉中なら交渉をやめる、契約が残るなら残りの契約を消す)。画面は状態バー(要約・予算・主ボタン)、段階のタブ 5 つ(折り返さない)、説明ブロックなし(D-270)。
+- **市場の提示の方式と判断の画面(UI の整理①b。D-296〜D-305)**:市場は `market.close_market`(FA の `fa.close_round` と同じ考え方で 1 ラウンド)。あなたの提示は `OffseasonProcedure.market_offers`、AI は `market.ai_market_offers`(FA と共通の `fa.choose_offers`:見込みの WAR が設定値以上・一軍に入る見込み・1 球団 3 人まで・空き枠と予算)。算定年俸と見込みは提示する球団の評価(`market.offer_terms` = `ContractContext.salary`)。選手は受けた提示の年俸の高い順に、`negotiation.judge`(出場機会と勝利は提示した球団での見込み。乱数は `derive_seed(手続きのシード, "market:<選手>:<球団>")`)で最も点の高い提示を選び、0 以上なら `procedure.join` で入団して `set_contract(..., "market")`。成立は `picks`(phase="market"・round=1)と `market_results` に残す。`market.uses_offers(ctx)`(志望の設定があるか)が偽の手続き(事前運転)は、今までの順番の方式(`draft.run_ai_turns`)。画面の表は `api.Game.decision_table(stage, group, kind, sort, order, season, show)`:列は段階ごと(`api/decisions.py` の `STAGE_COLUMNS`)、「全員」は WAR(野手は WAR、投手は失点版)と共通の列、ポジションを選ぶと種類の指標の列も。並べ替えは列のキー(見出しのタップ)で、値のない行は下。加入後の序列 `_depth` は志望の出場機会の軸と同じ数え方(`fa._context` の rank + 1)。手薄なポジション `_thin_positions`(D-303)。自球団の状況は `team_outlook`。画面は `web/js/decision.js`(絞り込みの 1 行・名前と並べ替えた列を固定する表・自球団の状況のパネル・提示のパネル・結果の一覧)を、`fa.js`・`draft.js`・`market.js` が使う。状態バー(`procedure.js`)に段階の操作を置き、要約を押すと自球団の状況のパネルが開く。
 - **表の部品(`web/js/parts.js` ほか。D-223)**:個人成績の表の仕組み(見出しの並べ替え、固定列、並べ替えた指標の固定表示、並び順の保持 `sortToggle`)を `statsTable()` に切り出し、個人成績・自由契約・市場・ドラフトの振り返りで共有する。幅に応じた表示は `fluid` の印を付けた表だけに適用する:画面の幅が `WIDE_MIN_WIDTH`(仮置き。9 章)以上なら `<html>` に `wide` の印が付き、`fluid` の表は横スクロールなしで全列を出す(固定列も解除)。既存の表(個人成績・チーム・順位)には付けない(デザインの見直しの第 2 段階で扱う)。固定列の幅と位置(D-267・D-268):名前の列の幅と、その右に固定する指標の列の位置は、CSS の変数 `--table-name-w` の 1 つの値で決め、見出しと本体で同じ値を使う(`box-sizing: border-box` で、余白を含めた幅)。以前は `9em` と書いていたため、文字の大きさが違う見出し(0.8rem)と本体(0.92rem)で幅が 115px と 132px に分かれ、横にずらすと固定列の線が 17px ずれていた。並べ替えた列は、見出しの ▲▼ を別の要素(`.arrow`)にして列の右の余白(`--table-sort-mark-w`)に置き、本体の同じ列にも `sorted` の印を付けて同じ余白にする(▲▼ を除いた見出しの文字の右端と、数値の右端がそろう)。固定列のすぐ右の列は、左の余白を `--table-first-scroll-gap` にする(固定しない広い画面の `fluid` の表では、ほかの列と同じ)。そろいは `scripts/check_table_align.mjs` がブラウザで要素の位置を測って確かめる(幅 360・390・412・768・1280。固定列の線 1px 以内、見出しと数値の右端 2px 以内、余白 8px 以上)。修正後の画面の写し(架空のデータ)は `docs/design/table-align-*.png`。
 - 指紋 (n):固定のシードで、観戦のみ(全球団 AI)のオフの手続きを 2 回行った後の、選手(年齢・能力)、入団時の評価、指名・自由契約の履歴。形式 15(2 層の評価。D-212)で (a)〜(m) も変わった(事前運転が評価を使うため。(i) 球場の倍率だけ同じ)。
 - **事前運転と校正**(D-034 の完成形。D-190、D-197。`newgame.new_league(prerun=True)`):初期選手の生成 → `offseason.prerun(league, seed, ...)`(`run_offseason` を `prerun_years` 回。乱数は `derive_seed(リーグのシード, "prerun:<年>")`。新人の ID は `B<年>R<番号>`。履歴は作らない)→ `offseason.apply_calibration(league, calibration)`(強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を年齢カーブで出し直す)→ 試運転の基準値 → 1 シーズン目。校正の定数は `data/offseason.json` の `calibration`(`scripts/calibrate.py` で求める)。`GameState.calibration` に新規開始時の定数を持ち、その後の新人(`make_rookie(potential_shift=…)`)にも足す。引退の判定(能力の分)は、総合値から定数を引いた校正前の目盛りで行う。旧版のセーブデータは定数 0(校正なし)で続ける。保存形式は版 7。版 8(F3-1):`scout_level`(ずれの段階)、`scout_sd`(球団ごとの値)、`procedure`(オフの手続きの状態)、`transactions`(指名・自由契約の履歴)、選手の `scouting`(入団時の評価)。版 7 以前は、段階「中」・手続きなしとして読み、次の年度の確定から新しい手続きで進む。版 9(D-215):ずれの段階の設定が `{common, item}` の 2 つの値になり、球団ごとの値 `scout_sd` も同じ形。版 8 の 1 つの数 v は共通 0.8v・項目ごと 0.6v(合計は v のまま)として読み、設定の段階の値は今の設定ファイルに置き換える。版 8 の手続きと入団時の評価は方式の版 1 として読む(進行中の手続きは旧方式のまま終える)。
@@ -565,6 +566,13 @@ F2 の実測(`scripts/inspect_multiyear.py`。世界 5 × 30 年、リーグ 1�
 | AI が狙う見込みの WAR | 0.5 以上 | 控え選手には提示しない |
 | 選手の判定の乱数 | 標準偏差 0.1(提示ごと) | 同じくらいの提示の間で決めるため |
 | 初期値の補い方 | 21 歳から数えて、一軍の選手は 0.7、ほかは 0.25 の確率 | D-264 |
+
+### 判断の画面(`src/pennant/api/decisions.py`。①b)
+
+| 項目 | 値 | 理由 |
+| --- | --- | --- |
+| 手薄の印:人数の不足(`THIN_SHORT`) | 人数の目安より 2 人以上少ない | 目安の合計が 70 人なので、1 人の差はどこかに必ず出る(D-303) |
+| 手薄の印:一軍相当の見込み(`THIN_BOTTOM`) | 自球団より大きい球団が 9 つ以上(下位 4 球団) | 依頼の例「一軍相当の選手の見込みの WAR」から決めた仮置き(D-303) |
 
 ### オフの手続きとスカウト評価(`src/pennant/data/draft.json`。F3-1)
 | 項目 | 仮置きの値 | 理由 |
