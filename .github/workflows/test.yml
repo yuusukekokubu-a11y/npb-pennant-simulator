@@ -1,9 +1,11 @@
-# CI(GitHub 上で自動的にテストを走らせる仕組み)。回し方は D-279〜D-281:
+# CI(GitHub 上で自動的にテストを走らせる仕組み)。回し方は D-279〜D-281・D-285・D-287:
 # - PR:速いテスト(何も指定しない pytest)を 3 つの版(3.10・3.12・3.14)で回す。指紋の一致の確認もここに入る(D-281)。
 #   計算本体(scripts/ci_needs_slow.py の範囲)が変わった PR だけ、重いテスト(pytest -m slow)も 3.12 で回す。
 # - main への取り込み後:速いテストだけを 3.12 で回す。
 # - 手動の実行(Actions の画面の「Run workflow」):速いテストと重いテストを 3.12 で回す。
 # - 同じ PR を出し直したときは、古い実行を止める。
+# - 待ち時間を短くするため、1 つの版の速いテストを 3 つのジョブ(指紋の一致の確認・a・b)に、重いテストも 3 つのジョブに分けて、
+#   同時に走らせる(D-285)。分け方は scripts/ci_groups.py(どこにも入らないテストは「残り全部」のジョブに入る)。
 # 秘密情報は使わない。権限は読み取りのみ。外部の部品(Action)は今までと同じ 2 つだけ。
 name: test
 
@@ -22,13 +24,14 @@ concurrency:
 
 jobs:
   pytest:
-    name: pytest (${{ matrix.python-version }})
+    name: pytest (${{ matrix.python-version }}, ${{ matrix.group }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # PR は 3 つの版、取り込み後と手動の実行は 1 つの版。3.14 はブラウザの中の Python と同じ版(D-089)
         python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.10", "3.12", "3.14"]' || '["3.12"]') }}
+        group: [fingerprint, a, b]
     steps:
       # 使う部品(Action)は、書き換えられないよう commit の番号で固定する
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +45,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]" "pytest==9.1.1"
       - name: Run pytest (速いテスト)
-        run: pytest --durations=10
+        env:
+          GROUP: ${{ matrix.group }}
+        run: pytest --durations=10 $(python scripts/ci_groups.py fast "$GROUP")
 
   # PR で計算本体が変わったかを調べる(変わったファイルの一覧を scripts/ci_needs_slow.py に渡す)
   changes:
@@ -64,10 +69,14 @@ jobs:
           python3 scripts/ci_needs_slow.py < changed.txt
 
   pytest-slow:
-    name: pytest slow (3.12)
+    name: pytest slow (3.12, ${{ matrix.group }})
     needs: [changes]
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.slow == 'true') }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ["1", "2", "3"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,4 +89,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]" "pytest==9.1.1"
       - name: Run pytest (重いテスト)
-        run: pytest -m slow --durations=20
+        env:
+          GROUP: ${{ matrix.group }}
+        run: pytest --durations=20 $(python scripts/ci_groups.py slow "$GROUP")
