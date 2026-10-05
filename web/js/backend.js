@@ -2,6 +2,7 @@
 
 import { $, LOCAL_PYODIDE, WAIT_SHOW_MS, state } from "./core.js";
 import { prerunProgress, trialProgress } from "./newgame.js";
+import { applyStaticTitles, setGlossary } from "./glossary.js";
 
 let worker = null;
 export let ready = false;
@@ -64,6 +65,10 @@ export async function boot() {
     worker = await createWorker();
     await call("boot", { local: LOCAL_PYODIDE });
     ready = true;
+    const g = await call("query", { name: "glossary", args: {} }); // 用語集(説明の文の 1 か所。D-311)
+    if (!g.ok) throw new Error(g.message);
+    setGlossary(g.value);
+    applyStaticTitles();
     $("boot-progress").value = $("boot-progress").max;
     $("boot").hidden = true;
     $("go-new").disabled = false;

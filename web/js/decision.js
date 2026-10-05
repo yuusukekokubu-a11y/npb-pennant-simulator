@@ -47,7 +47,7 @@ export function decisionTable(stage, data, truth, { onName, detail, rowClass }) 
   const ds = decisionState(stage);
   const sortCol = data.columns.find((c) => c.key === data.sort.key) || data.sort;
   const columns = data.columns.filter((c) => c.key !== sortCol.key);
-  if (truth) columns.push({ key: "truth", label: "真の総合", description: "答え合わせ:真の今の総合値" + (truth.level === 2 ? " / 潜在能力" : "") });
+  if (truth) columns.push({ key: "truth", label: "真の総合" });
   const rows = data.rows.map((r) => {
     const t = truth ? truth.players[r.player_id] : null;
     const values = { ...r.values, truth: t ? `${t.overall}${t.potential ? ` / ${t.potential}` : ""}` : "" };
@@ -61,7 +61,7 @@ export function decisionTable(stage, data, truth, { onName, detail, rowClass }) 
   return table({ firstLabel: "選手", columns, rows, first, sort: sortCol.key, order: data.order, onSort, rowClass, extra: sortCol, fluid: true, detail });
 }
 
-// 自球団の状況のパネル(状態バーを押すと開く。D-298)
+// 自球団の状況のパネル(状態バーを押すと開く。D-298)。見出しの解説は用語集から(D-311)
 export async function outlookPanel(token) {
   const o = await query("team_outlook", {});
   if (token !== state.token) return null;
@@ -76,7 +76,7 @@ export async function outlookPanel(token) {
     },
   }));
   const columns = [
-    { key: "count", label: "人数/目安", description: "今の人数と人数の目安。◆は手薄(目安より 2 人以上少ない、または一軍相当の見込みの WAR が下位 4 球団)" },
+    { key: "count", label: "人数/目安" },
     { key: "top", label: `主な選手(${o.season_label}の WAR・年齢)` },
     { key: "age", label: "平均年齢" },
   ];

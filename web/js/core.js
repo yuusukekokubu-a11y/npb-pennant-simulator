@@ -46,6 +46,7 @@ export const state = {
   gamesDay: null,
   proc: freshProc(), // オフの手続きの画面の状態(F3-1。契約の画面の絞り込み・並び順・開いた行は D-272)
   review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
+  glossary: null, // 用語集のデータ(起動のときに受け取る。D-311)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 

@@ -4,6 +4,7 @@ import { $, MAX_SEED, state } from "./core.js";
 import { call } from "./backend.js";
 import { showScreen } from "./screens.js";
 import { enterGame } from "./progress.js";
+import { termById } from "./glossary.js";
 
 // ---- 新規開始 ----
 
@@ -30,6 +31,7 @@ function names() {
 }
 
 export async function showNewGame() {
+  $("new-help").hidden = true;
   $("new-message").textContent = "";
   $("my-team-none").checked = true; // 既定は観戦のみ(D-198)
   $("league-seed").value = "";
@@ -179,3 +181,28 @@ export function trialProgress({ day, total }) {
   $("trial-progress").value = day;
   $("trial-text").textContent = `試運転のシーズン:${day} / ${total} 日(この結果は、画面に出さず保存もしません)`;
 }
+
+// ---- 説明バー(UI の整理②。D-313) ----
+// 設定の項目(入力欄・選択肢)を選ぶと、その項目の説明を用語集から引いて、画面の下のバーに出す。選び直すと入れ替わる。
+// 設定の画面から離れると消える(screens.js の showScreen)。
+
+export function helpIdFor(target) {
+  if (!target || !target.matches) return null;
+  if (target.matches("#league-fields input[type=text]")) return "setting.team_name";
+  if (target.name === "my-team") return target.value === "-1" ? "setting.watch" : "setting.my_team";
+  if (target.id === "league-seed") return "setting.league_seed";
+  if (target.id === "season-seed") return "setting.season_seed";
+  const groups = { "baseline-mode": "setting.baseline", "scout-level": "setting.scout", "money-rule": "setting.money_rule" };
+  if (groups[target.name]) return `${groups[target.name]}.${target.value}`;
+  return null;
+}
+
+function showHelp(event) {
+  const t = termById(helpIdFor(event.target));
+  if (!t) return;
+  $("new-help-name").textContent = t.name;
+  $("new-help-text").textContent = t.meaning;
+  $("new-help").hidden = false;
+}
+
+for (const type of ["focusin", "change", "click"]) $("screen-new").addEventListener(type, showHelp);

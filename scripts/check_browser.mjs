@@ -75,7 +75,25 @@ const requests = [];
 context.on("request", (r) => requests.push({ url: r.url(), body: r.postData() || "" }));
 page.on("pageerror", (e) => check(false, `ページのエラー: ${e.message}`));
 const texts = []; // 画面に出た文字(あとで隠し情報の言葉を探す)
-const grab = async () => texts.push(await page.evaluate(() => document.body.innerText));
+// 説明ブロックの見張り(UI の整理②。D-306、D-310):今の画面に、1 行の注意書きより長い説明の文がないか。grab のたびに記録し、最後にまとめて確かめる
+const blockFindings = [];
+const seenScreens = new Set();
+async function findBlocks() {
+  const f = await page.evaluate(() => {
+    const scr = [...document.querySelectorAll("main.screen")].find((m) => !m.hidden);
+    if (!scr) return null;
+    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions";
+    const blocks = [...scr.querySelectorAll("p, dl, dd, .info, .notice, .card")].filter((e) => e.offsetParent && !e.closest(skip) && !e.classList.contains("message") && e.textContent.trim().length > 50).map((e) => e.textContent.trim().slice(0, 30));
+    return { screen: scr.id, blocks };
+  });
+  if (!f) return;
+  seenScreens.add(f.screen);
+  for (const b of f.blocks) blockFindings.push(`${f.screen}:${b}…`);
+}
+const grab = async () => {
+  texts.push(await page.evaluate(() => document.body.innerText));
+  await findBlocks();
+};
 async function day() {
   const text = await page.textContent("#day-text");
   if (text.includes("終了")) return 125;
@@ -146,6 +164,26 @@ await page.check("input[name=my-team][value='7']");
 await page.click("#season-seed"); // 欄を移っても(変更の知らせが出ても)、選んだ自球団が変わらないこと
 check(await page.isChecked("input[name=baseline-mode][value=trial]"), "基準値の求め方は、最初は「試運転で求める」");
 check((await page.$$("input[name=money-rule]")).length === 4 && (await page.isChecked("input[name=money-rule][value=none]")), "お金のルールは 4 段階(なし・ゆるい・標準・きびしい)で、最初は「なし」(F3-2a。D-230)");
+// 新規開始の説明バー(D-313):常に出る説明はなく、項目を選ぶとその説明が下のバーに出て、選び直すと入れ替わる
+const helpText = () => page.textContent("#new-help");
+check(!(await page.$$eval("#screen-new label.radio .muted", (x) => x.length)) && (await page.$$eval("#screen-new p", (ps) => ps.filter((p) => p.offsetParent && p.textContent.length > 60).length)) === 0, "新規開始の設定に、常に出る説明の文がない");
+await page.focus("#team-4");
+await page.waitForSelector("#new-help:not([hidden])");
+const helpTeam = await helpText();
+await page.check("input[name=money-rule][value=strict]");
+await page.waitForFunction(() => document.querySelector("#new-help-name").textContent === "お金のルール:きびしい");
+const helpStrict = await helpText();
+await page.check("input[name=scout-level][value=large]");
+await page.waitForFunction(() => document.querySelector("#new-help-name").textContent === "ずれ:大");
+await page.check("input[name=scout-level][value=medium]");
+await page.check("input[name=money-rule][value=none]");
+await page.waitForFunction(() => document.querySelector("#new-help-name").textContent === "お金のルール:なし");
+const helpNone = await helpText();
+const helpPy = JSON.parse(python(`import json\nfrom pennant.glossary import default_glossary\ng = default_glossary()\nprint(json.dumps([g.by_id(i)["meaning"] for i in ("setting.team_name", "setting.money_rule.strict", "setting.money_rule.none")], ensure_ascii=False))`));
+check(helpTeam.includes(helpPy[0]) && helpStrict.includes(helpPy[1]) && helpNone.includes(helpPy[2]), `項目を選ぶと、その説明(用語集の文)が下のバーに出て、選び直すと入れ替わる(「${helpNone}」)`);
+await page.$eval("#new-start", (b) => b.scrollIntoView({ block: "end" }));
+const startVisible = await page.evaluate(() => { const b = document.querySelector("#new-start").getBoundingClientRect(); const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); const h = document.querySelector("#new-help").getBoundingClientRect(); return hit !== null && hit.closest("#new-start") !== null && h.bottom <= b.top + 1; });
+check(startVisible, "説明バーは「この内容で始める」のボタンを隠さない");
 let prerunSeen = false;
 const prerunWatch = page.waitForFunction(() => document.querySelector("#trial-text").textContent.includes("リーグの歴史を作っています"), null, { timeout: 60000 }).then(() => (prerunSeen = true)).catch(() => {});
 const trialStart = Date.now();
@@ -155,6 +193,7 @@ await page.waitForSelector("#trial-box:not([hidden])");
 await page.waitForFunction(() => /\d+ \/ 125 日/.test(document.querySelector("#trial-text").textContent));
 check((await page.textContent("#trial-box")).includes("リーグの基準値を求めています"), `試運転の進み具合が出る(「${await page.textContent("#trial-text")}」)`);
 await page.waitForSelector("#screen-progress:not([hidden])", { timeout: 120000 });
+check(await page.isHidden("#new-help"), "設定の画面から離れると、説明バーは消える(D-313)");
 const trialSeconds = (Date.now() - trialStart) / 1000;
 results.push(`  事前運転(25 年)と試運転(1シーズン)を含めた新規開始の時間: ${trialSeconds.toFixed(1)} 秒`);
 check(prerunSeen, "新規開始の間に、事前運転(リーグの歴史を作っています)の進み具合が出る");
@@ -237,10 +276,22 @@ async function statsOnScreen() {
   return page.$$eval("#stats-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
 }
 
+// 今の並び順(並び順の欄の指標と、押されている向きのボタン)。説明のブロックはないので、欄の表示で確かめる(D-310)
+const sortState = () => page.evaluate(() => { const s = document.querySelector("#stats-sort"); const o = document.querySelector("#stats-order button[aria-pressed=true]"); return `${s.selectedOptions[0] ? s.selectedOptions[0].textContent : ""}(${o ? o.textContent : ""})`; });
 async function waitStats(text, timeout = 30000) {
-  await page.waitForFunction((t) => document.querySelector("#stats-info").textContent.includes(t), text, { timeout });
+  await page.waitForFunction((t) => {
+    const s = document.querySelector("#stats-sort");
+    const o = document.querySelector("#stats-order button[aria-pressed=true]");
+    return document.querySelector("#stats-loading").hidden && `${s.selectedOptions[0] ? s.selectedOptions[0].textContent : ""}(${o ? o.textContent : ""})`.includes(t);
+  }, text, { timeout });
   return statsOnScreen();
 }
+// 表が計算本体の行(rows)と同じ人数・同じ先頭になるまで待つ(シーズンや種類を切り替えたあと)
+async function waitRows(rows) {
+  await page.waitForFunction(([n, top]) => { const m = document.querySelector("#stats-table .more"); const trs = document.querySelectorAll("#stats-table tbody tr"); const rest = m ? Number((m.textContent.match(/あと (\d+)/) || [0, 0])[1]) : 0; const first = trs[0] && trs[0].querySelector("td .link"); return document.querySelector("#stats-loading").hidden && trs.length + rest === n && (!top || (first && first.textContent === top)); }, [rows.length, rows.length ? rows[0][0] : null]);
+}
+// 用語集の解説(見出しの title と同じ文。D-311)
+const termTitle = (label) => JSON.parse(python(`import json\nfrom pennant.glossary import default_glossary, term_text\nprint(json.dumps(term_text(default_glossary().find(${JSON.stringify(label)})), ensure_ascii=False))`));
 
 // 画面の表と同じ形(名前、固定の列があればその値、各列の値)
 const pyStats = (args) => pyGame(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
@@ -249,6 +300,18 @@ const headsOnScreen = () => page.$$eval("#stats-table th", (ths) => ths.map((th)
 await page.click("#tabs button[data-tab=stats]");
 let screenRows = await waitStats("打率(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic" })), `個人成績(打者・基本・打率の高い順・規定到達者)が、計算本体の集計と同じ(${screenRows.length}人)`);
+// 画面の測定(幅 390。D-310):個人成績の表の上端が、画面の上から 40% 以内
+{
+  const vp = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  const top = await page.$eval("#stats-table", (e) => e.getBoundingClientRect().top);
+  check(top / 844 <= 0.4, `幅 390 で、個人成績の表の上端が画面の上から ${((top / 844) * 100).toFixed(0)}%(${top.toFixed(0)}px。40% 以内)`);
+  await page.setViewportSize(vp);
+  await page.waitForTimeout(300);
+}
+check((await page.$eval("#screen-standings th:nth-child(6)", (th) => th.title)) === termTitle("勝率"), "順位表の見出し(勝率)にも、用語集の解説が付く");
 let heads = await headsOnScreen();
 check(heads.indexOf("OPS") === heads.indexOf("長打率") + 1, `基本の打者の表に、長打率の隣に OPS がある(列: ${heads.slice(1).join("・")})`);
 await grab();
@@ -286,16 +349,15 @@ await waitStats("打率(高い順)");
 await page.click("#stats-table th button.sort >> text=本塁打");
 screenRows = await waitStats("本塁打(多い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "desc" })), "見出しを押すと並べ替わる(本塁打の多い順)");
-const countDesc = pyGame(`from pennant.api import metrics_config\nprint(json.dumps(metrics_config()["count_descriptions"]["batter"]["HR"], ensure_ascii=False))`);
-check((await page.textContent("#stats-info")).includes(countDesc), "見出しを押すと、その列の解説が出る(元の数の解説)");
+check((await page.$eval("#stats-table th.sorted", (th) => th.title)) === termTitle("本塁打") && !(await page.$("#stats-terms")), "列の見出しの解説(title)は用語集の文と同じで、表の下に用語の解説のブロックはない(D-306、D-311)");
 await page.click("#stats-table th button.sort >> text=本塁打");
 screenRows = await waitStats("本塁打(少ない順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc" })), "もう一度押すと逆の順になる");
 // 規定到達者の絞り込みを外す・リーグとチームで絞り込む
 await page.uncheck("#stats-qualified");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("試合に出た全員"));
-screenRows = await statsOnScreen();
 const all = pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false });
+await waitRows(all);
+screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(all), `規定到達者の絞り込みを外すと、試合に出た全員(${all.length}人)`);
 await page.selectOption("#stats-league", "1");
 await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
@@ -307,7 +369,7 @@ check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", ki
 await page.selectOption("#stats-team", "");
 await page.selectOption("#stats-league", "");
 await page.check("#stats-qualified");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("規定に届いた選手だけ"));
+await waitRows(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc" }));
 // 規定到達の判定が、実装⑤の定義(試合数 × 3.1、× 1.0)どおりか
 const qual = pyGame(`
 from pennant.records import qualifying_plate_appearances, qualifying_outs
@@ -324,8 +386,8 @@ screenRows = await waitStats("防御率(低い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "saber" })), `投手のセイバー(防御率の低い順。防御率は固定列)が、計算本体と同じ(${screenRows.length}人)`);
 await page.click("#stats-table th button.sort >> text=K%");
 await waitStats("K%(高い順)");
-const kDesc = pyGame(`from pennant.api import metrics_config\nprint(json.dumps(metrics_config().metrics["k_pct"]["description"], ensure_ascii=False))`);
-check((await page.textContent("#stats-info")).includes(kDesc), "指標名を押すと出る解説が、指標の定義データの解説と同じ(K%)");
+const kTitle = await page.$eval("#stats-table th.sorted", (th) => th.title);
+check(kTitle === termTitle("K%") && kTitle.includes("投手は高いほど良い") && kTitle.includes("式:"), `指標の見出しの解説が、用語集の文と同じ(K%:「${kTitle}」)`);
 await grab();
 // 第2弾の指標(打者のセイバー:wRC+ の高い順)と注記
 await page.click("#stats-role button[data-value=batter]");
@@ -333,10 +395,10 @@ await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th"
 screenRows = await waitStats("wRC+(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber" })), `打者のセイバー(wOBA・wRC+・OPS+。wRC+ の高い順)が、計算本体と同じ(${screenRows.length}人)`);
 const baseNote = await page.textContent("#stats-baseline");
-check(await page.isVisible("#stats-baseline") && baseNote.includes("試運転のシーズンの値に、今シーズンの値を混ぜて"), `表の近くに、基準値を混ぜている注記が出る(「${baseNote}」)`);
+check(await page.isVisible("#stats-baseline") && baseNote === "シーズン途中の値(ここまで)。", `表の近くに、1 行の注意書きだけが出る(「${baseNote}」。基準値の混ぜ方は用語集に。D-310)`);
 await page.click("#stats-table th button.sort >> text=OPS+");
 await waitStats("OPS+(高い順)");
-check((await page.textContent("#stats-info")).includes("1シーズン目は 1.0") && baseNote.includes("1シーズン目のため 1.0"), "OPS+ の解説と表の注記に、球場補正が1シーズン目は 1.0 であることが出る");
+check((await page.$eval("#stats-table th.sorted", (th) => th.title)).includes("球場補正"), "OPS+ の見出しの解説に、球場補正つきであることが出る(用語集)");
 await page.click("#stats-role button[data-value=pitcher]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("FIP")));
 await page.click("#stats-table th button.sort >> text=FIP");
@@ -348,7 +410,7 @@ await grab();
 await page.click("#stats-role button[data-value=batter]");
 await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 && [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("打率")));
-results.push(`  (WAR の前の並び順: ${await page.textContent("#stats-info")})`);
+results.push(`  (WAR の前の並び順: ${await sortState()})`);
 const warStart = Date.now();
 await page.click("#stats-kind button[data-value=war]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("WAR")), null, { timeout: 180000 });
@@ -358,8 +420,8 @@ results.push(`  WAR の計算と表示にかかった時間(打者、初回): ${
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "war" })), `打者の WAR(WAR の高い順。打席・内訳つき)が、計算本体と同じ(${screenRows.length}人。${warSeconds.toFixed(1)} 秒)`);
 heads = await headsOnScreen();
 check(heads.slice(1).join("・") === "打席・WAR・打撃・走塁・守備・ポジション補正・控え水準", `打者の WAR の列(${heads.slice(1).join("・")})`);
-check((await page.textContent("#stats-baseline")).includes("日目までの値"), "WAR の注記に「○日目までの値」と出る");
-check((await page.textContent("#stats-terms-list")).includes("控え水準") && (await page.$eval("#stats-terms", (d) => d.open)), "WAR の表の下に、用語の解説(控え水準など)が開いて出る");
+check((await page.textContent("#stats-baseline")) === "シーズン途中の値(ここまで)。", "WAR の表の近くに「シーズン途中の値(ここまで)」の 1 行が出る");
+check((await page.$$eval("#stats-table th", (ths) => ths.filter((th) => th.textContent.startsWith("控え水準")).map((th) => th.title)))[0] === termTitle("控え水準"), "WAR の用語(控え水準など)の解説は、見出しの title(用語集)で見られる");
 const warGroups = await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label));
 check(warGroups.some((g) => g.startsWith("WAR")), "並び順の欄に WAR の列の区分が出る");
 await page.click("#stats-table th button.sort >> text=守備");
@@ -403,6 +465,7 @@ const budgetText = await page.textContent("#team-budget");
 const salaryCells = await page.$$eval("#team-salaries tbody tr", (trs) => trs.slice(0, 3).map((tr) => tr.children[3].textContent));
 check(budgetText.includes(`総年俸 ${pyBudget[0]}`) && budgetText.includes(`お金のルール:${pyBudget[2]}`) && pyBudget[1] === null && !budgetText.includes("上限") && !budgetText.includes("null"), `チームのページに総年俸とお金のルールが出る(なしなので予算の上限は出ない。「${budgetText.slice(0, 40)}…」)`);
 check(JSON.stringify(salaryCells) === JSON.stringify(pyBudget[3]) && (await page.$$eval("#team-salaries thead th", (ths) => ths.map((t) => t.textContent))).join("|").includes("年俸(万円)|残り"), `チームのページの年俸の表(高い順。年俸・残りの列)が、計算本体と同じ(上位 ${salaryCells.join("・")})`);
+await findBlocks();
 await page.click("#screen-team .back");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden);
 await page.click("#player-kind button[data-value=basic]"); // 後の確認は「基本」を前提にしている
@@ -461,6 +524,7 @@ await page.click("#tabs button[data-tab=games]");
 await page.waitForSelector("#games-list .game-card");
 const cards = await page.locator("#games-list .game-card").count();
 check(cards === 6, `試合のタブで、その日の試合の一覧が出る(${stoppedDay}日目・${cards}試合)`);
+await findBlocks();
 await page.click("#games-prev");
 await page.waitForFunction((d) => document.querySelector("#games-day").value === String(d - 1), stoppedDay);
 await page.click("#games-list .game-card");
@@ -485,6 +549,7 @@ check((await page.textContent("#stadium-answers")).includes("答え合わせモ�
 const cmpOnScreen = await page.$$eval("#stadium-compare tbody tr", (trs) => trs.map((tr) => [...tr.children].slice(1).map((td) => td.textContent)));
 const cmpPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([[d["this_season"][k][c] for c in ("home", "away", "ratio")] for k in ("home_run", "babip", "runs")], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
 check(JSON.stringify(cmpOnScreen) === JSON.stringify(cmpPy), `本拠地とアウェイの比較の表(本塁打/打席・BABIP・得点/打席)が、計算本体と同じ(本塁打の比 ${cmpPy[0][2]})`);
+await findBlocks();
 check((await page.textContent("#stadium-estimate")).includes("まだ推定できません"), "1シーズン目は、推定した球場補正の代わりに「まだ推定できません」と出る");
 await page.click("#screen-stadium .back");
 await page.click("#screen-game .back");
@@ -504,7 +569,7 @@ check(await page.isVisible("#answer-badge"), "オンの間は、上の帯に「�
 await page.click("#screen-settings .back");
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=ability]");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("「+」は 80 より上") && document.querySelectorAll("#stats-table tbody tr").length > 0);
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("スタミナ")) && document.querySelectorAll("#stats-table tbody tr").length > 0);
 const pyAbility = pyGame(`
 from pennant import answers
 t = answers.ability_table(g, "pitcher", 2, sort="fip", order="asc")
@@ -534,11 +599,12 @@ const prefPid = pyGame(`print(json.dumps(g.team(a["id"])["salaries"][0]["player_
 const prefPy = pyGame(`from pennant import answers\nprint(json.dumps("・".join(f'{x["label"]} {x["text"]}' + ("" if x["active"] else "(効かない)") for x in answers.player_answers(g, a["id"], 2)["preference"]), ensure_ascii=False))`, JSON.stringify({ id: prefPid }));
 check((await page.textContent("#player-preference")) === `志望(答え合わせ):${prefPy}`, `オンのとき、選手のページに志望の重みが出る(${prefPy}。答え合わせ用の関数と同じ)`);
 await page.click("#screen-player .back");
+await findBlocks();
 await page.click("#screen-team .back");
 await page.click("#tabs button[data-tab=stats]");
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
 await page.selectOption("#stats-sort", "stamina");
-await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("(高い順)") && !document.querySelector("#stats-info").textContent.includes("FIP"));
+await waitStats("スタミナ(高い順)");
 check((await headsOnScreen())[1] !== "FIP", "並び順の欄で能力の項目を選ぶと、その項目で並び替わり、固定列は消える");
 check(HIDDEN.words.some((w) => abilityText.includes(w)), "オンのときは、能力の項目名・成長タイプなどが表示される");
 await page.click("#menu");
@@ -593,7 +659,7 @@ await standingsOnScreen(0);
 // シーズンの最後で、成績の画面を開く時間(集計は進めた日の分だけ足してあるので、すぐ開く)
 let s0 = Date.now();
 await page.click("#tabs button[data-tab=stats]");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("規定") && document.querySelectorAll("#stats-table tbody tr").length > 0);
+await page.waitForFunction(() => document.querySelector("#stats-loading").hidden && document.querySelectorAll("#stats-table tbody tr").length > 0);
 results.push(`  シーズンの最後で、個人成績を開くまで: ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
 // 読み込み直したセーブデータ(125日目)では、最初の1回だけ集計を作る
 await page.reload();
@@ -602,7 +668,7 @@ await page.setInputFiles("#open-file-start", last.path);
 await page.waitForSelector("#screen-progress:not([hidden])");
 s0 = Date.now();
 await page.click("#tabs button[data-tab=stats]");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("規定") && document.querySelectorAll("#stats-table tbody tr").length > 0);
+await page.waitForFunction(() => document.querySelector("#stats-loading").hidden && document.querySelectorAll("#stats-table tbody tr").length > 0);
 const firstOpen = (Date.now() - s0) / 1000;
 s0 = Date.now();
 await page.click("#tabs button[data-tab=progress]");
@@ -654,7 +720,8 @@ from pennant import api
 g = api.Game.load(open(sys.argv[1], "rb").read())
 print(json.dumps([f"{c['league_name']} 優勝:{'・'.join(c['teams'])}" for c in g.year_end_preview()["champions"]], ensure_ascii=False))`, last.path));
 const champsOnScreen = await page.$$eval("#yearend-champions p", (ps) => ps.map((p) => p.textContent));
-check(JSON.stringify(champsOnScreen) === JSON.stringify(champsPy) && (await page.textContent("#yearend-note")).includes("この操作は戻せません"), `確認の画面に、優勝チームと「戻せません」の説明が出る(${champsPy.join(" / ")})`);
+check(JSON.stringify(champsOnScreen) === JSON.stringify(champsPy) && (await page.textContent("#yearend-note")) === "確定すると戻せません。", `確認の画面に、優勝チームと「戻せません」の説明が出る(${champsPy.join(" / ")})`);
+await findBlocks();
 check((await page.textContent("#yearend-dirty")).includes("保存済み"), "確認の画面に、保存の状態(保存済み)が出る");
 const [beforeDl] = await Promise.all([page.waitForEvent("download"), page.click("#yearend-save")]);
 await beforeDl.saveAs(join(work, `before-yearend-${beforeDl.suggestedFilename()}`));
@@ -672,6 +739,7 @@ check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
+  await findBlocks();
   const vp = page.viewportSize();
   // 並べ替えた列の ▲▼ は、どの幅でもその見出しの中にある(広い画面で固定をやめた列も)
   const arrow = await page.evaluate(() => {
@@ -954,7 +1022,7 @@ check((await page.textContent("#offseason-answers")).includes("答え合わせ�
 await page.click("#offseason-rookies tbody tr td .link >> nth=0");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && !document.querySelector("#player-scouting-box").hidden);
 const scoutText = await page.textContent("#player-scouting");
-check(scoutText.includes("±") && scoutText.includes("天井") && (await page.textContent("#player-scouting-note")).includes("答え合わせモードをオンにすると"), "入団した選手のページに、入団時のスカウト評価(推定 ± 幅、天井)が出る。オフなら真の能力は出ない");
+check(scoutText.includes("±") && scoutText.includes("天井") && !scoutText.includes("真の能力"), "入団した選手のページに、入団時のスカウト評価(推定 ± 幅、天井)が出る。オフなら真の能力は出ない");
 await page.click("#screen-player .back");
 check(await isDirty(), "年度を確定したあとは「未保存」になる");
 await grab();
@@ -972,14 +1040,13 @@ const reviewRows = async () => page.$$eval("#review-table tbody tr", (trs) => tr
 let reviewOnScreen = await reviewRows();
 const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の総合 ± ふれ幅・今の所属・WAR 累計)`);
-check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-answers")).trim() && (await page.textContent("#review-answers-note")).includes("答え合わせモードをオンにすると"), "オフのとき、振り返りに真の総合・差・実際の天井の列は出ない");
+check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-answers")).trim() && !(await page.textContent("#review-note")), "オフのとき、振り返りに真の総合・差・実際の天井の列は出ない");
 check(reviewOnScreen.every((r) => /^ドラフト \d 巡$|^市場$|^自動補充$/.test(r[1]) && /^\d+ ± \d+$/.test(r[2])), "経路は「ドラフト n 巡」「市場」「自動補充」、入団時の総合は「推定値 ± ふれ幅」の形");
 await grab();
 // 別の球団を選ぶと、その球団の入団者になる
 await page.selectOption("#review-team", "T05");
-await page.waitForFunction(() => document.querySelector("#review-note").textContent.includes("T05") || document.querySelectorAll("#review-table tbody tr").length > 0, null, { timeout: 60000 });
-await page.waitForFunction((name) => document.querySelector("#review-note").textContent.includes(name), await page.textContent("#review-team option[value=T05]"));
 const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
+await page.waitForFunction(([n, top]) => document.querySelector("#review-loading").hidden && document.querySelectorAll("#review-table tbody tr").length === n && document.querySelector("#review-table tbody tr td").textContent === top, [reviewT05Py.length, reviewT05Py[0][0]], { timeout: 60000 });
 reviewOnScreen = await reviewRows();
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);
 // 答え合わせモードをオンにすると、真の総合・差・実際の天井と、球団ごとの「見る目」の目安が出る
@@ -993,6 +1060,7 @@ const reviewAnsPy = pyYear2(`from pennant import answers\nv = g.draft_review("T0
 const reviewTruth = await page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.children[9].textContent, tr.children[10].textContent, tr.children[11].textContent]));
 const leagueRow = await page.$$eval("#review-answers tbody tr:last-child td", (tds) => tds.map((td) => td.textContent));
 check(JSON.stringify(reviewTruth) === JSON.stringify(reviewAnsPy.slice(0, -1)) && leagueRow[0].startsWith("リーグ全体") && leagueRow[1] === String(reviewAnsPy.at(-1)[0]) && leagueRow[2] === reviewAnsPy.at(-1)[1] && leagueRow[3] === reviewAnsPy.at(-1)[2], `オンのとき、今の真の総合・差・実際の天井と、球団ごとの差の平均・標準偏差(リーグ全体 ${leagueRow[1]} 人、差の平均 ${leagueRow[2]})が、答え合わせ用の関数と同じ`);
+check((await page.textContent("#review-note")) === "入団直後は、差がマイナスに偏りやすい。", "オンのとき、差の列の読み違いを防ぐ 1 行の注意書きが出る(D-310)");
 check((await page.$$eval("#review-answers tbody tr", (trs) => trs.length)) === 13, "「見る目」の目安の表は 12 球団 + リーグ全体(球団の選択は T05 のまま保たれる)");
 await grab();
 await page.click("#screen-review .back");
@@ -1011,31 +1079,35 @@ const seasonOptions = await page.$$eval("#stats-season option", (os) => os.map((
 check(seasonOptions.length === 3 && seasonOptions[1] === "1シーズン目" && seasonOptions[2] === "通算" && (await page.isVisible("#stats-season")), `成績の画面に、シーズンの選択(${seasonOptions.join("・")})が出る`);
 const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
 await page.selectOption("#stats-season", "1");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("1シーズン目の成績"));
+await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "basic", season: "1" })), `1シーズン目を選ぶと、確定した1シーズン目の成績が出る(${screenRows.length}人。計算本体と同じ)`);
 await page.click("#stats-kind button[data-value=war]");
-await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent.includes("確定した WAR"));
+await waitRows(pyStats2({ role: "batter", kind: "war", season: "1" }));
+check(await page.isHidden("#stats-baseline"), "確定したシーズンには、注意書きが出ない");
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "1" })), `1シーズン目の WAR も、確定した値(${screenRows.length}人)`);
 await page.selectOption("#stats-season", "career");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("通算"));
+await waitRows(pyStats2({ role: "batter", kind: "war", season: "career" }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "career" })), `通算の WAR(各シーズンの合計)が、計算本体と同じ(${screenRows.length}人)`);
 await page.click("#stats-kind button[data-value=saber]");
 // 「基本」で使っていた並び順(打率)は、切り替えても保たれる(D-131)ので、名前の隣に打率の固定列が出る
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("足し合わせ") && document.querySelector("#stats-info").textContent.includes("並び順:打率"));
+await waitRows(pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" }));
+await waitStats("打率");
+check((await page.textContent("#stats-baseline")) === "通算の指標は参考値(シーズンごとの値の加重平均)。", "通算のセイバーには「参考値」の 1 行が出る");
 screenRows = await statsOnScreen();
 const careerSaber = pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" });
 const careerDiff = screenRows.findIndex((r, i) => JSON.stringify(r) !== JSON.stringify(careerSaber[i]));
 check(careerDiff < 0 && screenRows.length === careerSaber.length, `通算のセイバー(元の数の合計から今の基準値で計算。打率の並び順を保ったまま)が、計算本体と同じ(${screenRows.length}人)${careerDiff >= 0 ? `(違い: ${JSON.stringify(screenRows[careerDiff])} / ${JSON.stringify(careerSaber[careerDiff])})` : ""}`);
 await page.selectOption("#stats-season", "current");
-await page.waitForFunction(() => !document.querySelector("#stats-rule").textContent.includes("通算") && document.querySelector("#stats-baseline").textContent.includes("前のシーズンまで(1シーズン分)"));
-check(true, "2シーズン目の注記に、球場補正が前のシーズンまで(1シーズン分)の推定であることが出る");
+await page.waitForFunction(() => document.querySelector("#stats-season").value === "current" && document.querySelector("#stats-baseline").textContent === "シーズン途中の値(ここまで)。");
+check(true, "2シーズン目の今シーズンには「シーズン途中の値(ここまで)」の 1 行が出る(球場補正の推定のことは用語集に)");
 // 選手のページ:年度別の成績
 await page.selectOption("#stats-season", "1");
 await page.click("#stats-kind button[data-value=basic]");
-await page.waitForFunction(() => document.querySelector("#stats-rule").textContent.includes("1シーズン目の成績") && document.querySelector("#stats-info").textContent.includes("打率"));
+await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
+await waitStats("打率");
 await page.click("#stats-table tbody tr:first-child td .link");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelectorAll("#player-history tbody tr").length > 0);
 const topId = pyYear2(`print(json.dumps(g.stats("batter", "basic", season="1")["rows"][0]["player_id"]))`);
@@ -1090,18 +1162,40 @@ await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
 await page.setInputFiles("#open-file-start", last.path);
 await page.waitForSelector("#screen-progress:not([hidden])");
 
-// 指標の解説のページ(指標の定義データと同じ)
+// 用語集のページ(UI の整理②。D-307〜D-311):メニューの下の方から開く。分類と検索。項目は計算本体の用語集のデータと同じ
 await page.click("#menu");
+const menuOrder = await page.$$eval("#screen-settings h2", (hs) => hs.filter((h) => h.offsetParent).map((h) => h.textContent));
+check(menuOrder.at(-1) === "用語集" && (await page.isVisible("#open-guide")), `メニューの下の方に「用語集」がある(見出しの順:${menuOrder.join("・")})`);
+await findBlocks();
 await page.click("#open-guide");
 await page.waitForSelector("#guide-body .guide-item");
-const guideOnScreen = await page.$$eval("#guide-body .guide-item", (items) => items.map((i) => [i.dataset.key, i.querySelector("h3").textContent, i.querySelector(".description").textContent]));
-const guidePy = JSON.parse(python(`
+const glossPy = JSON.parse(python(`
 import json
-from pennant.api import metrics_config
-c = metrics_config()
-print(json.dumps([[k, c.metrics[k]["name"], c.metrics[k]["description"]] for k in c.in_category("basic") + c.in_category("saber")], ensure_ascii=False))`));
-check(JSON.stringify(guideOnScreen) === JSON.stringify(guidePy), `「指標の解説」ページが、指標の定義データと同じ(${guideOnScreen.length}個の指標)`);
-check((await page.textContent("#guide-body")).includes("式(打者):(四球の重み × 四球"), "指標の解説に、式が日本語で出る");
+from pennant.api import glossary_view
+v = glossary_view()
+print(json.dumps([[c["label"] for c in v["categories"]], [[t["name"], t["meaning"], t.get("formula", ""), t.get("better", "")] for c in v["categories"] for t in v["terms"] if t["category"] == c["key"]]], ensure_ascii=False))`));
+const glossOnScreen = await page.$$eval("#guide-body .guide-item", (items) => items.map((i) => [i.dataset.name, i.querySelector(".description").textContent, (i.querySelector(".formula")?.textContent || "").replace(/^式:/, ""), i.querySelector(".better")?.textContent || ""]));
+check(JSON.stringify(glossOnScreen) === JSON.stringify(glossPy[1]), `用語集の項目(${glossOnScreen.length} 個:名前・意味・式・良い向き)が、用語集のデータと同じ`);
+const catOptions = await page.$$eval("#guide-category option", (os) => os.map((o) => o.textContent));
+check(JSON.stringify(catOptions.slice(1)) === JSON.stringify(glossPy[0]) && JSON.stringify(await page.$$eval("#guide-body h2", (hs) => hs.map((h) => h.textContent))) === JSON.stringify(glossPy[0]), `分類(${glossPy[0].join("・")})で分けて並ぶ`);
+check((await page.textContent("#guide-body")).includes("式:(四球の重み × 四球"), "指標の式が日本語で出る(wOBA)");
+const glossNames = async () => page.$$eval("#guide-body .guide-item", (items) => items.map((i) => i.dataset.name));
+await page.fill("#guide-search", "wRC");
+await page.waitForFunction(() => document.querySelectorAll("#guide-body .guide-item").length < 10);
+const hitWrc = await glossNames();
+await page.fill("#guide-search", "年俸");
+await page.waitForFunction(() => [...document.querySelectorAll("#guide-body .guide-item")].some((i) => i.dataset.name === "算定年俸"));
+const hitSalary = await glossNames();
+check(hitWrc.includes("wRC+") && hitSalary.includes("年俸") && hitSalary.includes("算定年俸") && hitSalary.length < glossPy[1].length, `検索は、略語(wRC → ${hitWrc.join("・")})でも日本語(年俸 → ${hitSalary.length} 項目)でも見つかる`);
+await page.fill("#guide-search", "存在しない言葉です");
+await page.waitForSelector("#guide-empty");
+await page.fill("#guide-search", "");
+await page.selectOption("#guide-category", "money");
+await page.waitForFunction(() => document.querySelectorAll("#guide-body h2").length === 1);
+const moneyHead = await page.$$eval("#guide-body h2", (hs) => hs.map((h) => h.textContent));
+const moneyNames = await glossNames();
+check(moneyHead.join() === "契約とお金" && moneyNames.includes("お金のルール:きびしい") && moneyNames.includes("FA 権"), `分類で絞り込める(${moneyHead.join()}:${moneyNames.length} 項目。ゲームのルールも項目にある)`);
+await page.selectOption("#guide-category", "all");
 await grab();
 await page.click("#screen-guide .back");
 await page.click("#screen-settings .back");
@@ -1148,6 +1242,7 @@ const storage = await page.evaluate(async () => ({
 }));
 check(Object.values(storage).every((v) => v === 0), `ブラウザの保存領域は空のまま(${JSON.stringify(storage)})`);
 const paths = [...new Set(requests.filter((r) => !r.url.startsWith("blob:")).map((r) => { const u = new URL(r.url); return u.host === pageHost ? u.pathname : u.href.split("?")[0]; }))];
+check(blockFindings.length === 0 && seenScreens.size >= 12, `見た画面(${seenScreens.size} 個:${[...seenScreens].map((x) => x.replace("screen-", "")).join("・")})に、説明ブロックがない(1 行の注意書きだけ。D-306、D-310)${blockFindings.length ? `(残っている: ${[...new Set(blockFindings)].join(" / ")})` : ""}`);
 await browser.close();
 
 console.log(`# ブラウザでの通しの確認(${WIDTH}×${HEIGHT})`);

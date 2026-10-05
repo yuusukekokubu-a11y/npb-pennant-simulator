@@ -45,7 +45,6 @@ export async function renderGame(args, token) {
       rows: st.line.rows.map((r) => ({ ...r, values: { ...Object.fromEntries(st.line.innings.map((i, k) => [i, r.cells[k]])), total: String(r.total) } })),
       first: (r) => [teamLink(r.name, r.team_id)],
     }),
-    el("p", { className: "muted small" }, "イニングごとの得点。X は、後攻のチームが勝っていて、9回裏などの攻撃をしなかったこと。"),
   );
   const pcols = [
     { key: "decision", label: "結果" },
