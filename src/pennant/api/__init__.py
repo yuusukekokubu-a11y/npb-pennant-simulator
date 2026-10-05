@@ -19,7 +19,9 @@
     players.py    選手のページ
     contract.py   契約(予算・契約更改・契約の画面・自由契約)
     fa.py         FA
-    draft.py      ドラフトと市場・ドラフトの振り返り・入退団の記録
+    draft.py      ドラフト(指名の番)・ドラフトの振り返り・入退団の記録
+    decisions.py  判断の画面の表(FA・ドラフト・市場)・加入後の序列・手薄なポジション・自球団の状況(①b)
+    market.py     自由契約市場の提示(FA と同じ提示の方式。①b)
     offseason.py  オフの手続きの流れ(段階・次の手続きへ・おまかせ・オフの結果)
 Game は、これらの部品(Mixin:機能ごとに分けたクラスの部品)を合わせた 1 つのクラス。画面から呼ぶ名前は分ける前と同じ。
 新しい関数は、分野の合うファイルに足す(どこにも合わないときは、ファイルを足して、ここの一覧に書く)。
@@ -101,9 +103,11 @@ from .common import (
 )
 from .base import GameBase
 from .contract import ContractMixin
+from .decisions import DecisionMixin
 from .draft import DraftMixin
 from .fa import FaMixin
 from .games import GamesMixin
+from .market import MarketMixin
 from .offseason import OffseasonMixin
 from .players import PlayersMixin
 from .progress import ProgressMixin, check_team_names, preview_teams
@@ -111,7 +115,7 @@ from .stats import StatsMixin
 from .teams import TeamsMixin
 
 
-class Game(ProgressMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, DraftMixin, OffseasonMixin, GameBase):
+class Game(ProgressMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 

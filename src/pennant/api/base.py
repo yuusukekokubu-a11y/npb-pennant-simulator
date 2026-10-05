@@ -25,6 +25,7 @@ class GameBase:
         self._war: tuple[int, dict[str, WarLine]] | None = None  # (試合数, WAR の表)。試合数が変わるまで覚えておく(D-179)
         self.last_negotiations: dict | None = None  # 直前に終わったオフの手続きの更改の交渉(保存しない。F3-2b)
         self.last_fa: dict | None = None  # 直前に終わったオフの FA(保存しない。F3-2c)
+        self.last_market: dict | None = None  # 直前に終わったオフの市場(保存しない。①b)
 
     @property
     def records(self) -> _StatsCache:

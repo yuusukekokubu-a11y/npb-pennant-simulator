@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .. import draft as draftmod, fa as famod
+from .. import draft as draftmod, fa as famod, market as marketmod
 from ..abilities import POSITION_LABELS
 from ..draft import STAGES, STAGE_LABELS, stage_of
 from ..season import Season, derive_seed
@@ -34,6 +34,7 @@ class OffseasonMixin:
             state.transactions.append({"year": proc.year, "phase": "fa", **{k: v for k, v in x.items() if k != "offers"}})
         self.last_negotiations = proc.negotiations  # 終わった手続きの更改の交渉(保存しない。指紋 (p) と開発者向けの集計用)
         self.last_fa = {"info": proc.fa_info, "results": proc.fa_results, "log": proc.fa_log, "ranks": dict(proc.ranks), "budget_releases": list(proc.budget_releases)}  # 終わった FA(保存しない。指紋 (q) と集計用)
+        self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log), "pool": len(proc.market) + len(proc.market_results)}  # 終わった市場(保存しない。集計用。D-300)
         state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
@@ -76,10 +77,10 @@ class OffseasonMixin:
             "phases": [{"key": k, "label": STAGE_LABELS[k]} for k in STAGES],
             "order": [{"team_id": t, "team_name": names[t], "is_mine": t == my} for t in proc.order],
             "round": proc.round,
-            "total_rounds": proc.total_rounds() if proc.phase in ("draft", "market") else 0,
-            "current_team": proc.current_team() if proc.phase in ("draft", "market") else None,
-            "is_my_turn": proc.phase in ("draft", "market") and proc.current_team() == my and not draftmod.phase_finished(proc),
-            "phase_finished": draftmod.phase_finished(proc) if proc.phase in ("draft", "market") else proc.phase == "done",
+            "total_rounds": proc.total_rounds() if proc.phase == "draft" else 0,
+            "current_team": proc.current_team() if proc.phase == "draft" else None,
+            "is_my_turn": proc.phase == "draft" and proc.current_team() == my and not draftmod.phase_finished(proc),
+            "phase_finished": draftmod.phase_finished(proc) if proc.phase == "draft" else proc.market_done if proc.phase == "market" else proc.phase == "done",
             "my_team": None if my is None else {"team_id": my, "team_name": names[my], "players": len(self._team(my).players), "max": draftmod.MAX_ROSTER, "shortages": self._shortage_text(self._team(my).players, mins, min_batters)},
             "my_release_done": proc.my_release_done,
             "contracts": self._procedure_contracts(proc),
@@ -97,9 +98,10 @@ class OffseasonMixin:
             view["renewal"] = self._renewal_info(proc)
         if proc.phase == "fa":
             view["fa"] = self._fa_info(proc)
+        if proc.phase == "market":
+            view["market"] = self._market_info(proc)
         if my is not None:
-            team = self._team(my)
-            if proc.phase in ("draft", "market"):
+            if proc.phase == "draft":
                 pool = draftmod.pool_of(proc)
                 rows = []
                 for p in pool:
@@ -120,7 +122,8 @@ class OffseasonMixin:
     def offseason_next(self) -> dict:
         """「次の手続きへ」(D-271):自分の操作を終えて次の段階へ進む(AI の代行はしない)。
         契約:全員が決まり、標準以上で上限を超えていなければ、AI 球団の予算超過の解消と自由契約を行って FA へ。
-        FA:自球団は追加の提示をせず(今のラウンドの提示は有効)、残りのラウンドを締める。ドラフト・市場:自球団の残りの番はパス。
+        FA:自球団は追加の提示をせず(今のラウンドの提示は有効)、残りのラウンドを締める。ドラフト:自球団の残りの番はパス。
+        市場:まだ締めていなければ、今の提示で締める(AI の代行はしない。D-300)。
         市場の次は完了(自動補充 → 次のシーズン)。"""
         state = self.state
         proc = self._proc()
@@ -138,6 +141,10 @@ class OffseasonMixin:
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=False)
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=False)
+            draftmod.next_phase(proc)
+        elif stage == "market" and marketmod.uses_offers(ctx):
+            if not proc.market_done:
+                marketmod.close_market(state.league, proc, ctx, my, sd, state.draft_settings, my_ai=False)
             draftmod.next_phase(proc)
         elif stage in ("draft", "market"):
             self._run_turns(my_ai=False)
@@ -184,6 +191,10 @@ class OffseasonMixin:
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=True)
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=True)
+            draftmod.next_phase(proc)
+        elif stage == "market" and marketmod.uses_offers(ctx):
+            if not proc.market_done:
+                marketmod.close_market(state.league, proc, ctx, my, sd, state.draft_settings, my_ai=True)
             draftmod.next_phase(proc)
         elif stage in ("draft", "market"):
             self._run_turns(my_ai=True)

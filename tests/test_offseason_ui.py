@@ -36,7 +36,7 @@ def test_stages_and_contract_table(contract_games):
     assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "ドラフト", "市場", "完了"]
     assert "note" not in v["renewal"] and not v["renewal"]["can_next"] and v["renewal"]["none_max_ratio"] == 1.3
     t = g.contract_table()
-    assert [c["label"] for c in t["columns"]] == ["WAR", "ポジション", "年齢", "今の契約", "今回の提示", "状態", "出場"]  # 「全員」は共通の列だけ
+    assert [c["label"] for c in t["columns"]] == ["WAR", "状態", "今回の提示", "ポジション", "年齢", "今の契約", "出場"]  # 「全員」は共通の列だけ
     assert t["sort"]["key"] == "war_all" and t["order"] == "asc" and not t["kinds"]  # 初期は WAR の低い順
     team = g._team("T01")
     assert len(t["rows"]) == len(team.players) == v["renewal"]["players"]
@@ -45,7 +45,7 @@ def test_stages_and_contract_table(contract_games):
     assert {r["values"]["status"] for r in t["rows"]} <= {"未提示", "契約中"}
     # 種類を選べるのは、投手・捕手・内野手・外野手を選んだとき。選んだ指標は名前のすぐ右(D-272)
     p = g.contract_table("pitcher", "saber", "fip")
-    assert [c["key"] for c in p["columns"]][:4] == ["fip", "pos", "age", "contract"] and len(p["kinds"]) == 3
+    assert [c["key"] for c in p["columns"]][:4] == ["fip", "status", "offer", "pos"] and len(p["kinds"]) == 3
     assert all(r["position"] in ("SP", "RP") for r in p["rows"])
     c = g.contract_table("catcher", "basic")
     assert c["rows"] and all(r["position"] == "C" for r in c["rows"]) and c["columns"][0]["key"] == "war"

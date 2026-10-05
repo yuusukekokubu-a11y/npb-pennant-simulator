@@ -121,12 +121,12 @@ CONTRACT_STATUS_LABELS = {"unoffered": "未提示", "refused": "保留", "accept
 CONTRACT_GROUPS = {"all": ("全員", None), "pitcher": ("投手", ("SP", "RP")), "catcher": ("捕手", ("C",)), "infield": ("内野手", ("1B", "2B", "3B", "SS")), "outfield": ("外野手", ("LF", "CF", "RF"))}
 
 
-CONTRACT_COLUMNS = [
+CONTRACT_COLUMNS = [  # 「状態」と「今回の提示」を指標のすぐ右に(D-284)
+    {"key": "status", "label": "状態", "description": "未提示・保留(断られた)・更改済・FA 宣言・自由契約・契約中(複数年契約の途中)", "type": "text", "better": "low"},
+    {"key": "offer", "label": "今回の提示", "description": "今回の更改の提示(年俸・年数)。未提示は自動案", "type": "count", "better": "high"},
     {"key": "pos", "label": "ポジション", "description": "守備位置", "type": "text", "better": "low"},
     {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
     {"key": "contract", "label": "今の契約", "description": "今の契約の年俸(万円)と、次のシーズンからの残り年数(満了は更改の対象)", "type": "count", "better": "high"},
-    {"key": "offer", "label": "今回の提示", "description": "今回の更改の提示(年俸・年数)。未提示は自動案", "type": "count", "better": "high"},
-    {"key": "status", "label": "状態", "description": "未提示・保留(断られた)・更改済・FA 宣言・自由契約・契約中(複数年契約の途中)", "type": "text", "better": "low"},
     {"key": "usage", "label": "出場", "description": "選んだシーズンの打席数(投手は投球回)", "type": "count", "better": "high"},
 ]
 
