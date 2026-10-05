@@ -132,7 +132,7 @@
   th.sorted:not(.sticky):not(.sticky2) { position: relative; }
   th.sorted .arrow { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
-  /* 広い画面(幅が app.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */
+  /* 広い画面(幅が js/core.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */
   .wide #screen-procedure, .wide #screen-review { max-width: 1180px; } /* fluid の表がある画面だけ、広い画面では列の幅を広げる(他の画面は第 2 段階で) */
   .wide .table-wrap.fluid { overflow-x: visible; }
   .wide .table-wrap.fluid table { table-layout: auto; }
@@ -578,7 +578,7 @@
   <div id="guide-body"></div>
 </main>
 
-<!-- 下のタブ(ゲーム中だけ表示。タブは app.js の TABS で増やせる) -->
+<!-- 下のタブ(ゲーム中だけ表示。タブは js/core.js の TABS で増やせる) -->
 <nav class="tabs" id="tabs" role="tablist" hidden></nav>
 
 <input id="open-file-start" type="file" accept=".sav">

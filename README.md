@@ -35,7 +35,8 @@
 | --- | --- |
 | [docs/SPEC.md](docs/SPEC.md) | 仕様書(何を作るか) |
 | [docs/DESIGN.md](docs/DESIGN.md) | 設計書(どう作るか) |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 決定ログ(決めたことの記録) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 決定ログ(決めたことの日付つきの記録。正本) |
+| [docs/ACTIVE_DECISIONS.md](docs/ACTIVE_DECISIONS.md) | 今有効な決定の一覧(置き換えや取り下げを除いて、分野ごとに 1〜2 行でまとめたもの。D-289) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | 今後の予定 |
 | [CLAUDE.md](CLAUDE.md) | 開発ルール(AI と人間の共通ルール) |
 
@@ -52,14 +53,16 @@ pytest -m ""              # 全部のテストを実行する
 
 テストは「速いテスト」と「重いテスト」(印 `slow`)に分けています(D-280)。重いテストのファイルやテストを名前で指定して回すときも、`-m ""` か `-m slow` を付けてください(付けないと除かれます)。
 
-GitHub 上では、CI(自動でテストを走らせる仕組み)が次のように回します(D-279〜D-281)。
+GitHub 上では、CI(自動でテストを走らせる仕組み)が次のように回します(D-279〜D-281、D-285、D-287、D-293)。
 
 | いつ | 何を | Python の版 |
 | --- | --- | --- |
 | PR を出したとき(出し直すと、古い実行は止まる) | 速いテスト(指紋の一致の確認を含む) | 3.10・3.12・3.14 |
-| PR で計算本体(`src/pennant/`・`tests/`・`pyproject.toml` など。`scripts/ci_needs_slow.py`)が変わったとき | 重いテストも | 3.12 |
+| PR で計算本体(`src/pennant/`・`tests/`・`pyproject.toml`・`web/bridge.py` など。`scripts/ci_needs_slow.py`)が変わったとき | 重いテストも | 3.12 |
 | main に取り込んだあと | 速いテスト | 3.12 |
 | 手動(Actions の画面の「test」→「Run workflow」) | 速いテストと重いテスト | 3.12 |
+
+待ち時間を短くするため、1 つの版の速いテストは 3 つのジョブ(指紋の一致の確認・a・b)に、重いテストも 3 つのジョブに分けて、同時に走らせます。分け方は `scripts/ci_groups.py` にあり、手元でも `pytest $(python scripts/ci_groups.py fast a)` のように同じ分け方で回せます。
 
 ## ライセンス
 

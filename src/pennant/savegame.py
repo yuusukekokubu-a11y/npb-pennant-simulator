@@ -18,22 +18,17 @@ import copy
 import dataclasses
 import io
 import json
-import math
 import zipfile
 import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any, Callable
 
-from .abilities import BATTER, PITCHER, items_for
-from .baselines import STATES, VALUE_NAMES, Baselines, BaselineSettings, load_baseline_settings, validate_baseline_settings
-from .history import SeasonArchive
-from .offseason import OffseasonResult, OffseasonSettings, load_offseason_settings, validate_offseason_settings
-from .parkfactors import COUNT_KEYS, ParkTally, history_from_dict, history_to_dict
+from .baselines import Baselines, BaselineSettings, load_baseline_settings, validate_baseline_settings
+from .offseason import OffseasonSettings, load_offseason_settings, validate_offseason_settings
+from .parkfactors import ParkTally, history_to_dict
 from .contracts import MONEY_RULES, TIERS, load_contract_settings, validate_contract_settings
 from .negotiation import load_negotiation_settings, validate_negotiation_settings
-from .draft import OffseasonProcedure, load_draft_settings, validate_draft_settings
-from .baserunning import RunnerMove
+from .draft import load_draft_settings, validate_draft_settings
 from .config import (
     ConfigError,
     GenerationConfig,
@@ -43,169 +38,40 @@ from .config import (
     validate_generation_config,
     validate_name_parts,
 )
-from .game import GamePlateAppearance, GameResult, PitcherLine
 from .game_config import load_game_config, validate_game_config
 from .manager import SimpleManager
-from .models import HiddenInfo, League, ParkFactors, Player, PlayerState, Team
+from .models import League, ParkFactors, Team
 from .newgame import check_team_name, new_league
 from .pa_config import load_pa_config, validate_pa_config
-from .plate_appearance import BaseOutState, OddsRatioModel, PlateAppearance
+from .plate_appearance import OddsRatioModel
 from .season import GameContext, PlayedGame, Season
 from .season_config import load_season_config, validate_season_config
+from .save_checks import (  # RATING_RANGE・GROWTH_TYPES は、分ける前と同じく savegame からも参照できるように残す
+    RATING_RANGE,
+    GROWTH_TYPES,
+    _Problems,
+    _read_json,
+    _need,
+    _check_player,
+    _player_from,
+    _game_from,
+    _check_procedure,
+    _check_history,
+    _check_offseasons,
+    _check_park_history,
+    _check_baselines,
+)
+from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 SAVE_FORMAT_VERSION = 12  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
-RATING_RANGE = (-50.0, 150.0)  # 能力値として受け付ける範囲(内部では 20〜80 の外も許す。D-024)
-GROWTH_TYPES = ("early", "normal", "late")
 MAX_ROSTER = 70  # 支配下の上限(D-029)
 MIN_ROSTER = 29  # 一軍の人数(D-029 補足)
 
-# 古い版の変換:版 n の内容(manifest と state の組)を、版 n+1 の形に直す関数。版を1つずつ上げる
 
-
-def _v1_to_v2(bundle: dict) -> dict:
-    """版1には自球団の情報がない。「自球団なし」として足す。"""
-    bundle["state"].setdefault("user", {"my_team_id": None})
-    return bundle
-
-
-def _v2_to_v3(bundle: dict) -> dict:
-    """版2には指標の基準値がない。「設定ファイルの既定値を使う」として足す(D-122)。"""
-    bundle["state"].setdefault("baselines", {"source": "default"})
-    return bundle
-
-
-def _v3_to_v4(bundle: dict) -> dict:
-    """版3には球場の倍率がない。すべて 1.0(1000)として足し、これまでどおりの計算を続ける(D-138)。"""
-    league = bundle["state"].get("league")
-    if isinstance(league, dict) and isinstance(league.get("teams"), list):
-        for td in league["teams"]:
-            if isinstance(td, dict):
-                td.setdefault("park", {"home_run": 1000, "babip": 1000})
-    return bundle
-
-
-def _v4_to_v5(bundle: dict) -> dict:
-    """版4には球場 × シーズンの集計の履歴がない。履歴なし(球場補正 1.0)として足す(D-146)。"""
-    bundle["state"].setdefault("park_history", [])
-    return bundle
-
-
-def _v5_to_v6(bundle: dict) -> dict:
-    """版5には年とシーズンの履歴がない。1シーズン目・履歴なしとして足す(F2。D-189)。"""
-    bundle["state"].setdefault("year", 1)
-    bundle["state"].setdefault("history", [])
-    bundle["state"].setdefault("offseasons", [])
-    return bundle
-
-
-def _v6_to_v7(bundle: dict) -> dict:
-    """版6には校正の定数がない。校正なし(0)として足す(旧版の選手には校正を適用しない。D-197)。"""
-    bundle["state"].setdefault("calibration", {"batter": 0.0, "pitcher": 0.0})
-    return bundle
-
-
-def _v7_to_v8(bundle: dict) -> dict:
-    """版7にはオフの手続き・スカウト評価・指名の履歴がない。段階「中」・手続きなし・履歴なしとして足す(F3-1)。
-    校正の定数の設定は、段階ごとの形(small / medium / large)に直す(D-209)。"""
-    state = bundle["state"]
-    state.setdefault("scout_level", "medium")
-    state.setdefault("scout_sd", {})
-    state.setdefault("procedure", None)
-    state.setdefault("transactions", [])
-    cfg = state.get("configs", {})
-    off = cfg.get("offseason")
-    if isinstance(off, dict) and isinstance(off.get("calibration"), dict) and "medium" not in off["calibration"]:
-        old = off["calibration"]
-        off["calibration"] = {level: dict(old) for level in ("small", "medium", "large")}
-    for team in state.get("league", {}).get("teams", []):
-        for pd in team.get("players", []):
-            if isinstance(pd, dict):
-                pd.setdefault("scouting", None)
-    return bundle
-
-
-def _v8_to_v9(bundle: dict) -> dict:
-    """版8のずれの値は 1 つの数。2 層の形({common, item}。合計は元の値のまま)に直す。設定の段階の値は今の設定ファイルに置き換える(D-215)。
-    進行中の手続きと入団時の評価は、方式の版 1(旧方式)として読む。"""
-    from .scouting import total_from_single
-
-    state = bundle["state"]
-    state["scout_sd"] = {tid: (v if isinstance(v, dict) else total_from_single(v)) for tid, v in state.get("scout_sd", {}).items()}
-    cfg = state.get("configs", {})
-    draft = cfg.get("draft")
-    if isinstance(draft, dict) and isinstance(draft.get("scouting"), dict):
-        levels = draft["scouting"].get("levels")
-        if isinstance(levels, dict) and any(not isinstance(v, dict) for v in levels.values()):
-            draft["scouting"]["levels"] = copy.deepcopy(load_draft_settings().data["scouting"]["levels"])
-    proc = state.get("procedure")
-    if isinstance(proc, dict):
-        proc.setdefault("method", 1)
-    for team in state.get("league", {}).get("teams", []):
-        for pd in team.get("players", []):
-            if isinstance(pd, dict) and isinstance(pd.get("scouting"), dict):
-                pd["scouting"].setdefault("method", 1)
-    return bundle
-
-
-def _v9_to_v10(bundle: dict) -> dict:
-    """版9には契約がない。ルールは「なし」、格差なし、契約は読み込みの後に算定で補う(残りの年数は別の乱数系列で 1〜3 年。D-235)。"""
-    state = bundle["state"]
-    state.setdefault("money_rule", "none")
-    state.setdefault("budget_tiers", {})
-    state.setdefault("contract_rates", {})
-    for team in state.get("league", {}).get("teams", []):
-        for pd in team.get("players", []):
-            if isinstance(pd, dict):
-                pd.setdefault("contract", None)
-    return bundle
-
-
-def _v10_to_v11(bundle: dict) -> dict:
-    """版10には志望と交渉がない(F3-2b。D-253):志望は読み込みの後にシードから補う。契約の設定の年数は新しい既定(1 年)に置き換え、
-    交渉の設定は設定ファイルの値を使う。進行中の手続き(更改は済んでいる)は、自由契約の段階から続ける(from_dict が更改の結果を交渉の形に直す)。"""
-    state = bundle["state"]
-    cfg = state.get("configs", {})
-    ct = cfg.get("contracts")
-    if isinstance(ct, dict):
-        ct["years"] = copy.deepcopy(load_contract_settings().data["years"])
-    cfg.setdefault("negotiation", copy.deepcopy(load_negotiation_settings().data))
-    for team in state.get("league", {}).get("teams", []):
-        for pd in team.get("players", []):
-            if isinstance(pd, dict):
-                pd.setdefault("preference", None)
-    proc = state.get("procedure")
-    if isinstance(proc, dict):
-        for key in ("candidates", "market"):
-            for pd in proc.get(key, []):
-                if isinstance(pd, dict):
-                    pd.setdefault("preference", None)
-    return bundle
-
-
-def _v11_to_v12(bundle: dict) -> dict:
-    """版11には FA がない(F3-2c。D-263):FA 権の年数は読み込みの後に補う(D-264)。FA の設定は設定ファイルの値。進行中の手続きはそのまま(FA は飛ばす)。"""
-    state = bundle["state"]
-    neg = state.get("configs", {}).get("negotiation")
-    if isinstance(neg, dict):
-        neg.setdefault("fa", copy.deepcopy(load_negotiation_settings().data["fa"]))
-    for team in state.get("league", {}).get("teams", []):
-        for pd in team.get("players", []):
-            if isinstance(pd, dict):
-                pd.setdefault("fa_seasons", None)
-    proc = state.get("procedure")
-    if isinstance(proc, dict):
-        for key in ("candidates", "market"):
-            for pd in proc.get(key, []):
-                if isinstance(pd, dict):
-                    pd.setdefault("fa_seasons", 0)
-    return bundle
-
-
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7, 7: _v7_to_v8, 8: _v8_to_v9, 9: _v9_to_v10, 10: _v10_to_v11, 11: _v11_to_v12}
 PARK_RANGE = (100, 10000)  # 球場の倍率(千分率)として受け付ける範囲
 
 
@@ -400,136 +266,6 @@ def save_game(state: GameState, saved_at: datetime | None = None) -> bytes:
 
 
 # ---- 読み込み ----
-
-class _Problems:
-    def __init__(self) -> None:
-        self.items: list[str] = []
-
-    def add(self, where: str, why: str) -> None:
-        self.items.append(f"{where}: {why}")
-
-
-def _read_json(raw: bytes, where: str, p: _Problems):
-    try:
-        return json.loads(raw.decode("utf-8"))
-    except UnicodeDecodeError:
-        p.add(where, "文字コードが UTF-8 ではありません")
-    except json.JSONDecodeError as exc:
-        p.add(where, f"JSON として読めません({exc.lineno} 行目 {exc.colno} 文字目: {exc.msg})")
-    return None
-
-
-def _need(d: Any, key: str, kind, where: str, p: _Problems):
-    if not isinstance(d, dict) or key not in d:
-        p.add(where, f"「{key}」がありません(必須項目です)")
-        return None
-    v = d[key]
-    kinds = kind if isinstance(kind, tuple) else (kind,)
-    if (bool not in kinds and isinstance(v, bool)) or not isinstance(v, kinds):
-        p.add(f"{where}.{key}", f"形が違います(値: {str(v)[:40]!r})")
-        return None
-    return v
-
-
-def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
-    if not isinstance(pd, dict):
-        p.add(where, "選手の情報のまとまり({ })が必要です")
-        return
-    for key, kind in (("id", str), ("family_name", str), ("given_name", str), ("age", int), ("role", str), ("position", str)):
-        _need(pd, key, kind, where, p)
-    role = pd.get("role")
-    if role not in (BATTER, PITCHER):
-        p.add(f"{where}.role", f"batter か pitcher にしてください(値: {role!r})")
-        return
-    age = pd.get("age")
-    if isinstance(age, int) and not isinstance(age, bool) and not 15 <= age <= 60:
-        p.add(f"{where}.age", f"年齢が範囲外です(値: {age}。15〜60)")
-    if pd.get("team_id") != team_id:
-        p.add(f"{where}.team_id", f"所属の球団 {pd.get('team_id')!r} が、入っている球団 {team_id!r} と違います")
-    sc = pd.get("scouting")
-    if sc is not None and not (isinstance(sc, dict) and isinstance(sc.get("items"), dict) and isinstance(sc.get("ceiling"), str)):
-        p.add(f"{where}.scouting", "入団時のスカウト評価の形が違います")
-    ct = pd.get("contract")
-    if ct is not None and not (isinstance(ct, dict) and isinstance(ct.get("salary"), int) and not isinstance(ct.get("salary"), bool) and ct["salary"] >= 0 and isinstance(ct.get("until"), int) and isinstance(ct.get("history", []), list)):
-        p.add(f"{where}.contract", "契約の形が違います(年俸は 0 以上の整数、満了シーズンは整数)")
-    pref = pd.get("preference")
-    if pref is not None and not (isinstance(pref, dict) and pref and all(isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 for k, v in pref.items())):
-        p.add(f"{where}.preference", "志望の形が違います(軸 → 0 以上の重み)")
-    fs = pd.get("fa_seasons")
-    if fs is not None and not (isinstance(fs, int) and not isinstance(fs, bool) and 0 <= fs <= 60):
-        p.add(f"{where}.fa_seasons", "FA 権の年数は 0〜60 の整数にしてください")
-    items = items_for(role)
-    for group in ("ratings",):
-        ratings = _need(pd, group, dict, where, p)
-        if ratings is None:
-            continue
-        for item in items:
-            v = ratings.get(item)
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-                p.add(f"{where}.ratings.{item}", f"能力値がない、または数ではありません(値: {v!r})")
-            elif not RATING_RANGE[0] <= v <= RATING_RANGE[1]:
-                p.add(f"{where}.ratings.{item}", f"能力値が範囲外です(値: {v}。{RATING_RANGE[0]:g}〜{RATING_RANGE[1]:g})")
-        extra = sorted(set(ratings) - set(items))
-        if extra:
-            p.add(f"{where}.ratings", f"この役割にない能力があります: {', '.join(extra)}")
-    hidden = _need(pd, "hidden", dict, where, p)
-    if hidden is not None:
-        pot = _need(hidden, "potential", dict, f"{where}.hidden", p)
-        if pot is not None and sorted(pot) != sorted(items):
-            p.add(f"{where}.hidden.potential", "潜在能力の項目が、能力値の項目とそろっていません")
-        if hidden.get("growth_type") not in GROWTH_TYPES:
-            p.add(f"{where}.hidden.growth_type", f"early / normal / late のどれかにしてください(値: {hidden.get('growth_type')!r})")
-        _need(hidden, "archetype", str, f"{where}.hidden", p)
-        _need(hidden, "ability_drift", dict, f"{where}.hidden", p)
-    st = _need(pd, "state", dict, where, p)
-    if st is not None:
-        for key in ("form", "fatigue"):
-            v = st.get(key)
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-                p.add(f"{where}.state.{key}", f"数が必要です(値: {v!r})")
-        if isinstance(st.get("fatigue"), (int, float)) and st["fatigue"] < 0:
-            p.add(f"{where}.state.fatigue", f"疲労はマイナスにできません(値: {st['fatigue']})")
-
-
-def _player_from(pd: dict) -> Player:
-    h = pd["hidden"]
-    return Player(
-        id=pd["id"],
-        family_name=pd["family_name"],
-        given_name=pd["given_name"],
-        age=pd["age"],
-        role=pd["role"],
-        position=pd["position"],
-        bats=pd.get("bats"),
-        throws=pd.get("throws"),
-        ratings=dict(pd["ratings"]),
-        hidden=HiddenInfo(dict(h["potential"]), h["growth_type"], h["archetype"], dict(h["ability_drift"])),
-        state=PlayerState(form=pd["state"]["form"], fatigue=pd["state"]["fatigue"]),
-        team_id=pd.get("team_id"),
-        origin=pd.get("origin"),
-        scouting=copy.deepcopy(pd.get("scouting")),
-        contract=copy.deepcopy(pd.get("contract")),
-        preference=None if pd.get("preference") is None else {str(k): float(v) for k, v in pd["preference"].items()},
-        fa_seasons=pd.get("fa_seasons", 0),
-    )
-
-
-def _game_from(d: dict) -> GameResult:
-    log = []
-    for x in d["log"]:
-        pa = dict(x["pa"])
-        pa["base_out"] = BaseOutState(**pa["base_out"])
-        row = dict(x)
-        row["base_out"] = BaseOutState(**x["base_out"])
-        row["pa"] = PlateAppearance(**pa)
-        row["moves"] = [RunnerMove(**m) for m in x["moves"]]
-        log.append(GamePlateAppearance(**row))
-    g = dict(d)
-    g["log"] = log
-    g["pitchers"] = [PitcherLine(**line) for line in d["pitchers"]]
-    g["lineups"] = {k: [tuple(s) for s in v] for k, v in d["lineups"].items()}
-    g["line"] = {k: list(v) for k, v in d["line"].items()}
-    return GameResult(**g)
 
 
 def _upgrade(manifest: dict, state: dict, p: _Problems) -> tuple[dict, dict] | None:
@@ -857,161 +593,3 @@ def load_game(data: bytes) -> GameState:
     return out
 
 
-def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
-    """オフの手続きの状態の検証(F3-1)。候補・市場の選手は、所属なし(team_id は None)で点検する。"""
-    if d is None:
-        return None
-    where = "state.json.procedure"
-    if not isinstance(d, dict):
-        p.add(where, "手続きのまとまり({ })が必要です")
-        return None
-    try:
-        if d["phase"] not in ("renewal", "release", "fa", "draft", "market", "done"):
-            p.add(f"{where}.phase", f"段階が正しくありません(値: {d['phase']!r})")
-        for i, tid in enumerate(d["order"]):
-            if tid not in team_ids:
-                p.add(f"{where}.order[{i}]", "球団の一覧にない ID です")
-        seen = set()
-        for key in ("candidates", "market", "fa_pool"):
-            for i, pd in enumerate(d.get(key, [])):
-                _check_player(pd, f"{where}.{key}[{i}]", None, p)
-                pid = pd.get("id") if isinstance(pd, dict) else None
-                if pid in seen or pid in league_ids:
-                    p.add(f"{where}.{key}[{i}].id", f"選手の ID {pid!r} が重複しています")
-                seen.add(pid)
-        negs = d.get("negotiations", {})
-        if not isinstance(negs, dict):
-            p.add(f"{where}.negotiations", "選手 ID → 交渉のまとまりが必要です")
-        else:
-            for pid, e in negs.items():
-                w = f"{where}.negotiations.{pid}"
-                if not isinstance(e, dict) or e.get("status") not in ("pending", "accepted", "released", "declared") or not isinstance(e.get("offers"), list) or not isinstance(e.get("auto_salary"), int) or e.get("team_id") not in team_ids:
-                    p.add(w, "交渉の形が違います(状態は pending / accepted / released / declared、提示の一覧、自動案の年俸、球団)")
-                    continue
-                for j, o in enumerate(e["offers"]):
-                    if not (isinstance(o, dict) and isinstance(o.get("years"), int) and isinstance(o.get("salary"), int) and isinstance(o.get("accepted"), bool)):
-                        p.add(f"{w}.offers[{j}]", "提示の形が違います(年数・年俸は整数、受けたかは真偽)")
-                if e["status"] == "pending" and e["player_id"] not in league_ids:
-                    p.add(w, "交渉中の選手が、リーグにいません")
-        if p.items:
-            return None
-        return OffseasonProcedure.from_dict(d, _player_from)
-    except (KeyError, TypeError, ValueError) as exc:
-        p.add(where, f"手続きの形が違います({type(exc).__name__}: {exc})")
-        return None
-
-
-def _check_history(history_d: list, raws: dict, team_ids: set, year: int, p: _Problems) -> list:
-    """過去シーズンの集計の検証(F2。D-182)。打席ログが残っているシーズンは、試合の結果も読み込む。"""
-    out = []
-    seen = set()
-    for i, d in enumerate(history_d):
-        where = f"state.json.history[{i}]"
-        if not isinstance(d, dict):
-            p.add(where, "シーズンの集計のまとまり({ })が必要です")
-            continue
-        try:
-            y = int(d["year"])
-            if y in seen or y >= year or y < 1:
-                p.add(where, f"シーズンの番号が正しくありません(値: {y}。1〜{year - 1} で重複なし)")
-                continue
-            seen.add(y)
-            for tid in d["records"]["teams"]:
-                if tid not in team_ids:
-                    p.add(f"{where}.records.teams.{tid}", "球団の一覧にない ID です")
-            games = None
-            if d.get("has_games"):
-                log_name = f"logs/season-{y}.jsonl"
-                if log_name not in raws:
-                    p.add(log_name, "ファイルが入っていません(履歴に打席ログがあることになっています)")
-                else:
-                    games = []
-                    for n, raw in enumerate(line for line in raws[log_name].split(b"\n") if line.strip()):
-                        row = _read_json(raw, f"{log_name} の {n + 1} 行目", p)
-                        if row is None:
-                            continue
-                        games.append(_archived_game(row))
-            out.append(SeasonArchive.from_dict(d, games))
-        except (KeyError, TypeError, ValueError) as exc:
-            p.add(where, f"シーズンの集計の形が違います({type(exc).__name__}: {exc})")
-    out.sort(key=lambda a: a.year)
-    return out
-
-
-def _archived_game(row: dict):
-    """過去シーズンの試合(打席ログつき)。日程は持たないので、試合の番号と結果だけを持つ。"""
-    from .season import PlayedGame, ScheduledGame
-
-    result = _game_from(row["result"])
-    scheduled = ScheduledGame(int(row["number"]), 0, 0, result.home_team_id, result.away_team_id)
-    return PlayedGame(scheduled, result, GameContext({}, {}), {})
-
-
-def _check_offseasons(offseasons_d: list, p: _Problems) -> list:
-    out = []
-    for i, d in enumerate(offseasons_d):
-        try:
-            out.append(OffseasonResult.from_dict(d))
-        except (KeyError, TypeError, ValueError) as exc:
-            p.add(f"state.json.offseasons[{i}]", f"オフの結果の形が違います({type(exc).__name__}: {exc})")
-    return out
-
-
-def _check_park_history(d, team_ids: set, p) -> list:
-    """球場 × シーズンの集計の履歴の検証(D-146)。"""
-    where = "state.json.park_history"
-    if d is None:
-        p.add(where, "値がありません(必須項目です)")
-        return []
-    if not isinstance(d, list):
-        p.add(where, "リスト([ ])が必要です")
-        return []
-    for i, season in enumerate(d):
-        sw = f"{where}[{i}]"
-        if not isinstance(season, dict) or not isinstance(season.get("parks"), dict):
-            p.add(sw, "シーズンの集計のまとまり({ season, parks })が必要です")
-            continue
-        for tid, t in season["parks"].items():
-            if tid not in team_ids:
-                p.add(f"{sw}.parks.{tid}", "球団の一覧にない ID です")
-            for side in ("home", "away"):
-                counts = t.get(side) if isinstance(t, dict) else None
-                if not isinstance(counts, dict):
-                    p.add(f"{sw}.parks.{tid}.{side}", "まとまり({ })が必要です")
-                    continue
-                for key in COUNT_KEYS:
-                    v = counts.get(key)
-                    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
-                        p.add(f"{sw}.parks.{tid}.{side}.{key}", f"0 以上の整数が必要です(値: {v!r})")
-    if p.items:
-        return []
-    return history_from_dict(d)
-
-
-def _check_baselines(d, settings: BaselineSettings | None, p) -> Baselines | None:
-    """基準値の検証。source が default だけのものは、設定ファイルの既定値を使う(None を返す)。"""
-    where = "state.json.baselines"
-    if d is None:
-        p.add(where, "値がありません(必須項目です)")
-        return None
-    if not isinstance(d, dict):
-        p.add(where, "まとまり({ })が必要です")
-        return None
-    if set(d) == {"source"}:
-        return None
-    values = d.get("values")
-    if not isinstance(values, dict):
-        p.add(f"{where}.values", "まとまり({ })が必要です")
-        return None
-    for k in VALUE_NAMES:
-        if k not in values:
-            p.add(f"{where}.values.{k}", "値がありません(必須項目です)")
-    re24 = d.get("re24")
-    if re24 is not None and (not isinstance(re24, list) or len(re24) != STATES):
-        p.add(f"{where}.re24", f"{STATES}個の値のリストが必要です")
-    try:
-        b = Baselines.from_dict(d)
-    except (TypeError, ValueError, ZeroDivisionError, KeyError, AttributeError) as exc:
-        p.add(where, f"基準値の形が違います({exc})")
-        return None
-    return b

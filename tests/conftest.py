@@ -39,3 +39,12 @@ def all_players(leagues):
 @pytest.fixture(scope="session")
 def draft_class(config, names):
     return generate_draft_class(7, 4000, config, names)
+
+
+@pytest.fixture(scope="session")
+def current_fingerprints():
+    """今のコードで作った指紋(すべての項目)。作るのに数分かかるので、同じ回の中では 1 回だけ作って使い回す(D-285)。
+    指紋は決まったシードからの計算なので、何度作っても同じ値になる(別の Python を起動して確かめるテストは別に作り直す)。"""
+    from pennant.fingerprint import fingerprints
+
+    return fingerprints()

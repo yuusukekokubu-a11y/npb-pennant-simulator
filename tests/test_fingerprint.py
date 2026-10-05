@@ -21,8 +21,8 @@ EXPECTED = json.loads((ROOT / "tests" / "data" / "fingerprints.json").read_text(
 
 
 @pytest.fixture(scope="module")
-def fp():
-    return fpmod.fingerprints()
+def fp(current_fingerprints):
+    return current_fingerprints
 
 
 def test_fingerprints_match_expected(fp):
@@ -75,9 +75,13 @@ def test_format_shows_all_three(fp):
 
 
 @pytest.mark.slow
-def test_script_reports_match(capsys):
+def test_script_reports_match(capsys, monkeypatch, current_fingerprints):
+    """スクリプトが指紋を表示し、固定した正しい値と比べて「一致」と出す。
+    指紋の計算そのものは同じ関数(pennant.fingerprint.fingerprints)なので、同じ回で作った指紋を使い回す(D-285)。"""
     spec = importlib.util.spec_from_file_location("fingerprint_script", ROOT / "scripts" / "fingerprint.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    assert module.fingerprints is fpmod.fingerprints  # スクリプトは計算本体と同じ関数を使っている
+    monkeypatch.setattr(module, "fingerprints", lambda: current_fingerprints)
     assert module.main([]) == 0
     assert "○ 一致" in capsys.readouterr().out

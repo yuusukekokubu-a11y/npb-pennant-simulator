@@ -9,8 +9,10 @@
   tests/                  テストのコードと、固定した指紋などのデータ
   pyproject.toml          依存とテストの設定
   scripts/fingerprint.py  指紋の確認のスクリプト(テストから使う)
+  scripts/ci_groups.py    テストを同時に走らせるための分け方(D-285)
+  web/bridge.py           画面と計算の橋渡し(D-287)
   .github/workflows/test.yml  テストの回し方そのもの
-画面(web/)、docs/、ほかの開発者向けスクリプトだけの変更では、重いテストは回さない。
+画面(web/ の bridge.py 以外)、docs/、ほかの開発者向けスクリプトだけの変更では、重いテストは回さない(D-287)。
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ PATTERNS = (
     r"^tests/",
     r"^pyproject\.toml$",
     r"^scripts/fingerprint\.py$",
+    r"^scripts/ci_groups\.py$",
+    r"^web/bridge\.py$",
     r"^\.github/workflows/test\.yml$",
 )
 

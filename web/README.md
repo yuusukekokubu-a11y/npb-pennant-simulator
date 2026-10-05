@@ -47,9 +47,27 @@
 | ファイル | 役目 |
 | --- | --- |
 | `index.html` | 画面(スタート・新規開始・進行・順位表) |
-| `app.js` | 画面の動き(ボタン・表示の切り替え・保存と読み込み) |
+| `app.js` | 画面の入口(閉じる前の警告・ボタンと処理のつなぎ・起動)。画面ごとの処理は `js/` に分けてある(保守②。D-291) |
+| `js/core.js` | 定数・画面の状態(state)・要素の取り出し・広い画面の印 |
+| `js/backend.js` | 裏の Python とのやり取り・見る画面の問い合わせの使い回し・待ち時間の表示 |
+| `js/screens.js` | 画面の切り替え(タブ・重ねて開くページ・戻る) |
+| `js/parts.js` | 共通の部品(表・リンク・試合のカード・並べ替えの向き・項目と値の表) |
+| `js/progress.js` | 進行・順位表・進める |
+| `js/stats.js` | 成績(個人成績の表・並び順・能力の表) |
+| `js/games.js` | 試合(日付ごとの一覧と試合のページ) |
+| `js/player.js` | 選手のページ |
+| `js/team.js` | チームのページと球場のページ |
+| `js/review.js` | ドラフトの振り返り |
+| `js/procedure.js` | オフの手続きの枠(段階・状態バー・おまかせ・次の手続きへ) |
+| `js/contract.js` | 契約の画面 |
+| `js/fa.js` | FA の画面 |
+| `js/market.js` | ドラフトと市場の候補の表・指名と入退団の記録 |
+| `js/yearend.js` | 年度の確定とオフの結果 |
+| `js/menu.js` | メニュー(指標の解説・答え合わせモード) |
+| `js/newgame.js` | 新規開始 |
+| `js/files.js` | 保存と読み込み |
 | `worker.js` | 裏で Python を動かす部分 |
-| `bridge.py` | 裏の計算と、操作の関数(`pennant.api`)の取り次ぎ役 |
+| `bridge.py` | 裏の計算と、操作の関数(`pennant.api`。`src/pennant/api/` に分野ごと)の取り次ぎ役 |
 | `dev/` | 開発者向けの測定ページ(`index.html`・`app.js`・`worker.js`・`bench.py`) |
 | `../scripts/build_web.py` | 上のファイルと計算本体を `_site/` にまとめる |
 | `../scripts/check_browser.mjs` | ブラウザでの通しの確認(開発者向け) |

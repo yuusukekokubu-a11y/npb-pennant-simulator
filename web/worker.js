@@ -1,4 +1,4 @@
-// 裏で Python(Pyodide)を動かす部分(Web Worker)。画面(app.js)からの依頼を受けて、
+// 裏で Python(Pyodide)を動かす部分(Web Worker)。画面(app.js と js/)からの依頼を受けて、
 // 操作の関数(pennant.api)を bridge.py 経由で呼び、結果を返す。計算を裏で行うので、計算中も画面は固まらない。
 // 通信するのは、このページ自身(pennant.zip・bridge.py)と、Pyodide の配布元だけ。
 // ブラウザの保存領域(localStorage・IndexedDB など)は使わない。

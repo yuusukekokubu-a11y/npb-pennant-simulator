@@ -88,8 +88,11 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
     info = build.build(tmp_path / "site")
     site = tmp_path / "site"
     for name in ("index.html", "app.js", "worker.js", "bridge.py", "pennant.zip", "sample-save.sav", "sample-save.json", "expected-fingerprints.json",
-                 "dev/index.html", "dev/app.js", "dev/worker.js", "dev/bench.py"):
+                 "dev/index.html", "dev/app.js", "dev/worker.js", "dev/bench.py", "js/core.js"):
         assert (site / name).exists()
+    # 画面の処理(js/)は、web/js/ の全部をそのまま写す(保守②)
+    assert sorted(f.name for f in (site / "js").iterdir()) == sorted(f.name for f in (WEB / "js").glob("*.js"))
+    assert all((site / n).read_bytes() == (WEB / n).read_bytes() for n in info["web_files"])
     with zipfile.ZipFile(site / "pennant.zip") as zf:
         names = set(zf.namelist())
     expected = {"pennant/" + p.relative_to(ROOT / "src" / "pennant").as_posix() for p in build.package_files()}
@@ -104,8 +107,14 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
 PAGES = (WEB, WEB / "dev")  # 遊ぶための画面と、測定ページ
 
 
+def _main_js() -> str:
+    """遊ぶための画面の JavaScript(入口の app.js と、画面ごとに分けた js/ の各ファイル。保守②)。"""
+    return "\n".join(f.read_text(encoding="utf-8") for f in [WEB / "app.js", *sorted((WEB / "js").glob("*.js"))])
+
+
 def _web_text() -> str:
-    return "\n".join((d / n).read_text(encoding="utf-8") for d in PAGES for n in ("index.html", "app.js", "worker.js"))
+    text = "\n".join((d / n).read_text(encoding="utf-8") for d in PAGES for n in ("index.html", "app.js", "worker.js"))
+    return text + "\n" + _main_js()
 
 
 def test_no_browser_storage_writes():
@@ -138,14 +147,15 @@ def test_test_name_field_is_not_autosaved():
 
 
 @pytest.mark.slow
-def test_page_shows_the_same_fingerprints_as_the_script(bench_module):
-    """ブラウザのページは、PC のスクリプトと同じ関数・同じ文章で指紋を出す(D-089)。"""
+def test_page_shows_the_same_fingerprints_as_the_script(bench_module, current_fingerprints):
+    """ブラウザのページは、PC のスクリプトと同じ関数・同じ文章で指紋を出す(D-089)。
+    比べる相手(PC 側)の指紋は、同じ回で作ったものを使い回す(D-285)。ページ側は、ここで作り直す。"""
     import json
 
-    from pennant.fingerprint import fingerprints, format_fingerprints
+    from pennant.fingerprint import format_fingerprints
 
     report = bench_module.fingerprint_report()
-    assert report["text"] == format_fingerprints(fingerprints())
+    assert report["text"] == format_fingerprints(current_fingerprints)
     expected = json.loads((ROOT / "tests" / "data" / "fingerprints.json").read_text(encoding="utf-8"))
     for key in ("league", "game", "days"):
         assert expected[key] in report["text"]
@@ -242,7 +252,7 @@ def test_bridge_flow(bridge):
 def test_main_page_has_no_hidden_words():
     """遊ぶための画面のファイルに、能力の項目名・成長タイプ・生成時の型の名前を書かない(Python の答え合わせ用の関数からだけ届く。D-108)。"""
     words = hidden_words()
-    for name in ("index.html", "app.js", "worker.js", "bridge.py"):
+    for name in ("index.html", "app.js", "worker.js", "bridge.py", *(f"js/{f.name}" for f in sorted((WEB / "js").glob("*.js")))):
         text = (WEB / name).read_text(encoding="utf-8")
         for word in words:
             assert word not in text, f"{name}: {word}"
@@ -277,7 +287,7 @@ def test_bridge_queries_and_answers_are_separate(bridge):
 def test_main_page_basics():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "初回は約12MB" in html and 'id="real-name-notice"' in html
-    app = (WEB / "app.js").read_text(encoding="utf-8")
+    app = _main_js()
     assert "beforeunload" in app and "state.dirty" in app
     assert re.search(r'a\.download = r\.value\.file_name', app)  # ファイル名は Python が作る日付だけの名前
 
@@ -293,5 +303,5 @@ def test_table_fixed_columns_use_one_width():
     assert "left: var(--table-name-w)" in sticky2
     assert "padding-right: var(--table-sort-mark-w)" in rules["th.sorted, td.sorted"]
     assert any("var(--table-first-scroll-gap)" in body for sel, body in rules.items() if "td.sticky2 + td" in sel)
-    app = (WEB / "app.js").read_text(encoding="utf-8")
+    app = _main_js()
     assert 'className: "arrow"' in app and 'className: "sorted"' in app  # ▲▼ は別の要素、本体の並べ替えた列にも印
