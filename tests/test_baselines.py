@@ -246,21 +246,15 @@ def test_saber_table_and_notes(game):
     t = game.stats("batter", "saber")
     assert t["sort"]["key"] == "wrc_plus" and "前のシーズン" not in t["baseline_note"] and "試運転" in t["baseline_note"]
     assert "75%" in t["baseline_note"]
-    cols = {c["key"]: c for c in t["columns"]}
-    assert "1シーズン目は 1.0" in cols["wrc_plus"]["description"]
-    assert "1シーズン目は 1.0" in cols["ops_plus"]["description"]
+    assert all("description" not in c for c in t["columns"])  # 解説の文は用語集から画面が引く(D-311)
     assert all(r["values"]["woba"] != "-" for r in t["rows"])
     assert game.stats("batter", "basic")["baseline_note"] is None
 
 
-def test_metrics_guide_matches_definitions():
-    config = api.metrics_config()
-    guide = api.metrics_guide()
-    seen = [m for g in guide["groups"] for m in g["metrics"]]
-    assert [m["key"] for m in seen] == config.in_category("basic") + config.in_category("saber")
-    for m in seen:
-        d = config.metrics[m["key"]]
-        assert m["name"] == d["name"] and m["description"] == d["description"]
-        assert m["notes"] == [d[k] for k in ("note", "better_note") if d.get(k)]
-    woba = next(m for m in seen if m["key"] == "woba")
-    assert woba["formulas"][0]["text"].startswith("(四球の重み × 四球 + ")
+def test_glossary_has_the_saber_metrics_and_park_note():
+    """指標の解説は用語集に移した(D-307)。球場補正の 1 シーズン目の扱いも、用語集の「球場補正」に書く。"""
+    v = api.glossary_view()
+    names = {t["name"]: t for t in v["terms"]}
+    for mid in api.metrics_config().in_category("saber"):
+        assert api.metrics_config().metrics[mid]["name"] in names
+    assert "1 シーズン目は 1.0" in names["球場補正"]["meaning"] and "球場補正" in names["wRC+"]["meaning"]

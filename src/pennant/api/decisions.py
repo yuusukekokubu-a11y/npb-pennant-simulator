@@ -31,23 +31,23 @@ THIN_BOTTOM = 9  # 手薄の印:一軍相当の見込みの WAR が、12 球団�
 THIN_SHORT = 2  # 手薄の印:人数が人数の目安より 2 人以上少ない(目安の合計が 70 人なので、1 人の差はどこかに必ず出る。D-303)
 
 COL = {
-    "age": {"key": "age", "label": "年齢", "description": "今の年齢", "type": "metric", "better": "low"},
-    "origin": {"key": "origin", "label": "出身", "description": "高卒・大卒・社会人・独立リーグ", "type": "text", "better": "low"},
-    "pos": {"key": "pos", "label": "ポジション", "description": "守備位置。◆は自球団の手薄なポジション", "type": "text", "better": "low"},
-    "depth": {"key": "depth", "label": "加入後の序列", "description": "加入したら、自球団の同じポジションで何番手になるか(自球団の評価。志望の出場機会と同じ計算)。● は一軍の枠の目安に入る", "type": "count", "better": "low"},
-    "calc": {"key": "calc", "label": "算定年俸", "description": "見込みの WAR から算定した年俸(万円。自球団の評価)", "type": "count", "better": "high"},
-    "usage": {"key": "usage", "label": "出場", "description": "選んだシーズンの打席数(投手は投球回)", "type": "count", "better": "high"},
-    "former": {"key": "former", "label": "前の所属", "description": "FA を宣言した球団・手放した球団(指名されなかった候補は「候補」)", "type": "text", "better": "low"},
-    "status": {"key": "status", "label": "状態", "description": "未契約・提示中・契約(球団・年数・年俸)", "type": "text", "better": "low"},
-    "overall": {"key": "overall", "label": "総合(推定)", "description": "自球団のスカウトの総合の推定値 ± ふれ幅(真の値が約 80% の確率で入る幅)", "type": "metric", "better": "high"},
-    "ceiling": {"key": "ceiling", "label": "天井", "description": "潜在能力の見立て(S〜D。上位 5% が S)", "type": "metric", "better": "high"},
+    "age": {"key": "age", "label": "年齢", "type": "metric", "better": "low"},
+    "origin": {"key": "origin", "label": "出身", "type": "text", "better": "low"},
+    "pos": {"key": "pos", "label": "ポジション", "type": "text", "better": "low"},
+    "depth": {"key": "depth", "label": "加入後の序列", "type": "count", "better": "low"},
+    "calc": {"key": "calc", "label": "算定年俸", "type": "count", "better": "high"},
+    "usage": {"key": "usage", "label": "出場", "type": "count", "better": "high"},
+    "former": {"key": "former", "label": "前の所属", "type": "text", "better": "low"},
+    "status": {"key": "status", "label": "状態", "type": "text", "better": "low"},
+    "overall": {"key": "overall", "label": "総合(推定)", "type": "metric", "better": "high"},
+    "ceiling": {"key": "ceiling", "label": "天井", "type": "metric", "better": "high"},
 }
 STAGE_COLUMNS = {
     "fa": ["age", "pos", "depth", "calc", "usage", "former", "status"],
     "draft": ["overall", "ceiling", "age", "origin", "pos", "depth"],
     "market": ["overall", "ceiling", "age", "pos", "depth", "calc", "usage", "former", "status"],
 }
-WAR_ALL = {"key": "war_all", "label": "WAR", "description": "野手は WAR、投手は WAR(失点版)", "type": "metric", "category": "war", "better": "high"}
+WAR_ALL = {"key": "war_all", "label": "WAR", "type": "metric", "category": "war", "better": "high"}
 
 
 class DecisionMixin:
@@ -167,7 +167,7 @@ class DecisionMixin:
                 metric = next(c for c in WAR_COLUMNS[role] if c["key"] == ("war" if role == "batter" else "war_ra"))
         base = [dict(COL[k]) for k in STAGE_COLUMNS[stage]]
         if stage == "draft" and show == "all":
-            base.append({**COL["status"], "description": "未指名・指名(球団・巡)"})
+            base.append({**COL["status"]})
         columns = ([metric] if metric else []) + base + [c for c in kind_cols if not metric or c["key"] != metric["key"]]
         keys = {c["key"]: c for c in columns}
         if not sort:

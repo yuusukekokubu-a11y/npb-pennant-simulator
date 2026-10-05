@@ -123,10 +123,9 @@ def validate_metrics_config(data: Any, source: str = "(辞書)") -> MetricsConfi
         sec = c.section(m, path)
         if sec is None:
             continue
-        for key in ("name", "description"):
-            text = c.get(sec, key, path)
-            if text is not None and (not isinstance(text, str) or not text.strip()):
-                c.add(f"{path}.{key}", "文章を書いてください(空にはできません)")
+        text = c.get(sec, "name", path)  # 解説の文は用語集(glossary.json)に持つ(D-311)
+        if text is not None and (not isinstance(text, str) or not text.strip()):
+            c.add(f"{path}.name", "文章を書いてください(空にはできません)")
         c.integer(c.get(sec, "stage", path), f"{path}.stage", 1, 3)
         category = c.get(sec, "category", path)
         if category is not None and category not in CATEGORIES:
@@ -169,28 +168,10 @@ def validate_metrics_config(data: Any, source: str = "(辞書)") -> MetricsConfi
             if not any(name in counts[r] for r in ROLES):
                 c.add(f"{path}.inputs", f"{name} は、元の数にありません")
         seen.add(mid)
-    _check_count_descriptions(c, root, counts)
     _check_tables(c, root, counts, metrics or {})
     if c.problems:
         raise ConfigError(source, c.problems)
     return MetricsConfig(data=copy.deepcopy(root), source=source)
-
-
-def _check_count_descriptions(c: _Checker, root: dict, counts: dict[str, set[str]]) -> None:
-    """元の数の解説(D-119):すべての元の数に、短い解説があること。"""
-    sec = c.section(c.get(root, "count_descriptions", ""), "count_descriptions")
-    if sec is None:
-        return
-    for role in ROLES:
-        path = f"count_descriptions.{role}"
-        texts = c.section(c.get(sec, role, "count_descriptions"), path) or {}
-        for name in sorted(counts[role] - set(texts)):
-            c.add(f"{path}.{name}", "解説がありません(元の数のすべてに、短い解説を書いてください)")
-        for name, text in texts.items():
-            if name not in counts[role]:
-                c.add(f"{path}.{name}", f"{name} は、{role} の元の数にありません")
-            elif not isinstance(text, str) or not text.strip():
-                c.add(f"{path}.{name}", "文章を書いてください(空にはできません)")
 
 
 def _check_tables(c: _Checker, root: dict, counts: dict[str, set[str]], metrics: dict) -> None:
@@ -286,7 +267,7 @@ _SYMBOL = {ast.Add: " + ", ast.Sub: " − ", ast.Mult: " × ", ast.Div: " ÷ "}
 
 
 def formula_text(config: MetricsConfig, role: str, expr: str) -> str:
-    """計算式を、日本語の名前と × ÷ で書いた文字にする(指標の解説のページ用)。"""
+    """計算式を、日本語の名前と × ÷ で書いた文字にする(用語集の式)。"""
     counts = config["counts"][role]
     baselines = config.data.get("baseline_names", {})
 

@@ -157,11 +157,11 @@ class ContractMixin:
         usage = ROSTER_BASE_COLUMNS[role][2]
         cols = [
             ROSTER_BASE_COLUMNS[role][0], ROSTER_BASE_COLUMNS[role][1], usage,
-            {"key": "salary", "label": "現在の年俸", "description": "今の契約の年俸(万円)", "type": "count", "better": "high"},
-            {"key": "auto", "label": "自動案の年俸", "description": "自動案(1 年)の年俸(万円)。見込みの WAR から算定", "type": "count", "better": "high"},
-            {"key": "status", "label": "状態", "description": "未提示・断られた(残りの回数)・更改済", "type": "text", "better": "low"},
-            {"key": "reason", "label": "理由", "description": "最後に断られた理由", "type": "text", "better": "low"},
-            {"key": "fa", "label": "FA 権", "description": "一軍に登録されたシーズンの数。7 シーズンで FA 権。FA 権がある選手は断ると FA を宣言する", "type": "count", "better": "high"},
+            {"key": "salary", "label": "現在の年俸", "type": "count", "better": "high"},
+            {"key": "auto", "label": "自動案の年俸", "type": "count", "better": "high"},
+            {"key": "status", "label": "状態", "type": "text", "better": "low"},
+            {"key": "reason", "label": "理由", "type": "text", "better": "low"},
+            {"key": "fa", "label": "FA 権", "type": "count", "better": "high"},
         ]
         extra = {}
         for e in proc.negotiations.values():
@@ -346,7 +346,7 @@ class ContractMixin:
         my = self.state.my_team_id
         neg = self.state.negotiation_settings
         role = None if group == "all" else ("pitcher" if group == "pitcher" else "batter")
-        war_col = {"key": "war_all", "label": "WAR", "description": "野手は WAR、投手は WAR(失点版)", "type": "metric", "category": "war", "better": "high"}
+        war_col = {"key": "war_all", "label": "WAR", "type": "metric", "category": "war", "better": "high"}
         if role is None:
             kind = "war"
             kind_cols: list[dict] = []

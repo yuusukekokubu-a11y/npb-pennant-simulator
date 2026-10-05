@@ -184,8 +184,8 @@ def _run(table: dict, name: str, args_json: str) -> str:
 
 
 def query(name: str, args_json: str = "{}") -> str:
-    if name == "metrics_guide":  # 指標の解説(ゲームがなくても見られる)
-        return _ok(api.metrics_guide())
+    if name == "glossary":  # 用語集(ゲームがなくても見られる。D-307)
+        return _ok(api.glossary_view())
     return _run(_QUERIES, name, args_json)
 
 

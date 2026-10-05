@@ -17,7 +17,6 @@ from .common import (
     THROWS_LABELS,
     WAR_COLUMNS,
     WAR_KIND,
-    WAR_TERMS,
     _BASELINE_METRICS,
     _SeasonView,
     _WAR_SORT_KEYS,
@@ -167,7 +166,6 @@ class StatsMixin:
             "rows": rows,
             "day": self.state.season.day if view.key == "current" else view.day,
             "baseline_note": view.war_note,
-            "terms": WAR_TERMS,
             "season": view.key,
             "season_label": view.label,
         }
@@ -264,5 +262,4 @@ class StatsMixin:
             "columns": base_cols + cols, "sort": info, "order": order, "extra_column": extra, "rows": rows,
             "season": view.key, "season_label": view.label, "seasons": self.roster_seasons(),
             "baseline_note": view.baseline_note if any(c["key"] in _BASELINE_METRICS for c in cols) else None,
-            "terms": WAR_TERMS if kind == WAR_KIND else None,
         }

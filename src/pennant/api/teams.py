@@ -7,7 +7,7 @@ from ..contracts import remaining_years
 from ..newgame import public_player
 from ..parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkTally, raw_ratio
 from ..war import war_totals
-from .common import BATS_LABELS, THROWS_LABELS, WAR_TERMS, _gb_text, _pct_text, _war_text, raw_rate
+from .common import BATS_LABELS, THROWS_LABELS, _gb_text, _pct_text, _war_text, raw_rate
 
 
 class TeamsMixin:
@@ -138,7 +138,6 @@ class TeamsMixin:
                 "pitchers_fip": _war_text(totals["pitchers_fip"]),
                 "total_ra": _war_text(totals["batters"] + totals["pitchers_ra"]),
                 "note": self.war_note(),
-                "terms": WAR_TERMS,
             },
             "record": {
                 "games": t.get("G", 0),

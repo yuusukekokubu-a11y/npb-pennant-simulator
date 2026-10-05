@@ -13,7 +13,6 @@ from .common import (
     ROLE_LABELS,
     THROWS_LABELS,
     WAR_COLUMNS,
-    WAR_TERMS,
     _values,
     _war_values,
     column_info,
@@ -67,7 +66,7 @@ class PlayersMixin:
             season_block = {
                 "baseline_note": self.baseline_info()["text"],
                 "park_factor": None if pf is None else f"{float(pf):.3f}",
-                "war": None if line is None else {"columns": WAR_COLUMNS[role], "values": {k: v[1] for k, v in _war_values(line).items()}, "note": self.war_note(), "terms": WAR_TERMS},
+                "war": None if line is None else {"columns": WAR_COLUMNS[role], "values": {k: v[1] for k, v in _war_values(line).items()}, "note": self.war_note()},
                 "qualified": qualified,
                 "qualify_rule": QUALIFY_RULES[role],
                 "tables": {

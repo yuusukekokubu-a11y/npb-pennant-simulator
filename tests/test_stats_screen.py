@@ -130,17 +130,19 @@ def test_stats_filters(game):
         game.stats("batter", "ability")  # 能力は答え合わせ用の関数で
 
 
-def test_column_descriptions_come_from_metrics_data(game):
-    """見出しの解説は、指標の定義データの解説(D-119)。"""
+def test_columns_have_glossary_terms(game):
+    """見出しの解説は用語集から画面が引く(D-311)。成績の表の列は、すべて用語集にある。"""
+    from pennant.glossary import default_glossary
+
+    g = default_glossary()
     data = json.loads(open("src/pennant/data/metrics.json", encoding="utf-8").read())
     for role in ("batter", "pitcher"):
-        for kind in ("basic", "saber"):
-            for c in game.stats(role, kind)["columns"]:
-                if c["type"] == "metric":
-                    assert c["description"].startswith(data["metrics"][c["key"]]["description"])
+        for kind in ("basic", "saber", "war"):
+            t = game.stats(role, kind)
+            for c in t["columns"] + ([t["extra_column"]] if t.get("extra_column") else []):
+                assert "description" not in c and g.find(c["label"]) is not None, c
+                if c.get("type") == "metric" and c["key"] in data["metrics"]:
                     assert c["category"] == data["metrics"][c["key"]]["category"]
-                else:
-                    assert c["description"] == data["count_descriptions"][role][c["key"]]
 
 
 def test_cache_is_reused_until_day_advances(game):
@@ -272,8 +274,6 @@ def test_player_answers(game):
         (lambda d: d["tables"]["batter"]["basic"]["columns"].append("XYZ"), "tables.batter.basic.columns"),
         (lambda d: d["tables"]["pitcher"]["saber"].update(sort="avg"), "tables.pitcher.saber.sort"),
         (lambda d: d["tables"]["batter"].pop("game"), "tables.batter.game"),
-        (lambda d: d["count_descriptions"]["batter"].pop("PA"), "count_descriptions.batter.PA"),
-        (lambda d: d["count_descriptions"]["pitcher"].update(XYZ="?"), "count_descriptions.pitcher.XYZ"),
         (lambda d: d.pop("tables"), "tables"),
     ],
 )
