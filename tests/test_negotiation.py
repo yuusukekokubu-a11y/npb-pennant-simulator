@@ -79,11 +79,19 @@ def test_satisfaction_and_judge():
     r1 = judge(NEG, pref, 1, 1000, 1000, 25, bad, "loose", 0.0)
     r2 = judge(NEG, pref, 1, 1300, 1000, 25, bad, "loose", 0.0)
     assert r2["score"] > r1["score"] and r1["reason"] == "playing_time"
-    # 「なし」では年俸の軸は効かず、理由にもならない(D-246)
-    r3 = judge(NEG, {"salary": 0.9, "playing_time": 0.05, "winning": 0.05}, 1, 1000, 1000, 25, {**bad, "rank": 0, "standing": 1}, "none", 0.0)
-    assert "salary" not in r3["values"] and r3["reason"] != "salary"
-    r4 = judge(NEG, {"salary": 0.9, "playing_time": 0.05, "winning": 0.05}, 1, 1000, 1000, 25, {**bad, "rank": 0, "standing": 1}, "loose", 0.0)
-    assert r4["reason"] == "salary"
+    # 「なし」でも年俸の軸が効き、「ゆるい」と同じ判定(D-273)。設定 money_none.salary_axis を false にすると、以前どおり効かない(D-246)
+    heavy = {"salary": 0.9, "playing_time": 0.05, "winning": 0.05}
+    good = {**bad, "rank": 0, "standing": 1}
+    r3 = judge(NEG, heavy, 1, 1000, 1000, 25, good, "none", 0.0)
+    r4 = judge(NEG, heavy, 1, 1000, 1000, 25, good, "loose", 0.0)
+    assert r4["reason"] == "salary" and r3 == r4
+    off = copy.deepcopy(NEG.data)
+    off["money_none"] = {"salary_axis": False, "max_ratio": 1.3}
+    old_neg = validate_negotiation_settings(off)
+    r5 = judge(old_neg, heavy, 1, 1000, 1000, 25, good, "none", 0.0)
+    assert "salary" not in r5["values"] and r5["reason"] != "salary"
+    with pytest.raises(ConfigError, match="max_ratio"):
+        validate_negotiation_settings({**NEG.data, "money_none": {"max_ratio": 0.9}})
     # 複数年の加点:長い年数・高い年齢ほど大きい
     assert multi_year_bonus(1, 35, NEG) == 0 and 0 < multi_year_bonus(3, 25, NEG) < multi_year_bonus(5, 25, NEG) < multi_year_bonus(5, 33, NEG)
     assert judge(NEG, pref, 5, 1000, 1000, 33, bad, "loose", 0.0)["score"] > r1["score"]
@@ -107,7 +115,7 @@ def test_ai_policy():
     assert ai_offer(0, 5000, 1, 0.5, NEG, "loose", 5, 100) == (1, 5000)
     assert ai_offer(1, 5000, 1, 0.5, NEG, "loose", 5, 100) is None  # 見込みが低い選手には再提示しない
     assert ai_offer(1, 5000, 1, 2.0, NEG, "loose", 5, 100) == (2, 5800) and ai_offer(2, 5000, 1, 2.0, NEG, "loose", 5, 100) == (3, 6500)
-    assert ai_offer(1, 5000, 1, 2.0, NEG, "none", 5, 100) == (2, 5000)  # 「なし」は年俸を上げない
+    assert ai_offer(1, 5000, 1, 2.0, NEG, "none", 5, 100) == (2, 5800)  # 「なし」も年俸を上げる(D-273)
     assert ai_offer(3, 5000, 1, 2.0, NEG, "loose", 5, 100) is None
 
 
@@ -141,7 +149,7 @@ def test_renewal_phase_auto_offer_and_gate(renewal_games):
         g = _fresh(base)
         proc = g.state.procedure
         v = g.offseason_view()
-        assert v["phase"] == "renewal" and v["phases"][0]["label"] == "契約更改" and v["renewal"]["unoffered"] == v["renewal"]["total"] > 30
+        assert v["phase"] == "renewal" and v["stage"] == "contract" and [x["label"] for x in v["phases"]] == ["契約", "FA", "ドラフト", "市場", "完了"] and v["renewal"]["unoffered"] == v["renewal"]["total"] > 30
         assert all(e["status"] != "pending" for e in proc.negotiations.values() if e["team_id"] != "T01")  # AI 球団は交渉を終えている
         with pytest.raises(ValueError, match="決まっていない"):
             g.offseason_next()
@@ -153,27 +161,36 @@ def test_renewal_phase_auto_offer_and_gate(renewal_games):
         refused = [r for r in t["rows"] if r["renewal"]["status"] == "refused"]
         assert all(r["values"]["reason"] in ("年俸が低い", "出場機会が見込めない", "優勝を争えない") and r["values"]["status"].startswith("断られた") for r in refused)
         assert t["sort"]["key"] == "status" and all(t["rows"][i]["renewal"]["status"] == "refused" for i in range(len(refused) if t["rows"] and t["rows"][0]["role"] == "batter" else 0))
-        if rule == "none":
-            assert all(r["values"]["reason"] != "年俸が低い" for r in refused)
         # 断った選手は、自由契約にするまで「次の手続きへ」は押せない
         for e in [e for e in proc.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
             g.offseason_renew_release(e["player_id"])
             assert e["player_id"] in {p.id for p in proc.market} and proc.released[-1]["note"] == "negotiation"
+        _clear_overrun(g)
         v = g.offseason_next()
-        assert v["phase"] == "release"
+        assert v["stage"] in ("fa", "draft") and proc.ai_release_done and proc.my_release_done  # AI の超過の解消と自由契約は、契約の段階の終わりに(D-272)
         accepted = [e for e in proc.negotiations.values() if e["team_id"] == "T01" and e["status"] == "accepted"]
         p = next(p for p in g._team("T01").players if p.id == accepted[0]["player_id"])
         h = p.contract["history"][-1]
         assert h["reason"] == "renew" and h["offers"] == 1 and h["years"] == 1 and p.contract["until"] == 2 and p.contract["salary"] == accepted[0]["auto_salary"]
 
 
+def _clear_overrun(g):
+    """標準以上で上限を超えていれば、年俸の高い選手から自由契約にして下回らせる(契約の画面の「自由契約にする」)。"""
+    while g.offseason_view()["renewal"]["over"] > 0:
+        rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
+        g.offseason_contract_release(rows[0]["player_id"])
+
+
 def test_salary_editable_only_with_money_rules(renewal_games):
     g = _fresh(renewal_games["none"])
     e = next(e for e in g.state.procedure.negotiations.values() if e["team_id"] == "T01")
-    with pytest.raises(ValueError, match="変えられません"):
-        g.offseason_offer(e["player_id"], 1, e["auto_salary"] + 1000)
-    v = g.offseason_offer(e["player_id"], 2)  # 年数は選べる
-    assert v["last_offer"]["salary"] == e["auto_salary"] and v["last_offer"]["years"] == 2
+    auto = e["auto_salary"]
+    with pytest.raises(ValueError, match="1.3 倍"):  # 「なし」は算定の 1.0〜1.3 倍(D-273)
+        g.offseason_offer(e["player_id"], 1, int(auto * 1.3) + 100)
+    with pytest.raises(ValueError, match="低い年俸"):
+        g.offseason_offer(e["player_id"], 1, auto - 100)
+    v = g.offseason_offer(e["player_id"], 2, int(auto * 1.2))  # 年数も年俸も選べる
+    assert v["last_offer"]["salary"] == int(auto * 1.2) and v["last_offer"]["years"] == 2
     g = _fresh(renewal_games["loose"])
     e = next(e for e in g.state.procedure.negotiations.values() if e["team_id"] == "T01" and e["context"]["rank"] == 0)  # 出場機会のある選手
     v = g.offseason_offer(e["player_id"], 1, e["auto_salary"] * 2)
@@ -305,10 +322,15 @@ def test_web_bridge_renewal_actions():
 
 
 def test_threshold_without_money():
+    """年俸の軸が効かない「なし」(設定 money_none.salary_axis が false)のしきい値。既定では「なし」も「ゆるい」と同じ(D-273)。"""
     pref = {"salary": 0.3, "playing_time": 0.4, "winning": 0.3}
     ctx = {"rank": 3, "slots": 2.0, "standing": 4, "league_size": 6}
-    none = judge(NEG, pref, 1, 1000, 1000, 25, ctx, "none", 0.0)
-    loose = judge(NEG, pref, 1, 1000, 1000, 25, ctx, "loose", 0.0)
+    assert judge(NEG, pref, 1, 1000, 1000, 25, ctx, "none", 0.0) == judge(NEG, pref, 1, 1000, 1000, 25, ctx, "loose", 0.0)
+    off = copy.deepcopy(NEG.data)
+    off["money_none"] = {"salary_axis": False}
+    neg = validate_negotiation_settings(off)
+    none = judge(neg, pref, 1, 1000, 1000, 25, ctx, "none", 0.0)
+    loose = judge(neg, pref, 1, 1000, 1000, 25, ctx, "loose", 0.0)
     base = sum(pref[a] * NEG.axes[a]["strength"] * none["values"][a] for a in none["values"])
     assert none["score"] == pytest.approx(base - NEG.threshold_without_money) and NEG.threshold_without_money > NEG.threshold
     assert loose["score"] == pytest.approx(base + pref["salary"] * NEG.axes["salary"]["offset"] - NEG.threshold)
@@ -327,14 +349,13 @@ def test_overrun_can_break_minimums_as_last_resort():
     g.offseason_renew_auto()
     for e in [e for e in proc.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
         g.offseason_renew_release(e["player_id"])
-    g.offseason_next()
     team = g._team("T01")
     catchers = [p for p in team.players if p.position == "C"]
     for p in catchers:  # 捕手の年俸を大きくして、上限を超えさせる
         p.contract["salary"] = 200000
     assert g.offseason_view()["contracts"]["mine"]["blocked"]
-    t = g.offseason_table("release", "batter", "basic")
-    assert all(r["can_release"] for r in t["rows"])  # 上限を超えている間は全員外せる
+    t = g.contract_table("all")
+    assert all(r["can_release"] for r in t["rows"] if r["in_team"])  # 上限を超えている間は全員外せる
     g.offseason_release([p.id for p in catchers])  # 捕手を全員外す(最低人数を割る)
     assert not [p for p in team.players if p.position == "C"] and not g.offseason_view()["contracts"]["mine"]["blocked"]
     g.offseason_auto()

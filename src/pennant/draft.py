@@ -36,6 +36,13 @@ from .season import derive_seed
 SUPPORTED_FORMAT_VERSION = 1
 PHASES = ("renewal", "release", "fa", "draft", "market", "done")
 PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "draft": "ドラフト", "market": "自由契約市場", "done": "完了"}
+# 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ
+STAGES = ("contract", "fa", "draft", "market", "done")
+STAGE_LABELS = {"contract": "契約", "fa": "FA", "draft": "ドラフト", "market": "市場", "done": "完了"}
+
+
+def stage_of(phase: str) -> str:
+    return "contract" if phase in ("renewal", "release") else phase
 MAX_ROSTER = 70
 
 
@@ -471,8 +478,9 @@ def contract_scout(seed: int, sd_of, cuts: list[float]):
 
 
 def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: ContractContext, my_team_id: str | None, mins, min_batters) -> None:
-    """手続きの最初の契約の処理(D-235、D-244):単価を求め直す → 契約が満了した全員の交渉を作る → AI 球団は交渉を最後まで進める(D-251)
-    → 標準以上なら AI 球団の予算超過の解消。あなたの球団の交渉は契約更改の段階で(「おまかせ」は AI と同じ)、超過は自由契約の段階で手動。"""
+    """手続きの最初の契約の処理(D-235、D-244):単価を求め直す → 契約が満了した全員の交渉を作る → AI 球団は交渉を最後まで進める(D-251)。
+    AI 球団の予算超過の解消と自由契約は、契約の段階の終わり(finish_contract_stage)に行う(D-272。順序は 更改 → 超過の解消 → 自由契約 のまま)。
+    あなたの球団の交渉・超過の解消・自由契約は契約の段階で手動(「この段階をおまかせ」は AI と同じ)。"""
     if proc.contracts_done:
         return
     ctx.bind(proc)
@@ -512,12 +520,32 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
             continue
         for e in [e for e in proc.negotiations.values() if e["team_id"] == team.id and e["status"] == "pending"]:
             ai_negotiate_entry(teams[e["team_id"]], e, proc, ctx)
-    if ctx.hard():
-        for team in league.teams:
-            if team.id == my_team_id:
-                continue
-            resolve_overrun(team, proc, ctx, mins, min_batters)
     proc.contracts_done = True
+
+
+CONTRACT_PHASES = ("renewal", "release")  # 画面ではどちらも「契約」の段階(D-272。release は旧版のセーブデータのため残す)
+
+
+def finish_contract_stage(league: League, proc: OffseasonProcedure, ctx: ContractContext | None, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, my_ai: bool) -> None:
+    """契約の段階の終わり(D-272):my_ai なら、あなたの球団の残りの交渉・超過の解消・自由契約を AI と同じ方針で行う(「この段階をおまかせ」)。
+    続いて、AI 球団の予算超過の解消(標準以上)と自由契約を行い、FA の段階へ進める。内部の順序は 更改 → 超過の解消 → 自由契約。"""
+    teams = {t.id: t for t in league.teams}
+    mine = teams.get(my_team_id) if my_team_id is not None else None
+    if mine is not None and my_ai and ctx is not None:
+        for e in open_entries(proc, my_team_id):
+            ai_negotiate_entry(mine, e, proc, ctx)
+    if ctx is not None and ctx.hard():
+        for team in league.teams:
+            if team.id != my_team_id:
+                resolve_overrun(team, proc, ctx, mins, min_batters)
+    if mine is not None and my_ai and ctx is not None:
+        resolve_overrun(mine, proc, ctx, mins, min_batters)
+    apply_ai_releases(league, proc, scout_sd, settings, my_team_id, mins, min_batters)
+    if mine is not None and my_ai and not proc.my_release_done:
+        release_players(mine, ai_release(mine, proc, scout_sd[mine.id], settings, mins, min_batters), proc)
+    proc.my_release_done = True
+    proc.phase = "release"
+    next_phase(proc)
 
 
 # ---- 契約更改の交渉(F3-2b。D-244、D-250〜D-252) ----
@@ -983,21 +1011,8 @@ def joined_players(proc: OffseasonProcedure) -> list[PlayerNote]:
 def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
     """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。予算超過の解消も AI と同じ)。戻り値は自動補充で入った選手。"""
     while proc.phase != "done":
-        if proc.phase == "renewal":
-            if my_team_id is not None and ctx is not None:  # 「おまかせ」:残りの交渉を AI と同じ方針で(D-251)
-                team = next(t for t in league.teams if t.id == my_team_id)
-                for e in open_entries(proc, my_team_id):
-                    ai_negotiate_entry(team, e, proc, ctx)
-            next_phase(proc)
-        elif proc.phase == "release":
-            if my_team_id is not None and ctx is not None:
-                resolve_overrun(next(t for t in league.teams if t.id == my_team_id), proc, ctx, mins, min_batters)
-            apply_ai_releases(league, proc, scout_sd, settings, my_team_id, mins, min_batters)
-            if my_team_id is not None and not proc.my_release_done:
-                team = next(t for t in league.teams if t.id == my_team_id)
-                release_players(team, ai_release(team, proc, scout_sd[team.id], settings, mins, min_batters), proc)
-                proc.my_release_done = True
-            next_phase(proc)
+        if proc.phase in CONTRACT_PHASES:  # 「おまかせ」:残りの交渉・超過の解消・自由契約を AI と同じ方針で(D-251、D-272)
+            finish_contract_stage(league, proc, ctx, scout_sd, settings, my_team_id, mins, min_batters, my_ai=True)
         elif proc.phase == "fa":
             if ctx is not None:
                 from .fa import run_all_rounds

@@ -17,7 +17,7 @@ import random
 
 from .contracts import set_contract, team_salary
 from .models import League, Player, Team
-from .negotiation import NegotiationSettings, depth_ranks, judge
+from .negotiation import NegotiationSettings, depth_ranks, judge, money_axis_active
 from .season import derive_seed
 
 MAX_ROSTER = 70
@@ -145,8 +145,9 @@ def _context(player: Player, team: Team, proc, ctx, sizes: dict[int, int]) -> di
     return {"rank": rank, "slots": round((ctx.slots or {}).get(player.position, 1.0), 3), "standing": proc.ranks.get(team.id), "league_size": sizes.get(team.league_index, 6)}
 
 
-def round_salary(calc: int, multiplier: float, rule: str, rounding: int) -> int:
-    if rule == "none":
+def round_salary(calc: int, multiplier: float, rule: str, rounding: int, money_axis: bool = False) -> int:
+    """AI の提示の年俸 = 算定 × ラウンドの倍率(丸め)。「なし」で年俸の軸が効かないときは算定どおり(D-273)。"""
+    if rule == "none" and not money_axis:
         return int(calc)
     return max(int(calc), int(round(calc * multiplier / rounding)) * rounding)
 
@@ -177,7 +178,7 @@ def ai_offers(team: Team, proc, ctx, league_sizes: dict[int, int]) -> dict[str, 
         if len(out) >= limit:
             break
         info = proc.fa_info[pid]
-        salary = round_salary(int(info["calc_salary"]), mult, ctx.rule, ctx.settings.rounding)
+        salary = round_salary(int(info["calc_salary"]), mult, ctx.rule, ctx.settings.rounding, money_axis_active(ctx.negotiation, ctx.rule))
         if ctx.hard() and cap is not None and total + sum(s for _, s in out.values()) + salary > cap:
             continue
         out[pid] = (int(info["ai_years"]), salary)

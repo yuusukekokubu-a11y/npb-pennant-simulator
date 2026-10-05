@@ -42,13 +42,17 @@ MIN_BATTERS = minimum_batters()
 
 
 def finish_renewal(g):
-    """契約更改の段階(F3-2b)を済ませる:自動案でまとめて提示し、断った選手は自由契約にして、自由契約の段階へ進む。"""
+    """契約の段階(D-272)の更改を済ませる:自動案でまとめて提示し、断った選手は自由契約にする(段階は契約のまま。自由契約はこの後に同じ画面で)。"""
     proc = g.state.procedure
-    if proc is not None and proc.phase == "renewal":
+    if proc is not None and g.offseason_view()["stage"] == "contract":
         g.offseason_renew_auto()
         for e in [e for e in proc.negotiations.values() if e["team_id"] == g.state.my_team_id and e["status"] == "pending"]:
             g.offseason_renew_release(e["player_id"])
-        g.offseason_next()
+
+
+def roster_rows(g):
+    """契約の画面の表のうち、今の自球団の選手の行(D-272)。"""
+    return [r for r in g.contract_table("all")["rows"] if r["in_team"]]
 
 
 def skip_fa(g):
@@ -255,16 +259,17 @@ def operated():
 
 def test_operated_team_goes_through_phases_and_can_resume(operated):
     g = operated
-    assert g.status()["offseason"]["active"] and g.status()["offseason"]["phase"] == "release" and not g.status()["can_year_end"]
+    assert g.status()["offseason"]["active"] and g.status()["offseason"]["phase_label"] == "契約" and not g.status()["can_year_end"]
     assert g.state.scout_level == "large" and g.state.calibration == OFF.calibration("large")
     with pytest.raises(ValueError):
         g.year_end()
     v = g.offseason_view()
-    assert v["phase"] == "release" and len(v["roster"]) == len(g._team("T01").players) and v["my_team"]["team_id"] == "T01"
-    assert all("potential" not in json.dumps(r) for r in v["roster"])  # 公開用に隠し情報は出ない
-    ok = [r["player_id"] for r in v["roster"] if r["can_release"]][:2]
+    roster = roster_rows(g)
+    assert v["stage"] == "contract" and len(roster) == len(g._team("T01").players) and v["my_team"]["team_id"] == "T01"
+    assert all("potential" not in json.dumps(r) for r in roster)  # 公開用に隠し情報は出ない
+    ok = [r["player_id"] for r in roster if r["can_release"]][:2]
     with pytest.raises(ValueError, match="最低人数"):
-        g.offseason_release([r["player_id"] for r in v["roster"] if r["position"] == "C"])  # 捕手を全員は外せない
+        g.offseason_release([r["player_id"] for r in roster if r["position"] == "C"])  # 捕手を全員は外せない
     before = v["counts"]["released"]  # 更改の交渉で自由契約になった選手(F3-2b)を含む
     v = g.offseason_release(ok)
     assert v["my_release_done"] and v["counts"]["released"] == before + 2
@@ -328,7 +333,7 @@ def test_v7_save_loads_and_continues_with_new_procedure():
     old.advance(124)
     old.year_end()
     finish_renewal(old)
-    assert old.status()["offseason"]["phase"] == "release"
+    assert old.offseason_view()["stage"] == "contract"
     old.offseason_auto()
     assert old.status()["year"] == 2
 
@@ -530,7 +535,7 @@ def test_market_table_marks_candidates_without_stats(release_game):
     g = api.Game(copy.deepcopy(release_game.state), dirty=False)
     v = g.offseason_view()
     assert v["minimums"]["positions"]["C"] == 2 and v["minimums"]["batters"] == 15 and v["minimums"]["labels"]["SP"] == "先発"
-    g.offseason_release([next(r["player_id"] for r in v["roster"] if r["can_release"])])
+    g.offseason_release([next(r["player_id"] for r in roster_rows(g) if r["can_release"])])
     g.offseason_next()
     skip_fa(g)
     g.offseason_advance()

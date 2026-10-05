@@ -12,8 +12,8 @@
   "park_estimates": "d1995cbf6eea9d33dd26cc4e40eeb67c118522d3f854796c6d1235848ae9e145",
   "run_values": "496f16501704416a7d0bca1bbdd21a21a2051b482566bb9d3b76824a67e497cc",
   "war": "931333df02ed4a6829a833c679ec0c86e344d8508905c36df9155870742dc13b",
-  "multiyear": "b40dae0ea6dae3672a515da84c4543077a86e10199d4b0dd5f4f38dec83544c1",
-  "procedure": "fda1e1b95fc1c70910060b0273b9f75038169f80a291695168f87c510347bfe7",
+  "multiyear": "5981594e8d65385699d253f5cd1eda33ad296b80d46fd2a889ef8c16042a134c",
+  "procedure": "23bfbbbd56262e7d9f7afcee5ad6168722fb3ee9229036ca785fe6d35f71cf4c",
   "contracts": "6fdb0ac7e20aaaea460a7e210eb7592ff5b8bb7dd8cca23bb529bb4bc52ce4f6",
   "negotiation": "3abd600882a65c4cdaec1cabeb0c93235e0be2acf0dae9b9a0a0fa9b9024c0ee",
   "fa": "58e8deb362e1db754a53bbd7ad739b390bfaaac0770cfecb253d4ac22698b9fe",
@@ -88,11 +88,11 @@
       "year_ends": 2,
       "retired": [
         26,
-        34
+        32
       ],
       "rookies": [
-        123,
-        132
+        130,
+        134
       ],
       "players": 840,
       "seasons": 3,
@@ -101,16 +101,16 @@
     "procedure": {
       "year_ends": 2,
       "picked": [
-        95,
-        97
+        96,
+        105
       ],
       "released": [
-        84,
-        84
+        90,
+        88
       ],
       "market": [
         28,
-        27
+        33
       ],
       "players": 840,
       "scouted": 840

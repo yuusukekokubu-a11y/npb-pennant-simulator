@@ -19,20 +19,23 @@ FA = famod.fa_settings(NEG)
 HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "preference")
 
 
-def finish_renewal(g):
+def finish_contract(g):
+    """契約の段階(更改と自由契約。D-272)を自分の操作で済ませる:自動案 → 断った選手は自由契約 → 上限を超えていれば年俸の高い選手から自由契約 →「次の手続きへ」。"""
     proc = g.state.procedure
-    if proc.phase == "renewal":
-        g.offseason_renew_auto()
-        for e in [e for e in proc.negotiations.values() if e["team_id"] == g.state.my_team_id and e["status"] == "pending"]:
-            g.offseason_renew_release(e["player_id"])
-        g.offseason_next()
+    if g.offseason_view()["stage"] != "contract":
+        return
+    g.offseason_renew_auto()
+    for e in [e for e in proc.negotiations.values() if e["team_id"] == g.state.my_team_id and e["status"] == "pending"]:
+        g.offseason_renew_release(e["player_id"])
+    while g.offseason_view()["renewal"]["over"] > 0:
+        rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
+        g.offseason_contract_release(rows[0]["player_id"])
+    g.offseason_next()
 
 
 def to_fa(g):
-    """契約更改と自由契約を済ませて、FA の段階まで進める。"""
-    finish_renewal(g)
-    if g.state.procedure.phase == "release":
-        g.offseason_next()
+    """契約の段階を済ませて、FA の段階まで進める。"""
+    finish_contract(g)
     return g.offseason_view()
 
 
@@ -126,11 +129,13 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
         calc = proc.fa_info[target.id]["calc_salary"]
         with pytest.raises(ValueError, match="年数"):
             g.offseason_fa_offer(target.id, 0)
-        if rule == "none":
-            with pytest.raises(ValueError, match="変えられません"):
-                g.offseason_fa_offer(target.id, 2, calc + 1000)
+        if rule == "none":  # 「なし」は算定の 1.0〜1.3 倍(D-273)
+            with pytest.raises(ValueError, match="倍"):
+                g.offseason_fa_offer(target.id, 2, calc * 2)
             v = g.offseason_fa_offer(target.id, 2)
             assert v["fa"]["offers"][0]["salary"] == calc
+            v = g.offseason_fa_offer(target.id, 2, int(calc * 1.25))
+            assert v["fa"]["offers"][0]["salary"] == int(calc * 1.25)
         else:
             room = g.budget_info("T01")["cap"] - team_salary(g._team("T01"))
             with pytest.raises(ValueError, match="上限"):
@@ -153,8 +158,9 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
             assert p.contract["history"][-1]["reason"] == "fa" and p.contract["salary"] == x["salary"] and p.fa_seasons == 0
         with pytest.raises(ValueError):
             g.offseason_fa_offer(proc.fa_results[0]["player_id"], 1) if proc.fa_results else g.offseason_fa_offer("nobody", 1)
-        v = g.offseason_next()  # 残りのラウンドは AI と同じ方針で
+        v = g.offseason_next()  # 残りのラウンドは、自球団は追加の提示をせずに締める(D-271)
         assert v["phase"] == "draft" and proc.fa_done and not proc.fa_pool
+        assert not any(x["team_id"] == "T01" and x["round"] > 1 for x in proc.fa_log)  # 2 ラウンド目以降、自球団は提示していない
         unsigned = [pid for pid, x in proc.fa_info.items() if x["status"] == "unsigned"]
         assert all(any(p.id == pid for p in proc.market) for pid in unsigned)  # 決まらなかった選手は市場へ
         assert all(len(t.players) <= 70 for t in g.state.league.teams)
@@ -174,7 +180,8 @@ def test_player_prefers_better_offer():
     assert high["score"] > low["score"]
     none_low = judge(NEG, pref, 1, 10000, 10000, 30, ctx, "none", 0.0)
     none_high = judge(NEG, pref, 1, 12000, 10000, 30, ctx, "none", 0.0)
-    assert none_low["score"] == none_high["score"]  # 「なし」では年俸の軸は効かない
+    assert none_high["score"] > none_low["score"] and none_high == high  # 「なし」でも年俸の軸が効く(D-273)
+    assert famod.round_salary(10000, 1.2, "none", 100, True) == 12000 and famod.round_salary(10000, 1.2, "none", 100, False) == 10000
 
 
 def test_ai_offers_respect_limits(season_end):

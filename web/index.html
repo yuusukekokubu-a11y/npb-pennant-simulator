@@ -152,6 +152,15 @@
   .contract-box.over { background: var(--warn-bg); border-left: 4px solid var(--warn-line); }
   .contract-box dl { margin: var(--space-1) 0 0; font-size: var(--font-tiny); color: var(--muted); }
   /* 契約更改(F3-2b):提示のパネル。色・文字・余白は変数で指定(D-239) */
+  /* オフの手続きの状態バー(D-271)。色・余白・文字は変数(D-239) */
+  .status-bar { background: var(--box); border-radius: var(--radius); padding: var(--space-2); margin: var(--space-1) 0; }
+  .status-bar .bar-text { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); font-size: var(--font-tiny); }
+  .status-bar .bar-actions { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
+  .status-bar .bar-actions button { flex: 1 1 auto; min-width: 0; padding: var(--space-2) var(--space-1); font-size: var(--font-tiny); min-height: 40px; white-space: nowrap; }
+  #proc-message:empty, #proc-autolog:empty { display: none; }
+  #screen-procedure .page-head h1 { font-size: 1.4rem; }
+  .compact-filters { display: flex; gap: var(--space-1); margin: var(--space-1) 0; }
+  .compact-filters select { flex: 1 1 0; min-width: 0; font-size: var(--font-small); padding: var(--space-1); min-height: 36px; }
   .offer-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); font-size: var(--font-small); white-space: normal; text-align: left; position: sticky; left: 0; max-width: min(36em, calc(100vw - 4 * var(--space-3))); box-sizing: border-box; }
   .offer-panel p { margin: var(--space-1) 0; }
   .offer-fields { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: var(--space-1) 0; }
@@ -177,8 +186,8 @@
   .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
   .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
   tr.career td, tr.career th { font-weight: bold; border-top: 2px solid var(--line); }
-  .steps { display: flex; gap: 4px; padding: 0; margin: 8px 0; list-style: none; flex-wrap: wrap; }
-  .steps li { flex: 1 1 0; text-align: center; padding: 6px 4px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.85rem; color: var(--muted); }
+  .steps { display: flex; gap: 4px; padding: 0; margin: 8px 0; list-style: none; flex-wrap: nowrap; } /* 段階のタブは折り返さない(D-271) */
+  .steps li { flex: 1 1 0; min-width: 0; text-align: center; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .steps li.current { border-color: var(--accent); color: var(--accent); font-weight: bold; }
   .steps li.done { background: var(--box); }
   tr.detail td { background: var(--box); font-size: 0.85rem; white-space: normal; }
@@ -271,7 +280,7 @@
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)<br><span class="muted small">標準偏差 5。</span></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong><br><span class="muted small">標準偏差 8。当たり外れが大きい。</span></span></label>
     <p class="small"><strong>お金のルール</strong>:年俸と予算の厳しさです。途中では変えられません。</p>
-    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)<br><span class="muted small">予算の機能なし。年俸は算定どおりで、更改では年俸を変えられません(年数は選べます)。</span></span></label>
+    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)<br><span class="muted small">予算の機能なし。更改と FA では、年俸を算定の 1.0〜1.3 倍で提示できます。</span></span></label>
     <label class="radio"><input type="radio" name="money-rule" value="loose"><span><strong>ゆるい</strong><br><span class="muted small">予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。</span></span></label>
     <label class="radio"><input type="radio" name="money-rule" value="standard"><span><strong>標準</strong><br><span class="muted small">予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。</span></span></label>
     <label class="radio"><input type="radio" name="money-rule" value="strict"><span><strong>きびしい</strong><br><span class="muted small">標準に加えて、球団ごとの予算の格差(大・中・小)があります。</span></span></label>
@@ -462,16 +471,19 @@
 <main class="screen" id="screen-procedure" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="proc-title">オフの手続き</h1></div>
   <ol class="steps" id="proc-steps"></ol>
-  <p class="small" id="proc-info"></p>
-  <div class="row">
-    <button id="proc-next" class="secondary">次の手続きへ</button>
-    <button id="proc-auto" class="danger">おまかせ(残りを自動で)</button>
+  <!-- 状態バー(1 つ。D-271):段階の要約・予算・主ボタン。説明の文は置かない(D-270) -->
+  <div class="status-bar" id="proc-bar">
+    <div class="bar-text"><span id="proc-info"></span><span id="proc-budget"></span></div>
+    <div class="bar-actions" id="proc-actions">
+      <button id="proc-stage-auto">この段階をおまかせ</button>
+      <button id="proc-next" class="secondary">次の手続きへ</button>
+    </div>
   </div>
   <p class="message" id="proc-message" role="status" aria-live="polite"></p>
-  <div id="proc-contracts"></div>
+  <div id="proc-autolog"></div>
   <div id="proc-body"></div>
+  <div id="proc-contracts"></div>
   <details id="proc-history-box"><summary>指名・自由契約の履歴</summary><div id="proc-history"></div></details>
-  <p class="muted small" id="proc-note"></p>
 </main>
 
 <!-- ドラフトの振り返り(当たり外れの一覧。D-216) -->
@@ -553,6 +565,10 @@
     <label class="radio"><input type="radio" name="answer-level" value="2"><span><strong>2段階目</strong>:今の能力 + 潜在能力・成長タイプ・生成時の型<br><span class="muted small">伸びきったときの能力や、伸び方の違いまで見せます。</span></span></label>
   </div>
   <p class="muted small">この設定は、どこにも保存しません(セーブデータにも入りません)。ページを開き直すと、オフに戻ります。</p>
+  <div id="menu-offseason" hidden>
+    <h2>オフの手続き</h2>
+    <button class="danger" id="proc-auto">全部おまかせ</button>
+  </div>
 </main>
 
 <!-- 指標の解説 -->

@@ -23,7 +23,7 @@ from .season import derive_seed
 MONEY_RULES = ("none", "loose", "standard", "strict")
 RULE_LABELS = {"none": "なし", "loose": "ゆるい", "standard": "標準", "strict": "きびしい"}
 RULE_NOTES = {
-    "none": "予算の機能なし。年俸は算定どおりで、更改では年俸を変えられません(年数は選べます)。",
+    "none": "予算の機能なし。更改と FA では、年俸を算定の 1.0〜1.3 倍で提示できます(年数も選べます。D-273)。",
     "loose": "予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。",
     "standard": "予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。",
     "strict": "標準に加えて、球団ごとの予算の格差(大・中・小)があります。",

@@ -4,10 +4,10 @@
   重みは軸ごとにガンマ分布から引いて合計 1 に正規化する。乱数は derive_seed(リーグのシード, "preference:<選手 ID>") で、
   選手 ID だけで決まる(付ける時期によらず同じ値。選手の生成の乱数とは別の系列なので、生成は変わらない)。
 - 満足度(−1〜1。軸の種類 kind ごとの関数。軸を足すときは、設定に軸を書き、ここに種類の関数を足す):
-  - salary_ratio(年俸):傾き ×(提示年俸 ÷ 算定年俸 − 1)+ 基準のずれ。お金のルール「なし」では判定に効かない(D-246)
+  - salary_ratio(年俸):傾き ×(提示年俸 ÷ 算定年俸 − 1)+ 基準のずれ。お金のルール「なし」でも効く(設定 money_none.salary_axis。D-273。以前は効かなかった。D-246)
   - depth(出場機会):1 − r ÷ k。r は自球団の同じポジションで自分より評価の高い選手の数、k はそのポジションの一軍の枠の目安
   - standing(勝利):前年のリーグ内の順位(1 位 +1 〜 最下位 −1。順位がなければ 0)
-- 受ける条件:Σ 重み × 軸の強さ × 満足度 − しきい値 + 乱数 + 複数年の加点 ≧ 0(D-250)。年俸の軸が効かない「なし」では、しきい値は threshold_without_money。軸の強さは設定値(勝利軸を弱めにして、球団の順位で断る人数が偏りすぎないようにする)。乱数は選手ごと・オフごとに 1 つで、同じ提示には同じ答え。
+- 受ける条件:Σ 重み × 軸の強さ × 満足度 − しきい値 + 乱数 + 複数年の加点 ≧ 0(D-250)。年俸の軸が効かないとき(money_none.salary_axis が false の「なし」)は、しきい値は threshold_without_money。軸の強さは設定値(勝利軸を弱めにして、球団の順位で断る人数が偏りすぎないようにする)。乱数は選手ごと・オフごとに 1 つで、同じ提示には同じ答え。
 - 断った理由は、重み × 満足度が最も低い軸の文。
 - 年俸の算定(contracts.py)は志望に依存しない。
 """
@@ -24,6 +24,7 @@ from .models import Player
 from .season import derive_seed
 
 AXIS_KINDS = ("salary_ratio", "depth", "standing")
+DEFAULT_MONEY_NONE = {"salary_axis": True, "max_ratio": 1.3}  # 「なし」の年俸(D-273)。設定にない旧版のセーブデータもこの値
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,11 @@ class NegotiationSettings:
     @property
     def ai(self) -> dict:
         return self.data["ai"]
+
+    @property
+    def money_none(self) -> dict:
+        """お金のルール「なし」の年俸:salary_axis(年俸の軸を判定に使うか)、max_ratio(算定の何倍まで提示できるか)。D-273。"""
+        return {**DEFAULT_MONEY_NONE, **self.data.get("money_none", {})}
 
 
 def load_negotiation_settings(path: str | Path | None = None) -> NegotiationSettings:
@@ -122,6 +128,13 @@ def validate_negotiation_settings(root, source: str = "negotiation.json") -> Neg
             c.add(f"ai.{key}", "0 以上の数の一覧(提示の回ごと)にしてください")
         elif v is not None and max_offers is not None and len(v) < max_offers:
             c.add(f"ai.{key}", f"提示の回数({max_offers})以上の長さにしてください")
+    if "money_none" in root:
+        mn = c.section(root["money_none"], "money_none")
+        if mn is not None:
+            if "salary_axis" in mn and not isinstance(mn["salary_axis"], bool):
+                c.add("money_none.salary_axis", "true か false にしてください")
+            if "max_ratio" in mn:
+                c.number(mn["max_ratio"], "money_none.max_ratio", 1.0, 3.0)
     from .fa import validate_fa
 
     validate_fa(c, root)
@@ -211,8 +224,13 @@ def satisfaction(axis: str, settings: NegotiationSettings, offer_salary: int, au
     return max(-1.0, min(1.0, v))
 
 
+def money_axis_active(settings: NegotiationSettings, money_rule: str) -> bool:
+    """年俸の軸(お金が必要な軸)が判定に効くか:「ゆるい」以上は常に、「なし」は設定 money_none.salary_axis(D-273)。"""
+    return money_rule != "none" or bool(settings.money_none["salary_axis"])
+
+
 def axis_enabled(axis: str, settings: NegotiationSettings, money_rule: str) -> bool:
-    return not (settings.axes[axis].get("needs_money") and money_rule == "none")
+    return not (settings.axes[axis].get("needs_money") and not money_axis_active(settings, money_rule))
 
 
 def multi_year_bonus(years: int, age: int, settings: NegotiationSettings) -> float:
@@ -262,7 +280,7 @@ def ai_offer(attempt: int, auto_salary: int, base_years: int, expected: float, s
         return None
     if attempt > 0 and float(expected) < float(settings.ai["retry_min_expected"]):
         return None
-    raise_ = float(settings.ai["raises"][attempt]) if money_rule != "none" else 1.0
+    raise_ = float(settings.ai["raises"][attempt]) if money_axis_active(settings, money_rule) else 1.0
     salary = int(round(auto_salary * raise_ / rounding)) * rounding if raise_ != 1.0 else int(auto_salary)
     years = min(int(max_years), int(base_years) + int(settings.ai["extra_years"][attempt]))
     return years, max(int(auto_salary), salary)
