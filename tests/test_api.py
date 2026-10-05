@@ -1,4 +1,4 @@
-"""画面から呼ぶ操作の関数(src/pennant/api.py。D-107、D-108)の確認。"""
+"""画面から呼ぶ操作の関数(src/pennant/api/。D-107、D-108)の確認。"""
 
 import json
 import re

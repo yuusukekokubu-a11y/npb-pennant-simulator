@@ -26,7 +26,7 @@ def test_slow_tests_run_only_when_the_calculation_changes():
     assert not needs_slow(["docs/DECISIONS.md", "README.md", "CLAUDE.md", "scripts/check_browser.mjs", "scripts/inspect_fa.py"])
     assert not needs_slow([])
     # 計算本体(コードと設定のデータ)・テスト・設定・指紋のスクリプト・テストの回し方が変わったら回す
-    for path in ("src/pennant/api.py", "src/pennant/data/negotiation.json", "tests/test_fa.py", "tests/data/fingerprints.json", "pyproject.toml", "scripts/fingerprint.py", "scripts/ci_groups.py", "web/bridge.py", ".github/workflows/test.yml"):
+    for path in ("src/pennant/api/contract.py", "src/pennant/data/negotiation.json", "tests/test_fa.py", "tests/data/fingerprints.json", "pyproject.toml", "scripts/fingerprint.py", "scripts/ci_groups.py", "web/bridge.py", ".github/workflows/test.yml"):
         assert needs_slow(["web/app.js", path]), path
 
 

@@ -228,7 +228,7 @@
 | `9.5em` | 成績の画面(②):`.sub` |
 | `10em` | 成績の画面(②):`td.name-cell` |
 | `9em` | 成績の画面(②):`/* 並び順の指標が表にないとき、名前の隣に固定の列を出す(D-131)。名前の列の幅を決めて、その右に固定する */ th.name-fixed, td.name-fixed` |
-| `1180px` | 成績の画面(②):`/* 広い画面(幅が app.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */ .wide #screen-procedure, .wide #screen-review` |
+| `1180px` | 成績の画面(②):`/* 広い画面(幅が js/core.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */ .wide #screen-procedure, .wide #screen-review` |
 | `100%` | 成績の画面(②):`select` |
 
 ### 最小の幅(`min-width`)
