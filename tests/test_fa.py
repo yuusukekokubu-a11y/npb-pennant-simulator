@@ -220,7 +220,7 @@ def test_fa_is_hidden_unless_answer_mode(season_end):
 def test_save_v12_and_v11_loads(season_end):
     g = _fresh(season_end["standard"])
     data = save_game(g.state)
-    assert SAVE_FORMAT_VERSION == 12
+    assert SAVE_FORMAT_VERSION == 13
     again = load_game(data)
     assert [p.fa_seasons for p in again.league.all_players()] == [p.fa_seasons for p in g.state.league.all_players()]
     assert again.procedure.fa_info == g.state.procedure.fa_info and [p.id for p in again.procedure.fa_pool] == [p.id for p in g.state.procedure.fa_pool]

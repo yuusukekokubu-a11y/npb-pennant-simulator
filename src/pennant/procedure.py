@@ -228,6 +228,10 @@ class OffseasonProcedure:
     fa_done: bool = False  # FA 市場が終わったか
     budget_releases: list[dict] = field(default_factory=list)  # 予算超過の解消で自由契約になった選手({team_id, player_id, name, salary})
     contracts_done: bool = False  # 更改と AI の超過の解消を済ませたか
+    market_offers: dict = field(default_factory=dict)  # あなたの球団の市場の提示(選手 ID → {years, salary})。①b。D-300
+    market_results: list[dict] = field(default_factory=list)  # 市場で成立した契約
+    market_log: list[dict] = field(default_factory=list)  # 全球団の市場の提示の記録({player_id, team_id, years, salary})
+    market_done: bool = False  # 市場を締めたか
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 天井)。保存しない
 
     def current_team(self) -> str | None:
@@ -262,6 +266,8 @@ class OffseasonProcedure:
             "budget_releases": [dict(x) for x in self.budget_releases], "contracts_done": self.contracts_done,
             "fa_pool": [plain(p) for p in self.fa_pool], "fa_info": copy.deepcopy(self.fa_info), "fa_round": self.fa_round, "fa_offers": copy.deepcopy(self.fa_offers),
             "fa_results": [dict(x) for x in self.fa_results], "fa_log": [dict(x) for x in self.fa_log], "fa_done": self.fa_done,
+            "market_offers": copy.deepcopy(self.market_offers), "market_results": [dict(x) for x in self.market_results],
+            "market_log": [dict(x) for x in self.market_log], "market_done": self.market_done,
         }
 
     @classmethod
@@ -293,6 +299,10 @@ class OffseasonProcedure:
         proc.fa_done = bool(d.get("fa_done", "fa_pool" not in d))  # 版 11 以前の手続き:FA はない
         proc.budget_releases = [dict(x) for x in d.get("budget_releases", [])]
         proc.contracts_done = bool(d.get("contracts_done", False))
+        proc.market_offers = copy.deepcopy(d.get("market_offers", {}))  # 版 12 以前:市場の途中なら、提示の方式で続ける(D-300)
+        proc.market_results = [dict(x) for x in d.get("market_results", [])]
+        proc.market_log = [dict(x) for x in d.get("market_log", [])]
+        proc.market_done = bool(d.get("market_done", False))
         return proc
 
 

@@ -280,7 +280,7 @@ def test_save_v11_and_v10_with_procedure_in_progress(renewal_games):
     g.offseason_renew_auto()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 12 and again.procedure.phase == "renewal"
+    assert SAVE_FORMAT_VERSION == 13 and again.procedure.phase == "renewal"
     assert again.procedure.negotiations == g.state.procedure.negotiations and again.procedure.ranks == g.state.procedure.ranks
     assert [p.preference for p in again.league.all_players()] == [p.preference for p in g.state.league.all_players()]
     # 版 10 の進行中の手続き(更改は済んでいて、自由契約の段階):志望はシードから補い、自由契約の段階から続ける

@@ -152,37 +152,45 @@ def round_salary(calc: int, multiplier: float, rule: str, rounding: int, money_a
     return max(int(calc), int(round(calc * multiplier / rounding)) * rounding)
 
 
-def ai_offers(team: Team, proc, ctx, league_sizes: dict[int, int]) -> dict[str, tuple[int, int]]:
-    """AI の 1 ラウンドの提示(選手 ID → (年数, 年俸))。D-261。"""
+def round_multiplier(neg: NegotiationSettings | None, rnd: int) -> float:
+    fa = fa_settings(neg)
+    return float(fa["round_multipliers"][min(int(rnd), len(fa["round_multipliers"])) - 1])
+
+
+def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float) -> dict[str, tuple[int, int]]:
+    """AI の方針で提示する選手を選ぶ(FA と市場で共通。D-261、D-300)。items は (選手, 見込みの WAR, 算定年俸, 年数) の並び。
+    自球団の評価で一軍に入る見込みがあり、見込みの WAR が設定値以上の選手を、見込みの高い順に設定値まで、空き枠と予算の範囲で。"""
     fa = fa_settings(ctx.negotiation)
-    rnd = int(proc.fa_round)
-    mult = float(fa["round_multipliers"][min(rnd, len(fa["round_multipliers"])) - 1])
     space = MAX_ROSTER - len(team.players)
     limit = min(int(fa["ai_max_offers"]), max(0, space))
     if limit <= 0:
         return {}
     cands = []
-    for p in proc.fa_pool:
-        info = proc.fa_info[p.id]
-        if info["status"] != "open" or float(info["expected"]) < float(fa["ai_min_expected"]):
+    for p, expected, calc, years in items:
+        if float(expected) < float(fa["ai_min_expected"]):
             continue
         c = _context(p, team, proc, ctx, league_sizes)
         if c["rank"] >= c["slots"]:
             continue  # 自球団の評価で一軍に入る見込みがない
-        cands.append((-float(info["expected"]), p.id, p))
+        cands.append((-float(expected), p.id, int(calc), int(years)))
     cands.sort()
     out: dict[str, tuple[int, int]] = {}
     total = team_salary(team)
     cap = ctx.cap(team.id)
-    for _, pid, p in cands:
+    for _, pid, calc, years in cands:
         if len(out) >= limit:
             break
-        info = proc.fa_info[pid]
-        salary = round_salary(int(info["calc_salary"]), mult, ctx.rule, ctx.settings.rounding, money_axis_active(ctx.negotiation, ctx.rule))
+        salary = round_salary(calc, mult, ctx.rule, ctx.settings.rounding, money_axis_active(ctx.negotiation, ctx.rule))
         if ctx.hard() and cap is not None and total + sum(s for _, s in out.values()) + salary > cap:
             continue
-        out[pid] = (int(info["ai_years"]), salary)
+        out[pid] = (years, salary)
     return out
+
+
+def ai_offers(team: Team, proc, ctx, league_sizes: dict[int, int]) -> dict[str, tuple[int, int]]:
+    """AI の 1 ラウンドの提示(選手 ID → (年数, 年俸))。D-261。"""
+    items = [(p, proc.fa_info[p.id]["expected"], proc.fa_info[p.id]["calc_salary"], proc.fa_info[p.id]["ai_years"]) for p in proc.fa_pool if proc.fa_info[p.id]["status"] == "open"]
+    return choose_offers(team, items, proc, ctx, league_sizes, round_multiplier(ctx.negotiation, proc.fa_round))
 
 
 def compensation(proc, info: dict, team_id: str) -> None:

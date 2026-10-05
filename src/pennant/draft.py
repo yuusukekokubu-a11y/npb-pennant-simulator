@@ -5,7 +5,8 @@
   - 自由契約(release):球団が選手を手放す。AI は自球団のスカウト評価の低い選手を上限まで(方針は ai_release)
   - FA(fa):更改を断った FA 権保持者の提示ラウンド制の市場(F3-2c。fa.py。D-258〜D-264)
   - ドラフト(draft):ウェーバー方式(前年の勝率が低い順。巡ごとに往復)。空き枠がない球団はパス。AI は ai_choose
-  - 市場(market):手放された選手 + 指名されなかった候補。同じ順番で数巡。残った選手はリーグを去る
+  - 市場(market):手放された選手 + FA で決まらなかった選手 + 指名されなかった候補。FA と同じ提示の方式で 1 ラウンド(market.py。D-300)。
+    志望の判定がない事前運転は今までの順番の方式(D-301)。残った選手はリーグを去る
   - 完了(done):70 人に満たない球団を自動補充(offseason.replenish。F2 の穴埋め)
 AI の判断は、真の能力ではなく、球団ごとのスカウト評価(scouting.quick_value)を使う(D-205)。判断の関数は差し替え可能。
 評価のずれ(sd)は {"common", "item"} の 2 層(D-212)。手続きは評価方式の版(method)を持つ(D-215)。
@@ -24,6 +25,7 @@ from .names import NameGenerator
 from .negotiation import ensure_preferences
 from .offseason import OffseasonSettings, PlayerNote, replenish
 from .season import derive_seed
+from .market import close_market, uses_offers
 
 # 分けた先(procedure.py・contract_stage.py)の名前も、今までどおり draft から使えるようにする(D-302)
 from .procedure import (  # noqa: F401
@@ -275,6 +277,10 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
                 run_all_rounds(league, proc, ctx, my_team_id, my_ai=True)
             else:
                 finish_fa_market(proc)
+            next_phase(proc)
+        elif proc.phase == "market" and uses_offers(ctx):  # 市場は提示の方式(D-300)。志望の判定がない事前運転は今までの順番の方式(D-301)
+            if not proc.market_done:
+                close_market(league, proc, ctx, my_team_id, scout_sd, settings, my_ai=True)
             next_phase(proc)
         elif proc.phase in ("draft", "market"):
             run_ai_turns(league, proc, scout_sd, settings, None, mins, min_batters, ctx=ctx)
