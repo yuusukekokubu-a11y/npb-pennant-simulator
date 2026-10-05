@@ -31,6 +31,10 @@
   },
   "threshold": -0.6,
   "threshold_without_money": -0.55,
+  "money_none": {
+    "salary_axis": true,
+    "max_ratio": 1.3
+  },
   "noise_sd": 0.25,
   "multi_year": {
     "per_year": 0.03,

@@ -149,37 +149,36 @@ def test_renewal_and_hard_rules_flow(games):
         g.offseason_renew_auto()
         for e in [e for e in proc.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
             g.offseason_renew_release(e["player_id"])
-        v = g.offseason_next()
+        v = g.offseason_view()
         c = v["contracts"]
-        assert v["phase"] == "release" and c["rule"] == rule and proc.contracts_done and proc.rate > 0 and g.state.contract_rates["2"] == proc.rate
+        assert v["stage"] == "contract" and c["rule"] == rule and proc.contracts_done and proc.rate > 0 and g.state.contract_rates["2"] == proc.rate
         negotiated = {pid for pid, e in proc.negotiations.items()}
         assert negotiated == {pid for pid in expiring if pid in negotiated or any(p.id == pid for t in g.state.league.teams for p in t.players)}  # 満了者は全員(引退した人を除く)が更改の対象
         renewed = {x["player_id"] for x in proc.renewals}
         assert renewed == {pid for pid, e in proc.negotiations.items() if e["status"] == "accepted"} and renewed
         assert all(p.contract["until"] >= 2 for t in g.state.league.teams for p in t.players)  # 残った選手は全員、次のシーズンの契約がある
+        assert not proc.budget_releases  # AI 球団の予算超過の解消は、契約の段階の終わりに(D-272)
         if rule == "none":
-            assert not proc.budget_releases and c["mine"]["cap"] is None and not c["mine"]["blocked"]
-        else:
-            assert all(team_salary(t) <= g.budget_info(t.id)["cap"] for t in g.state.league.teams if t.id != "T01")  # AI は超過を解消
-            assert all(x["team_id"] != "T01" for x in proc.budget_releases)
-            if c["mine"]["blocked"]:
-                with pytest.raises(ValueError, match="予算の上限"):
-                    g.offseason_next()
-                t = g.offseason_table("release", "pitcher", "basic", "salary", "desc")
-                ids = []
-                for r in t["rows"]:
-                    if r["can_release"]:
-                        ids.append(r["player_id"])
-                    if team_salary(g._team("T01")) - sum(int(p.contract["salary"]) for p in g._team("T01").players if p.id in ids) <= c["mine"]["cap"]:
-                        break
-                g.offseason_release(ids)
-                assert g.offseason_view()["contracts"]["mine"]["over_now"] == 0
-            else:
-                g.offseason_release([])
+            assert c["mine"]["cap"] is None and not c["mine"]["blocked"]
+        elif c["mine"]["blocked"]:
+            with pytest.raises(ValueError, match="予算の上限"):
+                g.offseason_next()
+            t = g.contract_table("pitcher", "basic", "contract", "desc")
+            ids = []
+            for r in t["rows"]:
+                if r["can_release"] and r["in_team"]:
+                    ids.append(r["player_id"])
+                if team_salary(g._team("T01")) - sum(int(p.contract["salary"]) for p in g._team("T01").players if p.id in ids) <= c["mine"]["cap"]:
+                    break
+            g.offseason_release(ids)
+            assert g.offseason_view()["contracts"]["mine"]["over_now"] == 0
         assert all(x.get("salary") is not None for x in proc.released)  # 手放した選手の年俸は履歴に残り、契約は消える
         assert all(p.contract is None for p in proc.market)
         v = g.offseason_next()
-        if v["phase"] == "fa":  # FA の段階(F3-2c)は残りを AI と同じ方針で
+        if rule != "none":
+            assert all(team_salary(t) <= g.budget_info(t.id)["cap"] for t in g.state.league.teams if t.id != "T01")  # AI は超過を解消
+            assert all(x["team_id"] != "T01" for x in proc.budget_releases)
+        if v["phase"] == "fa":  # FA の段階(F3-2c)は、自球団は提示せずに締める
             v = g.offseason_next()
         assert v["phase"] == "draft"
         v = g.offseason_advance()
