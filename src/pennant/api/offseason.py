@@ -34,7 +34,7 @@ class OffseasonMixin:
             state.transactions.append({"year": proc.year, "phase": "fa", **{k: v for k, v in x.items() if k != "offers"}})
         self.last_negotiations = proc.negotiations  # 終わった手続きの更改の交渉(保存しない。指紋 (p) と開発者向けの集計用)
         self.last_fa = {"info": proc.fa_info, "results": proc.fa_results, "log": proc.fa_log, "ranks": dict(proc.ranks), "budget_releases": list(proc.budget_releases)}  # 終わった FA(保存しない。指紋 (q) と集計用)
-        self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log), "pool": len(proc.market) + len(proc.market_results)}  # 終わった市場(保存しない。集計用。D-300)
+        self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log)}  # 終わった市場(保存しない。集計用。D-300)
         state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)

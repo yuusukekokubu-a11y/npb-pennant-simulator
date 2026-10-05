@@ -173,7 +173,6 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
             row["market_signed"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "market" and x.get("player_id"))
             row["draft_picked"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "draft" and x.get("player_id"))
             row["filled"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "fill")
-            row["market_pool"] = (g.last_market or {}).get("pool") if hasattr(g, "last_market") else None
             now = {t.id: len(t.players) for t in g.state.league.teams}
             assert now == sizes, f"選手の数が変わった(リーグ {seed}、{year} 年目の確定の後:{ {k: v for k, v in now.items() if v != sizes[k]} })"
             from pennant.draft import minimum_batters, minimum_positions, shortages
