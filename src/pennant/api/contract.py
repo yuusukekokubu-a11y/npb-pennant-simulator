@@ -18,6 +18,7 @@ from ..contracts import (
 )
 from ..draft import stage_of
 from ..metrics import innings_text
+from ..negotiation import reason_text
 from .common import (
     BATS_LABELS,
     CONTRACT_COLUMNS,
@@ -103,13 +104,11 @@ class ContractMixin:
         if e["status"] == "released":
             return 3, "自由契約", ""
         if e["status"] == "declared":
-            reason = e["offers"][-1].get("reason") if e["offers"] else None
-            return 3, "FA 宣言", neg.reason(reason) if reason in neg.axes else ""
+            return 3, "FA 宣言", reason_text(neg, e["offers"][-1]) if e["offers"] and e["offers"][-1].get("reason") in neg.axes else ""
         if not e["offers"]:
             return 1, "未提示", ""
         left = draftmod.offers_left(e, neg)
-        reason = e["offers"][-1].get("reason")
-        return 0, f"断られた(残り {left} 回)", neg.reason(reason) if reason in neg.axes else "条件が合わない"
+        return 0, f"断られた(残り {left} 回)", reason_text(neg, e["offers"][-1])
 
     def _renewal_public(self, e) -> dict:
         neg = self.state.negotiation_settings
@@ -119,7 +118,7 @@ class ContractMixin:
             "old_salary": e["old_salary"], "old_text": "-" if e["old_salary"] is None else f"{int(e['old_salary']):,} 万円",
             "auto_salary": int(e["auto_salary"]), "auto_text": f"{int(e['auto_salary']):,} 万円", "expected": e["expected"],
             "status": e["status"] if e["status"] != "pending" else ("refused" if e["offers"] else "pending"), "status_label": status, "reason": reason,
-            "offers": [{"years": o["years"], "salary": o["salary"], "salary_text": f"{int(o['salary']):,} 万円", "accepted": o["accepted"], "reason": "" if o["accepted"] else (neg.reason(o["reason"]) if o.get("reason") in neg.axes else "条件が合わない")} for o in e["offers"]],
+            "offers": [{"years": o["years"], "salary": o["salary"], "salary_text": f"{int(o['salary']):,} 万円", "accepted": o["accepted"], "reason": "" if o["accepted"] else reason_text(neg, o)} for o in e["offers"]],
             "offers_left": draftmod.offers_left(e, neg), "max_offers": neg.max_offers,
         }
 
@@ -241,7 +240,7 @@ class ContractMixin:
         rec = draftmod.make_offer(team, e, years, int(salary), proc, self._contract_ctx())
         self.dirty = True
         view = self.offseason_view()
-        view["last_offer"] = {"player_id": e["player_id"], "name": e["name"], "accepted": rec["accepted"], "years": rec["years"], "salary": rec["salary"], "reason": "" if rec["accepted"] else state.negotiation_settings.reason(rec["reason"]) if rec.get("reason") in state.negotiation_settings.axes else "条件が合わない", "released": e["status"] == "released"}
+        view["last_offer"] = {"player_id": e["player_id"], "name": e["name"], "accepted": rec["accepted"], "years": rec["years"], "salary": rec["salary"], "reason": "" if rec["accepted"] else reason_text(state.negotiation_settings, rec), "released": e["status"] == "released"}
         return view
 
     def _none_salary(self, salary, calc: int) -> int:

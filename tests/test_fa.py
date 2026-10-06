@@ -142,11 +142,12 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
             room = g.budget_info("T01")["cap"] - team_salary(g._team("T01"))
             with pytest.raises(ValueError, match="上限"):
                 g.offseason_fa_offer(target.id, 2, room + 100)
-            v = g.offseason_fa_offer(target.id, 3, int(calc * 1.5) // 100 * 100)
+            pay = max(calc, min(int(calc * 1.5), room) // 100 * 100)  # 上限の中で、算定より高い提示
+            v = g.offseason_fa_offer(target.id, 3, pay)
             assert v["fa"]["offers"][0]["years"] == 3
             g.offseason_fa_cancel(target.id)
             assert not g.offseason_view()["fa"]["offers"]
-            g.offseason_fa_offer(target.id, 3, int(calc * 1.5) // 100 * 100)
+            g.offseason_fa_offer(target.id, 3, pay)
         # 保存して読み込んでも、同じ結果(乱数は手続きのシードから)
         again = api.Game(load_game(save_game(g.state)), dirty=False)
         assert again.state.procedure.fa_offers == proc.fa_offers and again.offseason_view()["phase"] == "fa"
@@ -198,7 +199,8 @@ def test_ai_offers_respect_limits(season_end):
         assert len(offers) <= FA["ai_max_offers"]
         assert all(proc.fa_info[pid]["expected"] >= FA["ai_min_expected"] for pid in offers)
         assert team_salary(team) + sum(s for _, s in offers.values()) <= ctx.cap(team.id)
-        assert all(s == proc.fa_info[pid]["calc_salary"] or abs(s - proc.fa_info[pid]["calc_salary"] * FA["round_multipliers"][0]) <= 100 for pid, (_, s) in offers.items())
+        # 年俸は 算定 × ラウンドの倍率 × 主力級の期待の倍率(D-325)
+        assert all(abs(s - proc.fa_info[pid]["calc_salary"] * FA["round_multipliers"][0] * famod.star_multiplier(NEG, proc.fa_info[pid]["expected"])) <= 100 for pid, (_, s) in offers.items())
 
 
 @pytest.mark.slow

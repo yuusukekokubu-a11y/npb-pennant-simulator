@@ -206,7 +206,7 @@ def standing_ranks(teams, records: dict[str, tuple[int, int]] | None) -> dict[st
     return out
 
 
-def satisfaction(axis: str, settings: NegotiationSettings, offer_salary: int, auto_salary: int, context: dict) -> float:
+def satisfaction(axis: str, settings: NegotiationSettings, offer_salary: int, auto_salary: float, context: dict) -> float:
     a = settings.axes[axis]
     kind = a["kind"]
     if kind == "salary_ratio":
@@ -245,7 +245,8 @@ def noise_for(proc_seed: int, player_id: str, settings: NegotiationSettings) -> 
 
 
 def judge(settings: NegotiationSettings, preference: dict[str, float], years: int, salary: int, auto_salary: int, age: int, context: dict, money_rule: str, noise: float) -> dict:
-    """提示への答え:{accepted, reason(軸のキー), score, values(軸 → 満足度)}。score と values は隠し情報(画面には出さない)。"""
+    """提示への答え:{accepted, reason(軸のキー), score, values(軸 → 満足度)}。score と values は隠し情報(画面には出さない)。
+    context の salary_expect(主力級の期待の倍率。D-322)があれば、年俸の軸の基準を 算定 × 倍率 にする。"""
     values = {}
     weighted = {}
     threshold = settings.threshold
@@ -253,7 +254,8 @@ def judge(settings: NegotiationSettings, preference: dict[str, float], years: in
         if not axis_enabled(axis, settings, money_rule):
             threshold = settings.threshold_without_money
             continue
-        s = satisfaction(axis, settings, salary, auto_salary, context)
+        base = auto_salary * float(context.get("salary_expect", 1.0)) if settings.axes[axis]["kind"] == "salary_ratio" else auto_salary  # 主力級の期待(D-322)
+        s = satisfaction(axis, settings, salary, base, context)
         values[axis] = s
         weighted[axis] = float(preference.get(axis, 0.0)) * float(settings.axes[axis]["strength"]) * s
     threshold += float(context.get("threshold_add", 0.0))  # FA 権保持者の更改は厳しい(F3-2c。D-259)
@@ -284,3 +286,15 @@ def ai_offer(attempt: int, auto_salary: int, base_years: int, expected: float, s
     salary = int(round(auto_salary * raise_ / rounding)) * rounding if raise_ != 1.0 else int(auto_salary)
     years = min(int(max_years), int(base_years) + int(settings.ai["extra_years"][attempt]))
     return years, max(int(auto_salary), salary)
+
+
+def reason_text(settings: NegotiationSettings, rec: dict) -> str:
+    """断られた理由の文(公開。D-245)。主力級の期待で年俸の軸が理由のときは、設定の文を足す(D-322)。"""
+    key = rec.get("reason")
+    if key not in settings.axes:
+        return "条件が合わない"
+    text = settings.reason(key)
+    star = (settings.data.get("fa") or {}).get("star")
+    if rec.get("star") and star:
+        text += f"({star['reason']})"
+    return text
