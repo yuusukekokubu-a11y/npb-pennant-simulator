@@ -25,7 +25,7 @@ export async function contractSection(v, token) {
   if (data.kinds.length) filters.append(pick("contract-kind", "成績の種類", data.kinds, cs.kind, (k) => { cs.kind = k; renderCurrent(); }));
   if (data.seasons.length > 1) filters.append(pick("contract-season", "シーズンの選択", data.seasons.map((x) => ({ key: x.key, label: x.key === "career" ? "通算" : "今季" })), cs.season, (k) => { cs.season = k; renderCurrent(); }));
   const first = (p) => [link(p.name, () => { ps.renewalOpen = ps.renewalOpen === p.player_id ? null : p.player_id; renderCurrent(); }), el("span", { className: "sub" }, p.hand || "")];
-  const detail = (p) => (ps.renewalOpen === p.player_id ? contractPanel(p, rn, prefs) : null);
+  const detail = (p) => (ps.renewalOpen === p.player_id ? contractPanel(p, rn) : null);
   const onSort = (key) => { sortToggle(cs.sortBy, cs.shown, key); renderCurrent(); };
   const rowClass = (p) => (p.status === "refused" ? "refused" : p.status === "released" || p.status === "declared" ? "muted" : "");
   return [
@@ -52,7 +52,7 @@ export function salaryInput(value, min, step, max = null) {
 
 // 選手をタップして出るパネル(D-272):交渉中なら 年数・年俸(±%)・提示する・自由契約にする・残りの回数・断られた理由。
 // 契約が残る選手(複数年の途中・更改済)は「自由契約にする」だけ(残りの契約は消える)
-function contractPanel(p, rn, prefs) {
+function contractPanel(p, rn) {
   const r = p.renewal;
   const box = el("div", { className: "offer-panel", id: "offer-panel", dataset: { playerId: p.player_id } });
   if (r && r.offers.length) {

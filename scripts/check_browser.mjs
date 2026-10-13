@@ -328,7 +328,7 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 18 && ["OPS", "wOBA", "本塁打", "BABIP"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標がある(${sortOptions.length}個)`);
+check(sortOptions.length === 18 + 7 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目。作り直し①)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
@@ -555,7 +555,7 @@ const homeTeamId = pyGame(`print(json.dumps(g.last_day_games()["games"][0]["home
 const stadiumPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([d["name"], str(d["games"]), str(d["home_runs"]), d["home_runs_per_game"], d["runs_per_game"]], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
 const stadiumOnScreen = [await page.textContent("#stadium-name"), ...(await page.$$eval("#stadium-record td", (tds) => tds.map((td) => td.textContent)))];
 check(JSON.stringify(stadiumOnScreen) === JSON.stringify(stadiumPy), `球場のページの実際の結果(試合・本塁打・本塁打/試合・得点/試合)が、計算本体と同じ(${stadiumPy[0]})`);
-check(!/倍率/.test(await page.textContent("#screen-stadium")), "球場のページに真の倍率が出ない(答え合わせモードはなくした)");
+check((await page.locator("#stadium-answers").count()) === 0 && !/\b[01]\.\d{3}\b/.test(await page.textContent("#stadium-record")), "球場のページに真の倍率が出ない(答え合わせモードはなくした)");
 // 本拠地とアウェイの比較の表と、推定(1シーズン目は「まだ推定できません」)(②b)
 const cmpOnScreen = await page.$$eval("#stadium-compare tbody tr", (trs) => trs.map((tr) => [...tr.children].slice(1).map((td) => td.textContent)));
 const cmpPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([[d["this_season"][k][c] for c in ("home", "away", "ratio")] for k in ("home_run", "babip", "runs")], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
@@ -570,6 +570,8 @@ const offMessages = await page.evaluate(() => window.__messages.join("\n"));
 const leaked = [...HIDDEN.words.filter((w) => offMessages.includes(w)), ...HIDDEN.keys.filter((k) => offMessages.includes(`"${k}"`))];
 check(leaked.length === 0, `裏の計算から届いたメッセージに隠し情報がない${leaked.length ? `(見つかった: ${leaked.join("、")})` : ""}`);
 check((await page.locator("input[name=answer-level]").count()) === 0, "メニューに答え合わせモードがない(D-338)");
+await page.click("#tabs button[data-tab=stats]");
+await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
 await page.click("#stats-kind button[data-value=basic]");
 await page.click("#stats-role button[data-value=batter]");
 await page.click("#tabs button[data-tab=progress]");
@@ -748,7 +750,7 @@ print(json.dumps([v["roster_counts"], v["status_labels"], v["players"]], ensure_
 const infoAfter = await page.textContent("#proc-info");
 const wantInfo = `${autoPy[2]} 人:` + ["unoffered", "refused", "accepted", "declared", "released", "contracted"].filter((k) => autoPy[0][k]).map((k) => `${autoPy[1][k]} ${autoPy[0][k]}`).join("・");
 check(infoAfter === wantInfo, `「自動案で更改」で全員に提示し、状態の内訳が計算本体と同じ(「${infoAfter}」。${raSeconds.toFixed(2)} 秒)`);
-check(!(await page.textContent("#proc-body")).includes("志望(答え合わせ)"), "答え合わせモードがオフのとき、契約の画面に志望の重みは出ない(D-245)");
+check(!(await page.textContent("#proc-body")).includes("志望"), "契約の画面に志望の重みは出ない(D-245、D-338)");
 // 状態の絞り込み「保留」:断った選手だけ
 await page.selectOption("#contract-status", "refused");
 await page.waitForFunction(() => document.querySelector("#contract-status").value === "refused" && (document.querySelector("#contract-empty") || [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("保留"))));
@@ -788,10 +790,9 @@ for (let i = 0; i < 40; i++) {
 // 契約が残る選手(更改済・複数年の途中)も「自由契約にする」で手放せる(残りの契約は消える)
 await page.selectOption("#contract-status", "accepted");
 await page.waitForFunction(() => document.querySelector("#contract-status").value === "accepted" && document.querySelectorAll("#proc-body tbody tr").length > 0);
-const keptName = pyAfter(`print(json.dumps(next(r["name"] for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"]), ensure_ascii=False))`); // 最低人数を割らない選手
+const [keptName, keptPid] = pyAfter(`print(json.dumps(next([r["name"], r["player_id"]] for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"]), ensure_ascii=False))`); // 最低人数を割らない選手
 await page.click(`#proc-body tbody tr .name-cell .link:text-is("${keptName}")`);
-await page.waitForSelector("#offer-release");
-const keptPid = await page.$eval("#offer-panel", (b) => b.dataset.playerId);
+await page.waitForSelector(`#offer-panel[data-player-id="${keptPid}"] #offer-release`); // 前に開いていたパネルが残っている間に読まないよう、押した選手のパネルを待つ
 check(!(await page.$("#offer-send")) && (await page.textContent("#offer-panel")).includes("残り"), "契約が残る選手のパネルは、契約(年俸・残り年数)と「自由契約にする」だけ");
 const beforeKept = await page.textContent("#proc-info");
 await page.click("#offer-release");

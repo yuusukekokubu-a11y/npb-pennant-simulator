@@ -13,7 +13,7 @@ export async function marketSection(v, token) {
   if (!m) return [el("p", { className: "muted" }, "市場の情報がありません。")];
   const got = await fetchDecision("market", token);
   if (!got) return null;
-  const prefs = null;
+
   const { data, truth } = got;
   const canOffer = (p) => v.my_team && !m.done && p.open;
   const onName = (p) => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); };
@@ -21,7 +21,7 @@ export async function marketSection(v, token) {
     if (ps.open !== p.player_id) return null;
     const items = el("p", { className: "small" }, `項目別の推定値 ± ふれ幅:${p.scouting.items.map((i) => `${i.label} ${i.text}`).join(" / ")}`);
     if (!canOffer(p)) return el("div", { className: "offer-panel", id: "market-panel", dataset: { playerId: p.player_id } }, items);
-    const panel = dealPanel(p, m, prefs, { prefix: "market", onSend: (args) => runProc("market_offer", args), onCancel: (pid) => runProc("market_cancel", { player_id: pid }) });
+    const panel = dealPanel(p, m, { prefix: "market", onSend: (args) => runProc("market_offer", args), onCancel: (pid) => runProc("market_cancel", { player_id: pid }) });
     panel.append(items);
     return panel;
   };

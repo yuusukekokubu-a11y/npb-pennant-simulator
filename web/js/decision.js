@@ -77,7 +77,7 @@ export async function outlookPanel(token) {
 }
 
 // 提示のパネル(FA と市場で共通。年数・年俸と ±% のボタン・提示する・取り消す。D-257、D-300)
-export function dealPanel(p, info, prefs, { prefix, onSend, onCancel }) {
+export function dealPanel(p, info, { prefix, onSend, onCancel }) {
   const d = p.deal;
   const box = el("div", { className: "offer-panel", id: `${prefix}-panel`, dataset: { playerId: p.player_id } });
   box.append(el("p", {}, `${d.former_team_name ? `前の所属 ${d.former_team_name}。` : ""}算定年俸 ${d.calc_text}。見込みの WAR ${Number(d.expected).toFixed(2)}。`));
