@@ -34,6 +34,27 @@ STYLE_ITEMS = ("gb_fb",)
 
 ALL_ITEMS = tuple(dict.fromkeys(BATTER_ITEMS + PITCHER_ITEMS))
 
+# ---- 見せる能力(作り直し①。D-336、D-347〜D-351) ----
+# 選手の正本はこちら。上の項目(試合の計算の内部の能力)は、ここから換算する(ability_model.py。D-349)。
+# 値は内部と同じ目盛り(50 が一軍の平均、10 点が標準偏差 1 つ分)の小数で持ち、画面では 1〜100 などに直して見せる。
+BATTER_ABILITIES = ("meet", "power", "speed", "arm", "defense", "catch")
+PITCHER_ABILITIES = ("velocity", "control", "stamina", "breaking")
+ALL_ABILITIES = tuple(dict.fromkeys(BATTER_ABILITIES + PITCHER_ABILITIES))
+
+ABILITY_LABELS = {
+    "trajectory": "弾道",
+    "meet": "ミート",
+    "power": "パワー",
+    "speed": "走力",
+    "arm": "肩力",
+    "defense": "守備力",
+    "catch": "捕球",
+    "velocity": "球速",
+    "control": "コントロール",
+    "stamina": "スタミナ",
+    "breaking": "変化球",
+}
+
 ITEM_LABELS = {
     "contact": "コンタクト",
     "eye": "選球眼",
@@ -80,6 +101,11 @@ POSITION_LABELS = {
 
 PITCHER = "pitcher"
 BATTER = "batter"
+
+
+def abilities_for(role: str) -> tuple[str, ...]:
+    """役割(投手/打者)ごとの見せる能力(正本。弾道と球種は別に持つ)。"""
+    return PITCHER_ABILITIES if role == PITCHER else BATTER_ABILITIES
 
 
 def items_for(role: str) -> tuple[str, ...]:

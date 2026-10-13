@@ -240,7 +240,7 @@ class OffseasonMixin:
         return {"finished": True, "summary": self.offseason_summary(), "status": self.status()}
 
     def offseason_summary(self, year: int | None = None) -> dict:
-        """オフの結果(公開用):引退した選手、入団した新人。能力の増減は答え合わせ用(answers.offseason_answers)。"""
+        """オフの結果(公開用):引退した選手、入団した新人。能力の増減は offseason_changes(作り直し①)。"""
         if not self.state.offseasons:
             return {"available": False, "years": []}
         if year is None:
@@ -264,5 +264,5 @@ class OffseasonMixin:
             "retired": retired,
             "rookies": rookies,
             "counts": {"retired": len(r.retired), "rookies": len(r.rookies), "players": len(self.state.league.all_players())},
-            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は、答え合わせモードがオンのときだけ見られます)。新人は、ドラフト・自由契約市場・自動補充で入った選手です。",
+            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は下の表)。新人は、ドラフト・自由契約市場・自動補充で入った選手です。",
         }

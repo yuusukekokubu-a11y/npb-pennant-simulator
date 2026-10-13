@@ -1,7 +1,6 @@
 // 画面の動き(最小のブラウザ画面①②。D-107、D-114)。計算は worker.js(裏の Python)に任せ、ここは表示と操作だけを行う。
 // ブラウザの保存領域(localStorage・sessionStorage・IndexedDB・Cookie)には何も書かない。自動保存もしない。
-// 選手の非公開の情報は、答え合わせモードがオンのときだけ、答え合わせ用の入口(answer)から受け取る(D-108、D-114)。
-// オフのときは、その入口を呼ばない。答え合わせモードの設定は、どこにも保存しない(開き直すとオフ)。
+// 能力は公開の情報として query から受け取る(答え合わせモードはなくした。作り直し①。D-338)。
 // 入口(保守②。D-291):閉じる前の警告・ボタンのつなぎ・起動。画面ごとの処理は js/ の各ファイルにある(一覧は web/README.md)。
 
 import { $, STATS_PAGE, state } from "./js/core.js";
@@ -11,7 +10,6 @@ import { advance } from "./js/progress.js";
 import { buildStatsFilters, commitSort, currentSort, isAbilityKey } from "./js/stats.js";
 import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
 import { yearEnd } from "./js/yearend.js";
-import { setAnswerLevel } from "./js/menu.js";
 import { leagueSeedChanged, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
 import { openFile, save } from "./js/files.js";
 
@@ -151,9 +149,5 @@ for (const b of $("player-kind").children) {
   });
 }
 
-// メニュー(答え合わせモード)
-for (const r of document.querySelectorAll("input[name=answer-level]")) {
-  r.addEventListener("change", () => setAnswerLevel(Number(r.value)));
-}
 
 boot();

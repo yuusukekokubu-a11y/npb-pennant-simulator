@@ -5,7 +5,6 @@ from __future__ import annotations
 from ..abilities import POSITION_LABELS
 from ..newgame import public_player
 from ..records import qualified_batters, qualified_pitchers
-from ..scouting import ScoutReport
 from .common import (
     BATS_LABELS,
     KIND_LABELS,
@@ -43,7 +42,7 @@ class PlayersMixin:
                 hand=BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
                 is_mine=team is not None and team.id == self.state.my_team_id,
                 retired=False,
-                scouting=None if p.scouting is None else {**ScoutReport.from_dict(p.scouting).to_public(), "year": p.scouting.get("year"), "team_name": self._team(p.scouting["team_id"]).name},
+                abilities=self.player_abilities(p),  # 見せる能力(作り直し①。プロのスカウト評価は見せない。D-352)
                 contract=self._contract_public(p),
             )
             role = p.role

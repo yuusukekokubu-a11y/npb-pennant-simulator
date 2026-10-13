@@ -10,7 +10,7 @@ import json
 import math
 from typing import Any
 
-from .abilities import BATTER, PITCHER, items_for
+from .abilities import BATTER, PITCHER, abilities_for, items_for
 from .baselines import BaselineSettings, Baselines, STATES, VALUE_NAMES
 from .baserunning import RunnerMove
 from .draft import OffseasonProcedure
@@ -102,15 +102,30 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
         extra = sorted(set(ratings) - set(items))
         if extra:
             p.add(f"{where}.ratings", f"この役割にない能力があります: {', '.join(extra)}")
+    abilities = _need(pd, "abilities", dict, where, p)  # 見せる能力(正本。作り直し①。D-349)
+    if abilities is not None:
+        names = abilities_for(role)
+        for item in names:
+            v = abilities.get(item)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                p.add(f"{where}.abilities.{item}", f"能力がない、または数ではありません(値: {v!r})")
+            elif not RATING_RANGE[0] <= v <= RATING_RANGE[1]:
+                p.add(f"{where}.abilities.{item}", f"能力が範囲外です(値: {v}。{RATING_RANGE[0]:g}〜{RATING_RANGE[1]:g})")
+        extra = sorted(set(abilities) - set(names))
+        if extra:
+            p.add(f"{where}.abilities", f"この役割にない能力があります: {', '.join(extra)}")
+    pitches = pd.get("pitches")
+    if role == PITCHER and not (isinstance(pitches, list) and pitches and all(isinstance(x, dict) and isinstance(x.get("type"), str) and isinstance(x.get("weight"), (int, float)) and not isinstance(x.get("weight"), bool) and x["weight"] > 0 for x in pitches)):
+        p.add(f"{where}.pitches", "投手の球種は [{type, weight(正の数)}] の形にしてください")
     hidden = _need(pd, "hidden", dict, where, p)
     if hidden is not None:
-        pot = _need(hidden, "potential", dict, f"{where}.hidden", p)
-        if pot is not None and sorted(pot) != sorted(items):
-            p.add(f"{where}.hidden.potential", "潜在能力の項目が、能力値の項目とそろっていません")
         if hidden.get("growth_type") not in GROWTH_TYPES:
             p.add(f"{where}.hidden.growth_type", f"early / normal / late のどれかにしてください(値: {hidden.get('growth_type')!r})")
         _need(hidden, "archetype", str, f"{where}.hidden", p)
-        _need(hidden, "ability_drift", dict, f"{where}.hidden", p)
+        for key, lo, hi in (("ease", 0.0, 5.0), ("trajectory_bias", -50.0, 50.0)):
+            v = hidden.get(key)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+                p.add(f"{where}.hidden.{key}", f"{lo:g}〜{hi:g} の数にしてください(値: {v!r})")
     st = _need(pd, "state", dict, where, p)
     if st is not None:
         for key in ("form", "fatigue"):
@@ -134,7 +149,7 @@ def _player_from(pd: dict) -> Player:
         bats=pd.get("bats"),
         throws=pd.get("throws"),
         ratings=dict(pd["ratings"]),
-        hidden=HiddenInfo(dict(h["potential"]), h["growth_type"], h["archetype"], dict(h["ability_drift"])),
+        hidden=HiddenInfo(h["growth_type"], h["archetype"], float(h["ease"]), float(h["trajectory_bias"])),
         state=PlayerState(form=pd["state"]["form"], fatigue=pd["state"]["fatigue"]),
         team_id=pd.get("team_id"),
         origin=pd.get("origin"),
@@ -142,6 +157,8 @@ def _player_from(pd: dict) -> Player:
         contract=copy.deepcopy(pd.get("contract")),
         preference=None if pd.get("preference") is None else {str(k): float(v) for k, v in pd["preference"].items()},
         fa_seasons=pd.get("fa_seasons", 0),
+        abilities={k: float(v) for k, v in pd["abilities"].items()},
+        pitches=copy.deepcopy(pd.get("pitches")),
     )
 
 

@@ -113,26 +113,26 @@ def build_stats_report(rec: Records, results: list[GameResult], league: League, 
         rows.append([teams[tid].name, str(c["G"]), f"{c['W']}勝{c['L']}敗{c['T']}分", str(c["R"]), str(c["RA"]), f"{c['R'] - c['RA']:+d}"])
     out.append("## チームの得点・失点\n" + _table(["チーム", "試合", "勝敗", "得点", "失点", "得失点差"], rows))
 
-    out.append("## 真の能力と1シーズンの成績の関係(確認用。画面には出さない)\n" + ability_relations(rec, players, config))
+    out.append("## 能力と1シーズンの成績の関係(確認用)\n" + ability_relations(rec, players, config))
     return "\n\n".join(out) + "\n"
 
 
 def ability_relations(rec: Records, players: dict, config: MetricsConfig) -> str:
-    """規定到達者で、能力値と成績の相関係数(−1〜1。1 に近いほど、能力が高いと成績も高い)。"""
+    """規定到達者で、見せる能力と成績の相関係数(−1〜1。1 に近いほど、能力が高いと成績も高い)。"""
     rows = []
     qb = qualified_batters(rec)
     qp = qualified_pitchers(rec)
-    pairs = [
-        ("打者のコンタクト と K%", qb, "contact", lambda c: compute(config, "batter", c)["k_pct"], "batter"),
-        ("打者の選球眼 と BB%", qb, "eye", lambda c: compute(config, "batter", c)["bb_pct"], "batter"),
-        ("打者の長打力 と 本塁打 ÷ 打席", qb, "power", lambda c: c["HR"] / c["PA"], "batter"),
-        ("打者の打球の質 と BABIP", qb, "batted_ball_quality", lambda c: compute(config, "batter", c)["babip"], "batter"),
-        ("投手の奪三振力 と K%", qp, "strikeout", lambda c: compute(config, "pitcher", c)["k_pct"], "pitcher"),
-        ("投手の制球力 と BB%", qp, "control", lambda c: compute(config, "pitcher", c)["bb_pct"], "pitcher"),
+    pairs = [  # 見せる能力(作り直し①。D-349)と成績
+        ("打者のミート と K%", qb, "meet", lambda c: compute(config, "batter", c)["k_pct"], "batter"),
+        ("打者のミート と BABIP", qb, "meet", lambda c: compute(config, "batter", c)["babip"], "batter"),
+        ("打者のパワー と 本塁打 ÷ 打席", qb, "power", lambda c: c["HR"] / c["PA"], "batter"),
+        ("投手の変化球 と K%", qp, "breaking", lambda c: compute(config, "pitcher", c)["k_pct"], "pitcher"),
+        ("投手の球速 と K%", qp, "velocity", lambda c: compute(config, "pitcher", c)["k_pct"], "pitcher"),
+        ("投手のコントロール と BB%", qp, "control", lambda c: compute(config, "pitcher", c)["bb_pct"], "pitcher"),
     ]
     for label, ids, item, stat, role in pairs:
         group = rec.batters if role == "batter" else rec.pitchers
-        xs = [players[pid].ratings[item] for pid in ids]
+        xs = [players[pid].abilities[item] for pid in ids]
         ys = [float(stat(group[pid])) for pid in ids]
         r = statistics.correlation(xs, ys) if len(ids) > 2 else float("nan")
         rows.append([label, str(len(ids)), f"{r:+.2f}"])

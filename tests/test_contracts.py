@@ -130,8 +130,7 @@ def test_salary_ignores_hidden_info(games):
     ctx.rate = 14000.0
     before = ctx.salary(p, "T01")
     p2 = copy.deepcopy(p)
-    for item in p2.hidden.potential:
-        p2.hidden.potential[item] += 20
+    p2.hidden.ease = 1.7  # 伸びやすさ(隠し情報)を変えても年俸は変わらない
     p2.hidden.growth_type = "late" if p2.hidden.growth_type != "late" else "early"
     ctx2 = ContractContext(state.contract_settings, "none", {}, state_war_history(state), state.scout_sd_of)
     ctx2.scout = lambda player, tid: (55.0, "A")
@@ -241,47 +240,13 @@ def test_contract_pages_are_public_and_without_hidden_info(games):
 # ---- 保存形式(版 10。F3-2b で版 11)と旧版 ----
 
 @pytest.mark.slow
-def test_save_round_trip_and_v9_migration(games):
+def test_save_round_trip(games):
     g = api.Game(copy.deepcopy(games["strict"].state), dirty=False)
     g.advance(125)
     g.year_end()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 13 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
+    assert SAVE_FORMAT_VERSION == 14 and again.money_rule == "strict" and again.budget_tiers == g.state.budget_tiers and again.contract_rates == g.state.contract_rates
     assert all(p.contract == q.contract for p, q in zip(g.state.league.all_players(), again.league.all_players()))
     assert again.procedure.rate == g.state.procedure.rate and len(again.procedure.renewals) == len(g.state.procedure.renewals)
-    # 版 9(契約なし)として読む:ルールは「なし」、契約は算定で補い、残りは 1〜3 年
-    g2 = api.Game.new(3, [None] * 12, None, season_seed=7, baselines="default")
-    g2.advance(125)
-    g2.year_end()
-    g2.advance(2)
-    data = save_game(g2.state)
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 9
-    state = json.loads(files["state.json"])
-    for key in ("money_rule", "budget_tiers", "contract_rates"):
-        del state[key]
-    del state["configs"]["contracts"]
-    del state["configs"]["negotiation"]
-    for team in state["league"]["teams"]:
-        for pd in team["players"]:
-            del pd["contract"]
-            del pd["preference"]
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    old = load_game(buf.getvalue())
-    assert old.money_rule == "none" and old.budget_tiers == {} and "2" in old.contract_rates
-    players = old.league.all_players()
-    assert all(p.contract and p.contract["history"][0]["reason"] == "migrate" and 1 <= remaining_years(p.contract, old.year) <= 3 for p in players)
-    twice = load_game(buf.getvalue())
-    assert [p.contract for p in twice.league.all_players()] == [p.contract for p in players]  # 同じ乱数系列で同じ契約
-    game = api.Game(old, dirty=False)
-    game.advance(123)
-    game.year_end()
-    assert game.status()["year"] == 3 and all(p.contract["until"] >= 3 for p in game.state.league.all_players())
+

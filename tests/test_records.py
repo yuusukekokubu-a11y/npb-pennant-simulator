@@ -428,5 +428,5 @@ def test_script_runs(capsys):
     assert module.main(["--seed", "2", "--top", "3"]) == 0
     out = capsys.readouterr().out
     assert "整合チェック" in out and "×" not in out.split("## 規定")[0]
-    for heading in ("打率の上位", "本塁打の上位", "打点の上位", "OPSの上位", "防御率の上位", "勝利の上位", "セーブの上位", "奪三振の上位", "チームの得点・失点", "真の能力"):
+    for heading in ("打率の上位", "本塁打の上位", "打点の上位", "OPSの上位", "防御率の上位", "勝利の上位", "セーブの上位", "奪三振の上位", "チームの得点・失点", "能力と1シーズンの成績"):
         assert heading in out

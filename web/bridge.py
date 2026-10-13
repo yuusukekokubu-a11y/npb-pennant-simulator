@@ -2,15 +2,14 @@
 
 裏の計算(worker.js)が、この関数を呼ぶ。やり取りは JSON の文字(セーブデータの中身だけは bytes)。
 遊んでいるゲームを1つ持つ。読み込みや新規開始に失敗したときは、今のゲームをそのまま残す。
-見る画面は query(公開用の関数だけ。D-108)、答え合わせは answer(pennant.answers。D-114)で、入口を分ける。
-画面は、答え合わせモードがオンのときだけ answer を呼ぶ。
+見る画面は query(公開用の関数だけ。D-108)。答え合わせモードはなくした(作り直し①。D-338)。
 """
 
 from __future__ import annotations
 
 import json
 
-from pennant import answers, api
+from pennant import api
 
 _game: api.Game | None = None
 
@@ -154,23 +153,10 @@ _QUERIES = {
     "baseline_info": lambda a: _game.baseline_info(),
     "sortable_keys": lambda a: api.sortable_keys(a.get("role", "batter")),
     "stadium": lambda a: _game.stadium(a["team_id"]),
+    "ability_table": lambda a: _game.ability_table(a.get("role", "batter"), a.get("sort"), a.get("order", "desc"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
+    "ability_columns": lambda a: _game.ability_columns(a.get("role", "batter")),
+    "offseason_changes": lambda a: _game.offseason_changes(a.get("year")),
 }
-
-# ---- 答え合わせ(答え合わせモードがオンのときだけ、画面が呼ぶ。D-108、D-114) ----
-_ANSWERS = {
-    "ability_table": lambda a: answers.ability_table(_game, a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order", "desc"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
-    "player_answers": lambda a: answers.player_answers(_game, a["player_id"], int(a.get("level", 1))),
-    "ability_columns": lambda a: answers.columns(a.get("role", "batter"), int(a.get("level", 1))),
-    "stadium_answers": lambda a: answers.stadium_answers(_game, a["team_id"], int(a.get("level", 1))),
-    "offseason_answers": lambda a: answers.offseason_answers(_game, a.get("year"), int(a.get("level", 1))),
-    "scouting_answers": lambda a: answers.scouting_answers(_game, a["player_id"], int(a.get("level", 1))),
-    "procedure_answers": lambda a: answers.procedure_answers(_game, int(a.get("level", 1))),
-    "negotiation_answers": lambda a: answers.negotiation_answers(_game, int(a.get("level", 1))),
-    "fa_answers": lambda a: answers.fa_answers(_game, int(a.get("level", 1))),
-    "offseason_ability_table": lambda a: answers.roster_ability_table(_game, a.get("phase", "release"), a.get("role", "batter"), int(a.get("level", 1)), a.get("sort"), a.get("order"), a.get("season")),
-    "draft_review_answers": lambda a: answers.draft_review_answers(_game, a.get("team_id"), a.get("year"), int(a.get("level", 1))),
-}
-
 
 def _run(table: dict, name: str, args_json: str) -> str:
     if _game is None:
@@ -188,6 +174,3 @@ def query(name: str, args_json: str = "{}") -> str:
         return _ok(api.glossary_view())
     return _run(_QUERIES, name, args_json)
 
-
-def answer(name: str, args_json: str = "{}") -> str:
-    return _run(_ANSWERS, name, args_json)

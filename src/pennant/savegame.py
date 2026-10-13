@@ -64,7 +64,8 @@ from .save_checks import (  # RATING_RANGE・GROWTH_TYPES は、分ける前と�
 from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-SAVE_FORMAT_VERSION = 13  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)
+FIRST_REBUILT_VERSION = 14  # 作り直し①の版。これより前は変換せずに読まない(D-344)
+SAVE_FORMAT_VERSION = 14  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -281,6 +282,12 @@ def _upgrade(manifest: dict, state: dict, p: _Problems) -> tuple[dict, dict] | N
         return None
     if version < 1:
         p.add("manifest.json.format_version", f"知らないバージョンです(値: {version})")
+        return None
+    if version < FIRST_REBUILT_VERSION:
+        p.add(
+            "manifest.json.format_version",
+            f"このセーブデータは作り直しの前の版(バージョン {version})で作られているため、使えません(能力の仕組みが変わりました)。新しく始めてください",
+        )
         return None
     bundle = {"manifest": manifest, "state": state}
     while version < SAVE_FORMAT_VERSION:

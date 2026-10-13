@@ -1,7 +1,7 @@
 // チームのページと球場のページ(web/app.js から分けた。保守②。D-291)
 
 import { $, state } from "./core.js";
-import { answer, query } from "./backend.js";
+import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
 import { el, kvTable, link, playerLink, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
@@ -46,10 +46,11 @@ export async function renderTeam(args, token) {
     { key: "hand", label: "投打" },
     { key: "games", label: "出場" },
   ];
-  const rows = (role) => d.players.filter((p) => p.role === role).map((p) => ({ ...p, values: { position: p.position, age: String(p.age), hand: p.hand || "", games: String(p.games) } }));
+  // 能力の列(作り直し①。D-335):野手は弾道〜捕球、投手は球速〜変化球
+  const rows = (role) => d.players.filter((p) => p.role === role).map((p) => ({ ...p, values: { position: p.position, age: String(p.age), hand: p.hand || "", games: String(p.games), ...p.abilities } }));
   const first = (p) => [playerLink(p.name, p.player_id)];
-  $("team-pitchers").replaceChildren(table({ firstLabel: "選手", columns: cols, rows: rows("pitcher"), first }));
-  $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: cols, rows: rows("batter"), first }));
+  $("team-pitchers").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.pitcher], rows: rows("pitcher"), first }));
+  $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.batter], rows: rows("batter"), first }));
 }
 
 // 総年俸と予算の表示(F3-2a。D-231):なしは総年俸だけ、ゆるいは目安、標準・きびしいは上限
@@ -67,7 +68,7 @@ function budgetLines(b) {
   return lines.filter((x) => x !== null);
 }
 
-// ---- 球場のページ(公開用の結果と、答え合わせモードでの真の倍率。D-138) ----
+// ---- 球場のページ(公開用の結果。真の倍率は見せない。作り直し①で答え合わせモードをなくした) ----
 
 export async function renderStadium(args, token) {
   const d = await query("stadium", { team_id: args.id });
@@ -105,18 +106,4 @@ export async function renderStadium(args, token) {
     );
   } else {
     $("stadium-estimate").replaceChildren(el("p", { className: "muted small" }, "まだ推定できません(2 シーズン目から)。"));
-  }
-  const box = $("stadium-answers");
-  if (state.answerLevel === 0) {
-    box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると見られます(上の「メニュー」から)。"));
-    return;
-  }
-  const a = await answer("stadium_answers", { team_id: args.id });
-  if (token !== state.token || state.answerLevel === 0) return;
-  box.replaceChildren(
-    kvTable([
-      { label: "本塁打の倍率", values: [a.home_run.text] },
-      { label: "BABIP の倍率", values: [a.babip.text] },
-    ]),
-  );
-}
+  }}

@@ -194,11 +194,8 @@ def test_sample_check(bench_module):
 
 # 画面に出してはいけない、能力値・隠し情報を表す言葉(D-108)
 def hidden_words() -> set[str]:
-    """答え合わせモードがオフのとき、画面に出てはいけない言葉:能力の項目名・成長タイプ・生成時の型の名前(D-108)。
-
-    「能力」「潜在能力」のような区分の名前(切り替えのボタンや設定の説明)は出てよい。値と項目名を出さない。
-    """
-    from pennant.abilities import ITEM_LABELS
+    """画面に出てはいけない言葉:成長タイプ・生成時の型・球質・役割の名前(隠し情報。D-108、D-338)。
+    見せる能力(ミート・パワーなど)は作り直し①から常に見せる。"""
     from pennant.config import load_generation_config
 
     c = load_generation_config()
@@ -208,7 +205,7 @@ def hidden_words() -> set[str]:
     return words - {"標準"}  # ふつうの文章にも出る短い言葉は除く
 
 
-HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "ability_drift", "preference")
+HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "ease", "trajectory_bias", "preference")
 
 
 @pytest.fixture()
@@ -258,7 +255,7 @@ def test_main_page_has_no_hidden_words():
             assert word not in text, f"{name}: {word}"
 
 
-def test_bridge_queries_and_answers_are_separate(bridge):
+def test_bridge_queries_show_abilities_but_not_hidden_info(bridge):
     """見る画面(query)は公開用の関数だけ。答え合わせ(answer)は別の入口(D-114)。"""
     import json
 
@@ -272,15 +269,12 @@ def test_bridge_queries_and_answers_are_separate(bridge):
     pid = json.loads(bridge.query("stats", json.dumps({"qualified": False})))["value"]["rows"][0]["player_id"]
     text = bridge.query("player", json.dumps({"player_id": pid}))
     assert not any(w in text for w in words)
-    # 答え合わせ用の関数は、query からは呼べない
-    assert json.loads(bridge.query("ability_table", "{}"))["ok"] is False
-    assert json.loads(bridge.query("draft_review_answers", "{}"))["ok"] is False
-    assert json.loads(bridge.query("offseason_ability_table", "{}"))["ok"] is False and json.loads(bridge.query("offseason_table", "{}"))["ok"] is False  # 手続き中でなければ表示できない
-    assert _ok(bridge.answer("draft_review_answers", json.dumps({"level": 1})))["available"] is False  # まだドラフトがない
-    table = _ok(bridge.answer("ability_table", json.dumps({"level": 2, "qualified": False})))
-    assert table["rows"] and "growth_type" in table["rows"][0]["values"]
-    assert _ok(bridge.answer("player_answers", json.dumps({"player_id": pid, "level": 1})))["items"]
-    assert json.loads(bridge.answer("player_answers", json.dumps({"player_id": pid, "level": 3})))["ok"] is False
+    # 答え合わせモードはなくした(D-338)。能力の表は query から見られ、隠し情報は入らない
+    assert not hasattr(bridge, "answer") and json.loads(bridge.query("draft_review_answers", "{}"))["ok"] is False
+    assert json.loads(bridge.query("offseason_table", "{}"))["ok"] is False  # 手続き中でなければ表示できない
+    table = _ok(bridge.query("ability_table", json.dumps({"qualified": False})))
+    assert table["rows"] and "meet" in table["rows"][0]["values"] and not any(f'"{k}"' in json.dumps(table) for k in HIDDEN_KEYS)
+    assert [c["key"] for c in _ok(bridge.query("ability_columns", json.dumps({"role": "pitcher"})))] == ["velocity", "control", "stamina", "breaking"]
     assert json.loads(bridge.query("player", json.dumps({"player_id": "nobody"})))["ok"] is False
 
 

@@ -8,8 +8,8 @@ import zipfile
 
 import pytest
 
-from pennant import answers, api
-from pennant.abilities import BATTER, PITCHER, strength_items_for
+from pennant import api
+from pennant.abilities import BATTER, PITCHER, abilities_for, strength_items_for
 from pennant.config import ConfigError, load_generation_config, load_name_parts
 from pennant.draft import (
     MAX_ROSTER,
@@ -31,7 +31,7 @@ from pennant.newgame import new_league
 from pennant.offseason import age_update_retire, load_offseason_settings
 from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 from pennant.scouting import GRADES, SCOUT_METHOD, ceiling_cuts, grade_of, item_sd, overall_sd, quick_value, report, total_from_single
-from pennant.stats import overall, potential_overall
+from pennant.stats import overall, projected_overall
 
 CONFIG = load_generation_config()
 PARTS = load_name_parts()
@@ -113,7 +113,7 @@ def test_report_is_deterministic_and_team_specific(pool):
     assert a.margin == pytest.approx(overall_sd(SD5, n) * 1.28) and a.item_margin == pytest.approx(6.4)  # 総合のふれ幅は実際の誤差から(D-213)
     assert a.method == SCOUT_METHOD == 2 and a.cuts == cuts
     pub = a.to_public()
-    assert 20 <= pub["overall"] <= 80 and all(20 <= i["estimate"] <= 80 for i in pub["items"]) and pub["ceiling"] in GRADES
+    assert 1 <= pub["overall"] <= 100 and all(1 <= i["estimate"] <= 100 or i["key"] == "velocity" for i in pub["items"]) and pub["ceiling"] in GRADES  # 1〜100 の目盛り(球速は km/h。D-347)
     assert "potential" not in json.dumps(pub) and "growth" not in json.dumps(pub) and "cuts" not in pub
     assert report(p, "T01", 100, SD5, cuts, 1.28).to_dict() != a.to_dict()  # シードが違えば違う
     # 旧方式(版 1)も残っていて、同じシードで決まった値を返す
@@ -136,14 +136,14 @@ def test_two_layer_error_sd_coverage_and_correlation(pool, level):
     pairs = []
     for p in players:
         r = report(p, "T03", 7, sd, cuts, DS.margin_z)
-        items = strength_items_for(p.role)
+        items = abilities_for(p.role)
         es = {}
         for item in items:
-            e = r.items[item] - p.ratings[item]
+            e = r.items[item] - p.abilities[item]
             errs.append(e)
             es[item] = e
             covered += abs(e) <= r.item_margin
-        oe = r.overall - sum(p.ratings[i] for i in items) / len(items)
+        oe = r.overall - sum(p.abilities[i] for i in items) / len(items)
         overall_errs.append(oe)
         overall_covered += abs(oe) <= r.margin
         pairs.append((es[items[0]], es[items[1]]))
@@ -159,9 +159,9 @@ def test_two_layer_error_sd_coverage_and_correlation(pool, level):
 def test_ceiling_grades_follow_shares_and_potential(pool):
     players, cuts = pool
     assert cuts == sorted(cuts, reverse=True)
-    grades = [grade_of(potential_overall(p), cuts) for p in players]
+    grades = [grade_of(projected_overall(p), cuts) for p in players]
     assert abs(grades.count("S") / len(players) - 0.05) < 0.03 and abs(grades.count("D") / len(players) - 0.20) < 0.05
-    by = {g: [potential_overall(p) for p, gr in zip(players, grades) if gr == g] for g in GRADES}
+    by = {g: [projected_overall(p) for p, gr in zip(players, grades) if gr == g] for g in GRADES}
     means = [statistics.fmean(by[g]) for g in GRADES if by[g]]
     assert means == sorted(means, reverse=True)
 
@@ -282,7 +282,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     # 保存して読み込むと、途中から再開できる(版 9)
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 13 and again.state.procedure.method == 2
+    assert SAVE_FORMAT_VERSION == 14 and again.state.procedure.method == 2
     v2 = again.offseason_view()
     assert v2["phase"] == "draft" and v2["round"] == v["round"] and v2["is_my_turn"] and [p["player_id"] for p in v2["pool"]] == [p["player_id"] for p in v["pool"]]
     assert v2["pool"][0]["scouting"] == v["pool"][0]["scouting"]  # 評価も同じ(シードから導く)
@@ -298,45 +298,10 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     assert r["finished"] and again.status()["year"] == 2 and again.state.procedure is None
     assert all(len(t.players) == 70 for t in again.state.league.teams)
     page = again.player(pick)
-    assert page["player"]["scouting"]["ceiling"] in GRADES and "ratings" not in json.dumps(page) and page["player"]["scouting"]["method"] == 2
-    a = answers.scouting_answers(again, pick, 2)
-    assert a["available"] and a["items"][0]["potential"]
+    assert page["player"]["abilities"] and '"ratings"' not in json.dumps(page) and "scouting" not in page["player"]  # プロになったら能力を見せ、スカウト評価は見せない(D-352)
     # 元のゲーム側は「おまかせ」で全部進めても同じ年に進む
     g.offseason_auto()
     assert g.status()["year"] == 2
-
-
-def test_v7_save_loads_and_continues_with_new_procedure():
-    g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
-    g.advance(1)
-    data = save_game(g.state)
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 7
-    state = json.loads(files["state.json"])
-    for key in ("scout_level", "scout_sd", "procedure", "transactions"):
-        del state[key]
-    state["configs"]["offseason"]["calibration"] = state["configs"]["offseason"]["calibration"]["medium"]  # 版 7 の形
-    del state["configs"]["draft"]
-    for team in state["league"]["teams"]:
-        for pd in team["players"]:
-            del pd["scouting"]
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    loaded = load_game(buf.getvalue())
-    assert loaded.scout_level == "medium" and loaded.procedure is None and loaded.transactions == []
-    old = api.Game(loaded, dirty=False)
-    old.advance(124)
-    old.year_end()
-    finish_renewal(old)
-    assert old.offseason_view()["stage"] == "contract"
-    old.offseason_auto()
-    assert old.status()["year"] == 2
 
 
 # ---- ドラフトの振り返り(D-216) ----
@@ -377,86 +342,6 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
         g.draft_review("T01", 9)
     with pytest.raises(ValueError):
         g.draft_review("T99")
-
-
-@pytest.mark.slow
-def test_draft_review_answers_show_truth_only_there(reviewed):
-    g = reviewed
-    a = answers.draft_review_answers(g, "T02", 2, 1)
-    assert a["available"] and a["year"] == 2 and a["team_id"] == "T02" and len(a["teams"]) == 12 and a["league"]["count"] > 0
-    rows = g.draft_review("T02", 2)["rows"]
-    present = [r for r in rows if r["in_league"]]
-    assert present and all(r["player_id"] in a["players"] for r in present)
-    players = {p.id: p for p in g.state.league.all_players()}
-    for r in present:
-        t = a["players"][r["player_id"]]
-        assert t["actual_ceiling"] in GRADES and t["diff"][0] in "+-"
-        assert float(t["overall"]) == pytest.approx(overall(players[r["player_id"]]), abs=0.05)
-        assert float(t["diff"]) == pytest.approx(overall(players[r["player_id"]]) - r["entry_overall"], abs=0.06)
-        assert t["actual_ceiling"] == grade_of(potential_overall(players[r["player_id"]]), players[r["player_id"]].scouting["cuts"])
-    assert "potential" in next(iter(answers.draft_review_answers(g, "T02", 2, 2)["players"].values()))
-    sel = next(t for t in a["teams"] if t["selected"])
-    assert sel["team_id"] == "T02" and sel["count"] == len(present)
-    assert answers.draft_review_answers(api.Game.new(4, [None] * 12, None, season_seed=1, baselines="default"))["available"] is False
-    with pytest.raises(ValueError):
-        answers.draft_review_answers(g, "T02", 2, 3)
-
-
-@pytest.mark.slow
-def test_v8_save_loads_with_old_method_and_converted_sd():
-    """版 8(評価が 1 層)のセーブデータ:ずれの値を 2 層に直し、進行中の手続きと入団時の評価は旧方式(版 1)のまま読む(D-215)。"""
-    g = api.Game.new(2, [None] * 12, 1, season_seed=5, baselines="default")
-    g.advance(125)
-    g.year_end()
-    finish_renewal(g)
-    g.offseason_next()
-    skip_fa(g)
-    g.offseason_advance()
-    before = g.offseason_view()
-    data = save_game(g.state)
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 8
-    state = json.loads(files["state.json"])
-    state["scout_sd"] = {"T01": 5.0}
-    state["configs"]["draft"]["scouting"]["levels"] = {"small": 3, "medium": 5, "large": 8}  # 版 8 の形
-    del state["procedure"]["method"]
-    for pd in state["procedure"]["candidates"]:
-        pd.pop("scouting", None)
-    for team in state["league"]["teams"]:
-        for pd in team["players"]:
-            if pd.get("scouting"):
-                pd["scouting"]["sd"] = 5.0
-                del pd["scouting"]["method"]
-                pd["scouting"].pop("cuts", None)
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    loaded = load_game(buf.getvalue())
-    assert loaded.scout_sd == {"T01": {"common": 4.0, "item": 3.0}} and loaded.procedure.method == 1
-    assert loaded.draft_settings.level_sd("medium") == DS.level_sd("medium")
-    old = api.Game(loaded, dirty=False)
-    v = old.offseason_view()
-    assert v["phase"] == "draft" and sorted(p["player_id"] for p in v["pool"]) == sorted(p["player_id"] for p in before["pool"])  # 並び順は評価(旧方式)で変わる
-    assert all(p["scouting"]["method"] == 1 for p in v["pool"])  # 進行中の手続きは旧方式のまま
-    # 旧方式の入団時の評価は、そのまま(方式 1)表示される
-    someone = next(p for t in loaded.league.teams for p in t.players if p.scouting)
-    page = old.player(someone.id)
-    assert page["player"]["scouting"]["method"] == 1 and "±" in page["player"]["scouting"]["overall_text"]
-    old.offseason_auto()
-    assert old.status()["year"] == 2
-    # 次のドラフトから新方式
-    old.advance(125)
-    old.year_end()
-    finish_renewal(old)
-    assert old.state.procedure.method == 2
-    old.offseason_next()
-    assert all(p["scouting"]["method"] == 2 for p in skip_fa(old)["pool"])
-    assert answers.draft_review_answers(old, "T02", 2)["available"]  # 版 8 の入団(区切りなし)でも実際の天井が出る
 
 
 def test_finalize_makes_room_when_full_team_lacks_minimum():
@@ -518,21 +403,6 @@ def test_roster_table_columns_sort_and_missing_stats(release_game):
         g.offseason_table("release", "batter", "basic", "contact")  # 能力の項目は公開用の表では使えない
     with pytest.raises(ValueError):
         g.offseason_table("release", "batter", "basic", season="career")
-
-
-def test_roster_ability_table_only_through_answers(release_game):
-    g = release_game
-    a = answers.roster_ability_table(g, "release", "batter", 1, "avg")
-    assert [c["key"] for c in a["columns"]][:3] == ["pos", "age", "usage"] and "contact" in [c["key"] for c in a["columns"]]
-    assert a["extra_column"]["key"] == "avg" and a["order"] == "desc"
-    avgs = [float(r["values"]["avg"]) for r in a["rows"] if r["values"]["avg"] != "—"]
-    assert avgs == sorted(avgs, reverse=True)
-    a2 = answers.roster_ability_table(g, "release", "pitcher", 2, "usage", "asc")
-    assert a2["sort"]["key"] == "usage" and a2["extra_column"] is None and "growth_type" in a2["rows"][0]["values"]
-    a3 = answers.roster_ability_table(g, "release", "batter", 1)
-    assert a3["sort"]["key"] == "contact" and a3["order"] == "desc"
-    with pytest.raises(ValueError):
-        answers.roster_ability_table(g, "release", "batter", 3)
 
 
 @pytest.mark.slow

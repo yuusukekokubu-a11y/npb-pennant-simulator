@@ -10,7 +10,8 @@ import statistics
 from collections import Counter
 from typing import Iterable
 
-from .abilities import BATTER, FIELDER_POSITIONS, ITEM_LABELS, PITCHER, POSITION_LABELS, items_for, strength_items_for
+from . import ability_model, aging
+from .abilities import ABILITY_LABELS, BATTER, FIELDER_POSITIONS, ITEM_LABELS, PITCHER, POSITION_LABELS, abilities_for, items_for, strength_items_for
 from .config import GenerationConfig, archetype_shares
 from .models import League, Player, Team
 
@@ -29,14 +30,26 @@ def bin_labels() -> list[str]:
 
 
 def overall(player: Player) -> float:
-    """総合値:現在の能力のうち、強弱を表す項目の平均。"""
-    items = strength_items_for(player.role)
-    return statistics.fmean(player.ratings[i] for i in items)
+    """総合値:見せる能力の平均(内部の目盛り。作り直し①。D-349)。"""
+    return ability_model.overall(player)
 
 
-def potential_overall(player: Player) -> float:
-    items = strength_items_for(player.role)
-    return sum(player.hidden.potential[i] for i in items) / len(items)
+_DEFAULT_CONFIG: list = []
+
+
+def _default_config() -> GenerationConfig:
+    if not _DEFAULT_CONFIG:
+        from .config import load_generation_config
+
+        _DEFAULT_CONFIG.append(load_generation_config())
+    return _DEFAULT_CONFIG[0]
+
+
+def projected_overall(player: Player, config: GenerationConfig | None = None) -> float:
+    """ピークまでの伸びを見込んだ総合値(伸びやすさも含めた見込み。ドラフト候補の天井の目安。D-352)。"""
+    config = config or _default_config()
+    items = abilities_for(player.role)
+    return sum(float(player.abilities[i]) + aging.expected_gain(config, i, player.age, player.hidden.growth_type, player.hidden.ease) for i in items) / len(items)
 
 
 def first_team(team: Team, config: GenerationConfig) -> list[Player]:
@@ -62,8 +75,8 @@ def mean_sd(values: list[float]) -> tuple[float, float]:
 
 
 def strength_mean(players: Iterable[Player]) -> float:
-    """選手たちの「強弱の項目」の現在の能力を、項目・選手すべてで平均したもの。"""
-    values = [p.ratings[i] for p in players for i in strength_items_for(p.role)]
+    """選手たちの見せる能力を、項目・選手すべてで平均したもの(作り直し①)。"""
+    values = [p.abilities[i] for p in players for i in abilities_for(p.role)]
     return statistics.fmean(values) if values else float("nan")
 
 
@@ -107,22 +120,22 @@ def _share_table(counter: Counter, total: int, expected: dict[str, float], label
 
 def _ability_table(players: list[Player], role: str, use_potential: bool = False) -> str:
     rows = []
-    for item in items_for(role):
-        vals = [(p.hidden.potential if use_potential else p.ratings)[item] for p in players if p.role == role]
+    for item in abilities_for(role):
+        vals = [p.abilities[item] for p in players if p.role == role]
         m, sd = mean_sd(vals)
-        rows.append([ITEM_LABELS[item], _f(m), _f(sd)])
+        rows.append([ABILITY_LABELS[item], _f(m), _f(sd)])
     return _table(["能力項目", "平均", "標準偏差"], rows)
 
 
 def _ability_by_position_table(batters: list[Player]) -> str:
     rows = []
-    for item in items_for(BATTER):
-        row = [ITEM_LABELS[item]]
+    for item in abilities_for(BATTER):
+        row = [ABILITY_LABELS[item]]
         for pos in FIELDER_POSITIONS:
-            vals = [p.hidden.potential[item] for p in batters if p.position == pos]
+            vals = [p.abilities[item] for p in batters if p.position == pos]
             row.append(_f(mean_sd(vals)[0]))
         rows.append(row)
-    return _table(["潜在能力"] + [POSITION_LABELS[pos] for pos in FIELDER_POSITIONS], rows)
+    return _table(["能力"] + [POSITION_LABELS[pos] for pos in FIELDER_POSITIONS], rows)
 
 
 def _ability_by_age_table(players: list[Player], role: str) -> str:
@@ -261,24 +274,13 @@ def build_report(
     rows = []
     for lb in bin_labels():
         group = [p for p in players if age_bin_label(p.age) == lb]
-        pot = [potential_overall(p) for p in group]
+        pot = [projected_overall(p, config) for p in group]
         cur = [overall(p) for p in group]
-        gb = [p.ratings["gb_fb"] - p.hidden.potential["gb_fb"] for p in group]
-        rows.append(
-            [
-                lb,
-                str(len(group)),
-                _f(mean_sd(pot)[0]),
-                _f(mean_sd(cur)[0]),
-                _f(mean_sd([a - b for a, b in zip(pot, cur)])[0]),
-                _f(mean_sd(gb)[0], 2),
-            ]
-        )
+        rows.append([lb, str(len(group)), _f(mean_sd(pot)[0]), _f(mean_sd(cur)[0]), _f(mean_sd([a - b for a, b in zip(pot, cur)])[0])])
     out.append(
-        "## 潜在能力と現在の能力の差(年齢層別・初期選手)\n"
-        "- 潜在能力・現在の能力は、強弱を表す項目の平均(総合値)\n"
-        "- 「固定」グループ(ゴロ/フライ傾向)は年齢で変わらないので、差は 0 になるはず\n\n"
-        + _table(["年齢層", "人数", "潜在能力の平均", "現在の能力の平均", "差(潜在−現在)", "ゴロ/フライ傾向の差"], rows)
+        "## ピークまでの見込みと現在の能力の差(年齢層別・初期選手。D-350)\n"
+        "- どちらも見せる能力の平均(総合値)。見込みは、年齢カーブと伸びやすさから\n\n"
+        + _table(["年齢層", "人数", "ピークの見込みの平均", "現在の能力の平均", "差(見込み−現在)"], rows)
     )
 
     # 新人(ドラフト候補)
@@ -295,7 +297,7 @@ def build_report(
                     _pct(len(group), len(draft_class)),
                     f"{100 * o['share']:.0f}%",
                     _f(mean_sd(ages_g)[0]),
-                    _f(mean_sd([potential_overall(p) for p in group])[0]),
+                    _f(mean_sd([projected_overall(p, config) for p in group])[0]),
                     _f(mean_sd([overall(p) for p in group])[0]),
                 ]
             )

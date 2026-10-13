@@ -118,6 +118,7 @@ class TeamsMixin:
                     "position": POSITION_LABELS[p.position],
                     "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
                     "games": counts.get("G", 0),
+                    "abilities": {a["key"]: a["text"] for a in self.player_abilities(p)},  # 見せる能力(作り直し①)
                 }
             )
         lines = {pid: v for pid, v in self.war_lines().items() if v.team_id == team_id}
@@ -132,6 +133,7 @@ class TeamsMixin:
             "league_name": self.state.league.league_names[team.league_index],
             "is_mine": team_id == self.state.my_team_id,
             "rank": row.rank,
+            "ability_columns": {"batter": self.ability_columns("batter"), "pitcher": self.ability_columns("pitcher")},
             "war": {
                 "batters": _war_text(totals["batters"]),
                 "pitchers_ra": _war_text(totals["pitchers_ra"]),

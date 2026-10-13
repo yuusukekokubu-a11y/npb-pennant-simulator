@@ -3,8 +3,8 @@
 計算本体の側にあり、画面からは独立している。戻り値は、画面がそのまま使える JSON にできる形
 (辞書・リスト・文字列・数・真偽値・None)。bytes はセーブデータの中身だけ。
 
-公開用の関数だけを置く:選手の能力値・能力の見積もり・隠し情報は返さない(D-108)。
-答え合わせ用の関数は、別のモジュール(answers.py)に置く(D-114)。
+公開用の関数だけを置く。プロの選手の見せる能力は返す(作り直し①。D-335、D-338)が、隠し情報(伸びやすさ・成長タイプ・生成時の型・
+試合の計算の内部の能力・志望・球場の真の倍率)は返さない。答え合わせモードはなくした(D-338)。
 
 成績の画面(②。D-114):個人成績・選手・試合・チームの詳細。集計(試合ごとの元の数)は、
 進めた試合の分だけ足していき、日が進むまで使い回す(_StatsCache)。
@@ -23,13 +23,14 @@
     decisions.py  判断の画面の表(FA・ドラフト・市場)・加入後の序列・手薄なポジション・自球団の状況(①b)
     market.py     自由契約市場の提示(FA と同じ提示の方式。①b)
     offseason.py  オフの手続きの流れ(段階・次の手続きへ・おまかせ・オフの結果)
+    abilities.py  能力の表・オフの能力の増減(作り直し①)
 Game は、これらの部品(Mixin:機能ごとに分けたクラスの部品)を合わせた 1 つのクラス。画面から呼ぶ名前は分ける前と同じ。
 新しい関数は、分野の合うファイルに足す(どこにも合わないときは、ファイルを足して、ここの一覧に書く)。
 """
 
 from __future__ import annotations
 
-# 分ける前の api.py と同じ名前で使えるようにする(scripts・tests・answers.py などが参照する)
+# 分ける前の api.py と同じ名前で使えるようにする(scripts・tests などが参照する)
 import copy
 from dataclasses import dataclass
 import math
@@ -100,6 +101,7 @@ from .common import (
     _SeasonView,
     _add_war,
 )
+from .abilities import AbilitiesMixin
 from .base import GameBase
 from .contract import ContractMixin
 from .decisions import DecisionMixin
@@ -114,7 +116,7 @@ from .stats import StatsMixin
 from .teams import TeamsMixin
 
 
-class Game(ProgressMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
+class Game(AbilitiesMixin, ProgressMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 

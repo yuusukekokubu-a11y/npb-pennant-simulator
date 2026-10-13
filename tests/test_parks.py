@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from pennant import answers, api
+from pennant import api
 from pennant.config import ConfigError, load_generation_config, validate_generation_config
 from pennant.game import simulate_game
 from pennant.game_config import load_game_config
@@ -122,57 +122,17 @@ def test_park_changes_home_run_and_babip_in_the_expected_direction():
 
 # ---- 受け入れ条件6:セーブデータ ----
 
-def test_parks_are_saved_and_old_saves_read_as_neutral():
+def test_parks_are_saved():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
     g.advance(2)
     data = save_game(g.state)
     loaded = load_game(data)
     assert [t.park for t in loaded.league.teams] == [t.park for t in g.state.league.teams]
-    # 版3(球場の倍率がない)→ すべて 1.0 として読む
-    import io
-    import zipfile
-
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        files = {n: zf.read(n) for n in zf.namelist()}
-    state = json.loads(files["state.json"])
-    for td in state["league"]["teams"]:
-        td.pop("park")
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 3
-    files["state.json"] = json.dumps(state).encode()
-    files["manifest.json"] = json.dumps(manifest).encode()
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, "w") as zf:
-        for n, b in files.items():
-            zf.writestr(n, b)
-    old = load_game(out.getvalue())
-    assert all(t.park == NEUTRAL_PARK for t in old.league.teams)
-    # 旧版の続きは、倍率なしの計算と同じ
-    neutral = new_league(1)
-    neutralize_parks(neutral)
-    from pennant.season import Season
-
-    ref = Season(neutral, 13)
-    ref.play_days(3)
-    old.season.play_days(1)
-    # 保存までの試合(倍率あり)は変わらないが、読み込んだあとに進めた日(3日目)は、倍率なしの計算と同じになる
-    assert [p.result.log == q.result.log for p, q in zip(old.season.played[12:], ref.played[12:])] == [True] * 6
-    # 壊れた倍率は、分かりやすいエラー
-    state["league"]["teams"][0]["park"] = {"home_run": 5, "babip": 1000}
-    manifest["format_version"] = 4
-    files["state.json"] = json.dumps(state).encode()
-    files["manifest.json"] = json.dumps(manifest).encode()
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, "w") as zf:
-        for n, b in files.items():
-            zf.writestr(n, b)
-    with pytest.raises(SaveDataError, match="球場の倍率が範囲外"):
-        load_game(out.getvalue())
 
 
 # ---- 受け入れ条件8:公開用には倍率を含めない。答え合わせ用で見せる ----
 
-def test_public_stadium_has_no_factors_and_answers_show_them():
+def test_public_stadium_has_no_factors():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
     g.advance(4)
     d = g.stadium("T02")
@@ -184,8 +144,3 @@ def test_public_stadium_has_no_factors_and_answers_show_them():
     for value in (g.teams(), g.team("T02"), g.game(0), g.last_day_games(), g.status()):
         assert "park" not in json.dumps(value)
     assert g.game(0)["summary"]["stadium"] == g.state.league.teams[[t.id for t in g.state.league.teams].index(g.game(0)["summary"]["home"]["team_id"])].stadium
-    a = answers.stadium_answers(g, "T02", 1)
-    park = g.state.league.teams[1].park
-    assert a["home_run"]["value"] == park.home_run and a["home_run"]["text"] == f"{park.home_run / 1000:.3f}"
-    with pytest.raises(ValueError):
-        answers.stadium_answers(g, "T02", 0)

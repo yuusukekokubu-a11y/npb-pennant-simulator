@@ -1,12 +1,12 @@
 """スカウト評価(F3-1。D-199、D-200、D-206。2 層化:D-212〜D-215)。
 
-評価 = 真の現在の能力 + 球団 × 選手ごとに固定のずれ。ずれは 2 層(方式の版 2。D-212):
+評価 = 真の現在の見せる能力(作り直し①:プロの選手の評価は画面に出さず、ドラフト候補・市場の判断に使う。D-352)+ 球団 × 選手ごとに固定のずれ。ずれは 2 層(方式の版 2。D-212):
   - 共通の見誤り(選手 × 球団ごとに 1 つ。全項目に同じ値):N(0, common)
   - 項目ごとの見誤り(項目ごとに独立):N(0, item)
   sd = {"common": …, "item": …}(球団ごとの値。既定は設定の小・中・大)。
   - 項目の誤差の標準偏差 = √(common² + item²)、総合(項目の平均)の誤差 = √(common² + item²/n)
   - ふれ幅はそれぞれの標準偏差 × margin_z(1.28 なら真の値が入る確率が約 80%。D-213)
-  - 天井:潜在能力の総合値 + N(0, 総合の誤差の標準偏差)(別の乱数。D-214)を、候補全体の分位点(cuts)で S〜D に分ける
+  - 天井:ピークまでの伸びを見込んだ総合値(stats.projected_overall。D-352)+ N(0, 総合の誤差の標準偏差)(別の乱数。D-214)を、候補全体の分位点(cuts)で S〜D に分ける
 乱数は derive_seed(手続きのシード, "scout:<球団>:<選手>") から作るので、同じ候補は何度見ても同じ値(D-199)。
 乱数の並び:①共通の見誤り、②項目ごとの見誤りの平均 N(0, item/√n)、③天井の見誤り、④項目ごとの偏り × n(平均 0 に正規化)。
 総合の推定値 = 真の総合値 + ① + ②。AI の判断(quick_value)は ①〜③ だけを引くので速く、report() と同じ値になる。
@@ -20,10 +20,11 @@ import math
 import random
 from dataclasses import dataclass
 
-from .abilities import ITEM_LABELS, strength_items_for
+from .abilities import ABILITY_LABELS, abilities_for
+from . import ability_model
 from .models import Player
 from .season import derive_seed
-from .stats import potential_overall
+from .stats import projected_overall
 
 GRADES = ("S", "A", "B", "C", "D")
 LOW, HIGH = 20, 80
@@ -35,7 +36,7 @@ def _rng(seed: int, team_id: str, player_id: str) -> random.Random:
 
 
 def _true_overall(player: Player, items) -> float:
-    return sum(player.ratings[i] for i in items) / len(items)
+    return sum(player.abilities[i] for i in items) / len(items)
 
 
 # ---- ずれの大きさ ----
@@ -57,7 +58,7 @@ def total_from_single(value: float) -> dict:
 
 def _draws(player: Player, team_id: str, seed: int, sd: dict, method: int):
     """乱数の最初の 3 本(総合の見誤り、天井の見誤り)と、残りの乱数。"""
-    items = strength_items_for(player.role)
+    items = abilities_for(player.role)
     n = len(items)
     rng = _rng(seed, team_id, player.id)
     if method == 1:
@@ -81,12 +82,12 @@ def quick_overall(player: Player, team_id: str, seed: int, sd: dict, method: int
 def quick_value(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float], method: int = SCOUT_METHOD) -> tuple[float, str]:
     """総合の推定値と天井(AI の判断用。乱数の最初の数本だけを使うので速い)。report() と同じ値。"""
     items, _, quick, ceiling_noise = _draws(player, team_id, seed, sd, method)
-    return _true_overall(player, items) + quick, grade_of(potential_overall(player) + ceiling_noise, cuts)
+    return _true_overall(player, items) + quick, grade_of(projected_overall(player) + ceiling_noise, cuts)
 
 
 def ceiling_cuts(pool: list[Player], shares: dict[str, float]) -> list[float]:
     """天井の段階の境目(S/A、A/B、B/C、C/D の順。候補全体の潜在能力の総合値の分位点)。"""
-    values = sorted((potential_overall(p) for p in pool), reverse=True)
+    values = sorted((projected_overall(p) for p in pool), reverse=True)
     if not values:
         return [70.0, 60.0, 50.0, 40.0]
     cuts = []
@@ -123,8 +124,8 @@ class ScoutReport:
             "team_id": self.team_id,
             "overall": _shown(self.overall),
             "margin": round(self.margin, 1),
-            "overall_text": f"{_shown(self.overall)} ± {self.margin:.0f}",
-            "items": [{"key": k, "label": ITEM_LABELS[k], "estimate": _shown(v), "margin": round(self.item_margin, 1), "text": f"{_shown(v)} ± {self.item_margin:.0f}"} for k, v in self.items.items()],
+            "overall_text": f"{_shown(self.overall)} ± {self.margin * 1.5:.0f}",
+            "items": [_public_item(k, v, self.item_margin) for k, v in self.items.items()],
             "ceiling": self.ceiling,
             "sd": {k: float(v) for k, v in self.sd.items()},
             "method": self.method,
@@ -146,7 +147,24 @@ class ScoutReport:
 
 
 def _shown(v: float) -> int:
-    return int(min(HIGH, max(LOW, round(v))))
+    """総合の推定値を 1〜100 の目盛りで(作り直し①。D-347)。"""
+    from .stats import _default_config
+
+    return ability_model.display(_default_config(), v)
+
+
+def _public_item(key: str, value: float, margin: float) -> dict:
+    """項目の推定値の見せ方(1〜100 とランク、球速は km/h。ふれ幅も同じ目盛りで)。"""
+    from .stats import _default_config
+
+    cfg = _default_config()
+    if key == "velocity":
+        v = ability_model.velocity_kmh(cfg, value)
+        m = margin * float(cfg["abilities"]["velocity"]["per_point"])
+        return {"key": key, "label": ABILITY_LABELS[key], "estimate": v, "margin": round(m, 1), "text": f"{v}km/h ± {m:.0f}"}
+    v = ability_model.display(cfg, value)
+    m = margin * float(cfg["abilities"]["display"]["per_point"])
+    return {"key": key, "label": ABILITY_LABELS[key], "estimate": v, "margin": round(m, 1), "text": f"{ability_model.rank(cfg, v)} {v} ± {m:.0f}"}
 
 
 def report(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float], margin_z: float, method: int = SCOUT_METHOD) -> ScoutReport:
@@ -156,7 +174,7 @@ def report(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float],
     spread = item_sd(sd) if method == 1 else float(sd["item"])
     devs = [rng.gauss(0, spread) for _ in items]
     mean_dev = sum(devs) / n
-    est = {item: player.ratings[item] + quick + (d - mean_dev) for item, d in zip(items, devs)}
+    est = {item: player.abilities[item] + quick + (d - mean_dev) for item, d in zip(items, devs)}
     if method == 1:
         margin, item_margin = item_sd(sd) / math.sqrt(n) * margin_z, item_sd(sd) * margin_z
     else:
@@ -168,7 +186,7 @@ def report(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float],
         margin=margin,
         items=est,
         item_margin=item_margin,
-        ceiling=grade_of(potential_overall(player) + ceiling_noise, cuts),
+        ceiling=grade_of(projected_overall(player) + ceiling_noise, cuts),
         method=method,
         cuts=list(cuts),
     )

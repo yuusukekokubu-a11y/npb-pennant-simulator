@@ -16,8 +16,8 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import aging
-from .abilities import items_for
+from . import ability_model, aging
+from .abilities import abilities_for
 from .config import ConfigError, GenerationConfig, NameParts, _Checker, _read_json
 from .generate import make_rookie, shift_potential
 from .models import League, Player, Team
@@ -108,7 +108,7 @@ class OffseasonResult:
     seed: int
     retired: list[PlayerNote] = field(default_factory=list)
     rookies: list[PlayerNote] = field(default_factory=list)
-    ability_changes: dict[str, dict[str, float]] = field(default_factory=dict)  # 選手 ID → 項目 → 増減(隠し情報。答え合わせ用)
+    ability_changes: dict[str, dict[str, float]] = field(default_factory=dict)  # 選手 ID → 項目 → 増減(見せる能力の内部の目盛り。オフの結果の画面で見せる)
     ages: dict[str, int] = field(default_factory=dict)  # 選手 ID → 更新後の年齢(残った選手)
 
     def to_dict(self) -> dict:
@@ -147,19 +147,22 @@ def retirement_probability(settings: OffseasonSettings, age: int, overall_value:
 
 
 def age_and_update(player: Player, config: GenerationConfig, rng: random.Random) -> dict[str, float]:
-    """1人分の加齢と能力の更新(D-186)。戻り値は項目ごとの増減。"""
+    """1人分の加齢と能力の更新(D-186、D-350)。見せる能力に「年齢による増減 × 伸びやすさ + 揺れ」を足す。戻り値は項目ごとの増減。"""
     var = config["variation"]
-    before = dict(player.ratings)
     player.age += 1
-    for item in items_for(player.role):
+    changes: dict[str, float] = {}
+    for item in abilities_for(player.role):
         if aging.group_of(config, item) == aging.FIXED_GROUP:
             continue
+        delta = aging.yearly_change(config, item, player.age - 1, player.hidden.growth_type, player.hidden.ease)
         if var["ability_drift_sd_per_year"] > 0:
-            player.hidden.ability_drift[item] += rng.gauss(0, var["ability_drift_sd_per_year"])
-        player.ratings[item] = aging.current_rating(config, item, player.hidden.potential[item], player.age, player.hidden.growth_type, player.hidden.ability_drift[item])
+            delta += rng.gauss(0, var["ability_drift_sd_per_year"])
+        player.abilities[item] += delta
+        changes[item] = delta
+    ability_model.refresh(config, player)
     player.state.form = rng.gauss(0, var["form_sd"]) if var["form_sd"] > 0 else 0.0
     player.state.fatigue = 0.0
-    return {item: player.ratings[item] - before[item] for item in items_for(player.role)}
+    return changes
 
 
 def replenish(team: Team, slots: list[tuple[str, str]], config: GenerationConfig, names: NameGenerator, rng: random.Random, year: int, counter: list[int], calibration: dict[str, float] | None = None, id_prefix: str = "Y") -> list[Player]:

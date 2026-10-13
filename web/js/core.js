@@ -33,14 +33,13 @@ export const state = {
   tab: "progress",
   pages: [], // 開いているページ({ name, args })。空ならタブの画面
   newGame: null, // 新規開始の画面の情報(シードと初期名)
-  answerLevel: 0, // 答え合わせモード(0:オフ、1:今の能力、2:潜在能力なども)。保存しない
   cache: new Map(), // 見る画面の結果(日が進むまで使い回す)
   cacheStamp: null,
   stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", season: "current", shown: STATS_PAGE }, // season は "current"・シーズン番号・"career"(F2)
   // 並び順(打者/投手ごとに保つ。基本・セイバー・能力を切り替えても保つ。D-131)。key が null なら、その表の既定
   sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } },
   shownSort: { batter: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
-  abilityKeys: { batter: [], pitcher: [] }, // 答え合わせモードがオンのときだけ入る、能力の項目の名前
+  abilityKeys: { batter: [], pitcher: [] }, // 能力の表の列の名前(作り直し①:能力はいつでも見える。D-335)
   warKeys: { batter: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
   playerKind: "basic",
   gamesDay: null,

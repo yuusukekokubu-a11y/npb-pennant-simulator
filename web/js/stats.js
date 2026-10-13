@@ -1,7 +1,7 @@
 // 成績(個人成績の表・並び順・能力の表)(web/app.js から分けた。保守②。D-291)
 
 import { $, STATS_PAGE, state } from "./core.js";
-import { answer, query, withLoading } from "./backend.js";
+import { query, withLoading } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { el, playerLink, setPressed, sortToggle, table } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
@@ -47,7 +47,7 @@ function isWarKey(key) {
   return state.warKeys[state.stats.role].includes(key);
 }
 
-// 並び順の選択欄(D-132):基本・セイバーの全指標。答え合わせモードがオンなら、能力の項目も
+// 並び順の選択欄(D-132):基本・セイバーの全指標と、能力の項目(作り直し①:能力はいつでも見える)
 async function buildSortSelect(sortKey, warColumns) {
   const role = state.stats.role;
   const keys = await query("sortable_keys", { role });
@@ -62,13 +62,9 @@ async function buildSortSelect(sortKey, warColumns) {
     state.warKeys[role] = warColumns.map((c) => c.key);
     options.unshift(el("optgroup", { label: "WAR(WAR の表でだけ)" }, ...warColumns.map((c) => el("option", { value: c.key }, c.label))));
   }
-  if (state.answerLevel > 0) {
-    const cols = await answer("ability_columns", { role });
-    state.abilityKeys[role] = cols.map((c) => c.key);
-    options.push(el("optgroup", { label: "能力(答え合わせモード)" }, ...cols.map((c) => el("option", { value: c.key }, c.label))));
-  } else {
-    state.abilityKeys[role] = [];
-  }
+  const cols = await query("ability_columns", { role });
+  state.abilityKeys[role] = cols.map((c) => c.key);
+  options.push(el("optgroup", { label: "能力" }, ...cols.map((c) => el("option", { value: c.key }, c.label))));
   $("stats-sort").replaceChildren(...options);
   $("stats-sort").value = sortKey;
 }
@@ -100,7 +96,7 @@ export async function renderStats(token) {
     return renderAbilityTable(token);
   }
   const sort = currentSort();
-  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(能力の値は、公開用の関数では扱わない)。
+  // 能力の項目で並べていたときは、成績の表ではその表の既定に戻す(成績の表には能力の列がないため)。
   // WAR の列は WAR の表でだけ、WAR 以外の列は WAR 以外の表でだけ使える
   const usable = sort.key && !isAbilityKey(sort.key) && (s.kind === "war" ? isWarKey(sort.key) : !isWarKey(sort.key));
   const key = usable ? sort.key : null;
@@ -142,18 +138,11 @@ function sortStats(key) {
 
 async function renderAbilityTable(token) {
   const s = state.stats;
-  if (state.answerLevel === 0) {
-    await buildSortSelect(currentSort().key);
-    if (token !== state.token) return;
-    $("stats-info").replaceChildren(el("strong", {}, "答え合わせモードをオンにすると見られます"), "(上の「メニュー」から)");
-    $("stats-table").replaceChildren();
-    return;
-  }
   const sort = currentSort();
-  const data = await withLoading("stats-loading", answer("ability_table", { ...statsArgs(), sort: sort.key, order: sort.order }));
-  if (token !== state.token || state.answerLevel === 0) return;
+  const data = await withLoading("stats-loading", query("ability_table", { ...statsArgs(), sort: sort.key, order: sort.order }));
+  if (token !== state.token) return;
   await buildSortSelect(data.sort.key);
-  if (token !== state.token || state.answerLevel === 0) return;
+  if (token !== state.token) return;
   showSortState(data.sort, data.order);
   $("stats-table").replaceChildren(
     table({

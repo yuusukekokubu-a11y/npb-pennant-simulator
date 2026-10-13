@@ -17,6 +17,9 @@ from typing import Any
 
 from .storage import read_package_text, read_text_file
 from .abilities import (
+    ALL_ABILITIES,
+    BATTER_ABILITIES,
+    PITCHER_ABILITIES,
     ALL_ITEMS,
     BATTER_ITEMS,
     FIELDER_POSITIONS,
@@ -189,6 +192,84 @@ def _check_balance(
             )
 
 
+def _check_abilities(c: _Checker, data: Any) -> None:
+    """見せる能力の見せ方・球種・成長・内部の能力への換算(作り直し①。D-347〜D-351)。"""
+    ab = c.section(data, "abilities")
+    if ab is None:
+        return
+    d = c.section(c.get(ab, "display", "abilities"), "abilities.display")
+    c.number(c.get(d, "center", "abilities.display"), "abilities.display.center", 1, 100)
+    c.number(c.get(d, "per_point", "abilities.display"), "abilities.display.per_point", 0.1, 10)
+    c.integer(c.get(d, "min", "abilities.display"), "abilities.display.min", 0, 100)
+    c.integer(c.get(d, "max", "abilities.display"), "abilities.display.max", 1, 200)
+    ranks = c.get(ab, "ranks", "abilities")
+    if ranks is not None and not (isinstance(ranks, list) and ranks and all(isinstance(r, list) and len(r) == 2 and isinstance(r[0], str) and isinstance(r[1], (int, float)) for r in ranks)
+                                  and all(ranks[i][1] > ranks[i + 1][1] for i in range(len(ranks) - 1))):
+        c.add("abilities.ranks", "[ランクの文字, 下限] を下限の大きい順に並べてください")
+    v = c.section(c.get(ab, "velocity", "abilities"), "abilities.velocity")
+    for key in ("center", "per_point", "min", "max"):
+        c.number(c.get(v, key, "abilities.velocity"), f"abilities.velocity.{key}", 0, 250)
+    t = c.section(c.get(ab, "trajectory", "abilities"), "abilities.trajectory")
+    cuts = c.get(t, "cuts", "abilities.trajectory")
+    if cuts is not None and not (isinstance(cuts, list) and len(cuts) == 3 and all(isinstance(x, (int, float)) for x in cuts) and cuts == sorted(cuts)):
+        c.add("abilities.trajectory.cuts", "弾道 2・3・4 の下限(小さい順に 3 つ)にしてください")
+    gb = c.get(t, "gb_fb", "abilities.trajectory")
+    if gb is not None and not (isinstance(gb, list) and len(gb) == 4 and all(isinstance(x, (int, float)) for x in gb)):
+        c.add("abilities.trajectory.gb_fb", "弾道 1〜4 のゴロ/フライ傾向(4 つの数)にしてください")
+    c.number(c.get(t, "bias_sd", "abilities.trajectory"), "abilities.trajectory.bias_sd", 0, 30)
+    b = c.section(c.get(ab, "breaking", "abilities"), "abilities.breaking")
+    c.number(c.get(b, "total_at_50", "abilities.breaking"), "abilities.breaking.total_at_50", 0, 28)
+    c.number(c.get(b, "per_point", "abilities.breaking"), "abilities.breaking.per_point", 0, 5)
+    c.integer(c.get(b, "max_per_pitch", "abilities.breaking"), "abilities.breaking.max_per_pitch", 1, 10)
+    counts = c.section(c.get(b, "count_shares", "abilities.breaking"), "abilities.breaking.count_shares")
+    if counts is not None:
+        for k in counts:
+            if k not in ("1", "2", "3", "4", "5"):
+                c.add(f"abilities.breaking.count_shares.{k}", "球種の数は 1〜5 にしてください")
+        c.shares({k: c.number(v, f"abilities.breaking.count_shares.{k}", 0, 1) or 0.0 for k, v in counts.items()}, "abilities.breaking.count_shares")
+    wr = c.get(b, "weight_range", "abilities.breaking")
+    if wr is not None and not (isinstance(wr, list) and len(wr) == 2 and all(isinstance(x, (int, float)) and x > 0 for x in wr) and wr[0] <= wr[1]):
+        c.add("abilities.breaking.weight_range", "[下限, 上限] の正の数にしてください")
+    types = c.section(c.get(ab, "pitch_types", "abilities"), "abilities.pitch_types")
+    if types is not None:
+        if len(types) < 5:
+            c.add("abilities.pitch_types", "球種は 5 つ以上にしてください(1 人 4 つまで重ならずに選ぶため)")
+        for k, e in types.items():
+            sec = c.section(e, f"abilities.pitch_types.{k}")
+            if sec is not None and not (isinstance(sec.get("label"), str) and sec["label"]):
+                c.add(f"abilities.pitch_types.{k}.label", "表示名が必要です")
+            c.number(c.get(sec, "share", f"abilities.pitch_types.{k}"), f"abilities.pitch_types.{k}.share", 0, 1)
+    g = c.section(c.get(ab, "growth", "abilities"), "abilities.growth")
+    for key, lo, hi in (("ease_mean", 0, 3), ("ease_sd", 0, 2), ("ease_min", 0, 3), ("ease_max", 0, 5)):
+        c.number(c.get(g, key, "abilities.growth"), f"abilities.growth.{key}", lo, hi)
+    eng = c.section(c.get(ab, "engine", "abilities"), "abilities.engine")
+    if eng is not None:
+        for role, engine_items, sources in (("batter", BATTER_ITEMS, BATTER_ABILITIES), ("pitcher", PITCHER_ITEMS, PITCHER_ABILITIES)):
+            table = c.section(c.get(eng, role, "abilities.engine"), f"abilities.engine.{role}")
+            if table is None:
+                continue
+            for item in engine_items:
+                path = f"abilities.engine.{role}.{item}"
+                rule = c.get(table, item, f"abilities.engine.{role}")
+                if rule is None:
+                    continue
+                if rule == "trajectory":
+                    if role != "batter":
+                        c.add(path, "弾道から決めるのは打者だけです")
+                elif isinstance(rule, (int, float)) and not isinstance(rule, bool):
+                    c.number(rule, path, 0, 100)
+                elif isinstance(rule, dict) and rule:
+                    for src, w in rule.items():
+                        if src not in sources:
+                            c.add(f"{path}.{src}", f"この役割にない見せる能力です(使えるもの: {', '.join(sources)})")
+                        c.number(w, f"{path}.{src}", -3, 3)
+                else:
+                    c.add(path, "固定の数、\"trajectory\"、または {見せる能力: 重み} にしてください")
+            for item in table:
+                if item not in engine_items:
+                    c.add(f"abilities.engine.{role}.{item}", "試合の計算にない能力です")
+
+
 def validate_generation_config(data: Any, source: str = "(辞書)") -> GenerationConfig:
     c = _Checker()
     root = c.section(data, "(全体)")
@@ -222,7 +303,6 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
     pot = c.section(c.get(root, "potential", ""), "potential")
     c.number(c.get(pot, "batter_base_mean", "potential"), "potential.batter_base_mean", 0, 100)
     c.number(c.get(pot, "pitcher_base_mean", "potential"), "potential.pitcher_base_mean", 0, 100)
-    c.number(c.get(pot, "style_mean", "potential"), "potential.style_mean", 0, 100)
     c.number(c.get(pot, "noise_sd", "potential"), "potential.noise_sd", 0, 30)
     tolerance = c.number(c.get(pot, "balance_tolerance", "potential"), "potential.balance_tolerance", 0, 5)
     # 省略可(第3弾①より前の設定・セーブデータにはない)。省略時は 0.005
@@ -236,7 +316,7 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
         path = f"batter_archetypes.{key}"
         e = c.section(entry, path)
         share = c.number(c.get(e, "share", path), f"{path}.share", 0, 1)
-        corr = _check_corrections(c, c.get(e, "corrections", path), BATTER_ITEMS, f"{path}.corrections")
+        corr = _check_corrections(c, c.get(e, "corrections", path), BATTER_ABILITIES, f"{path}.corrections")
         if share is not None:
             shares[key] = share
             weighted_batter.append((share, corr))
@@ -244,7 +324,7 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
         c.add("batter_archetypes", "型が1つもありません")
     c.shares(shares, "batter_archetypes")
     if tolerance is not None:
-        _check_balance(c, weighted_batter, BATTER_ITEMS, tolerance, "batter_archetypes")
+        _check_balance(c, weighted_batter, BATTER_ABILITIES, tolerance, "batter_archetypes")
 
     # ポジション別の型の足す量(第3弾①。D-157)
     shifts = c.section(root["position_archetype_shifts"], "position_archetype_shifts") if "position_archetype_shifts" in root else None  # 省略可(なければ全体の割合)
@@ -293,11 +373,11 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
         for role in PITCHER_POSITIONS:
             path = f"pitcher_roles.{role}"
             e = c.section(c.get(roles, role, "pitcher_roles"), path)
-            corr = _check_corrections(c, c.get(e, "corrections", path), PITCHER_ITEMS, f"{path}.corrections")
+            corr = _check_corrections(c, c.get(e, "corrections", path), PITCHER_ABILITIES, f"{path}.corrections")
             if total_pitchers and role in role_counts:
                 weighted_roles.append((role_counts[role] / total_pitchers, corr))
         if tolerance is not None and len(weighted_roles) == len(PITCHER_POSITIONS):
-            _check_balance(c, weighted_roles, PITCHER_ITEMS, tolerance, "pitcher_roles(割合は roster.pitchers の人数から計算)")
+            _check_balance(c, weighted_roles, PITCHER_ABILITIES, tolerance, "pitcher_roles(割合は roster.pitchers の人数から計算)")
 
     # 投手の球質(D-028)
     qualities = c.section(c.get(root, "pitcher_qualities", ""), "pitcher_qualities")
@@ -307,7 +387,7 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
         path = f"pitcher_qualities.{key}"
         e = c.section(entry, path)
         share = c.number(c.get(e, "share", path), f"{path}.share", 0, 1)
-        corr = _check_corrections(c, c.get(e, "corrections", path), PITCHER_ITEMS, f"{path}.corrections")
+        corr = _check_corrections(c, c.get(e, "corrections", path), PITCHER_ABILITIES, f"{path}.corrections")
         if share is not None:
             shares[key] = share
             weighted_q.append((share, corr))
@@ -315,7 +395,9 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
         c.add("pitcher_qualities", "球質が1つもありません")
     c.shares(shares, "pitcher_qualities")
     if tolerance is not None:
-        _check_balance(c, weighted_q, PITCHER_ITEMS, tolerance, "pitcher_qualities")
+        _check_balance(c, weighted_q, PITCHER_ABILITIES, tolerance, "pitcher_qualities")
+
+    _check_abilities(c, c.get(root, "abilities", ""))
 
     # 年齢カーブ(D-030、D-031、D-033)
     aging = c.section(c.get(root, "aging", ""), "aging")
@@ -330,27 +412,22 @@ def validate_generation_config(data: Any, source: str = "(辞書)") -> Generatio
                 c.add(f"{path}.items", "能力項目の名前を並べたリストが必要です")
                 items = []
             for item in items:
-                if item not in ALL_ITEMS:
+                if item not in ALL_ABILITIES:
                     c.add(f"{path}.items", f"知らない能力項目です: {item!r}")
                 elif item in seen:
                     c.add(f"{path}.items", f"「{item}」が「{seen[item]}」グループにも入っています(1項目は1グループだけ)")
                 else:
                     seen[item] = gkey
-        is_fixed = items is not None and all(i in STYLE_ITEMS for i in items) and gkey == "fixed"
+        is_fixed = gkey == "fixed"
         if g is not None and not is_fixed:
             c.number(c.get(g, "peak_age", path), f"{path}.peak_age", 18, 45)
             c.number(c.get(g, "gap_per_year_before_peak", path), f"{path}.gap_per_year_before_peak", 0, 10)
             c.number(c.get(g, "decline_per_year", path), f"{path}.decline_per_year", 0, 10)
             c.number(c.get(g, "decline_accel", path), f"{path}.decline_accel", 0, 2)
     if groups is not None:
-        if "fixed" not in groups:
-            c.add("aging.groups", "年齢で変わらない「fixed」グループが必要です")
-        for item in ALL_ITEMS:
+        for item in ALL_ABILITIES:
             if item not in seen:
-                c.add("aging.groups", f"能力項目「{item}」がどのグループにも入っていません")
-        for item in STYLE_ITEMS:
-            if seen.get(item) not in (None, "fixed"):
-                c.add("aging.groups", f"「型」の項目「{item}」は fixed グループに入れてください(D-031)")
+                c.add("aging.groups", f"能力「{item}」がどのグループにも入っていません")
     growth = c.section(c.get(aging, "growth_types", "aging"), "aging.growth_types")
     shares = {}
     for key, entry in (growth or {}).items():

@@ -84,7 +84,8 @@ def test_file_layout(saved):
     assert {"seed", "rng", "configs", "league", "season"} <= set(state)
     assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season", "baselines", "offseason", "draft", "contracts", "negotiation"}
     assert state["baselines"]["source"] == "default" and len(state["baselines"]["re24"]) == 24  # 第2弾①の基準値(版 3)
-    assert "potential" in state["league"]["teams"][0]["players"][0]["hidden"]
+    player = state["league"]["teams"][0]["players"][0]
+    assert "ease" in player["hidden"] and "potential" not in player["hidden"] and player["abilities"]  # 見せる能力と伸びやすさ(版 14。D-350)
 
 
 def test_saved_at_does_not_change_the_content(saved):
@@ -118,7 +119,7 @@ def test_sample_file_from_another_version():
     data = (DATA / "sample-save.sav").read_bytes()
     state = load_game(data)
     assert state.season.day == info["save_day"]
-    assert read_manifest(data)["format_version"] == 1  # 見本は版1。版2へ変換して読む
+    assert read_manifest(data)["format_version"] == 14  # 見本は版 14(作り直し①で作り直した。13 以前は読まない。D-344)
     resaved = load_game(save_game(state, AT))
     assert save_game(resaved, AT) == save_game(state, AT) and resaved.my_team_id is None
     state.season.play_days(info["continue_to_day"] - state.season.day)
@@ -199,18 +200,16 @@ def test_failed_load_keeps_current_state(saved):
     assert save_game(current, AT) == before  # 今の状態は変わらない
 
 
-# ---- 受け入れ条件5:旧版の変換 ----
+# ---- 受け入れ条件5:旧版の変換(作り直し①より前の版は読まない。D-344) ----
 
-def test_real_v1_to_v2_conversion(saved):
-    """版1(自球団の情報がない)のファイルは、版2へ変換して読む。"""
+@pytest.mark.parametrize("version", [1, 13])
+def test_versions_before_the_rebuild_are_rejected(saved, version):
+    """版 13 以前(作り直し①の前)のファイルは、変換せずに分かりやすいエラーにする。"""
     files = _zip(saved[1])
-    state = json.loads(files["state.json"])
-    state.pop("user")
     m = json.loads(files["manifest.json"])
-    m["format_version"] = 1
-    files.update({"state.json": json.dumps(state).encode(), "manifest.json": json.dumps(m).encode()})
-    loaded = load_game(_rezip(files))
-    assert loaded.my_team_id is None and loaded.season.day == 4
+    m["format_version"] = version
+    files["manifest.json"] = json.dumps(m).encode()
+    _assert_error(_rezip(files), re.escape(f"作り直しの前の版(バージョン {version})"))
 
 
 def test_my_team_is_saved():
@@ -234,16 +233,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 14)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 13: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 15)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 14: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 15)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 13: lambda b: b})
-    _assert_error(saved[1], "バージョン 14 から 15 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 16)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 14: lambda b: b})
+    _assert_error(saved[1], "バージョン 15 から 16 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----

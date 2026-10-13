@@ -2,7 +2,7 @@
 // 自球団の状況のパネル・提示のパネル。説明ブロックは置かない(列の説明は見出しの title に入る。D-270)
 
 import { $, state } from "./core.js";
-import { answer, query } from "./backend.js";
+import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { el, link, playerLink, sortToggle, table } from "./parts.js";
 import { salaryInput } from "./contract.js";
@@ -15,19 +15,13 @@ function decisionState(stage) {
   return ps.decision[stage];
 }
 
-// 表を計算本体から受け取る。答え合わせモードがオンなら、真の総合も受け取る
+// 表を計算本体から受け取る(答え合わせモードはなくした。作り直し①)
 export async function fetchDecision(stage, token) {
   const ds = decisionState(stage);
   const data = await query("decision_table", { stage, group: ds.group, kind: ds.kind, sort: ds.sortBy.key, order: ds.sortBy.key ? ds.sortBy.order : null, season: ds.season, show: ds.show });
   if (token !== state.token) return null;
   ds.shown = { key: data.sort.key, order: data.order };
-  let truth = null;
-  if (state.answerLevel > 0) {
-    truth = await answer("procedure_answers", {});
-    if (token !== state.token) return null;
-    if (state.answerLevel === 0) truth = null;
-  }
-  return { data, truth };
+  return { data, truth: null };
 }
 
 // 絞り込みの 1 行(ポジション・種類・表示する選手・シーズン)
@@ -47,10 +41,8 @@ export function decisionTable(stage, data, truth, { onName, detail, rowClass }) 
   const ds = decisionState(stage);
   const sortCol = data.columns.find((c) => c.key === data.sort.key) || data.sort;
   const columns = data.columns.filter((c) => c.key !== sortCol.key);
-  if (truth) columns.push({ key: "truth", label: "真の総合" });
   const rows = data.rows.map((r) => {
-    const t = truth ? truth.players[r.player_id] : null;
-    const values = { ...r.values, truth: t ? `${t.overall}${t.potential ? ` / ${t.potential}` : ""}` : "" };
+    const values = { ...r.values };
     if (r.thin && values.pos) values.pos = el("span", { className: "thin" }, values.pos);
     if (r.in_slots && values.depth) values.depth = el("span", { className: "depth-in" }, values.depth);
     return { ...r, values };
@@ -93,10 +85,6 @@ export function dealPanel(p, info, prefs, { prefix, onSend, onCancel }) {
   const years = el("select", { id: `${prefix}-years`, "aria-label": "契約年数" }, ...Array.from({ length: info.max_years - info.min_years + 1 }, (_, i) => info.min_years + i).map((y) => el("option", { value: String(y), selected: p.offer ? p.offer.years === y : y === 1 }, `${y} 年`)));
   const si = salaryInput(p.offer ? p.offer.salary : d.calc_salary, info.none_max_ratio ? d.calc_salary : info.minimum_salary, info.rounding, info.none_max_ratio ? Math.floor(d.calc_salary * info.none_max_ratio) : null);
   box.append(el("div", { className: "offer-fields" }, el("label", {}, "年数 ", years), si.wrap));
-  if (prefs && prefs.players && prefs.players[p.player_id]) {
-    const w = prefs.players[p.player_id];
-    box.append(el("p", { className: "small answer" }, `志望(答え合わせ):${w.map((x) => `${x.label} ${x.text}${x.active ? "" : "(効かない)"}`).join("・")}`));
-  }
   const send = el("button", { id: `${prefix}-send`, type: "button", disabled: state.running, onclick: () => {
     const val = si.input.value.trim();
     if (!/^\d+$/.test(val)) {

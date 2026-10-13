@@ -28,7 +28,7 @@ from .parks import neutralize_parks
 from .records import Records, season_records
 from .season import Season, SeasonResult
 
-FINGERPRINT_VERSION = 20  # 20:主力級の FA の期待(D-322〜D-325)で (m)(n)(o)(p)(q) が変わった。事前運転は志望の判定を扱わないので (a)〜(l) は変わらない。 19:市場の提示の方式(①b。D-300)で (m)(n)(o)(p)(q) が変わった。事前運転の市場は今までの方式なので (a)〜(l) は変わらない(D-301)。 18:(q)FA(F3-2c。お金のルール「標準」)。更改で FA 権保持者が宣言するので (m)(n)(o)(p) が変わった。 17:(p)契約更改と志望(F3-2b。お金のルール「標準」)。更改で断る選手が出るので (m)(n)(o) が変わった。 16:(o)契約(F3-2a。お金のルール「標準」)。(a)〜(n) は変わらない(D-237)。 15:評価の 2 層化(D-212)で事前運転が変わり、(a)〜(m) と (n) が変わった((i) は同じ)。 14:(n)オフの手続き(F3-1)。事前運転が新しい手続きになり、(a)〜(m) も変わった。 13:事前運転と校正(D-190、D-197)で選手が変わり、(a)〜(m) すべて変わった。 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
+FINGERPRINT_VERSION = 21  # 21:作り直し①(見せる能力・成長・球種。D-347〜D-352)で選手が変わり、(i) 以外すべて変わった。(a) に球種、(m)(n) は見せる能力を入れた。 20:20:主力級の FA の期待(D-322〜D-325)で (m)(n)(o)(p)(q) が変わった。事前運転は志望の判定を扱わないので (a)〜(l) は変わらない。 19:市場の提示の方式(①b。D-300)で (m)(n)(o)(p)(q) が変わった。事前運転の市場は今までの方式なので (a)〜(l) は変わらない(D-301)。 18:(q)FA(F3-2c。お金のルール「標準」)。更改で FA 権保持者が宣言するので (m)(n)(o)(p) が変わった。 17:(p)契約更改と志望(F3-2b。お金のルール「標準」)。更改で断る選手が出るので (m)(n)(o) が変わった。 16:(o)契約(F3-2a。お金のルール「標準」)。(a)〜(n) は変わらない(D-237)。 15:評価の 2 層化(D-212)で事前運転が変わり、(a)〜(m) と (n) が変わった((i) は同じ)。 14:(n)オフの手続き(F3-1)。事前運転が新しい手続きになり、(a)〜(m) も変わった。 13:事前運転と校正(D-190、D-197)で選手が変わり、(a)〜(m) すべて変わった。 12:(m)複数年(F2)。(l)はポジション補正の値の変更で変わった。 11:(l)WAR(第3弾③a)。 10:(k)打撃・走塁・守備の得点(第3弾②)。 9:第3弾①の選手生成(ポジション別の型の割合)で (a)〜(h)・(j) の値が変わった。 2:(d)1シーズン(④)。3:(e)集計結果(⑤)。4:(f)保存と読み込み(⑥)。5:(g)(h)基準値と第2弾の指標(②)。6:(i)球場の倍率(②a)。7:(j)球場補正の推定(②b)。8:(j)の得点を本塁打と BABIP から組み立てる(②c)
 LEAGUE_SEED = 1  # (a)〜(c)で使うリーグのシード
 GAME_SEED = 7  # (b)1試合の乱数のシード
 DAYS_SEED = 11  # (c)数十日分の試合の乱数のシード
@@ -84,6 +84,7 @@ def league_record(league: League) -> dict:
                         p.origin,
                         p.hidden.archetype,
                         p.hidden.growth_type,
+                        [x["type"] for x in (p.pitches or [])],
                     ]
                     for p in t.players
                 ],
@@ -333,7 +334,7 @@ def multiyear_fingerprint(parks: bool = True) -> tuple[str, dict]:
         record[f"offseason-{o.year}"] = {
             "retired": sorted(n.player_id for n in o.retired),
             "rookies": sorted((n.player_id, n.team_id, n.role, n.position, n.age) for n in o.rookies),
-            "players": [[p.id, p.age, {item: int(round(v * 10)) for item, v in sorted(p.ratings.items())}] for t in g.state.league.teams for p in t.players],
+            "players": [[p.id, p.age, {item: int(round(v * 10)) for item, v in sorted(p.abilities.items())}] for t in g.state.league.teams for p in t.players],
         }
         info["retired"].append(len(o.retired))
         info["rookies"].append(len(o.rookies))
@@ -362,7 +363,7 @@ def procedure_fingerprint(parks: bool = True) -> tuple[str, dict]:
         info["market"].append(sum(1 for x in rows if x["phase"] == "market" and x.get("player_id")))
         info["released"].append(sum(1 for x in rows if x["phase"] == "release"))
         record[f"players-{year}"] = [
-            [p.id, p.age, {item: int(round(v * 10)) for item, v in sorted(p.ratings.items())}, None if p.scouting is None else [p.scouting["team_id"], p.scouting["ceiling"], int(round(p.scouting["overall"] * 10))]]
+            [p.id, p.age, {item: int(round(v * 10)) for item, v in sorted(p.abilities.items())}, None if p.scouting is None else [p.scouting["team_id"], p.scouting["ceiling"], int(round(p.scouting["overall"] * 10))]]
             for t in g.state.league.teams
             for p in t.players
         ]

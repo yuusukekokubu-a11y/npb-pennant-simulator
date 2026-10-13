@@ -1,10 +1,13 @@
-"""年齢カーブ(D-030、D-031、D-033)。
+"""年齢カーブ(D-030、D-031、D-033、D-350)。
 
-年齢カーブは「ピークからの差(点数)」で持つ(DESIGN.md 検討中の論点)。
-  現在の能力 = 潜在能力 - 年齢による差 + 能力の揺れ
+年齢カーブは「ピークからの差(点数)」で持つ。
 年齢による差は、ピークより若いと (ピーク年齢 - 年齢) × 1年あたりの差、
 ピークを過ぎると 衰退の速さ × 年数 + 加速 × 年数² で大きくなる。
-「固定」グループ(ゴロ/フライ傾向)は年齢で変わらない。
+
+作り直し①(D-350)から、潜在能力(ピーク時の能力)は持たない。毎年のオフの増減は
+  年齢による増減(ある年齢から次の年齢への差の変わり方)× 伸びやすさ(伸びる年だけ)+ 小さな揺れ
+で決める。生成のときだけ「ピーク時の水準」を一度引き、そこから年齢による差を引いて今の能力にする。
+「固定」グループの項目は年齢で変わらない(今の見せる能力にはない)。
 """
 
 from __future__ import annotations
@@ -44,15 +47,16 @@ def age_gap(config: GenerationConfig, item: str, age: float, growth_type: str) -
     return group["decline_per_year"] * years + group["decline_accel"] * years * years
 
 
-def current_rating(
-    config: GenerationConfig,
-    item: str,
-    potential: float,
-    age: float,
-    growth_type: str,
-    drift: float,
-) -> float:
-    """潜在能力から、現在の能力を出す。"""
+def yearly_change(config: GenerationConfig, item: str, age: float, growth_type: str, ease: float) -> float:
+    """age 歳から age+1 歳になるときの、年齢による増減の見込み(伸びる年は伸びやすさを掛ける。D-350)。"""
     if group_of(config, item) == FIXED_GROUP:
-        return potential
-    return potential - age_gap(config, item, age, growth_type) + drift
+        return 0.0
+    change = age_gap(config, item, age, growth_type) - age_gap(config, item, age + 1, growth_type)
+    return change * ease if change > 0 else change
+
+
+def expected_gain(config: GenerationConfig, item: str, age: float, growth_type: str, ease: float = 1.0) -> float:
+    """今の年齢からピークまでに伸びる見込みの合計(ドラフト候補の天井の目安に使う。D-352)。"""
+    if group_of(config, item) == FIXED_GROUP:
+        return 0.0
+    return age_gap(config, item, age, growth_type) * ease

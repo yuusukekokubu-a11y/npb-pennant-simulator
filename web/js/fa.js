@@ -2,7 +2,6 @@
 // 名前を押すと提示のパネル。説明ブロックは置かない(D-270)
 
 import { state } from "./core.js";
-import { answer } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { el } from "./parts.js";
 import { runProc } from "./procedure.js";
@@ -14,11 +13,7 @@ export async function faSection(v, token) {
   if (!fa) return [el("p", { className: "muted" }, "FA の情報がありません。")];
   const got = await fetchDecision("fa", token);
   if (!got) return null;
-  let prefs = null;
-  if (state.answerLevel > 0) {
-    prefs = await answer("fa_answers", {});
-    if (token !== state.token) return null;
-  }
+  const prefs = null;
   const { data, truth } = got;
   const canOffer = (p) => v.my_team && !fa.done && p.open && p.deal && p.deal.status === "open";
   const onName = (p) => { ps.faOpen = ps.faOpen === p.player_id ? null : p.player_id; renderCurrent(); };
