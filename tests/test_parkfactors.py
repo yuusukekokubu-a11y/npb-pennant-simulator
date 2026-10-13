@@ -158,38 +158,13 @@ def test_second_season_uses_previous_estimates_and_keeps_mean_about_100(second_s
 
 
 @pytest.mark.slow
-def test_history_is_saved_and_old_saves_have_none(second_season):
+def test_history_is_saved(second_season):
     g = second_season
     data = save_game(g.state)
     loaded = load_game(data)
     assert history_to_dict(loaded.park_history) == history_to_dict(g.state.park_history)
     again = api.Game(loaded, dirty=False)
     assert again.stats("batter", "saber") == g.stats("batter", "saber")
-    # 版4(履歴なし)→ 球場補正 1.0
-    import io
-    import zipfile
-
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        files = {n: zf.read(n) for n in zf.namelist()}
-    state = json.loads(files["state.json"])
-    state.pop("park_history")
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 4
-
-    def rezip():
-        out = io.BytesIO()
-        with zipfile.ZipFile(out, "w") as zf:
-            for n, b in {**files, "state.json": json.dumps(state).encode(), "manifest.json": json.dumps(manifest).encode()}.items():
-                zf.writestr(n, b)
-        return out.getvalue()
-
-    old = api.Game(load_game(rezip()), dirty=False)
-    assert old.season_number() == 1 and old.park_estimates() is None
-    state["park_history"] = [{"season": 1, "parks": {"T01": {"home": {"PA": -1, "HR": 0, "BIP": 0, "HIT": 0, "R": 0}, "away": {"PA": 0, "HR": 0, "BIP": 0, "HIT": 0, "R": 0}}}}]
-    manifest["format_version"] = 5
-    with pytest.raises(SaveDataError, match="park_history"):
-        load_game(rezip())
-    assert history_from_dict(history_to_dict(g.state.park_history)) == g.state.park_history
 
 
 def test_finish_season_appends_history():

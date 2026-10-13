@@ -1,7 +1,7 @@
 """選手・球団・リーグのデータの形。
 
-隠し情報(潜在能力・成長タイプ・生成時の型・能力の揺れ)は Player.hidden にまとめ、
-画面に出してよい情報と区別できるようにする(D-017、D-030、D-033、D-043)。
+選手の正本は見せる能力(Player.abilities)。試合の計算は、そこから換算した内部の能力(Player.ratings)を使う(D-349)。
+隠し情報(成長タイプ・伸びやすさ・弾道の傾き・生成時の型)は Player.hidden にまとめる(D-350)。
 """
 
 from __future__ import annotations
@@ -11,12 +11,12 @@ from dataclasses import asdict, dataclass, field
 
 @dataclass
 class HiddenInfo:
-    """選手本人も画面も知らない前提の情報。計算や表示の前提にしない。"""
+    """画面に出さない情報(作り直し①。D-337、D-350)。潜在能力(ピーク時の能力)は持たない。"""
 
-    potential: dict[str, float]  # 潜在能力(ピーク時の能力。D-030)
-    growth_type: str  # 成長タイプ:early / normal / late(D-033)
+    growth_type: str  # 成長タイプ:early / normal / late(年齢のピークの早い・遅い。D-033)
     archetype: str  # 生成時の型。年齢で変わらない。計算には使わない(D-043)
-    ability_drift: dict[str, float]  # 能力の揺れ(翌年以降に残る。D-033)
+    ease: float = 1.0  # 伸びやすさ(伸びる年の増え方に掛ける。D-350)
+    trajectory_bias: float = 0.0  # 弾道の傾き(打者。パワーに足して弾道を決める。D-347)
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ class Player:
     position: str  # SP, RP, C, 1B, ...(abilities.POSITION_LABELS)
     bats: str | None  # 打者のみ:R / L / S(両打ち)。投手は打席に立たないので None(D-046)
     throws: str | None  # 投手のみ:R / L。野手の投げ手は持たないので None(D-048)
-    ratings: dict[str, float]  # 現在の能力(内部は小数。20〜80 の外も許す。D-024)
+    ratings: dict[str, float]  # 試合の計算に使う内部の能力(見せる能力から換算。ability_model.refresh。D-349)
     hidden: HiddenInfo
     state: PlayerState = field(default_factory=PlayerState)
     team_id: str | None = None
@@ -64,6 +64,8 @@ class Player:
     scouting: dict | None = None  # 入団時のスカウト評価(獲得した球団の評価。F3-1。D-199)。初期選手・自動補充の前の選手は None
     contract: dict | None = None  # 契約({salary: 年俸(万円), until: 満了シーズン, history: [{year, salary, years, reason, offers?}]}。F3-2a。D-232)。所属がなければ None でもよい
     preference: dict | None = None  # 志望の重み(軸 → 重み。合計 1。隠し情報。F3-2b。D-245)。付ける前は None
+    abilities: dict[str, float] = field(default_factory=dict)  # 見せる能力(正本。内部と同じ目盛りの小数。D-336、D-349)
+    pitches: list[dict] | None = None  # 投手の球種 [{type, weight}](D-351)。打者は None
     fa_seasons: int | None = 0  # 一軍に登録されたシーズンの通算(FA 権の年数。宣言したら 0。F3-2c。D-258)。None は旧版で、読み込みのときに補う
 
     @property

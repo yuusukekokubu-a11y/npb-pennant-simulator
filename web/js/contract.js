@@ -1,7 +1,7 @@
 // 契約の画面(表・提示のパネル・自由契約・自動案)(web/app.js から分けた。保守②。D-291)
 
 import { $, state } from "./core.js";
-import { answer, query } from "./backend.js";
+import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { el, link, sortToggle, table } from "./parts.js";
 import { runProc } from "./procedure.js";
@@ -18,11 +18,6 @@ export async function contractSection(v, token) {
   const data = await query("contract_table", { group: cs.group, kind: cs.kind, sort: usable, order: usable ? cs.sortBy.order : null, season: cs.season, status: cs.status });
   if (token !== state.token) return null;
   cs.shown = { key: data.sort.key, order: data.order };
-  let prefs = null;
-  if (state.answerLevel > 0) {
-    prefs = await answer("negotiation_answers", {});
-    if (token !== state.token) return null;
-  }
   const pick = (id, label, items, value, onPick) => el("select", { id, "aria-label": label, onchange: (e) => onPick(e.target.value) }, ...items.map((x) => el("option", { value: x.key, selected: x.key === value }, x.label)));
   const filters = el("div", { className: "compact-filters" },
     pick("contract-group", "ポジションの絞り込み", data.groups, cs.group, (k) => { cs.group = k; cs.sortBy = { key: null, order: null }; renderCurrent(); }),
@@ -30,7 +25,7 @@ export async function contractSection(v, token) {
   if (data.kinds.length) filters.append(pick("contract-kind", "成績の種類", data.kinds, cs.kind, (k) => { cs.kind = k; renderCurrent(); }));
   if (data.seasons.length > 1) filters.append(pick("contract-season", "シーズンの選択", data.seasons.map((x) => ({ key: x.key, label: x.key === "career" ? "通算" : "今季" })), cs.season, (k) => { cs.season = k; renderCurrent(); }));
   const first = (p) => [link(p.name, () => { ps.renewalOpen = ps.renewalOpen === p.player_id ? null : p.player_id; renderCurrent(); }), el("span", { className: "sub" }, p.hand || "")];
-  const detail = (p) => (ps.renewalOpen === p.player_id ? contractPanel(p, rn, prefs) : null);
+  const detail = (p) => (ps.renewalOpen === p.player_id ? contractPanel(p, rn) : null);
   const onSort = (key) => { sortToggle(cs.sortBy, cs.shown, key); renderCurrent(); };
   const rowClass = (p) => (p.status === "refused" ? "refused" : p.status === "released" || p.status === "declared" ? "muted" : "");
   return [
@@ -57,7 +52,7 @@ export function salaryInput(value, min, step, max = null) {
 
 // 選手をタップして出るパネル(D-272):交渉中なら 年数・年俸(±%)・提示する・自由契約にする・残りの回数・断られた理由。
 // 契約が残る選手(複数年の途中・更改済)は「自由契約にする」だけ(残りの契約は消える)
-function contractPanel(p, rn, prefs) {
+function contractPanel(p, rn) {
   const r = p.renewal;
   const box = el("div", { className: "offer-panel", id: "offer-panel", dataset: { playerId: p.player_id } });
   if (r && r.offers.length) {
@@ -70,10 +65,6 @@ function contractPanel(p, rn, prefs) {
     const si = salaryInput(r.auto_salary, min, rn.rounding, rn.none_max_ratio ? Math.floor(r.auto_salary * rn.none_max_ratio) : null);
     box.append(el("div", { className: "offer-fields" }, el("label", {}, "年数 ", years), si.wrap));
     if (rn.hard && rn.cap) box.append(el("p", { className: "muted small" }, `見込みの総年俸 ${rn.projected_text} / 上限 ${rn.cap_text}`));
-    if (prefs && prefs.players && prefs.players[p.player_id]) {
-      const w = prefs.players[p.player_id];
-      box.append(el("p", { className: "small answer" }, `志望(答え合わせ):${w.map((x) => `${x.label} ${x.text}${x.active ? "" : "(効かない)"}`).join("・")}`));
-    }
     const offerBtn = el("button", { id: "offer-send", type: "button", disabled: state.running, onclick: () => sendOffer(p, years, si.input) }, `提示する(残り ${r.offers_left} 回)`);
     box.append(el("div", { className: "row" }, offerBtn, releaseBtn));
   } else if (p.status === "released" || p.status === "declared") {

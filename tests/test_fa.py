@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from pennant import answers, api
+from pennant import api
 from pennant import fa as famod
 from pennant.config import ConfigError
 from pennant.contracts import team_salary
@@ -142,7 +142,7 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
             room = g.budget_info("T01")["cap"] - team_salary(g._team("T01"))
             with pytest.raises(ValueError, match="上限"):
                 g.offseason_fa_offer(target.id, 2, room + 100)
-            pay = max(calc, min(int(calc * 1.5), room) // 100 * 100)  # 上限の中で、算定より高い提示
+            pay = min(int(calc * 1.5), room) // 100 * 100  # 上限の中で、できれば算定より高い提示(算定が上限を超える選手もいる)
             v = g.offseason_fa_offer(target.id, 3, pay)
             assert v["fa"]["offers"][0]["years"] == 3
             g.offseason_fa_cancel(target.id)
@@ -204,7 +204,7 @@ def test_ai_offers_respect_limits(season_end):
 
 
 @pytest.mark.slow
-def test_fa_is_hidden_unless_answer_mode(season_end):
+def test_fa_hidden_info_is_not_shown(season_end):
     g = _fresh(season_end["standard"])
     to_fa(g)
     pid = g.state.procedure.fa_pool[0].id
@@ -212,47 +212,18 @@ def test_fa_is_hidden_unless_answer_mode(season_end):
     for key in HIDDEN_KEYS:
         assert f'"{key}"' not in text
     assert g.player(pid)["player"]["team_name"] == "FA 宣言中" and g.player(g.state.procedure.market[0].id)["player"]["team_name"] == "自由契約"
-    a = answers.fa_answers(g, 1)
-    assert a["available"] and pid in a["players"] and [x["key"] for x in a["players"][pid]] == list(NEG.axes)
     page = g.player(next(p for p in g._team("T02").players).id)
     assert "FA 権" in page["player"]["contract"]["fa_text"] or "一軍" in page["player"]["contract"]["fa_text"]
 
 
 @pytest.mark.slow
-def test_save_v12_and_v11_loads(season_end):
+def test_save_round_trip(season_end):
     g = _fresh(season_end["standard"])
     data = save_game(g.state)
-    assert SAVE_FORMAT_VERSION == 13
+    assert SAVE_FORMAT_VERSION == 14
     again = load_game(data)
     assert [p.fa_seasons for p in again.league.all_players()] == [p.fa_seasons for p in g.state.league.all_players()]
     assert again.procedure.fa_info == g.state.procedure.fa_info and [p.id for p in again.procedure.fa_pool] == [p.id for p in g.state.procedure.fa_pool]
-    # 版 11(FA なし)として読む:年数は補い、進行中の手続きはそのまま続けられる
-    g2 = api.Game.new(3, [None] * 12, None, season_seed=7, baselines="default")
-    g2.advance(125)
-    g2.year_end()
-    g2.advance(2)
-    zin = zipfile.ZipFile(io.BytesIO(save_game(g2.state)))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 11
-    state = json.loads(files["state.json"])
-    del state["configs"]["negotiation"]["fa"]
-    for team in state["league"]["teams"]:
-        for pd in team["players"]:
-            del pd["fa_seasons"]
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    old = load_game(buf.getvalue())
-    assert all(isinstance(p.fa_seasons, int) for p in old.league.all_players())
-    assert [p.fa_seasons for p in load_game(buf.getvalue()).league.all_players()] == [p.fa_seasons for p in old.league.all_players()]  # 同じ乱数系列
-    game = api.Game(old, dirty=False)
-    game.advance(123)
-    game.year_end()
-    assert game.status()["year"] == 3
 
 
 def test_web_bridge_fa_actions():
@@ -262,4 +233,4 @@ def test_web_bridge_fa_actions():
     spec = importlib.util.spec_from_file_location("bridge_for_fa", Path(__file__).resolve().parents[1] / "web" / "bridge.py")
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
-    assert {"fa_offer", "fa_cancel", "fa_close"} <= set(bridge._OFFSEASON) and "fa_answers" in bridge._ANSWERS
+    assert {"fa_offer", "fa_cancel", "fa_close"} <= set(bridge._OFFSEASON)

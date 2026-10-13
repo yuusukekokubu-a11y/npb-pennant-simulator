@@ -102,15 +102,6 @@ async function cached(kind, name, args) {
 
 export const query = (name, args = {}) => cached("query", name, args);
 
-export function answer(name, args = {}) {
-  // 答え合わせモードがオフのときは、答え合わせ用の入口を呼ばない(D-108)
-  if (state.answerLevel === 0) return Promise.reject(new Error("答え合わせモードがオフです"));
-  return cached("answer", name, { ...args, level: state.answerLevel });
-}
-
-export function clearAnswers() {
-  for (const key of [...state.cache.keys()]) if (key.startsWith("answer|")) state.cache.delete(key);
-}
 
 // 待ち時間の表示:0.6 秒を超えたら出し、出したら最低 0.6 秒は続ける(D-118)
 export function delayedShow(show, hide) {

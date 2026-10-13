@@ -167,3 +167,15 @@ def test_bridge_has_new_operations():
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
     assert {"stage_auto", "contract_release", "auto", "next"} <= set(bridge._OFFSEASON) and "contract_table" in bridge._QUERIES
+
+
+@pytest.mark.slow
+def test_released_after_renewal_counts_as_released(contract_games):
+    """更改済の選手を自由契約にすると、状態の内訳でも「自由契約」に数える(交渉の記録は更改済のまま)。"""
+    g = api.Game(copy.deepcopy(contract_games["none"].state), dirty=False)
+    g.offseason_renew_auto()
+    before = g.offseason_view()["renewal"]["roster_counts"]
+    row = next(r for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"])
+    g.offseason_contract_release(row["player_id"])
+    after = g.offseason_view()["renewal"]["roster_counts"]
+    assert after["released"] == before["released"] + 1 and after["accepted"] == before["accepted"] - 1

@@ -7,14 +7,14 @@ from fractions import Fraction
 
 import pytest
 
-from pennant import answers, api
-from pennant.abilities import ITEM_LABELS, items_for
+from pennant import api
+from pennant.abilities import items_for
 from pennant.config import ConfigError
 from pennant.game_stats import game_story, narrate, story_text
 from pennant.metrics import compute, default_metrics_data, validate_metrics_config
 from pennant.records import qualifying_outs, qualifying_plate_appearances, season_records
 
-HIDDEN_KEYS = {"ratings", "potential", "growth_type", "archetype", "ability_drift", "hidden"}
+HIDDEN_KEYS = {"ratings", "potential", "growth_type", "archetype", "ease", "trajectory_bias", "hidden"}
 
 
 def _keys(value) -> set[str]:
@@ -92,16 +92,15 @@ def test_sort_by_any_metric_with_extra_column(game):
 
 def test_ability_table_can_keep_stats_sort(game):
     """能力の表も、成績の指標で並べられる(並び順を保ったまま切り替えたとき。固定列)。"""
-    t = answers.ability_table(game, "pitcher", 1, sort="era", order="asc", qualified=False)
+    t = game.ability_table("pitcher", sort="era", order="asc", qualified=False)
     assert t["extra_column"]["key"] == "era" and t["sort"]["key"] == "era"
     ids = [r["player_id"] for r in t["rows"]]
     assert ids == [r["player_id"] for r in game.stats("pitcher", "basic", sort="era", order="asc", qualified=False)["rows"]]
     assert all("era" in r["values"] for r in t["rows"])
-    by_default = answers.ability_table(game, "pitcher", 1, sort="era", order=None, qualified=False)
+    by_default = game.ability_table("pitcher", sort="era", order=None, qualified=False)
     assert by_default["order"] == "asc" and [r["player_id"] for r in by_default["rows"]] == ids  # 向きの省略時は「よい」向き
-    plain = answers.ability_table(game, "pitcher", 1, sort="stamina")
+    plain = game.ability_table("pitcher", sort="stamina")
     assert plain["extra_column"] is None and "era" not in plain["rows"][0]["values"]
-    assert [c["key"] for c in answers.columns("batter", 2)][-2:] == ["growth_type", "archetype"]
 
 
 def test_qualified_follows_definition(game):
@@ -205,7 +204,7 @@ def test_game_page_matches_narrate(game):
 
 
 def test_narrate_text_is_unchanged():
-    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。第3弾①で選手が変わったので値を取り直した)。"""
+    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。作り直し①で選手が変わったので値を取り直した)。"""
     from pennant.newgame import new_league
     from pennant.parks import neutralize_parks
     from pennant.season import Season
@@ -216,54 +215,48 @@ def test_narrate_text_is_unchanged():
     s.play_days(3)
     names = {t.id: t.name for t in s.league.teams}
     text = "".join(narrate(p.result, s.players, names) for p in s.played)
-    assert hashlib.sha256(text.encode()).hexdigest() == "3cf08a5baa7a08184880ae9dd8234e374758842a80bcf3f97702b30239e370e5"
+    assert hashlib.sha256(text.encode()).hexdigest() == "5b15a905489a8d0708690d63937b16d9b897b01a5164312f888ee82c0b8fd48b"
 
 
 def test_public_functions_have_no_hidden_info(game):
-    """公開用の関数の戻り値に、能力値・隠し情報(その項目名も)が入らない(D-108)。"""
+    """公開用の関数の戻り値に、隠し情報(内部の能力・伸びやすさ・成長タイプ・型。その項目名も)が入らない(D-108、D-338)。"""
     pid = game.stats("batter")["rows"][0]["player_id"]
     values = [game.stats(r, k, qualified=False) for r in ("batter", "pitcher") for k in ("basic", "saber")]
     page = game.player(pid)
     values += [page, game.team("T03"), game.games_on(5), game.game(3), game.last_day_games(), game.draft_review()]
     assert not (_keys(values) & HIDDEN_KEYS)
-    # 能力の項目名は、入団時のスカウト評価(推定値。F3-1)の中にだけ出てよい。それ以外の場所には出ない
-    stripped = dict(page)
-    stripped["player"] = {k: v for k, v in page["player"].items() if k != "scouting"}
-    text = json.dumps([v for v in values if v is not page] + [stripped], ensure_ascii=False)
-    for label in ITEM_LABELS.values():
-        assert label not in text or label in ("肩", "捕球"), label
+    # 試合の計算の内部の能力の項目名(コンタクト・選球眼など)は出さない(見せるのは新しい項目だけ。D-349)
+    text = json.dumps(values, ensure_ascii=False)
+    for key in ("contact", "eye", "batted_ball_quality", "contact_suppression", "recovery", "holding", "gb_fb"):
+        assert f'"{key}"' not in text, key
+    assert [a["key"] for a in page["player"]["abilities"]] == ["trajectory", "meet", "power", "speed", "arm", "defense", "catch"]
 
 
-# ---- 答え合わせ(D-115) ----
-
-@pytest.mark.parametrize("value, text", [(17.4, "20-"), (19.9, "20-"), (20, "20"), (22.4, "20"), (22.5, "25"), (52.6, "55"), (80, "80"), (80.2, "80+"), (95, "80+")])
-def test_scale(value, text):
-    assert answers.scale(value)["text"] == text
-
+# ---- 能力の表(作り直し①。D-335、D-347) ----
 
 def test_ability_table(game):
-    t = answers.ability_table(game, "pitcher", 1, sort="control", order="desc", qualified=False)
-    assert [c["key"] for c in t["columns"]] == list(items_for("pitcher"))
-    raw = [game.state.season.players[r["player_id"]].ratings["control"] for r in t["rows"]]
+    t = game.ability_table("pitcher", sort="control", order="desc", qualified=False)
+    assert [c["key"] for c in t["columns"]] == ["velocity", "control", "stamina", "breaking"]
+    raw = [game.state.season.players[r["player_id"]].abilities["control"] for r in t["rows"]]
     assert raw == sorted(raw, reverse=True)
     assert {r["player_id"] for r in t["rows"]} == set(game.select_players("pitcher", qualified=False))
     for r in t["rows"]:
-        assert all(re.fullmatch(r"(20|25|30|35|40|45|50|55|60|65|70|75|80)[+-]?", v) for v in r["values"].values())
-    t2 = answers.ability_table(game, "batter", 2)
-    assert t2["columns"][-2]["key"] == "growth_type" and t2["rows"][0]["values"]["growth_type"] in ("早熟", "標準", "晩成")
-    with pytest.raises(ValueError):
-        answers.ability_table(game, "batter", 3)
+        assert re.fullmatch(r"\d{3}km/h", r["values"]["velocity"]) and re.fullmatch(r"[SABCDEFG] \d{1,3}", r["values"]["control"])
+    t2 = game.ability_table("batter", sort="trajectory")
+    assert [c["key"] for c in t2["columns"]][0] == "trajectory" and all(r["values"]["trajectory"] in "1234" for r in t2["rows"])
 
 
-def test_player_answers(game):
-    pid = game.stats("batter")["rows"][0]["player_id"]
-    p = game.state.season.players[pid]
-    a1 = answers.player_answers(game, pid, 1)
-    assert [i["current"] for i in a1["items"]] == [answers.scale(p.ratings[k])["text"] for k in items_for("batter")]
-    assert "growth_type" not in a1 and "potential" not in a1["items"][0]
-    a2 = answers.player_answers(game, pid, 2)
-    assert a2["items"][0]["potential"] == answers.scale(p.hidden.potential[items_for("batter")[0]])["text"]
-    assert a2["growth_type"] and a2["archetype"]
+def test_ability_display_and_ranks(game):
+    """1〜100 とランクの区切り(S 90〜 … G 〜19)、球速の km/h、変化球の球種ごとの変化量(D-347、D-351)。"""
+    from pennant import ability_model as am
+
+    cfg = game.state.gen_config
+    assert [am.display(cfg, x) for x in (50, 60, 80, -20, 120)] == [60, 75, 100, 1, 100]
+    assert [am.rank(cfg, v) for v in (95, 90, 89, 60, 59, 40, 20, 19, 1)] == ["S", "S", "A", "C", "D", "E", "F", "G", "G"]
+    assert am.velocity_kmh(cfg, 50) == 145 and am.velocity_kmh(cfg, 60) == 149
+    p = next(p for p in game.state.league.all_players() if p.role == "pitcher")
+    amounts = am.pitch_amounts(cfg, p)
+    assert 2 <= len(amounts) <= 4 and all(1 <= a["amount"] <= 7 for a in amounts)
 
 
 # ---- 指標の定義データ(D-119) ----

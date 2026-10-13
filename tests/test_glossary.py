@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from pennant import api
-from pennant.abilities import ITEM_LABELS
+from pennant.abilities import ABILITY_LABELS
 from pennant.config import ConfigError
 from pennant.glossary import default_glossary, term_text, validate_glossary
 from pennant.metrics import load_metrics_config
@@ -27,7 +27,7 @@ def _strip_template(text: str) -> str:
 def column_labels() -> dict[str, str]:
     """画面のすべての表の列の名前(と、見出しを押すと解説が出る行の名前)。名前 → 見つかった場所。"""
     out: dict[str, str] = {}
-    py = list((ROOT / "src" / "pennant" / "api").glob("*.py")) + [ROOT / "src" / "pennant" / "answers.py"]
+    py = list((ROOT / "src" / "pennant" / "api").glob("*.py"))
     for f in py:
         for key, label in re.findall(r'"key":\s*"([^"]*)",\s*"label":\s*"([^"]+)"', f.read_text(encoding="utf-8")):
             if key not in _NOT_COLUMNS:
@@ -48,8 +48,8 @@ def column_labels() -> dict[str, str]:
             out.setdefault(v, "metrics.json counts")
     for m in config.metrics.values():
         out.setdefault(m["name"], "metrics.json")
-    for v in ITEM_LABELS.values():
-        out.setdefault(v, "abilities.ITEM_LABELS")
+    for v in ABILITY_LABELS.values():  # 見せる能力の名前(作り直し①)
+        out.setdefault(v, "abilities.ABILITY_LABELS")
     return out
 
 
@@ -100,7 +100,7 @@ def test_find_by_alias_and_parenthesis():
 def test_game_rules_and_new_game_settings_are_terms():
     """ゲームのルール(D-309)と、新規開始の説明バーで引く設定の項目(D-313)。"""
     g = default_glossary()
-    for name in ("お金のルール", "志望", "FA 権", "ドラフト", "自由契約市場", "天井", "ふれ幅", "答え合わせモード"):
+    for name in ("お金のルール", "志望", "FA 権", "ドラフト", "自由契約市場", "天井", "ふれ幅", "能力のランク"):
         assert g.find(name) is not None, name
     newgame = (ROOT / "web" / "js" / "newgame.js").read_text(encoding="utf-8")
     ids = set(re.findall(r'"(setting\.[a-z_.]+)"', newgame))

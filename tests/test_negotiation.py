@@ -3,11 +3,12 @@
 import copy
 import io
 import json
+import re
 import zipfile
 
 import pytest
 
-from pennant import answers, api
+from pennant import api
 from pennant.config import ConfigError
 from pennant.contracts import load_contract_settings, remaining_years
 from pennant.generate import generate_league
@@ -259,7 +260,7 @@ def test_multi_year_contract_is_fixed_and_skipped_until_expiry(renewal_games):
 
 
 @pytest.mark.slow
-def test_preference_is_hidden_unless_answer_mode(renewal_games):
+def test_preference_is_hidden(renewal_games):
     g = _fresh(renewal_games["loose"])
     g.offseason_renew_auto()
     e = next(e for e in g.state.procedure.negotiations.values() if e["team_id"] == "T01")
@@ -267,54 +268,19 @@ def test_preference_is_hidden_unless_answer_mode(renewal_games):
     text = json.dumps(texts, ensure_ascii=False)
     for key in HIDDEN_KEYS:
         assert f'"{key}"' not in text
-    assert '"score"' not in text and '"values": {"salary"' not in text  # 判定の点数・満足度も出さない
-    a = answers.player_answers(g, e["player_id"], 1)
-    assert [x["key"] for x in a["preference"]] == list(NEG.axes) and abs(sum(x["weight"] for x in a["preference"]) - 1) < 0.01
-    na = answers.negotiation_answers(g, 1)
-    assert na["available"] and e["player_id"] in na["players"]
+    # 判定の点数(数)・満足度も出さない(試合の記録の "score": "9-6" のような文字の得点は別物)
+    assert not re.search(r'"score": [-0-9]', text) and '"values": {"salary"' not in text
 
 
 @pytest.mark.slow
-def test_save_v11_and_v10_with_procedure_in_progress(renewal_games):
+def test_save_with_procedure_in_progress(renewal_games):
     g = _fresh(renewal_games["standard"])
     g.offseason_renew_auto()
     data = save_game(g.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 13 and again.procedure.phase == "renewal"
+    assert SAVE_FORMAT_VERSION == 14 and again.procedure.phase == "renewal"
     assert again.procedure.negotiations == g.state.procedure.negotiations and again.procedure.ranks == g.state.procedure.ranks
     assert [p.preference for p in again.league.all_players()] == [p.preference for p in g.state.league.all_players()]
-    # 版 10 の進行中の手続き(更改は済んでいて、自由契約の段階):志望はシードから補い、自由契約の段階から続ける
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 10
-    state = json.loads(files["state.json"])
-    del state["configs"]["negotiation"]
-    state["configs"]["contracts"]["years"] = {"min": 1, "max": 5, "young_until": 25, "young": 3, "prime_until": 29, "prime": [[2.0, 4], [1.0, 3], [0.0, 2]], "veteran_until": 32, "veteran": [[2.0, 2], [0.0, 1]], "old": 1, "rookie": 3}
-    for team in state["league"]["teams"]:
-        for pd in team["players"]:
-            del pd["preference"]
-    proc = state["procedure"]
-    proc["phase"] = "release"
-    proc["renewals"] = [{"team_id": e["team_id"], "player_id": e["player_id"], "name": e["name"], "role": e["role"], "position": e["position"], "age": e["age"], "old_salary": e["old_salary"], "salary": e["auto_salary"], "years": 1, "expected": e["expected"]} for e in proc["negotiations"].values() if e["status"] == "accepted"]
-    del proc["negotiations"]
-    del proc["ranks"]
-    for key in ("candidates", "market"):
-        for pd in proc[key]:
-            del pd["preference"]
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    old = load_game(buf.getvalue())
-    assert old.procedure.phase == "release" and old.contract_settings.default_years == 1 and old.contract_settings.rookie_years == 1
-    assert all(e["status"] == "accepted" for e in old.procedure.negotiations.values()) and old.procedure.renewals
-    assert [p.preference for p in old.league.all_players()] == [p.preference for p in g.state.league.all_players()]  # シードから同じ志望
-    game = api.Game(old, dirty=False)
-    game.offseason_auto()
-    assert game.status()["year"] == 2
 
 
 def test_web_bridge_renewal_actions():
@@ -325,7 +291,7 @@ def test_web_bridge_renewal_actions():
     spec = importlib.util.spec_from_file_location("bridge_for_test", Path(__file__).resolve().parents[1] / "web" / "bridge.py")
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
-    assert {"renew_auto", "offer", "renew_release"} <= set(bridge._OFFSEASON) and "negotiation_answers" in bridge._ANSWERS
+    assert {"renew_auto", "offer", "renew_release"} <= set(bridge._OFFSEASON)
 
 
 def test_threshold_without_money():

@@ -21,9 +21,8 @@
     }
   },
   "potential": {
-    "batter_base_mean": 46.3,
-    "pitcher_base_mean": 46.6,
-    "style_mean": 50.0,
+    "batter_base_mean": 46.1,
+    "pitcher_base_mean": 45.6,
     "noise_sd": 10.0,
     "balance_tolerance": 0.5,
     "share_balance_tolerance": 0.005
@@ -33,80 +32,60 @@
       "label": "長距離砲",
       "share": 0.2,
       "corrections": {
-        "contact": -3,
-        "eye": 2,
+        "meet": 0.0,
         "power": 11,
-        "batted_ball_quality": 3,
-        "gb_fb": -7,
         "speed": -7,
-        "baserunning": -4,
-        "range": -5,
         "arm": -1,
-        "fielding": -4
+        "defense": -5,
+        "catch": -4
       }
     },
     "contact_hitter": {
       "label": "巧打者",
       "share": 0.2,
       "corrections": {
-        "contact": 7,
-        "eye": 3,
+        "meet": 4.5,
         "power": -4,
-        "batted_ball_quality": 2,
-        "gb_fb": 2,
         "speed": -3,
-        "baserunning": -1,
-        "range": -4,
         "arm": -3,
-        "fielding": -2
+        "defense": -4,
+        "catch": -2
       }
     },
     "speedster": {
       "label": "俊足型",
       "share": 0.2,
       "corrections": {
-        "contact": 0,
-        "eye": -2,
+        "meet": -1.5,
         "power": -6,
-        "batted_ball_quality": -3,
-        "gb_fb": 5,
         "speed": 9,
-        "baserunning": 5,
-        "range": 1,
         "arm": -3,
-        "fielding": -2
+        "defense": 1,
+        "catch": -2
       }
     },
     "defensive": {
       "label": "守備型",
       "share": 0.2,
       "corrections": {
-        "contact": -6,
-        "eye": -5,
+        "meet": -5.0,
         "power": -3,
-        "batted_ball_quality": -4,
-        "gb_fb": 0,
         "speed": -1,
-        "baserunning": -2,
-        "range": 6,
         "arm": 5,
-        "fielding": 6
+        "defense": 6,
+        "catch": 6
       }
     },
     "all_round": {
       "label": "万能型",
       "share": 0.2,
       "corrections": {
-        "contact": 2,
-        "eye": 2,
+        "meet": 2.0,
         "power": 2,
-        "batted_ball_quality": 2,
-        "gb_fb": 0,
         "speed": 2,
-        "baserunning": 2,
-        "range": 2,
         "arm": 2,
-        "fielding": 2
+        "defense": 2,
+        "catch": 2
       }
     }
   },
@@ -172,27 +151,19 @@
     "SP": {
       "label": "先発型",
       "corrections": {
-        "strikeout": -1,
+        "velocity": -1,
         "control": 0,
-        "stuff": -1,
-        "contact_suppression": 0,
-        "gb_fb": 0,
         "stamina": 9,
-        "recovery": -3,
-        "holding": 0
+        "breaking": -1
       }
     },
     "RP": {
       "label": "救援型",
       "corrections": {
-        "strikeout": 1,
+        "velocity": 1,
         "control": 0,
-        "stuff": 1,
-        "contact_suppression": 0,
-        "gb_fb": 0,
         "stamina": -7,
-        "recovery": 2,
-        "holding": 0
+        "breaking": 1
       }
     }
   },
@@ -201,70 +172,50 @@
       "label": "本格派",
       "share": 0.25,
       "corrections": {
-        "strikeout": 5,
+        "velocity": 6,
         "control": -2,
-        "stuff": 6,
-        "contact_suppression": 0,
-        "gb_fb": -6,
         "stamina": 0,
-        "recovery": 0,
-        "holding": -1
+        "breaking": 5
       }
     },
     "finesse": {
       "label": "技巧派",
       "share": 0.2,
       "corrections": {
-        "strikeout": -3,
+        "velocity": -5,
         "control": 6,
-        "stuff": -5,
-        "contact_suppression": 1,
-        "gb_fb": -2,
         "stamina": 0,
-        "recovery": 0,
-        "holding": 2
+        "breaking": -3
       }
     },
     "groundball": {
       "label": "ゴロ打たせ型",
       "share": 0.2,
       "corrections": {
-        "strikeout": -3,
+        "velocity": 0,
         "control": 1,
-        "stuff": 0,
-        "contact_suppression": 1,
-        "gb_fb": 12,
         "stamina": 0,
-        "recovery": 0,
-        "holding": 0
+        "breaking": -3
       }
     },
     "unorthodox": {
       "label": "変則派",
       "share": 0.1,
       "corrections": {
-        "strikeout": 4,
+        "velocity": -1,
         "control": -4,
-        "stuff": -1,
-        "contact_suppression": 0,
-        "gb_fb": 0,
         "stamina": 0,
-        "recovery": 0,
-        "holding": -4
+        "breaking": 4
       }
     },
     "standard": {
       "label": "標準型",
       "share": 0.25,
       "corrections": {
-        "strikeout": -2,
+        "velocity": -2,
         "control": -2,
-        "stuff": -2,
-        "contact_suppression": -2,
-        "gb_fb": -2,
         "stamina": 0,
-        "recovery": 0,
-        "holding": 1
+        "breaking": -2
       }
     }
   },
@@ -274,9 +225,8 @@
         "label": "身体系",
         "items": [
           "speed",
-          "range",
-          "stamina",
-          "recovery"
+          "defense",
+          "stamina"
         ],
         "peak_age": 25,
         "gap_per_year_before_peak": 1.0,
@@ -287,7 +237,7 @@
         "label": "パワー系",
         "items": [
           "power",
-          "stuff",
+          "velocity",
           "arm"
         ],
         "peak_age": 28,
@@ -298,26 +248,15 @@
       "technical": {
         "label": "技術系",
         "items": [
-          "contact",
-          "eye",
-          "batted_ball_quality",
-          "fielding",
-          "baserunning",
-          "strikeout",
+          "meet",
+          "catch",
           "control",
-          "contact_suppression",
-          "holding"
+          "breaking"
         ],
         "peak_age": 30,
         "gap_per_year_before_peak": 1.4,
         "decline_per_year": 0.5,
         "decline_accel": 0.03
-      },
-      "fixed": {
-        "label": "固定",
-        "items": [
-          "gb_fb"
-        ]
       }
     },
     "growth_types": {
@@ -402,5 +341,166 @@
       0.97,
       1.03
     ]
+  },
+  "abilities": {
+    "display": {
+      "center": 60,
+      "per_point": 1.5,
+      "min": 1,
+      "max": 100
+    },
+    "ranks": [
+      [
+        "S",
+        90
+      ],
+      [
+        "A",
+        80
+      ],
+      [
+        "B",
+        70
+      ],
+      [
+        "C",
+        60
+      ],
+      [
+        "D",
+        50
+      ],
+      [
+        "E",
+        40
+      ],
+      [
+        "F",
+        20
+      ],
+      [
+        "G",
+        0
+      ]
+    ],
+    "velocity": {
+      "center": 145,
+      "per_point": 0.4,
+      "min": 120,
+      "max": 165
+    },
+    "trajectory": {
+      "cuts": [
+        40,
+        50,
+        60
+      ],
+      "bias_sd": 6.0,
+      "gb_fb": [
+        60,
+        54,
+        46,
+        40
+      ]
+    },
+    "breaking": {
+      "total_at_50": 6,
+      "per_point": 0.2,
+      "max_per_pitch": 7,
+      "count_shares": {
+        "2": 0.35,
+        "3": 0.45,
+        "4": 0.2
+      },
+      "weight_range": [
+        0.5,
+        1.5
+      ]
+    },
+    "pitch_types": {
+      "slider": {
+        "label": "スライダー",
+        "share": 0.24
+      },
+      "curve": {
+        "label": "カーブ",
+        "share": 0.16
+      },
+      "fork": {
+        "label": "フォーク",
+        "share": 0.14
+      },
+      "changeup": {
+        "label": "チェンジアップ",
+        "share": 0.12
+      },
+      "cutter": {
+        "label": "カットボール",
+        "share": 0.12
+      },
+      "shoot": {
+        "label": "シュート",
+        "share": 0.11
+      },
+      "sinker": {
+        "label": "シンカー",
+        "share": 0.11
+      }
+    },
+    "growth": {
+      "ease_mean": 1.0,
+      "ease_sd": 0.3,
+      "ease_min": 0.3,
+      "ease_max": 1.8
+    },
+    "engine": {
+      "batter": {
+        "contact": {
+          "meet": 1.0
+        },
+        "eye": 50,
+        "power": {
+          "power": 1.0
+        },
+        "batted_ball_quality": {
+          "meet": 1.0
+        },
+        "gb_fb": "trajectory",
+        "speed": {
+          "speed": 1.0
+        },
+        "baserunning": {
+          "speed": 1.0
+        },
+        "range": {
+          "defense": 1.0
+        },
+        "arm": {
+          "arm": 1.0
+        },
+        "fielding": {
+          "catch": 1.0
+        }
+      },
+      "pitcher": {
+        "strikeout": {
+          "velocity": 0.7,
+          "breaking": 0.7
+        },
+        "control": {
+          "control": 1.0
+        },
+        "stuff": {
+          "velocity": 1.0
+        },
+        "contact_suppression": 50,
+        "gb_fb": 50,
+        "stamina": {
+          "stamina": 1.0
+        },
+        "recovery": 50,
+        "holding": 50
+      }
+    }
   }
 }

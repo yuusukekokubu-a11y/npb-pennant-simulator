@@ -152,35 +152,6 @@ def test_decision_tables_columns_depth_and_thin(season_end):
         assert f'"{key}"' not in text
 
 
-@pytest.mark.slow
-def test_old_save_in_the_middle_of_the_waiver_market_resumes_with_offers(season_end):
-    """版 12 で市場の段階(指名の途中)にいたセーブは、版 13 の提示の方式で再開できる(D-300)。それまでの獲得はそのまま。"""
-    g = _to_stage(_fresh(season_end), "market")
-    proc = g.state.procedure
-    proc.round, proc.index = 2, 3  # 旧方式の巡の途中
-    old_pick = {"phase": "market", "round": 1, "team_id": "T02", "player_id": None, "name": "", "role": "", "position": "", "age": None, "note": "pass"}
-    proc.picks.append(old_pick)
-    data = save_game(g.state)
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    state = json.loads(files["state.json"])
-    manifest["format_version"] = 12
-    for key in ("market_offers", "market_results", "market_log", "market_done"):
-        state["procedure"].pop(key)
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, "w") as z:
-        for n, b in files.items():
-            z.writestr(n, json.dumps(manifest).encode() if n == "manifest.json" else json.dumps(state).encode() if n == "state.json" else b)
-    again = api.Game(load_game(out.getvalue()), dirty=False)
-    assert SAVE_FORMAT_VERSION == 13
-    v = again.offseason_view()
-    assert v["stage"] == "market" and not v["market"]["done"] and v["market"]["counts"]["pool"] == len(proc.market)
-    assert old_pick in again.state.procedure.picks
-    r = again.offseason_next()
-    assert r["finished"] and again.state.year == 2
-
-
 def test_market_needs_negotiation_settings():
     """志望の判定の設定がない手続き(事前運転。D-254)では、提示の方式は使わない(今までの順番の方式。D-301)。"""
     assert not marketmod.uses_offers(None)

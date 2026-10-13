@@ -25,7 +25,7 @@ def test_report_has_all_sections(league, config, draft_class):
         "一軍相当",
         "年齢層別の平均",
         "調整案",
-        "潜在能力と現在の能力の差",
+        "ピークまでの見込みと現在の能力の差",
         "新人(ドラフト候補)",
     ):
         assert heading in text, heading

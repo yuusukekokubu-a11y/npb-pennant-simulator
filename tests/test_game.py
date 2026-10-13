@@ -425,7 +425,7 @@ def test_hidden_info_not_used(league2, game_config):
     for p in b_league.all_players():
         p.hidden.archetype = "other"
         p.hidden.growth_type = "late"
-        p.hidden.potential = {k: v + 30 for k, v in p.hidden.potential.items()}
+        p.hidden.ease = 0.4
     a = simulate_game(*setups(a_league, game_config), random.Random(8), config=game_config)
     b = simulate_game(*setups(b_league, game_config), random.Random(8), config=game_config)
     assert a == b

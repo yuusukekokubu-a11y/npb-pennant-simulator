@@ -291,7 +291,9 @@ class ContractMixin:
         out = {}
         for p in self._contract_players(proc):
             e = proc.negotiations.get(p.id)
-            if e is not None and e["team_id"] == my:
+            if p.id in released and p.id not in team_ids:
+                out[p.id] = ("released", 5, "自由契約")  # 更改済のあとで自由契約にした選手も「自由契約」(交渉の記録は更改済のまま)
+            elif e is not None and e["team_id"] == my:
                 if e["status"] == "accepted":
                     out[p.id] = ("accepted", 3, "更改済")
                 elif e["status"] == "declared":

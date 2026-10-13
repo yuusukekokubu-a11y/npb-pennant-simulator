@@ -1,6 +1,7 @@
 """複数年(F2。D-180〜D-189):年度の確定(加齢・能力の更新・引退・補充)、履歴と通算、保存の版6。"""
 
 import copy
+import re
 import io
 import json
 import random
@@ -12,8 +13,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from pennant import answers, api
-from pennant.abilities import items_for
+from pennant import api
+from pennant.abilities import abilities_for, items_for
 from pennant.config import ConfigError, load_generation_config, load_name_parts
 from pennant.generate import generate_league
 from pennant.offseason import (
@@ -73,19 +74,32 @@ def test_retirement_probability_shape():
     assert retirement_probability(SETTINGS, 40, 20) <= SETTINGS.retirement("cap")
 
 
-# ---- 1人分の更新(D-186):年齢 +1、固定の項目は変えない、潜在能力は変えない ----
+# ---- 1人分の更新(D-186、D-350):年齢 +1、見せる能力に増減を足し、内部の能力を作り直す。伸びやすさは変えない ----
 
-def test_age_and_update_keeps_hidden_potential_and_fixed_items():
+def test_age_and_update_adds_changes_and_refreshes_ratings():
+    from pennant.ability_model import engine_ratings
+
     league = generate_league(3, CONFIG, PARTS)
     p = league.teams[0].players[0]
-    before_potential = dict(p.hidden.potential)
-    before_age = p.age
+    before = dict(p.abilities)
+    before_age, ease = p.age, p.hidden.ease
     rng = random.Random(1)
     changes = age_and_update(p, CONFIG, rng)
-    assert p.age == before_age + 1 and p.hidden.potential == before_potential
-    assert set(changes) == set(items_for(p.role)) and p.state.fatigue == 0
-    for item in items_for(p.role):
-        assert 1 <= p.ratings[item] <= 99
+    assert p.age == before_age + 1 and p.hidden.ease == ease
+    assert set(changes) == set(abilities_for(p.role)) and p.state.fatigue == 0
+    for item in abilities_for(p.role):
+        assert p.abilities[item] == pytest.approx(before[item] + changes[item])
+    assert p.ratings == engine_ratings(CONFIG, p)
+
+
+def test_growth_follows_age_and_ease():
+    """若いうちは伸び(伸びやすさが大きいほど大きく)、ピークを過ぎると衰える(D-350)。"""
+    from pennant import aging
+
+    for item in ("meet", "power", "speed", "velocity"):
+        young = aging.yearly_change(CONFIG, item, 20, "normal", 1.0)
+        assert young > 0 and aging.yearly_change(CONFIG, item, 20, "normal", 1.5) == pytest.approx(young * 1.5)
+        assert aging.yearly_change(CONFIG, item, 35, "normal", 1.5) == aging.yearly_change(CONFIG, item, 35, "normal", 1.0) < 0
 
 
 # ---- 年度の確定の処理(run_offseason):人数・ポジションを保つ、同じ入力で同じ結果 ----
@@ -201,25 +215,23 @@ def test_career_sums_counts_and_war(two_seasons):
     assert [r["season"] for r in page["history"]["rows"]][-1] == "career" and page["history"]["rows"][0]["year"] == 1
 
 
-def test_offseason_answers_are_hidden_from_public_functions(two_seasons):
+def test_offseason_changes_are_public_and_hidden_info_is_not(two_seasons):
+    """オフの能力の増減は見せる(作り直し①)。隠し情報(伸びやすさ・成長タイプ・型・内部の能力)は出さない(D-338)。"""
     g, before, summary = two_seasons
-    text = json.dumps(summary, ensure_ascii=False) + json.dumps(g.stats("batter", "basic", season="career"), ensure_ascii=False) + json.dumps(g.player(summary["rookies"][0]["player_id"]), ensure_ascii=False)
-    for key in ("ratings", "potential", "ability_changes", "growth_type", "archetype", "mean_change"):
-        assert key not in text
-    a = answers.offseason_answers(g, 1, 1)
+    a = g.offseason_changes(1)
+    text = json.dumps([summary, g.stats("batter", "basic", season="career"), g.player(summary["rookies"][0]["player_id"]), a], ensure_ascii=False)
+    for key in ("ratings", "potential", "growth_type", "archetype", "ease", "trajectory_bias"):
+        assert f'"{key}"' not in text
     stayed = [p.id for p in g.state.league.all_players() if p.id in before["players"]]  # オフの前からいた選手(市場で拾われた選手も含む)
     assert a["available"] and a["year"] == 1 and len(a["players"]) == len(stayed)
     row = a["players"][0]
-    pid = row["player_id"]
-    p = next(p for p in g.state.league.all_players() if p.id == pid)
-    item = row["items"][0]
-    assert item["change"] == f"{p.ratings[item['key']] - before['players'][pid][1][item['key']]:+.1f}"
+    assert row["items"] and all(re.fullmatch(r"[+-]\d+", i["change"]) for i in row["items"])
 
 
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 13
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 14
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)
@@ -235,35 +247,6 @@ def test_save_v6_round_trip_and_log_policy(two_seasons):
     g2.advance(2)
     assert war_record(g.war_lines()) == war_record(g2.war_lines())
     assert save_game(g.state, AT) == save_game(g2.state, AT)
-
-
-def test_v5_save_is_converted_to_v6():
-    g = api.Game.new(2, [None] * 12, None, season_seed=5, baselines="default")
-    g.advance(2)
-    data = save_game(g.state)
-    # 版5の形にする:year・history・offseasons と offseason の設定を取り除く
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 5
-    state = json.loads(files["state.json"])
-    for key in ("year", "history", "offseasons"):
-        del state[key]
-    del state["configs"]["offseason"]
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    loaded = load_game(buf.getvalue())
-    assert loaded.year == 1 and loaded.history == [] and loaded.offseasons == [] and loaded.offseason_settings.log_seasons == 1
-    old = api.Game(loaded, dirty=False)
-    assert old.status()["year"] == 1 and old.season_choices() == [{"key": "current", "label": "今シーズン(1シーズン目)"}]
-    old.advance(123)
-    assert old.status()["can_year_end"]
-    old.year_end()
-    assert old.status()["year"] == 2
 
 
 def test_broken_history_is_reported():
@@ -320,18 +303,13 @@ def test_prerun_is_reproducible_and_keeps_roster_shape():
 def test_calibration_shifts_strength_items_only_and_hits_50():
     league = generate_league(1, CONFIG, PARTS)
     prerun(league, 1, CONFIG, PARTS, SETTINGS)
-    before = {p.id: (dict(p.hidden.potential), dict(p.ratings)) for p in league.all_players()}
+    before = {p.id: dict(p.abilities) for p in league.all_players()}
     cal = SETTINGS.calibration("medium")
-    assert cal[BATTER] > 0 and cal[PITCHER] > 0
+    assert cal[BATTER] != 0 and cal[PITCHER] != 0
     apply_calibration(league, cal, CONFIG)
     for p in league.all_players():
-        pot, rat = before[p.id]
-        for item in p.ratings:
-            if item in STYLE_ITEMS:
-                assert p.hidden.potential[item] == pot[item] and p.ratings[item] == rat[item]
-            else:
-                assert p.hidden.potential[item] == pytest.approx(pot[item] + cal[p.role])
-                assert p.ratings[item] == pytest.approx(rat[item] + cal[p.role])
+        for item, v in before[p.id].items():
+            assert p.abilities[item] == pytest.approx(v + cal[p.role])  # 見せる能力をそのまま動かす(潜在能力はない。D-350)
     means = _first_team_means(league)
     assert abs(means[BATTER] - 50) < 0.75 and abs(means[PITCHER] - 50) < 0.75  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60)
 
@@ -350,8 +328,8 @@ def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated(
 
     r0 = make_rookie(CONFIG, NameGenerator(PARTS, random.Random(5), set()), random.Random(5), BATTER, "SS", "X1", 0.0)
     r1 = make_rookie(CONFIG, NameGenerator(PARTS, random.Random(5), set()), random.Random(5), BATTER, "SS", "X1", 4.0)
-    for item in r0.ratings:
-        assert r1.ratings[item] == pytest.approx(r0.ratings[item] + (0.0 if item in STYLE_ITEMS else 4.0))
+    for item in r0.abilities:
+        assert r1.abilities[item] == pytest.approx(r0.abilities[item] + 4.0)
     # 引退の判定は校正前の目盛り(総合値 − 定数)で行うので、定数の有無で引退する人数が大きく変わらない
     r_zero = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, {"batter": 0.0, "pitcher": 0.0})
     r_cal = run_offseason(copy.deepcopy(league), 99, CONFIG, PARTS, SETTINGS, 1, SETTINGS.calibration("medium"))
@@ -366,30 +344,6 @@ def test_game_new_uses_prerun_and_saves_calibration():
     g.advance(1)
     again = load_game(save_game(g.state))
     assert again.calibration == SETTINGS.calibration("medium")
-
-
-def test_v6_save_loads_with_zero_calibration():
-    g = api.Game.new(2, [None] * 12, None, season_seed=5, baselines="default")
-    g.advance(1)
-    data = save_game(g.state)
-    zin = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: zin.read(n) for n in zin.namelist()}
-    manifest = json.loads(files["manifest.json"])
-    manifest["format_version"] = 6
-    state = json.loads(files["state.json"])
-    del state["calibration"]
-    files["manifest.json"] = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    files["state.json"] = json.dumps(state, ensure_ascii=False).encode("utf-8")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for n, b in files.items():
-            zout.writestr(n, b)
-    loaded = load_game(buf.getvalue())
-    assert loaded.calibration == {"batter": 0.0, "pitcher": 0.0}
-    old = api.Game(loaded, dirty=False)
-    old.advance(124)
-    old.year_end()  # 旧版の選手には校正を足さず、新人にも足さない(定数 0)
-    assert old.status()["year"] == 2
 
 
 def test_career_metrics_are_weighted_averages_of_seasons(two_seasons):

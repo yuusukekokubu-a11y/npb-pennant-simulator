@@ -18,13 +18,13 @@ import argparse
 import statistics
 import sys
 
-from pennant.abilities import strength_items_for
+from pennant.abilities import abilities_for
 from pennant.config import load_generation_config, load_name_parts
 from pennant.draft import load_draft_settings, make_candidates, run_ai_offseason, scout_report
 from pennant.newgame import new_league
 from pennant.offseason import age_update_retire, load_offseason_settings
 from pennant.scouting import GRADES, item_sd, overall_sd
-from pennant.stats import overall, potential_overall
+from pennant.stats import overall, projected_overall
 
 
 def _table(headers, rows):
@@ -71,7 +71,7 @@ def main(argv=None):
             picked = {x["player_id"]: x for x in proc.picks if x["player_id"] and x["phase"] == "draft"}
             team_ids = [t.id for t in league.teams]
             for p in whole:  # 候補全体(指名されなかった候補も含む)を、同じ手続きの評価で見る
-                items = strength_items_for(p.role)
+                items = abilities_for(p.role)
                 ns.append(len(items))
                 r1 = scout_report(proc, p, team_ids[0], sd, ds)
                 r2 = scout_report(proc, p, team_ids[0], sd, ds)
@@ -90,7 +90,7 @@ def main(argv=None):
                 overall_errs.append(oe)
                 overall_covered += abs(oe) <= r1.margin
                 pairs.append((es[items[0]], es[items[1]]))
-                by_grade[r1.ceiling].append(potential_overall(p))
+                by_grade[r1.ceiling].append(projected_overall(p))
                 if p.id in picked:
                     drafted.append(overall(p))
                     by_round.setdefault(picked[p.id]["round"], []).append(overall(p))

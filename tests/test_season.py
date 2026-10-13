@@ -261,7 +261,7 @@ def test_hidden_info_not_used(league3):
     a.play_days(10)
     changed = copy.deepcopy(league3)
     for p in changed.all_players():
-        p.hidden.potential = {k: 99.0 for k in p.hidden.potential}
+        p.hidden.ease = 1.8
         p.hidden.growth_type = "late"
         p.hidden.archetype = "other"
     b = Season(changed, 8)

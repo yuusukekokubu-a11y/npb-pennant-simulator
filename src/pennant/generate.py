@@ -1,9 +1,10 @@
-"""架空リーグの生成(段階1・第1弾の実装 ①)。
+"""架空リーグの生成(段階1・第1弾の実装 ①、作り直し①)。
 
-潜在能力の作り方(D-028、D-030):
-  型を選ぶ(打者は守備位置ごとの割合。D-157)→ 型ごとの補正を基準値に足す → 正規分布の乱数を足す
+見せる能力の作り方(D-028、D-030、D-350):
+  型を選ぶ(打者は守備位置ごとの割合。D-157)→ 型ごとの補正を基準値に足す → 正規分布の乱数を足して「ピーク時の水準」を引く
   (初期選手だけ、年齢が高いほど高めにずらす:生き残りバイアス。D-034)
-現在の能力は、潜在能力から年齢カーブで出す(D-031、aging.py)。
+  → 年齢カーブの差を引き、これまでの揺れを足して今の能力にする。ピーク時の水準は保存しない(潜在能力は持たない。D-350)。
+試合の計算に使う内部の能力は、見せる能力から換算する(ability_model.py。D-349)。
 
 乱数はすべて random.Random(seed) から取る。同じシードなら同じ結果になる(D-006)。
 """
@@ -13,14 +14,13 @@ from __future__ import annotations
 import math
 import random
 
-from . import aging
+from . import ability_model, aging
 from .abilities import (
     BATTER,
     FIELDER_POSITIONS,
     PITCHER,
     PITCHER_POSITIONS,
-    STYLE_ITEMS,
-    items_for,
+    abilities_for,
 )
 from .config import ConfigError, GenerationConfig, NameParts, archetype_shares, load_generation_config, load_name_parts
 from .models import HiddenInfo, League, Player, PlayerState, Team
@@ -77,27 +77,25 @@ class _PlayerFactory:
             bias = sb["per_year"] * max(0.0, age - sb["start_age"])
 
         archetype, corrections = self._archetype(role, position)
-        potential: dict[str, float] = {}
-        for item in items_for(role):
-            if item in STYLE_ITEMS:
-                potential[item] = pot_cfg["style_mean"] + corrections[item] + rng.gauss(0, pot_cfg["noise_sd"])
-            else:
-                potential[item] = base + corrections[item] + rng.gauss(0, pot_cfg["noise_sd"]) + bias
+        peak: dict[str, float] = {}
+        for item in abilities_for(role):
+            peak[item] = base + corrections[item] + rng.gauss(0, pot_cfg["noise_sd"]) + bias
 
         growth_type = _weighted_key(rng, cfg["aging"]["growth_types"])
+        ease = ability_model.draw_ease(cfg, rng)
+        trajectory_bias = rng.gauss(0, cfg["abilities"]["trajectory"]["bias_sd"]) if role == BATTER else 0.0
+        pitches = ability_model.draw_pitches(cfg, rng) if role == PITCHER else None
 
         var = cfg["variation"]
         years = max(0.0, age - var["drift_start_age"]) if initial else 0.0
         drift_sd = var["ability_drift_sd_per_year"] * math.sqrt(years)
-        drift: dict[str, float] = {}
-        for item in items_for(role):
+        abilities: dict[str, float] = {}
+        for item in abilities_for(role):
             fixed = aging.group_of(cfg, item) == aging.FIXED_GROUP
-            drift[item] = 0.0 if fixed or drift_sd == 0 else rng.gauss(0, drift_sd)
+            drift = 0.0 if fixed or drift_sd == 0 else rng.gauss(0, drift_sd)
+            # 今の能力 = ピーク時の水準 − 年齢による差 + これまでの揺れ。これからの伸びは毎年の増減で決まる(伸びやすさ次第。D-350)
+            abilities[item] = peak[item] - aging.age_gap(cfg, item, age, growth_type) + drift
 
-        ratings = {
-            item: aging.current_rating(cfg, item, potential[item], age, growth_type, drift[item])
-            for item in items_for(role)
-        }
         form = rng.gauss(0, var["form_sd"]) if var["form_sd"] > 0 else 0.0
         # 投手は投げ手だけ、打者は打席の左右だけを持つ(D-046、D-048)
         hand = cfg["handedness"]
@@ -109,7 +107,7 @@ class _PlayerFactory:
         family, given = self.names.person()
 
         self.count += 1
-        return Player(
+        player = Player(
             id=f"{self.id_prefix}{self.count:04d}",
             family_name=family,
             given_name=given,
@@ -118,11 +116,15 @@ class _PlayerFactory:
             position=position,
             bats=bats,
             throws=throws,
-            ratings=ratings,
-            hidden=HiddenInfo(potential=potential, growth_type=growth_type, archetype=archetype, ability_drift=drift),
+            ratings={},
+            hidden=HiddenInfo(growth_type=growth_type, archetype=archetype, ease=round(ease, 4), trajectory_bias=round(trajectory_bias, 4)),
             state=PlayerState(form=form),
             origin=origin,
+            abilities=abilities,
+            pitches=pitches,
         )
+        ability_model.refresh(cfg, player)
+        return player
 
 
 def _roster_slots(config: GenerationConfig) -> list[tuple[str, str]]:
@@ -215,10 +217,7 @@ def make_rookie(config: GenerationConfig, names: NameGenerator, rng: random.Rand
 
 
 def shift_potential(config: GenerationConfig, player: Player, shift: float) -> None:
-    """校正(D-197):強弱の項目(型の項目を除く)の潜在能力に定数を足し、現在の能力を年齢カーブで出し直す。"""
-    for item in items_for(player.role):
-        if item in STYLE_ITEMS:
-            continue
-        player.hidden.potential[item] += shift
-        player.ratings[item] = aging.current_rating(config, item, player.hidden.potential[item], player.age, player.hidden.growth_type, player.hidden.ability_drift[item])
-
+    """校正(D-197):見せる能力に定数を足し、内部の能力を作り直す(潜在能力はないので、今の能力をそのまま動かす。D-350)。"""
+    for item in abilities_for(player.role):
+        player.abilities[item] += shift
+    ability_model.refresh(config, player)

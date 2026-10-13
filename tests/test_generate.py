@@ -9,10 +9,11 @@ from collections import Counter
 
 import pytest
 
-from pennant import generate_draft_class, generate_league
-from pennant.abilities import BATTER, FIELDER_POSITIONS, PITCHER, STYLE_ITEMS, items_for, strength_items_for
+from pennant import aging, generate_draft_class, generate_league
+from pennant.config import load_generation_config
+from pennant.abilities import BATTER, FIELDER_POSITIONS, PITCHER, abilities_for, items_for
 from pennant.config import archetype_shares, validate_generation_config, default_generation_data
-from pennant.stats import AGE_BINS, calibration_suggestion, overall, potential_overall
+from pennant.stats import AGE_BINS, calibration_suggestion, overall, projected_overall
 
 
 # ---- 受け入れ条件1:同じシードなら同じ結果、違うシードなら違う結果 ----
@@ -53,19 +54,22 @@ def test_league_structure(league, config):
     assert len({p.id for p in league.all_players()}) == 840
 
 
-def test_ratings_have_the_right_items(league):
+def test_abilities_and_ratings_have_the_right_items(league, config):
+    from pennant.ability_model import engine_ratings
+
     for p in league.all_players():
-        assert set(p.ratings) == set(items_for(p.role))
-        assert set(p.hidden.potential) == set(items_for(p.role))
+        assert set(p.abilities) == set(abilities_for(p.role))  # 見せる能力(正本。D-349)
+        assert set(p.ratings) == set(items_for(p.role)) and p.ratings == engine_ratings(config, p)  # 試合の計算の能力は換算
         assert p.role == (PITCHER if p.position in ("SP", "RP") else BATTER)
+        assert (p.pitches is not None and 2 <= len(p.pitches) <= 4 and len({x["type"] for x in p.pitches}) == len(p.pitches)) == (p.role == PITCHER)
 
 
 def test_hidden_information_is_separated(league):
     p = league.all_players()[0]
     data = p.to_dict()
-    # 潜在能力・成長タイプ・生成時の型・能力の揺れは hidden の中だけにある
-    assert set(data["hidden"]) == {"potential", "growth_type", "archetype", "ability_drift"}
-    for key in ("potential", "growth_type", "archetype", "ability_drift"):
+    # 成長タイプ・生成時の型・伸びやすさ・弾道の傾きは hidden の中だけにある。潜在能力は持たない(D-350)
+    assert set(data["hidden"]) == {"growth_type", "archetype", "ease", "trajectory_bias"}
+    for key in ("potential", "growth_type", "archetype", "ease", "trajectory_bias"):
         assert key not in data
 
 
@@ -119,19 +123,21 @@ def test_batter_archetype_shares_by_position(all_players, config):
         assert s["power_hitter"] > 0.3 and s["defensive"] < 0.1
 
 
+CONFIG_FOR_AGING = load_generation_config()
+
+
 def test_position_ability_means_follow_the_shares(all_players):
-    """ポジション別の潜在能力の平均が、狙いの方向(遊撃・捕手・二塁・中堅は守備範囲・走力が高め、一塁・三塁・両翼は長打力が高め。受け入れ条件3)。"""
+    """ポジション別の能力の平均(今の能力には年ごとの揺れも入るので、差の下限は 0.5)が、狙いの方向(遊撃・捕手・二塁・中堅は守備力・走力が高め、一塁・三塁・両翼はパワーが高め。受け入れ条件3)。"""
     batters = [p for p in all_players if p.role == BATTER]
 
-    def mean(pos, item):
-        return statistics.fmean(p.hidden.potential[item] for p in batters if p.position == pos)
+    def mean(pos, item):  # 年齢の差を除くため、ピークの見込みで比べる
+        return statistics.fmean(p.abilities[item] + aging.expected_gain(CONFIG_FOR_AGING, item, p.age, p.hidden.growth_type) for p in batters if p.position == pos)
 
     for defensive_pos in ("C", "SS", "2B", "CF"):
         for corner in ("1B", "3B", "LF", "RF"):
-            assert mean(defensive_pos, "range") > mean(corner, "range") + 1.0, (defensive_pos, corner)
-            assert mean(defensive_pos, "speed") > mean(corner, "speed") + 1.0, (defensive_pos, corner)
-            assert mean(corner, "power") > mean(defensive_pos, "power") + 1.0, (defensive_pos, corner)
-    # 投手の生成は変わらない:球質の割合は従来どおり(test_pitcher_quality_and_role_shares)
+            assert mean(defensive_pos, "defense") > mean(corner, "defense") + 0.5, (defensive_pos, corner)
+            assert mean(defensive_pos, "speed") > mean(corner, "speed") + 0.5, (defensive_pos, corner)
+            assert mean(corner, "power") > mean(defensive_pos, "power") + 0.5, (defensive_pos, corner)
 
 
 def test_pitcher_quality_and_role_shares(all_players, config):
@@ -144,46 +150,38 @@ def test_pitcher_quality_and_role_shares(all_players, config):
         assert p.hidden.archetype.split("/")[0] == p.position
 
 
-def test_growth_type_shares(all_players, config):
+def test_growth_type_and_ease(all_players, config):
     counts = Counter(p.hidden.growth_type for p in all_players)
     for key, entry in config["aging"]["growth_types"].items():
         assert counts[key] / len(all_players) == pytest.approx(entry["share"], abs=0.02)
+    g = config["abilities"]["growth"]
+    eases = [p.hidden.ease for p in all_players]
+    assert statistics.fmean(eases) == pytest.approx(g["ease_mean"], abs=0.02) and all(g["ease_min"] <= e <= g["ease_max"] for e in eases)
 
 
-# ---- 受け入れ条件5:型の補正を入れても、潜在能力の平均が基準値から大きくずれない ----
+# ---- 受け入れ条件5:型の補正を入れても、ピークの見込みの平均が基準値から大きくずれない(D-350) ----
 
-def _potential_means_by_item(players, role):
+def _projected_means_by_item(players, role, config):
+    from pennant import aging
+
     return {
-        item: statistics.fmean(p.hidden.potential[item] for p in players if p.role == role)
-        for item in items_for(role)
+        item: statistics.fmean(p.abilities[item] + aging.expected_gain(config, item, p.age, p.hidden.growth_type) for p in players if p.role == role)
+        for item in abilities_for(role)
     }
 
 
 @pytest.mark.parametrize("role,base_key", [(BATTER, "batter_base_mean"), (PITCHER, "pitcher_base_mean")])
-def test_potential_mean_stays_at_base_for_rookies(draft_class, config, role, base_key):
-    means = _potential_means_by_item(draft_class, role)
-    for item, m in means.items():
-        expected = config["potential"]["style_mean"] if item in STYLE_ITEMS else config["potential"][base_key]
-        assert m == pytest.approx(expected, abs=1.0), item
+def test_peak_mean_stays_at_base_for_rookies(draft_class, config, role, base_key):
+    for item, m in _projected_means_by_item(draft_class, role, config).items():
+        assert m == pytest.approx(config["potential"][base_key], abs=1.0), item
 
 
-@pytest.mark.parametrize("role,base_key", [(BATTER, "batter_base_mean"), (PITCHER, "pitcher_base_mean")])
-def test_potential_mean_stays_at_base_without_survival_bias(names, role, base_key):
-    data = default_generation_data()
-    data["survival_bias"]["per_year"] = 0
-    cfg = validate_generation_config(data)
-    players = [p for seed in range(1, 6) for p in generate_league(seed, cfg, names).all_players()]
-    for item, m in _potential_means_by_item(players, role).items():
-        expected = cfg["potential"]["style_mean"] if item in STYLE_ITEMS else cfg["potential"][base_key]
-        assert m == pytest.approx(expected, abs=1.0), item
-
-
-# ---- 受け入れ条件6:初期選手は年齢が高い層ほど潜在能力が高い。新人ではその傾向がない ----
+# ---- 受け入れ条件6:初期選手は年齢が高い層ほど能力が高い(生き残りバイアス)。新人ではその傾向がない ----
 
 def test_survival_bias_in_initial_players(all_players):
     means = []
     for lo, hi in AGE_BINS[:4]:  # 38 歳以上は人数が少ないので除く
-        group = [potential_overall(p) for p in all_players if lo <= p.age <= hi]
+        group = [projected_overall(p) for p in all_players if lo <= p.age <= hi]
         means.append(statistics.fmean(group))
     assert means == sorted(means)
     assert means[-1] - means[0] > 3.0
@@ -192,33 +190,19 @@ def test_survival_bias_in_initial_players(all_players):
 def test_no_age_trend_in_rookies(draft_class):
     by_origin = {}
     for key in ("high_school", "college", "corporate"):
-        by_origin[key] = statistics.fmean(potential_overall(p) for p in draft_class if p.origin == key)
-    assert max(by_origin.values()) - min(by_origin.values()) < 1.0
+        by_origin[key] = statistics.fmean(projected_overall(p) for p in draft_class if p.origin == key)
+    assert max(by_origin.values()) - min(by_origin.values()) < 1.5
 
 
-# ---- 受け入れ条件7:若い層は現在の能力が潜在能力より低い。「固定」は年齢で変わらない ----
+# ---- 受け入れ条件7:若い層は今の能力がピークの見込みより低い ----
 
-def test_young_players_are_below_potential(all_players):
+def test_young_players_are_below_their_peak(all_players):
     young = [p for p in all_players if p.age <= 22]
-    gap = statistics.fmean(potential_overall(p) - overall(p) for p in young)
+    gap = statistics.fmean(projected_overall(p) - overall(p) for p in young)
     assert gap > 5.0
 
 
-def test_fixed_group_does_not_change_with_age(all_players, draft_class):
-    for p in all_players + draft_class:
-        for item in STYLE_ITEMS:
-            assert p.ratings[item] == p.hidden.potential[item]
-            assert p.hidden.ability_drift[item] == 0.0
-
-
-def test_rookies_have_no_ability_drift(draft_class):
-    for p in draft_class:
-        assert all(v == 0.0 for v in p.hidden.ability_drift.values())
-
-
-def test_initial_players_have_drift_and_form(all_players):
-    older = [p for p in all_players if p.age >= 30]
-    assert any(v != 0.0 for p in older for v in p.hidden.ability_drift.values())
+def test_initial_players_have_form(all_players):
     assert statistics.stdev(p.state.form for p in all_players) > 1.0
 
 
@@ -277,8 +261,3 @@ def test_handedness(all_players, config):
     bats = Counter(p.bats for p in batters)
     for key, share in hand["bats"].items():
         assert bats[key] / len(batters) == pytest.approx(share, abs=0.02)
-
-
-def test_strength_items_exclude_style():
-    for role in (BATTER, PITCHER):
-        assert not set(strength_items_for(role)) & set(STYLE_ITEMS)

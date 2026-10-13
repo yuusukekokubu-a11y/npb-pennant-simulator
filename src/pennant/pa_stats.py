@@ -10,7 +10,7 @@ import random
 from collections import Counter
 from typing import Iterable, Mapping
 
-from .abilities import BATTER, FIELDER_POSITIONS, ITEM_LABELS, PITCHER, POSITION_LABELS, items_for
+from .abilities import BATTER, FIELDER_POSITIONS, ITEM_LABELS, PITCHER, POSITION_LABELS, abilities_for, items_for
 from .config import GenerationConfig
 from .models import HiddenInfo, League, Player, PlayerState
 from .plate_appearance import RESULT_LABELS, RESULTS, BaseOutState, OddsRatioModel, PlateAppearance
@@ -20,7 +20,8 @@ from .stats import first_team, overall
 
 
 def average_player(role: str, pid: str = "AVG", ratings: Mapping[str, float] | None = None, **attrs) -> Player:
-    """全能力 50 の選手。ratings で一部の能力を、attrs で左右などを変えられる。"""
+    """全能力 50 の選手。ratings で一部の内部の能力(試合の計算に使う)を、attrs で左右などを変えられる。
+    見せる能力も 50 にそろえる(ratings を変えても見せる能力は変えない。確認・テスト用)。"""
     r = {item: 50.0 for item in items_for(role)}
     r.update(ratings or {})
     defaults = {"bats": "R", "throws": None} if role == BATTER else {"bats": None, "throws": "R"}
@@ -33,8 +34,10 @@ def average_player(role: str, pid: str = "AVG", ratings: Mapping[str, float] | N
         role=role,
         position="SP" if role == PITCHER else "C",
         ratings=r,
-        hidden=HiddenInfo(potential=dict(r), growth_type="normal", archetype="-", ability_drift={i: 0.0 for i in r}),
+        hidden=HiddenInfo(growth_type="normal", archetype="-"),
         state=PlayerState(form=0.0),
+        abilities={item: 50.0 for item in abilities_for(role)},
+        pitches=[{"type": "slider", "weight": 1.0}, {"type": "curve", "weight": 1.0}] if role == PITCHER else None,
         **defaults,
     )
 

@@ -108,12 +108,19 @@ def test_item_in_two_aging_groups():
     assert "1項目は1グループだけ" in _errors(data)
 
 
-def test_style_item_must_be_fixed():
+def test_every_ability_needs_an_aging_group():
     data = default_generation_data()
-    data["aging"]["groups"]["fixed"]["items"] = []
-    data["aging"]["groups"]["technical"]["items"].append("gb_fb")
+    data["aging"]["groups"]["technical"]["items"].remove("meet")
+    assert "能力「meet」がどのグループにも入っていません" in _errors(data)
+
+
+def test_ability_engine_table_is_checked():
+    """見せる能力から内部の能力への換算表(D-349):知らない見せる能力・知らない内部の項目は設定の誤り。"""
+    data = default_generation_data()
+    data["abilities"]["engine"]["batter"]["contact"] = {"velocity": 1.0}
+    data["abilities"]["engine"]["pitcher"]["xyz"] = 50
     message = _errors(data)
-    assert "gb_fb" in message
+    assert "abilities.engine.batter.contact.velocity" in message and "abilities.engine.pitcher.xyz" in message
 
 
 def test_age_range_must_be_ordered():

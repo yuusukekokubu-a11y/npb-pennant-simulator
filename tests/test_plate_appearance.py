@@ -232,8 +232,7 @@ def test_hidden_info_and_names_are_not_used(model, all_players):
         other.family_name, other.given_name, other.age = "別人", "太郎", other.age + 9
         other.hidden.archetype = "something_else"
         other.hidden.growth_type = "late" if player.hidden.growth_type != "late" else "early"
-        other.hidden.potential = {k: v + 25 for k, v in player.hidden.potential.items()}
-        other.hidden.ability_drift = {k: 3.0 for k in player.hidden.ability_drift}
+        other.hidden.ease = 1.6
         return other
 
     assert model.probabilities(disguise(batter), disguise(pitcher), defense) == base

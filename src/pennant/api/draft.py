@@ -158,7 +158,7 @@ class DraftMixin:
 
     def draft_review(self, team_id: str | None = None, year: int | None = None) -> dict:
         """ドラフトの振り返り(公開用):入団の経路、入団時の総合の推定値とふれ幅・天井、今の所属、出場と WAR の累計(D-216)。
-        真の能力は含めない(答え合わせ用は answers.draft_review_answers)。"""
+        真の能力は含めない(ドラフト候補の能力は見せない。D-342)。"""
         state = self.state
         names = self._team_names()
         years = self.review_years()
@@ -215,7 +215,7 @@ class DraftMixin:
                 }
             )
         out["rows"] = rows
-        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の評価は、そのときの {names[team_id]} のスカウトの推定値 ± ふれ幅と天井(S〜D)。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。答え合わせモードをオンにすると、今の真の総合と、入団時の推定値との差、実際の天井が並びます。"
+        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の評価は、そのときの {names[team_id]} のスカウトの推定値 ± ふれ幅と天井(S〜D)。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。"
         return out
 
     def transactions(self, year: int | None = None) -> dict:

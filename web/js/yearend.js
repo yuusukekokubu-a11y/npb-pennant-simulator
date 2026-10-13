@@ -1,7 +1,7 @@
 // 年度の確定と、オフの結果(web/app.js から分けた。保守②。D-291)
 
 import { $, STATS_PAGE, freshProc, state } from "./core.js";
-import { answer, call, query } from "./backend.js";
+import { call, query } from "./backend.js";
 import { current, openPage, renderCurrent, showScreen } from "./screens.js";
 import { el, playerLink, table } from "./parts.js";
 import { renderProgress, setDirty } from "./progress.js";
@@ -77,20 +77,16 @@ export async function renderOffseason(args, token) {
   if (token !== state.token) return;
   if (!d.available) {
     $("offseason-counts").textContent = "まだ年度を確定していません。";
-    for (const id of ["offseason-retired", "offseason-rookies", "offseason-answers"]) $(id).replaceChildren();
+    for (const id of ["offseason-retired", "offseason-rookies", "offseason-changes"]) $(id).replaceChildren();
     return;
   }
   $("offseason-title").textContent = `オフの結果(${d.year}シーズン目の終わり)`;
   $("offseason-counts").textContent = `引退 ${d.counts.retired}人 / 新人 ${d.counts.rookies}人 / 選手の数 ${d.counts.players}人(変わりません)`;
   $("offseason-retired").replaceChildren(d.retired.length ? playerTable(d.retired, false) : el("p", { className: "muted" }, "引退した選手はいません。"));
   $("offseason-rookies").replaceChildren(d.rookies.length ? playerTable(d.rookies, true) : el("p", { className: "muted" }, "入団した新人はいません。"));
-  const box = $("offseason-answers");
-  if (state.answerLevel === 0) {
-    box.replaceChildren(el("p", { className: "info" }, "答え合わせモードをオンにすると見られます(上の「メニュー」から)。"));
-    return;
-  }
-  const a = await answer("offseason_answers", { year: d.year });
-  if (token !== state.token || state.answerLevel === 0) return;
+  const box = $("offseason-changes"); // 能力の増減(作り直し①:能力はいつでも見える)
+  const a = await query("offseason_changes", { year: d.year });
+  if (token !== state.token) return;
   const columns = [{ key: "age", label: "年齢" }, { key: "mean_change", label: "平均の増減" }, { key: "items", label: "項目ごと" }];
   box.replaceChildren(
     table({
@@ -99,8 +95,8 @@ export async function renderOffseason(args, token) {
       rows: a.players.map((r) => ({ ...r, values: { age: `${r.age}歳`, mean_change: r.mean_change, items: r.items.map((i) => `${i.label}${i.change}`).join(" ") } })),
       first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
       rowClass: (r) => (r.is_mine ? "mine" : ""),
-      limit: args.answersShown || STATS_PAGE,
-      more: () => { args.answersShown = (args.answersShown || STATS_PAGE) + STATS_PAGE; renderCurrent(); },
+      limit: args.changesShown || STATS_PAGE,
+      more: () => { args.changesShown = (args.changesShown || STATS_PAGE) + STATS_PAGE; renderCurrent(); },
     }),
   );
 }

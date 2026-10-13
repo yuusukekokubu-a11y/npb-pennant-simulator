@@ -46,7 +46,7 @@ c = load_generation_config()
 words = {v["label"] for v in c["aging"]["growth_types"].values()} | {v["label"] for v in c["batter_archetypes"].values()}
 words |= {v["label"] for v in c["pitcher_qualities"].values()} | {v["label"] for v in c["pitcher_roles"].values()}
 words -= {"標準"}  # ふつうの文章にも出る短い言葉は除く
-print(json.dumps({"words": sorted(words), "keys": ["ratings", "potential", "growth_type", "archetype", "ability_drift", "hidden", "park", "home_run_multiplier"]}, ensure_ascii=False))
+print(json.dumps({"words": sorted(words), "keys": ["ratings", "potential", "growth_type", "archetype", "ease", "trajectory_bias", "hidden", "park", "home_run_multiplier"]}, ensure_ascii=False))
 `));
 
 const browser = await chromium.launch();
@@ -328,7 +328,7 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 18 && ["OPS", "wOBA", "本塁打", "BABIP"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標がある(${sortOptions.length}個)`);
+check(sortOptions.length === 18 + 7 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目。作り直し①)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
@@ -479,13 +479,23 @@ await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th"
 await page.click("#stats-table th button.sort >> text=FIP");
 await waitStats("FIP(低い順)");
 
-// 能力:オフのときは「オンにすると見られます」だけ
+// 能力(作り直し①。D-335):いつでも見られる。並び順(FIP の低い順。固定列)を保ったまま出る
 await page.click("#stats-kind button[data-value=ability]");
-await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("答え合わせモードをオンにすると見られます"));
-check((await page.locator("#stats-table table").count()) === 0, "答え合わせモードがオフのとき、「能力」は表を出さない");
-const offOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(!offOptions.some((o) => HIDDEN.words.includes(o)) && !(await page.$$eval("#stats-sort optgroup", (gs) => gs.some((g) => g.label.includes("能力")))), "オフのとき、並び順の欄に能力の項目が出ない");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("スタミナ")) && document.querySelectorAll("#stats-table tbody tr").length > 0);
+const pyAbility = pyGame(`
+t = g.ability_table("pitcher", sort="fip", order="asc")
+keys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]
+print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`);
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `「能力」の表が、並び順(FIP の低い順。固定列)を保ったまま出る(計算本体と同じ。${screenRows.length}人)`);
+check(screenRows.every((r) => /^\d{3}km\/h$/.test(r[2]) && /^[SABCDEFG] \d{1,3}$/.test(r[3]) && /^[SABCDEFG] \d{1,3}$/.test(r[4])), "能力は 球速 km/h・ランクと 1〜100 で表示(D-347)");
+check((await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label))).includes("能力"), "並び順の欄に能力の項目が出る");
 await grab();
+await page.selectOption("#stats-sort", "stamina");
+await waitStats("スタミナ(高い順)");
+check((await headsOnScreen())[1] !== "FIP", "並び順の欄で能力の項目を選ぶと、その項目で並び替わり、固定列は消える");
+await page.selectOption("#stats-sort", "fip");
+await waitStats("FIP(低い順)");
 
 // 選手のページ
 await page.click("#stats-kind button[data-value=basic]");
@@ -501,11 +511,10 @@ const seasonOnScreen = await page.$$eval("#player-season td", (tds) => tds.map((
 check(JSON.stringify(seasonOnScreen) === JSON.stringify(pyPlayer.season), `選手のページのシーズン通算が、計算本体と同じ(${pitcherName})`);
 const gameDays = await page.$$eval("#player-games tbody td.sticky .link", (ls) => ls.map((l) => Number(l.textContent.replace("日目", ""))));
 check(JSON.stringify(gameDays) === JSON.stringify(pyPlayer.games.slice(0, 20)), `試合ごとの成績が新しい順(${gameDays.length}試合)`);
-await page.click("#player-kind button[data-value=ability]");
-await page.waitForFunction(() => document.querySelector("#player-season").textContent.includes("答え合わせモードをオンにすると見られます"));
-check(true, "選手のページの「能力」は、オフなら「答え合わせモードをオンにすると見られます」だけ");
+const abilitiesPy = pyGame(`print(json.dumps([[x["label"], x["text"]] for x in g.player(a["id"])["player"]["abilities"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
+const abilitiesOnScreen = await page.$$eval("#player-abilities .ability", (els) => els.map((e) => [e.querySelector(".ability-label").textContent, e.querySelector(".ability-value").textContent]));
+check(JSON.stringify(abilitiesOnScreen) === JSON.stringify(abilitiesPy), `選手のページの上に能力が出る(${abilitiesPy.map((x) => x.join(" ")).join("・")})`);
 await grab();
-await page.click("#player-kind button[data-value=basic]");
 
 // 試合のページ(文章ログが、確認用の形式と同じ内容か)
 await page.click("#player-games tbody tr:first-child td.sticky .link");
@@ -546,7 +555,7 @@ const homeTeamId = pyGame(`print(json.dumps(g.last_day_games()["games"][0]["home
 const stadiumPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([d["name"], str(d["games"]), str(d["home_runs"]), d["home_runs_per_game"], d["runs_per_game"]], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
 const stadiumOnScreen = [await page.textContent("#stadium-name"), ...(await page.$$eval("#stadium-record td", (tds) => tds.map((td) => td.textContent)))];
 check(JSON.stringify(stadiumOnScreen) === JSON.stringify(stadiumPy), `球場のページの実際の結果(試合・本塁打・本塁打/試合・得点/試合)が、計算本体と同じ(${stadiumPy[0]})`);
-check((await page.textContent("#stadium-answers")).includes("答え合わせモードをオンにすると見られます") && !/\d\.\d{3}/.test(await page.textContent("#stadium-answers")), "オフのとき、球場のページに真の倍率が出ない");
+check((await page.locator("#stadium-answers").count()) === 0 && !/\b[01]\.\d{3}\b/.test(await page.textContent("#stadium-record")), "球場のページに真の倍率が出ない(答え合わせモードはなくした)");
 // 本拠地とアウェイの比較の表と、推定(1シーズン目は「まだ推定できません」)(②b)
 const cmpOnScreen = await page.$$eval("#stadium-compare tbody tr", (trs) => trs.map((tr) => [...tr.children].slice(1).map((td) => td.textContent)));
 const cmpPy = pyGame(`d = g.stadium(a["id"])\nprint(json.dumps([[d["this_season"][k][c] for c in ("home", "away", "ratio")] for k in ("home_run", "babip", "runs")], ensure_ascii=False))`, JSON.stringify({ id: homeTeamId }));
@@ -556,67 +565,13 @@ check((await page.textContent("#stadium-estimate")).includes("まだ推定でき
 await page.click("#screen-stadium .back");
 await page.click("#screen-game .back");
 
-// 答え合わせモードがオフの間に届いたメッセージに、隠し情報がない
+// 裏の計算から届いたメッセージに、隠し情報(成長タイプ・型の名前、伸びやすさなど)がない(D-338)
 const offMessages = await page.evaluate(() => window.__messages.join("\n"));
 const leaked = [...HIDDEN.words.filter((w) => offMessages.includes(w)), ...HIDDEN.keys.filter((k) => offMessages.includes(`"${k}"`))];
-check(leaked.length === 0, `答え合わせモードがオフの間、裏の計算から届いたメッセージに隠し情報がない${leaked.length ? `(見つかった: ${leaked.join("、")})` : ""}`);
-
-// 答え合わせモードをオンにする(確認が出る)→ 能力が見える → オフに戻すと消える
-let dialogText = "";
-page.once("dialog", (d) => { dialogText = d.message(); d.accept(); });
-await page.click("#menu");
-await page.check("input[name=answer-level][value='2']");
-check(dialogText.includes("見ると、成績から実力を推理する楽しみが減ります"), "オンにするとき、確認が出る");
-check(await page.isVisible("#answer-badge"), "オンの間は、上の帯に「答え合わせモード」と出る");
-await page.click("#screen-settings .back");
-await page.click("#tabs button[data-tab=stats]");
-await page.click("#stats-kind button[data-value=ability]");
-await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.startsWith("スタミナ")) && document.querySelectorAll("#stats-table tbody tr").length > 0);
-const pyAbility = pyGame(`
-from pennant import answers
-t = answers.ability_table(g, "pitcher", 2, sort="fip", order="asc")
-keys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]
-print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`);
-screenRows = await statsOnScreen();
-const abilityText = await page.textContent("#stats-table");
-check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `オンのとき、「能力」の表が、並び順(FIP の低い順。固定列)を保ったまま出る(答え合わせ用の関数と同じ。${screenRows.length}人)`);
-check(screenRows.every((r) => r.slice(2, 10).every((v) => /^(20|25|30|35|40|45|50|55|60|65|70|75|80)[+-]?$/.test(v))), "能力は 20〜80・5刻みで表示");
-const onOptions = await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label));
-check(onOptions.some((g) => g.includes("能力")), "オンのとき、並び順の欄に能力の項目も出る");
-// 答え合わせモードがオンなら、球場のページに真の倍率が出る(段階1以上)
-await page.click("#tabs button[data-tab=standings]");
-await page.click("#standings-body tr:first-child .link");
-await page.waitForFunction(() => document.querySelector("#team-info .link") !== null);
-const firstTeamId = pyGame(`lg = next(l for l in g.standings()["leagues"] if any(r["is_mine"] for r in l["rows"]))\nprint(json.dumps(lg["rows"][0]["team_id"]))`);
-await page.click("#team-info .link");
-await page.waitForFunction(() => document.querySelectorAll("#stadium-answers td").length === 2);
-const parkPy = pyGame(`from pennant import answers\na2 = answers.stadium_answers(g, a["id"], 2)\nprint(json.dumps([a2["home_run"]["text"], a2["babip"]["text"]]))`, JSON.stringify({ id: firstTeamId }));
-const parkOnScreen = await page.$$eval("#stadium-answers td", (tds) => tds.map((td) => td.textContent));
-check(JSON.stringify(parkOnScreen) === JSON.stringify(parkPy), `オンのとき、球場のページに真の倍率が出る(本塁打 ${parkPy[0]}・BABIP ${parkPy[1]}。答え合わせ用の関数と同じ)`);
-await page.click("#screen-stadium .back");
-// 答え合わせモードがオンなら、選手のページの契約の箱に志望の重みが出る(F3-2b。D-245)
-await page.click("#team-salaries tbody tr:first-child .link");
-await page.waitForSelector("#player-preference", { timeout: 30000 });
-const prefPid = pyGame(`print(json.dumps(g.team(a["id"])["salaries"][0]["player_id"]))`, JSON.stringify({ id: firstTeamId }));
-const prefPy = pyGame(`from pennant import answers\nprint(json.dumps("・".join(f'{x["label"]} {x["text"]}' + ("" if x["active"] else "(効かない)") for x in answers.player_answers(g, a["id"], 2)["preference"]), ensure_ascii=False))`, JSON.stringify({ id: prefPid }));
-check((await page.textContent("#player-preference")) === `志望(答え合わせ):${prefPy}`, `オンのとき、選手のページに志望の重みが出る(${prefPy}。答え合わせ用の関数と同じ)`);
-await page.click("#screen-player .back");
-await findBlocks();
-await page.click("#screen-team .back");
+check(leaked.length === 0, `裏の計算から届いたメッセージに隠し情報がない${leaked.length ? `(見つかった: ${leaked.join("、")})` : ""}`);
+check((await page.locator("input[name=answer-level]").count()) === 0, "メニューに答え合わせモードがない(D-338)");
 await page.click("#tabs button[data-tab=stats]");
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
-await page.selectOption("#stats-sort", "stamina");
-await waitStats("スタミナ(高い順)");
-check((await headsOnScreen())[1] !== "FIP", "並び順の欄で能力の項目を選ぶと、その項目で並び替わり、固定列は消える");
-check(HIDDEN.words.some((w) => abilityText.includes(w)), "オンのときは、能力の項目名・成長タイプなどが表示される");
-await page.click("#menu");
-await page.check("input[name=answer-level][value='0']");
-await page.click("#screen-settings .back");
-await page.waitForFunction(() => document.querySelector("#stats-info").textContent.includes("答え合わせモードをオンにすると見られます"));
-const afterOff = await page.evaluate(() => document.documentElement.textContent);
-const left = HIDDEN.words.filter((w) => afterOff.includes(w));
-check(left.length === 0, `オフに戻すと、能力の表示が画面(隠れている画面も含む)から消える${left.length ? `(残っている: ${left.join("、")})` : ""}`);
-check((await page.textContent("#stadium-answers")) === "", "オフに戻すと、球場のページの真の倍率も消える");
 await page.click("#stats-kind button[data-value=basic]");
 await page.click("#stats-role button[data-value=batter]");
 await page.click("#tabs button[data-tab=progress]");
@@ -795,7 +750,7 @@ print(json.dumps([v["roster_counts"], v["status_labels"], v["players"]], ensure_
 const infoAfter = await page.textContent("#proc-info");
 const wantInfo = `${autoPy[2]} 人:` + ["unoffered", "refused", "accepted", "declared", "released", "contracted"].filter((k) => autoPy[0][k]).map((k) => `${autoPy[1][k]} ${autoPy[0][k]}`).join("・");
 check(infoAfter === wantInfo, `「自動案で更改」で全員に提示し、状態の内訳が計算本体と同じ(「${infoAfter}」。${raSeconds.toFixed(2)} 秒)`);
-check(!(await page.textContent("#proc-body")).includes("志望(答え合わせ)"), "答え合わせモードがオフのとき、契約の画面に志望の重みは出ない(D-245)");
+check(!(await page.textContent("#proc-body")).includes("志望"), "契約の画面に志望の重みは出ない(D-245、D-338)");
 // 状態の絞り込み「保留」:断った選手だけ
 await page.selectOption("#contract-status", "refused");
 await page.waitForFunction(() => document.querySelector("#contract-status").value === "refused" && (document.querySelector("#contract-empty") || [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("保留"))));
@@ -835,10 +790,9 @@ for (let i = 0; i < 40; i++) {
 // 契約が残る選手(更改済・複数年の途中)も「自由契約にする」で手放せる(残りの契約は消える)
 await page.selectOption("#contract-status", "accepted");
 await page.waitForFunction(() => document.querySelector("#contract-status").value === "accepted" && document.querySelectorAll("#proc-body tbody tr").length > 0);
-const keptName = pyAfter(`print(json.dumps(next(r["name"] for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"]), ensure_ascii=False))`); // 最低人数を割らない選手
+const [keptName, keptPid] = pyAfter(`print(json.dumps(next([r["name"], r["player_id"]] for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"]), ensure_ascii=False))`); // 最低人数を割らない選手
 await page.click(`#proc-body tbody tr .name-cell .link:text-is("${keptName}")`);
-await page.waitForSelector("#offer-release");
-const keptPid = await page.$eval("#offer-panel", (b) => b.dataset.playerId);
+await page.waitForSelector(`#offer-panel[data-player-id="${keptPid}"] #offer-release`); // 前に開いていたパネルが残っている間に読まないよう、押した選手のパネルを待つ
 check(!(await page.$("#offer-send")) && (await page.textContent("#offer-panel")).includes("残り"), "契約が残る選手のパネルは、契約(年俸・残り年数)と「自由契約にする」だけ");
 const beforeKept = await page.textContent("#proc-info");
 await page.click("#offer-release");
@@ -1019,12 +973,13 @@ const retiredOnScreen = await page.$$eval("#offseason-retired tbody tr td .link"
 const rookiesOnScreen = await page.$$eval("#offseason-rookies tbody tr td .link", (as) => as.map((a) => a.textContent));
 const countsText = await page.textContent("#offseason-counts");
 check(JSON.stringify(retiredOnScreen) === JSON.stringify(offPy[3]) && JSON.stringify(rookiesOnScreen) === JSON.stringify(offPy[4]) && countsText.includes(`引退 ${offPy[0]}人`) && countsText.includes(`新人 ${offPy[1]}人`) && countsText.includes(`${offPy[2]}人`), `オフの結果(引退 ${offPy[0]}人・入団 ${offPy[1]}人・選手 ${offPy[2]}人)が、計算本体で同じ操作をした結果と同じ`);
-check((await page.textContent("#offseason-answers")).includes("答え合わせモードをオンにすると") && !/[+-]\d\.\d/.test(await page.textContent("#offseason-answers")), "オフのとき、オフの結果に能力の増減は出ない");
-// 入団した新人の選手ページに、入団時のスカウト評価が出る(答え合わせモードがオフなら真の能力は出ない)
+const changesPy = pyYear2(`x = g.offseason_changes(None)\nprint(json.dumps([len(x["players"]), x["players"][0]["mean_change"]]))`);
+const changeRows = await page.$$eval("#offseason-changes tbody tr", (trs) => trs.length);
+check(changesPy[0] > 700 && changeRows > 0 && /^[+-]\d+\.\d$/.test(changesPy[1]), `オフの結果に、残った選手(${changesPy[0]}人)の能力の増減が出る(作り直し①。先頭 ${changesPy[1]})`);
+// 入団した新人の選手ページに、能力が出る(プロのスカウト評価は見せない。D-352)
 await page.click("#offseason-rookies tbody tr td .link >> nth=0");
-await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && !document.querySelector("#player-scouting-box").hidden);
-const scoutText = await page.textContent("#player-scouting");
-check(scoutText.includes("±") && scoutText.includes("天井") && !scoutText.includes("真の能力"), "入団した選手のページに、入団時のスカウト評価(推定 ± 幅、天井)が出る。オフなら真の能力は出ない");
+await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelectorAll("#player-abilities .ability").length > 0);
+check((await page.locator("#player-scouting-box").count()) === 0, "入団した選手のページに能力が出て、スカウト評価の箱はない");
 await page.click("#screen-player .back");
 check(await isDirty(), "年度を確定したあとは「未保存」になる");
 await grab();
@@ -1042,7 +997,7 @@ const reviewRows = async () => page.$$eval("#review-table tbody tr", (trs) => tr
 let reviewOnScreen = await reviewRows();
 const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の総合 ± ふれ幅・今の所属・WAR 累計)`);
-check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-answers")).trim() && !(await page.textContent("#review-note")), "オフのとき、振り返りに真の総合・差・実際の天井の列は出ない");
+check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-note")), "振り返りに真の総合・差・実際の天井の列は出ない(答え合わせモードはなくした)");
 check(reviewOnScreen.every((r) => /^ドラフト \d 巡$|^市場$|^自動補充$/.test(r[1]) && /^\d+ ± \d+$/.test(r[2])), "経路は「ドラフト n 巡」「市場」「自動補充」、入団時の総合は「推定値 ± ふれ幅」の形");
 await grab();
 // 別の球団を選ぶと、その球団の入団者になる
@@ -1051,27 +1006,6 @@ const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["na
 await page.waitForFunction(([n, top]) => document.querySelector("#review-loading").hidden && document.querySelectorAll("#review-table tbody tr").length === n && document.querySelector("#review-table tbody tr td").textContent === top, [reviewT05Py.length, reviewT05Py[0][0]], { timeout: 60000 });
 reviewOnScreen = await reviewRows();
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);
-// 答え合わせモードをオンにすると、真の総合・差・実際の天井と、球団ごとの「見る目」の目安が出る
-await page.click("#screen-review .back");
-await page.click("#menu");
-await page.check("input[name=answer-level][value='1']");
-await page.click("#screen-settings .back");
-await page.click("#open-review");
-await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-answers tbody tr").length > 0, null, { timeout: 60000 });
-const reviewAnsPy = pyYear2(`from pennant import answers\nv = g.draft_review("T05")\na = answers.draft_review_answers(g, "T05", None, 1)\nprint(json.dumps([[a["players"][r["player_id"]]["overall"], a["players"][r["player_id"]]["diff"], a["players"][r["player_id"]]["actual_ceiling"]] if r["player_id"] in a["players"] else ["-", "-", "-"] for r in v["rows"]] + [[a["league"]["count"], a["league"]["mean"], a["league"]["sd"]]], ensure_ascii=False))`);
-const reviewTruth = await page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.children[9].textContent, tr.children[10].textContent, tr.children[11].textContent]));
-const leagueRow = await page.$$eval("#review-answers tbody tr:last-child td", (tds) => tds.map((td) => td.textContent));
-check(JSON.stringify(reviewTruth) === JSON.stringify(reviewAnsPy.slice(0, -1)) && leagueRow[0].startsWith("リーグ全体") && leagueRow[1] === String(reviewAnsPy.at(-1)[0]) && leagueRow[2] === reviewAnsPy.at(-1)[1] && leagueRow[3] === reviewAnsPy.at(-1)[2], `オンのとき、今の真の総合・差・実際の天井と、球団ごとの差の平均・標準偏差(リーグ全体 ${leagueRow[1]} 人、差の平均 ${leagueRow[2]})が、答え合わせ用の関数と同じ`);
-check((await page.textContent("#review-note")) === "入団直後は、差がマイナスに偏りやすい。", "オンのとき、差の列の読み違いを防ぐ 1 行の注意書きが出る(D-310)");
-check((await page.$$eval("#review-answers tbody tr", (trs) => trs.length)) === 13, "「見る目」の目安の表は 12 球団 + リーグ全体(球団の選択は T05 のまま保たれる)");
-await grab();
-await page.click("#screen-review .back");
-await page.click("#menu");
-await page.check("input[name=answer-level][value='0']");
-await page.click("#screen-settings .back");
-await page.click("#open-review");
-await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-table tbody tr").length > 0 && document.querySelectorAll("#review-table thead th").length === 9);
-check(!(await page.textContent("#review-answers")).trim(), "オフに戻すと、振り返りの真の値と「見る目」の表は消える");
 await page.click("#screen-review .back");
 // 成績:シーズンの選択(今シーズン・1シーズン目・通算)
 await page.click("#tabs button[data-tab=stats]");
@@ -1144,20 +1078,6 @@ check(y2[0] === 2 && y2[1] === 1 && JSON.stringify(y2[2]) === JSON.stringify(["l
 const y2Messages = await page.evaluate(() => window.__messages.join("\n"));
 const leakedY2 = [...HIDDEN.words.filter((w) => y2Messages.includes(w)), ...HIDDEN.keys.filter((k) => y2Messages.includes(`"${k}"`))];
 check(leakedY2.length === 0, `年度の確定の前後に届いたメッセージにも、隠し情報がない${leakedY2.length ? `(見つかった: ${leakedY2.join("、")})` : ""}`);
-// 答え合わせモードをオンにすると、オフの結果に能力の増減が出る
-await page.click("#menu");
-await page.check("input[name=answer-level][value='1']");
-await page.click("#screen-settings .back");
-await page.click("#tabs button[data-tab=stats]");
-await page.selectOption("#stats-season", "current");
-await page.click("#stats-kind button[data-value=basic]");
-await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 || document.querySelector("#stats-table").textContent.includes("条件に合う選手"));
-// オフの結果のページは、進行の画面から開き直せないので、確定の直後に出したページと同じ内容を問い合わせで確かめる
-const ansPy = pyYear2(`from pennant import answers\nx = answers.offseason_answers(g, None, 1)\nprint(json.dumps([len(x["players"]), x["players"][0]["mean_change"]]))`);
-check(ansPy[0] > 700 && /^[+-]\d+\.\d$/.test(ansPy[1]), `答え合わせ用の関数で、残った選手(${ansPy[0]}人)の能力の増減が見られる(先頭 ${ansPy[1]})`);
-await page.click("#menu");
-await page.check("input[name=answer-level][value='0']");
-await page.click("#screen-settings .back");
 // 1シーズン目の終わりのセーブデータに戻して、以降の確認を続ける
 await page.reload();
 await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });

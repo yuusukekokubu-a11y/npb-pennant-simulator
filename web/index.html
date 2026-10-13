@@ -19,11 +19,14 @@
     --table-name-w: calc(8.28rem + 13px); /* 名前の列(並べ替えた指標を隣に固定するとき)。中身 8.28rem + 左右の余白 8px・5px */
     --table-sort-mark-w: 1rem; /* 並べ替えた列の右の余白(▲▼ を置く場所)。見出しと本体で同じにして、文字と数値の右端をそろえる */
     --table-first-scroll-gap: var(--space-3); /* 固定列のすぐ右の列の左の余白 */
+    /* 能力のランクの色(作り直し①。D-347)。S・A は暖色、B・C は緑寄り、D 以下は落ち着いた色 */
+    --rank-s: #d1242f; --rank-a: #e16f24; --rank-b: #bf8700; --rank-c: #1a7f37; --rank-d: #0969da; --rank-e: #57606a; --rank-f: #8c959f; --rank-g: #8c959f;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8; --accent-fg: #0d1117;
       --ok: #3fb950; --ng: #ff7b72; --box: #161b22; --mine: #3b2e00; --mine-line: #bb8009; --warn-bg: #2d1a0a; --warn-line: #db6d28;
+      --rank-s: #ff7b72; --rank-a: #ffa657; --rank-b: #e3b341; --rank-c: #3fb950; --rank-d: #4493f8; --rank-e: #9198a1; --rank-f: #6e7681; --rank-g: #6e7681;
     }
   }
   * { box-sizing: border-box; }
@@ -142,6 +145,13 @@
   .wide .table-wrap.fluid th.sticky + th, .wide .table-wrap.fluid td.sticky + td, .wide .table-wrap.fluid th.sticky2 + th, .wide .table-wrap.fluid td.sticky2 + td { padding-left: 5px; } /* 固定しないときは、ほかの列と同じ */
   .warn { color: var(--warn-line); font-weight: bold; }
   /* 契約・予算(F3-2a。色・余白・文字は変数で指定。D-239) */
+  .ability-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--space-1) var(--space-2); background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); }
+  .ability { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+  .ability-label { color: var(--muted); font-size: var(--font-small); }
+  .ability[data-key=breaking] { grid-column: 1 / -1; }
+  .ability.rank-S .ability-value { color: var(--rank-s); } .ability.rank-A .ability-value { color: var(--rank-a); } .ability.rank-B .ability-value { color: var(--rank-b); }
+  .ability.rank-C .ability-value { color: var(--rank-c); } .ability.rank-D .ability-value { color: var(--rank-d); } .ability.rank-E .ability-value { color: var(--rank-e); }
+  .ability.rank-F .ability-value, .ability.rank-G .ability-value { color: var(--rank-f); }
   .contract-box { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); }
   .contract-box .big { font-size: 1.05rem; font-weight: bold; }
   .budget-bar { height: var(--space-2); background: var(--line); border-radius: var(--radius); overflow: hidden; margin: var(--space-1) 0; }
@@ -183,7 +193,6 @@
   tr.refused td { background: var(--warn-bg); }
   .salary-input { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
   .salary-input button.pct { padding: var(--space-1) var(--space-2); font-size: var(--font-tiny); min-width: 3.5em; }
-  .small.answer { color: var(--warn-line); }
   select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-height: 40px; max-width: 100%; }
   .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
   .check input { width: 20px; height: 20px; }
@@ -232,7 +241,6 @@
   .kv th { text-align: left; color: var(--fg); font-size: 0.95rem; }
   .kv td { text-align: right; }
   .desc { display: block; font-size: 0.8rem; color: var(--muted); white-space: normal; font-weight: normal; }
-  .answer-badge { font-size: 0.75rem; color: var(--warn-line); font-weight: bold; display: block; }
   .run-box { margin: 4px 0 8px; }
   .loading { color: var(--muted); font-size: 0.9rem; }
   label.radio { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 0.95rem; }
@@ -247,7 +255,6 @@
     <div class="topbar-title">
       <span id="topbar-day"></span>
       <span class="dirty" id="dirty" hidden>● 未保存の変更があります</span>
-      <span class="answer-badge" id="answer-badge" hidden>答え合わせモード:オン</span>
     </div>
     <button id="save">保存</button>
     <label class="button secondary" for="open-file-top">開く</label>
@@ -429,16 +436,16 @@
 <main class="screen" id="screen-player" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="player-name"></h1></div>
   <p id="player-info"></p>
+  <div id="player-abilities-box" hidden>
+    <h2>能力</h2>
+    <div id="player-abilities"></div>
+  </div>
   <h2>シーズン通算の成績</h2>
   <div class="seg" id="player-kind" role="group" aria-label="成績の種類の切り替え">
-    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button><button data-value="ability">能力</button>
+    <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button>
   </div>
   <div id="player-season"></div>
   <p class="muted small" id="player-baseline" hidden></p>
-  <div id="player-scouting-box" hidden>
-    <h2>入団時のスカウト評価</h2>
-    <div id="player-scouting"></div>
-    </div>
   <div id="player-contract-box" class="contract-box" hidden>
     <h2>契約</h2>
     <div id="player-contract"></div>
@@ -474,7 +481,7 @@
   <h2>入団した新人</h2>
   <div id="offseason-rookies"></div>
   <h2>能力の増減</h2>
-  <div id="offseason-answers"></div>
+  <div id="offseason-changes"></div>
 </main>
 
 <!-- オフの手続き(F3-1。D-201〜D-207) -->
@@ -507,8 +514,6 @@
   <p class="loading" id="review-loading" hidden>集計しています…</p>
   <div id="review-table"></div>
   <p class="small" id="review-note"></p>
-  <div id="review-answers"></div>
-  <p class="muted small" id="review-answers-note"></p>
 </main>
 
 <!-- チームのページ -->
@@ -541,7 +546,6 @@
   <h2>推定した球場補正</h2>
   <div id="stadium-estimate"></div>
   <h2>真の倍率</h2>
-  <div id="stadium-answers"></div>
 </main>
 
 <!-- 試合のページ -->
@@ -560,13 +564,6 @@
 <!-- メニュー(設定) -->
 <main class="screen" id="screen-settings" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1>メニュー</h1></div>
-  <h2>答え合わせモード</h2>
-  <div id="answer-options">
-    <label class="radio"><input type="radio" name="answer-level" value="0" checked><span><strong>オフ</strong>(おすすめ)</span></label>
-    <label class="radio"><input type="radio" name="answer-level" value="1"><span><strong>1段階目</strong>:今の能力</span></label>
-    <label class="radio"><input type="radio" name="answer-level" value="2"><span><strong>2段階目</strong>:今の能力 + 潜在能力・成長タイプ・生成時の型</span></label>
-  </div>
-  <p class="muted small">この設定は保存しません(開き直すとオフ)。</p>
   <div id="menu-offseason" hidden>
     <h2>オフの手続き</h2>
     <button class="danger" id="proc-auto">全部おまかせ</button>
