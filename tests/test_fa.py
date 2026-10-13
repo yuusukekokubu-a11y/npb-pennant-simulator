@@ -142,7 +142,7 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
             room = g.budget_info("T01")["cap"] - team_salary(g._team("T01"))
             with pytest.raises(ValueError, match="上限"):
                 g.offseason_fa_offer(target.id, 2, room + 100)
-            pay = max(calc, min(int(calc * 1.5), room) // 100 * 100)  # 上限の中で、算定より高い提示
+            pay = min(int(calc * 1.5), room) // 100 * 100  # 上限の中で、できれば算定より高い提示(算定が上限を超える選手もいる)
             v = g.offseason_fa_offer(target.id, 3, pay)
             assert v["fa"]["offers"][0]["years"] == 3
             g.offseason_fa_cancel(target.id)
