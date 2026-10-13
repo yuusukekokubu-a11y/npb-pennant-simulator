@@ -3,6 +3,7 @@
 import copy
 import io
 import json
+import re
 import zipfile
 
 import pytest
@@ -267,7 +268,8 @@ def test_preference_is_hidden(renewal_games):
     text = json.dumps(texts, ensure_ascii=False)
     for key in HIDDEN_KEYS:
         assert f'"{key}"' not in text
-    assert '"score"' not in text and '"values": {"salary"' not in text  # 判定の点数・満足度も出さない
+    # 判定の点数(数)・満足度も出さない(試合の記録の "score": "9-6" のような文字の得点は別物)
+    assert not re.search(r'"score": [-0-9]', text) and '"values": {"salary"' not in text
 
 
 @pytest.mark.slow
