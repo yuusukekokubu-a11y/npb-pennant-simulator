@@ -923,7 +923,9 @@ await page.click("#proc-body thead th button:has-text('前の所属')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.startsWith("前の所属"));
 const mkF = await decisionUi(400);
 check(mkF.some((r) => r["前の所属"] === "候補" && r["WAR"] === "—" && /±/.test(r["総合(推定)"])) && mkF.some((r) => r["前の所属"] !== "候補" && r["WAR"] !== "—"), "指名されなかった候補(前の所属「候補」)は評価が、手放された選手は成績も見られる");
-await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link >> nth=-1`);
+const [mkName] = pyAfter(`t = g.decision_table("market")
+print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、算定年俸の最も安い選手
+await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${mkName}")`);
 await page.waitForSelector("#market-panel");
 const mkPid = await page.getAttribute("#market-panel", "data-player-id");
 check(Boolean(await page.$("#market-send")) && Boolean(await page.$("#offer-plus10")), "市場の提示のパネル:年数・年俸(±% のボタン)・提示する");
