@@ -1,17 +1,17 @@
 {
   "fingerprint_version": 22,
-  "league": "510ccdc3c2a31167cdbfdba84749b0a9c2a65412e8c3f45a33664897a6e8afc8",
-  "game": "a7d5d291694b955e946581f071bb6126cf7a83358c5c05a020b3c67ba750c06e",
-  "days": "294a8d367665a477f6d8a23918af3fde2f6ed75e626b4b15bfb08527a7a7572b",
-  "season": "9ee0fed559a534e5c6b2cf57115e4ef9bf1e21ed0fbe57a352ee1283cfa8dd6e",
-  "records": "01b4f25857b79d33b4e3258e47466e20e9569b2926a01e003595e23238239409",
-  "save": "8d15f23a8e1fa8ea6ea6e7661c74c938e930cdf9dc0d205d2c7dad22e039b53e",
-  "baselines": "2b119dea5b0ddcaa0ac3cd7c196be6372dcbf4d93be9a2b11f3a19d56f2e7801",
-  "metrics2": "0e6b16c3bb78ca28e0efe2d76085d60f753dc17e162839a86158c7fcf081c530",
+  "league": "8de1a54d36045fda4677f64b0ecf88f7680be38b8248b6b3aad85ae1f7b72133",
+  "game": "efbc47ccde57672290205a1c55dee9c09d75b43b5f22986414bb5e937735935c",
+  "days": "3b7bb8b1da9cb8eaf27bf6d74132f68ef105d37c598d1b4050b77b9da843ea65",
+  "season": "94cd3d085cc36e14271802318cb822f2380f4ed612eded9e3465b22ab748bb8e",
+  "records": "eb85ce2b33236fd543f9fb00cae0c724c869869d982bbbd2827b48b78784a10b",
+  "save": "995fd7edac27dad7b098fdb270c636e0dbead18f07405fc847256351952aa604",
+  "baselines": "f6de7ea0f10b5ab19f61efae07d097f373a8fb85ceb96b74c9e35e632cd3cb77",
+  "metrics2": "bfae6d9e8b41c6baaa254d88bb62aa48f0ac7611375e6897b7a54f10814bf9d8",
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
-  "park_estimates": "5d71c7eefac28fb6d0decf1ff7d907b78c099f18e9a048af5e59e93a4d677408",
-  "run_values": "aec509cbb22d36542654303666c7e7f01a677b8c5c6c4e4591fe2af8cba28ab3",
-  "war": "902370deb02dfdf37354434b48b52e0755d9ebeda2cd24ecee4e3dbea90982e0",
+  "park_estimates": "d0d03e289fd4c18925a87ecb845f8882d066594fdcf4384121f4cc9671bec97d",
+  "run_values": "f53e24f7db2e94ef95d69ac6f044103e48f4ea28324e8dc53f7364d37a94faba",
+  "war": "23287a413e1d8386f630a66adb249bdd6b0dd2a27fdb1175f4804c0d875777b0",
   "multiyear": "aaf1f11e964a7024e474f8cb1f86d667531baf9fe833263699426c693408570a",
   "procedure": "9bd3f7c92c0a1ca3a8b6eb51094c139020a7cb662e4a1b3e29ea02884161bdce",
   "contracts": "c8848bf3b7148ff10c088641fbb3c56cf4e85680af94c78c9830d794a4fcc370",
@@ -19,25 +19,25 @@
   "fa": "5c24c6a5ee69c2bfc4481d58c11c66f93c131a2ad577c5cdccdc3a530db18dce",
   "counts": {
     "players": 840,
-    "game_plate_appearances": 86,
-    "game_score": "9-4",
+    "game_plate_appearances": 75,
+    "game_score": "5-2",
     "days": 30,
     "days_games": 180,
-    "days_plate_appearances": 14120,
-    "days_runs": 1383,
+    "days_plate_appearances": 14167,
+    "days_runs": 1583,
     "season_games": 750,
-    "season_plate_appearances": 58696,
+    "season_plate_appearances": 58993,
     "season_champions": [
-      "T04",
+      "T06",
       "T09"
     ],
     "records_totals": {
-      "R": 6083,
-      "RBI": 5944,
-      "W": 729,
-      "SV": 365,
-      "HLD": 822,
-      "ER": 5733
+      "R": 6582,
+      "RBI": 6426,
+      "W": 738,
+      "SV": 360,
+      "HLD": 770,
+      "ER": 6243
     },
     "save_days": [
       1,
@@ -50,10 +50,10 @@
       true
     ],
     "baselines": {
-      "trial_plate_appearances": 58247,
-      "batters": 165,
+      "trial_plate_appearances": 58477,
+      "batters": 169,
       "pitchers": 168,
-      "weight": "7337/9837"
+      "weight": "58993/78993"
     },
     "parks": {
       "teams": 12,
@@ -76,13 +76,13 @@
     },
     "run_values": {
       "seasons": 3,
-      "players": 325,
-      "fielding_chances": 34672
+      "players": 329,
+      "fielding_chances": 35111
     },
     "war": {
       "seasons": 3,
-      "players": 333,
-      "total_war_x100": 35211
+      "players": 339,
+      "total_war_x100": 32027
     },
     "multiyear": {
       "year_ends": 2,
