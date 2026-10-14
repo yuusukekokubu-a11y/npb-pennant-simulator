@@ -1,5 +1,5 @@
 """主力級の FA の調整(主力級ほど自分の価値を高く見る。D-322、D-325、D-329、D-331)の確認。
-作り直し②で更改での引き留めはなくなり(D-359)、期待の倍率は FA 市場の判定と AI の提示だけに使う。"""
+作り直し②で更改での引き留めはなくなり(D-359)、期待の倍率は FA 市場の点数(D-365)と AI の提示だけに使う。"""
 
 import copy
 import json
@@ -9,7 +9,7 @@ import pytest
 from pennant import api
 from pennant import fa as famod
 from pennant.config import ConfigError
-from pennant.negotiation import judge, load_negotiation_settings, validate_negotiation_settings
+from pennant.negotiation import load_negotiation_settings, offer_score, validate_negotiation_settings
 
 NEG = load_negotiation_settings()
 FA = famod.fa_settings(NEG)
@@ -32,7 +32,6 @@ def test_star_multiplier_formula_and_cap():
     [
         (lambda d: d["fa"]["star"].update(max_multiplier=0.9), "fa.star.max_multiplier"),
         (lambda d: d["fa"]["star"].update(per_war=-0.1), "fa.star.per_war"),
-        (lambda d: d["fa"]["star"].update(reason=""), "fa.star.reason"),
         (lambda d: d["fa"].update(star=3), "fa.star"),
     ],
 )
@@ -44,14 +43,12 @@ def test_star_settings_validation(change, message):
 
 
 def test_expectation_raises_the_salary_base():
-    """年俸の軸の基準が 算定 × 倍率 になる:同じ提示でも主力級は満足度が下がり、倍率どおりに上げれば元に戻る。"""
-    pref = {"salary": 0.4, "playing_time": 0.4, "winning": 0.2}
+    """点数の年俸の基準が 算定 × 倍率 になる:同じ提示でも主力級は点数が下がり、倍率どおりに上げれば元に戻る。"""
     ctx = {"rank": 0, "slots": 2.0, "standing": 3, "league_size": 6}
-    plain = judge(NEG, pref, 1, 10000, 10000, 29, ctx, 0.0)
-    star = judge(NEG, pref, 1, 10000, 10000, 29, {**ctx, "salary_expect": 1.2}, 0.0)
-    raised = judge(NEG, pref, 1, 12000, 10000, 29, {**ctx, "salary_expect": 1.2}, 0.0)
-    assert star["score"] < plain["score"] and star["values"]["salary"] < plain["values"]["salary"]
-    assert raised["score"] == pytest.approx(plain["score"]) and raised["values"]["playing_time"] == plain["values"]["playing_time"]
+    plain = offer_score(NEG, 10000, 10000, 1.0, False, 1, 29, ctx, 0.0)
+    star = offer_score(NEG, 10000, 10000, 1.2, False, 1, 29, ctx, 0.0)
+    raised = offer_score(NEG, 12000, 10000, 1.2, False, 1, 29, ctx, 0.0)
+    assert star < plain and raised == pytest.approx(plain)
 
 
 @pytest.fixture(scope="module")
@@ -64,7 +61,7 @@ def season_end():
 
 @pytest.mark.slow
 def test_fa_market_uses_the_expectation(season_end):
-    """FA 市場の AI は、主力級に期待の倍率を考えた年俸で提示する(D-325、D-331)。期待の倍率と志望の重みは画面に出ない。"""
+    """FA 市場の AI は、主力級に期待の倍率を考えた年俸で提示する(D-325、D-331)。期待の倍率は画面に出ない。"""
     g = api.Game(copy.deepcopy(season_end.state), dirty=False)
     proc = g.state.procedure
     stars = [e for e in proc.negotiations.values() if e["context"].get("fa_holder") and e["expected"] >= 2.0]

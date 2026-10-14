@@ -1,4 +1,5 @@
-"""F3-1(ドラフトと自由契約、スカウト評価。D-198〜D-211)と、評価の 2 層化・ドラフトの振り返り(D-212〜D-216)の確認。"""
+"""F3-1(ドラフトと自由契約、スカウト評価。D-198〜D-211)と、評価の 2 層化・ドラフトの振り返り(D-212〜D-216)、
+作り直し③の A〜E の評価とスカウトの一言・1 巡目の入札と抽選(D-368、D-369)の確認。"""
 
 import copy
 import io
@@ -30,7 +31,7 @@ from pennant.generate import generate_league
 from pennant.newgame import new_league
 from pennant.offseason import age_update_retire, load_offseason_settings
 from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
-from pennant.scouting import GRADES, SCOUT_METHOD, ceiling_cuts, grade_of, item_sd, overall_sd, quick_value, report, total_from_single
+from pennant.scouting import GRADES, SCOUT_METHOD, grade_cuts, grade_of, item_sd, item_stats, overall_sd, quick_value, report, strengths
 from pennant.stats import overall, projected_overall
 
 CONFIG = load_generation_config()
@@ -73,10 +74,14 @@ def test_settings_and_validation():
     data["scouting"]["levels"]["medium"] = 5
     with pytest.raises(ConfigError, match="scouting.levels.medium"):
         validate_draft_settings(data)
-    assert abs(sum(DS.ceiling_shares.values()) - 1) < 1e-9
+    assert abs(sum(DS.grade_shares.values()) - 1) < 1e-9 and list(DS.grade_shares) == list(GRADES) == ["A", "B", "C", "D", "E"]
     data = copy.deepcopy(DS.data)
-    data["scouting"]["ceiling_shares"]["S"] = 0.5
-    with pytest.raises(ConfigError, match="ceiling_shares"):
+    data["scouting"]["grade_shares"]["A"] = 0.5
+    with pytest.raises(ConfigError, match="grade_shares"):
+        validate_draft_settings(data)
+    data = copy.deepcopy(DS.data)
+    del data["scouting"]["comment"]["phrases"]["velocity"]
+    with pytest.raises(ConfigError, match="phrases.velocity"):
         validate_draft_settings(data)
     data = copy.deepcopy(DS.data)
     data["draft"]["rounds"] = 0
@@ -92,75 +97,81 @@ def test_settings_and_validation():
 def pool():
     league = generate_league(5, CONFIG, PARTS)
     players = league.all_players()[:300]
-    cuts = ceiling_cuts(players, DS.ceiling_shares)
-    return players, cuts
+    cuts = grade_cuts(players, DS.grade_shares)
+    return players, cuts, item_stats(players)
 
 
 SD5 = {"common": 4.0, "item": 3.0}
 
 
 def test_report_is_deterministic_and_team_specific(pool):
-    players, cuts = pool
+    players, cuts, stats = pool
     p = players[0]
-    a = report(p, "T01", 99, SD5, cuts, 1.28)
-    b = report(p, "T01", 99, SD5, cuts, 1.28)
-    c = report(p, "T02", 99, SD5, cuts, 1.28)
+    a = report(p, "T01", 99, SD5, cuts, stats, DS.comment)
+    b = report(p, "T01", 99, SD5, cuts, stats, DS.comment)
+    c = report(p, "T02", 99, SD5, cuts, stats, DS.comment)
     assert a.to_dict() == b.to_dict() and a.to_dict() != c.to_dict()
     q = quick_value(p, "T01", 99, SD5, cuts)
-    assert abs(q[0] - a.overall) < 1e-9 and q[1] == a.ceiling  # AI が使う速い値と、画面の評価が一致する
+    assert abs(q[0] - a.overall) < 1e-9 and q[1] == a.grade  # AI が使う速い値と、画面の評価が一致する
     assert abs(sum(a.items.values()) / len(a.items) - a.overall) < 1e-9
-    n = len(a.items)
-    assert a.margin == pytest.approx(overall_sd(SD5, n) * 1.28) and a.item_margin == pytest.approx(6.4)  # 総合のふれ幅は実際の誤差から(D-213)
-    assert a.method == SCOUT_METHOD == 2 and a.cuts == cuts
+    assert a.method == SCOUT_METHOD == 3 and a.grade in GRADES
+    # 画面に出すのは評価と一言だけ(能力の数値・ふれ幅は出さない。D-368)
     pub = a.to_public()
-    assert 1 <= pub["overall"] <= 100 and all(1 <= i["estimate"] <= 100 or i["key"] == "velocity" for i in pub["items"]) and pub["ceiling"] in GRADES  # 1〜100 の目盛り(球速は km/h。D-347)
-    assert "potential" not in json.dumps(pub) and "growth" not in json.dumps(pub) and "cuts" not in pub
-    assert report(p, "T01", 100, SD5, cuts, 1.28).to_dict() != a.to_dict()  # シードが違えば違う
-    # 旧方式(版 1)も残っていて、同じシードで決まった値を返す
-    old = report(p, "T01", 99, SD5, cuts, 1.28, method=1)
-    assert old.method == 1 and old.margin == pytest.approx(5.0 / n**0.5 * 1.28) and old.to_dict() != a.to_dict()
-    assert quick_value(p, "T01", 99, SD5, cuts, method=1)[0] == pytest.approx(old.overall)
-    # 版 8 の 1 つの数は、合計を保って 2 層に直せる
-    assert item_sd(total_from_single(5.0)) == pytest.approx(5.0)
+    assert set(pub) == {"team_id", "grade", "comment"} and pub["comment"]
+    assert "potential" not in json.dumps(pub) and "growth" not in json.dumps(pub)
+    assert report(p, "T01", 100, SD5, cuts, stats, DS.comment).to_dict() != a.to_dict()  # シードが違えば違う
+
+
+def test_comment_picks_one_or_two_strengths(pool):
+    """スカウトの一言(D-368):同じ役割の候補の中で目立つ項目を 1〜2 個。目立つ項目がなければ「目立つ長所はまだない」。"""
+    players, cuts, stats = pool
+    st = stats["pitcher"]
+    mean = {k: v[0] for k, v in st.items()}
+    sd = {k: v[1] for k, v in st.items()}
+    flat = dict(mean)
+    assert strengths(flat, st, DS.comment) == []
+    one = {**mean, "velocity": mean["velocity"] + 2 * sd["velocity"]}
+    assert strengths(one, st, DS.comment) == ["velocity"]
+    two = {**one, "control": mean["control"] + 1.8 * sd["control"]}
+    assert strengths(two, st, DS.comment) == ["velocity", "control"]
+    far = {**one, "control": mean["control"] + 1.0 * sd["control"]}  # 2 つ目が 1 つ目より 0.5 以上離れていれば 1 つだけ
+    assert strengths(far, st, DS.comment) == ["velocity"]
+    texts = [report(p, "T01", 5, SD5, cuts, stats, DS.comment).comment for p in players[:120]]
+    assert "速球が武器" in "".join(texts) and any("、" in x for x in texts) and any(x == DS.comment["none"] for x in texts)
 
 
 @pytest.mark.parametrize("level", ["small", "medium", "large"])
 def test_two_layer_error_sd_coverage_and_correlation(pool, level):
-    """2 層の見誤り(D-212〜D-214):項目の誤差 3・5・8、総合の誤差 約 2・4・6、ふれ幅に入る割合 75〜85%、項目間の誤差の相関が正。"""
-    players, cuts = pool
+    """2 層の見誤り(D-212):項目の誤差 3・5・8、総合の誤差 約 2・4・6、項目間の誤差の相関が正(内部の推定値。画面には出さない)。"""
+    players, cuts, stats = pool
     sd = DS.level_sd(level)
     errs = []
     overall_errs = []
-    covered = 0
-    overall_covered = 0
     pairs = []
     for p in players:
-        r = report(p, "T03", 7, sd, cuts, DS.margin_z)
+        r = report(p, "T03", 7, sd, cuts, stats, DS.comment)
         items = abilities_for(p.role)
         es = {}
         for item in items:
             e = r.items[item] - p.abilities[item]
             errs.append(e)
             es[item] = e
-            covered += abs(e) <= r.item_margin
         oe = r.overall - sum(p.abilities[i] for i in items) / len(items)
         overall_errs.append(oe)
-        overall_covered += abs(oe) <= r.margin
         pairs.append((es[items[0]], es[items[1]]))
     assert abs(statistics.pstdev(errs) - item_sd(sd)) < 0.12 * item_sd(sd)  # 項目:3・5・8
     target = {"small": 2.0, "medium": 4.0, "large": 6.0}[level]
     assert abs(statistics.pstdev(overall_errs) - target) < 0.2 * target + 0.3  # 総合:約 2・4・6
-    assert 0.75 <= covered / len(errs) <= 0.85 and 0.75 <= overall_covered / len(players) <= 0.85
     corr = statistics.correlation([a for a, _ in pairs], [b for _, b in pairs])
     expect = sd["common"] ** 2 / (sd["common"] ** 2 + sd["item"] ** 2)
     assert corr > 0.25 and abs(corr - expect) < 0.15  # 共通の見誤りで、項目間の誤差が正の相関になる
 
 
-def test_ceiling_grades_follow_shares_and_potential(pool):
-    players, cuts = pool
+def test_grades_follow_shares_and_potential(pool):
+    players, cuts, _ = pool
     assert cuts == sorted(cuts, reverse=True)
     grades = [grade_of(projected_overall(p), cuts) for p in players]
-    assert abs(grades.count("S") / len(players) - 0.05) < 0.03 and abs(grades.count("D") / len(players) - 0.20) < 0.05
+    assert abs(grades.count("A") / len(players) - 0.10) < 0.03 and abs(grades.count("E") / len(players) - 0.15) < 0.05
     by = {g: [projected_overall(p) for p, gr in zip(players, grades) if gr == g] for g in GRADES}
     means = [statistics.fmean(by[g]) for g in GRADES if by[g]]
     assert means == sorted(means, reverse=True)
@@ -185,14 +196,18 @@ def test_ai_offseason_keeps_rules_and_is_reproducible():
         age_update_retire(league, 55, CONFIG, OFF, 1, None)
         sd = {t.id: SD5 for t in league.teams}
         proc, joined = run_ai_offseason(league, 55, CONFIG, PARTS, OFF, DS, 1, None, sd, [t.id for t in league.teams])
-        results.append(([(x["phase"], x["round"], x["team_id"], x["player_id"]) for x in proc.picks], [p.id for p in league.all_players()]))
+        results.append(([(x["phase"], x["round"], x["team_id"], x["player_id"]) for x in proc.picks], [p.id for p in league.all_players()], proc.lottery))
         assert proc.phase == "done" and not proc.candidates and not proc.market
         assert all(len(t.players) == MAX_ROSTER for t in league.teams)
         assert all(not shortages(t.players, MINS, MIN_BATTERS) for t in league.teams)
-        # 往復:1 巡目と 2 巡目の順番が逆
-        r1 = [x["team_id"] for x in proc.picks if x["phase"] == "draft" and x["round"] == 1]
+        # 1 巡目は入札(全球団が 1 人ずつ。重なったら抽選)、2 巡目は前年の順位が低い順、3 巡目は逆(D-369)
+        r1 = [x for x in proc.picks if x["phase"] == "draft" and x["round"] == 1]
+        assert sorted(x["team_id"] for x in r1) == sorted(proc.order) and proc.bid_done
+        assert [x["winner"] for x in proc.lottery] and all(x["winner"] in x["teams"] for x in proc.lottery)
+        assert len({x["player_id"] for x in r1 if x["player_id"]}) == sum(1 for x in r1 if x["player_id"])
         r2 = [x["team_id"] for x in proc.picks if x["phase"] == "draft" and x["round"] == 2]
-        assert r1 == proc.order and r2 == list(reversed(proc.order))
+        r3 = [x["team_id"] for x in proc.picks if x["phase"] == "draft" and x["round"] == 3]
+        assert r2 == proc.order and r3 == list(reversed(proc.order))
         assert max(x["round"] for x in proc.picks if x["phase"] == "draft") <= DS.rounds
         # 空き枠がない球団はパス(note=full)、指名は空き枠の分まで
         for t in league.teams:
@@ -245,7 +260,7 @@ def test_spectator_year_end_completes_automatically():
     assert g.status()["year"] == 2 and g.state.procedure is None and g.status()["offseason"] is None
     assert s["counts"]["players"] == 840 and all(len(t.players) == 70 for t in g.state.league.teams)
     assert any(x["phase"] == "draft" for x in g.state.transactions) and g.transactions(1)["rows"]
-    assert all("overall" in x and "ceiling" in x for x in g.state.transactions if x["player_id"] and x["phase"] in ("draft", "market", "fill"))
+    assert all("grade" in x and "comment" in x for x in g.state.transactions if x["player_id"] and x["phase"] in ("draft", "market", "fill"))
 
 
 @pytest.fixture(scope="module")
@@ -278,19 +293,29 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     v = skip_fa(g)
     assert v["phase"] == "draft" and v["counts"]["released"] >= before + 2 and v["counts"]["candidates"] == 108
     v = g.offseason_advance()
-    assert v["is_my_turn"] and v["round"] == 1
-    # 保存して読み込むと、途中から再開できる(版 9)
+    assert v["is_my_turn"] and v["round"] == 1 and v["bidding"] and v["current_team"] is None  # 1 巡目は入札(D-369)
+    table = g.decision_table("draft")
+    assert [c["key"] for c in table["columns"]][:2] == ["grade", "comment"] and table["sort"]["key"] == "grade"
+    assert all(set(r["scouting"]) == {"team_id", "grade", "comment"} for r in table["rows"])  # 能力の数値は出さない(D-368)
+    # 保存して読み込むと、途中から再開できる
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 15 and again.state.procedure.method == 2
+    assert SAVE_FORMAT_VERSION == 16
     v2 = again.offseason_view()
-    assert v2["phase"] == "draft" and v2["round"] == v["round"] and v2["is_my_turn"] and [p["player_id"] for p in v2["pool"]] == [p["player_id"] for p in v["pool"]]
-    assert v2["pool"][0]["scouting"] == v["pool"][0]["scouting"]  # 評価も同じ(シードから導く)
-    pick = v2["pool"][0]["player_id"]
-    v2 = again.offseason_pick(pick)
-    assert pick in {p.id for p in again._team("T01").players} and v2["counts"]["picked"] >= 1
+    t2 = again.decision_table("draft")
+    assert v2["phase"] == "draft" and v2["bidding"] and v2["is_my_turn"] and [r["player_id"] for r in t2["rows"]] == [r["player_id"] for r in table["rows"]]
+    assert t2["rows"][0]["scouting"] == table["rows"][0]["scouting"]  # 評価も同じ(シードから導く)
+    pick = t2["rows"][0]["player_id"]
+    v2 = again.offseason_pick(pick)  # 入札
+    assert v2["last_bid"]["step"] == 1 and any(x["player_id"] == pick for x in v2["last_bid"]["results"])
+    while v2["bidding"]:  # 外れたら入札し直す
+        assert not v2["last_bid"]["won"] and v2["bid_step"] > 1
+        pick = again.decision_table("draft")["rows"][0]["player_id"]
+        v2 = again.offseason_pick(pick)
+    assert v2["last_bid"]["won"] and pick in {p.id for p in again._team("T01").players} and v2["counts"]["picked"] >= 12
     chosen = next(p for p in again._team("T01").players if p.id == pick)
-    assert chosen.scouting["team_id"] == "T01" and chosen.scouting["year"] == 2
+    assert chosen.scouting["team_id"] == "T01" and chosen.scouting["year"] == 2 and chosen.scouting["grade"] in GRADES
+    assert v2["round"] >= 2 and not v2["bidding"]
     with pytest.raises(ValueError):
         again.offseason_pick(pick)  # 一覧にいない
     v2 = again.offseason_pass()
@@ -323,12 +348,12 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
     assert g.review_years() == [2, 3]
     v = g.draft_review()
     assert v["team_id"] == "T01" and v["year"] == 3 and v["years"] == [2, 3] and len(v["teams"]) == 12  # 観戦のみ:最初の球団・最新の年度
-    assert v["rows"] and all(r["route"] in ("draft", "market", "fill") and r["entry_ceiling"] in GRADES and "±" in r["entry_text"] for r in v["rows"])
+    assert v["rows"] and all(r["route"] in ("draft", "market", "fill") and r["entry_grade"] in GRADES and r["entry_comment"] for r in v["rows"])
     assert all(r["status"] in ("same", "moved", "left") and isinstance(r["games"], int) for r in v["rows"])
     text = json.dumps(v, ensure_ascii=False)
-    for key in ("ratings", "potential", "growth_type", "archetype", "hidden", "cuts"):
+    for key in ("ratings", "potential", "growth_type", "archetype", "hidden", "cuts", "items", "overall"):
         assert f'"{key}"' not in text
-    assert "diff" not in text and "actual_ceiling" not in text
+    assert "diff" not in text and "actual_ceiling" not in text and "±" not in text  # 入団時の評価は A〜E と一言だけ(D-368)
     ids = {r["player_id"] for r in v["rows"]}
     players = {p.id: p for p in g.state.league.all_players()}
     assert all(players[pid].scouting["year"] == 3 for pid in ids if pid in players)

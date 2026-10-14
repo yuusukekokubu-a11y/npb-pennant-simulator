@@ -865,16 +865,13 @@ print(json.dumps(next(([r["name"]] for r in sorted(t["rows"], key=lambda r: r["d
   const faMine = pyAfter(`print(json.dumps([x for x in g.state.procedure.fa_log if x["team_id"] == g.state.my_team_id and x["round"] > 1]))`);
   check(faMine.length === 0, `FA の「次の手続きへ」では、自球団は 2 ラウンド目以降の提示をしない(AI の代行をしない。D-271)${faMine.length ? JSON.stringify(faMine.slice(0, 2)) : ""}`);
 }
-// ドラフト(D-299):状態バーに巡と順番。自分の番まで → 表(並べ替えは見出し・絞り込み 1 本)→ 名前を押して指名 →「この段階をおまかせ」(確認つき)
-check((await page.textContent("#proc-title")) === "ドラフト" && (await page.textContent("#proc-info")).startsWith("1/6 巡"), `ドラフトの段階:状態バーに「1/6 巡」(「${await page.textContent("#proc-info")}」)`);
+// ドラフト(D-299、D-368、D-369):1 巡目は入札(状態バーに「入札・あなたの番」)。表(並べ替えは見出し・絞り込み 1 本)→ 名前を押して入札 → 抽選の結果 →「この段階をおまかせ」(確認つき)
+check((await page.textContent("#proc-title")) === "ドラフト" && (await page.textContent("#proc-info")).startsWith("1/6 巡・入札・あなたの番"), `ドラフトの段階:状態バーに「1/6 巡・入札・あなたの番」(「${await page.textContent("#proc-info")}」)`);
 await page.waitForSelector("#proc-body tbody tr");
 await measureDecision("ドラフト");
-await page.click("#draft-advance");
-await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("あなたの番") && document.querySelector("#draft-pass"), null, { timeout: 60000 });
-procOps.push(["offseason_advance", []]);
-await page.waitForTimeout(500);
-const dr0 = await sameAsPy({ stage: "draft" }, "ドラフト(自分の番)");
-check(JSON.stringify(dr0.heads) === JSON.stringify(["選手", "総合(推定)", "天井", "年齢", "出身", "ポジション", "加入後の序列"]), `ドラフトの列は 名前・総合の推定値とふれ幅・天井・年齢・出身・ポジション・加入後の序列(年齢と出身は別の列。D-299)`);
+check(Boolean(await page.$("#draft-pass")) && !(await page.$("#draft-advance")), "1 巡目の入札の間は、状態バーに「パス」(「自分の番まで」はない)");
+const dr0 = await sameAsPy({ stage: "draft" }, "ドラフト(1 巡目の入札)");
+check(JSON.stringify(dr0.heads) === JSON.stringify(["選手", "評価", "スカウトの一言", "年齢", "出身", "ポジション", "加入後の序列"]), `ドラフトの列は 名前・評価(A〜E)・スカウトの一言・年齢・出身・ポジション・加入後の序列(能力の数値は出さない。D-368)`);
 check(!(await page.$("#proc-body select[aria-label='並び順']")) && (await page.inputValue("#draft-show")) === "open", "並べ替えのドロップダウンはなく、絞り込みの既定は「未指名だけ」");
 const thinPy = pyAfter(`t = g.decision_table("draft")\nprint(json.dumps(sorted(t["thin"])))`);
 const thinUi = await page.$$eval("#proc-body tbody .thin", (s) => s.length);
@@ -882,8 +879,8 @@ check(thinPy.length === 0 || thinUi > 0, `手薄なポジション(${thinPy.join
 await page.click("#proc-body thead th button:has-text('年齢')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2") && document.querySelector("#proc-body thead th.sticky2").textContent.startsWith("年齢"));
 await sameAsPy({ stage: "draft", sort: "age", order: "asc" }, "ドラフトを年齢の見出しで並べ替え(年齢が名前の右に固定)");
-await page.click("#proc-body thead th button:has-text('総合(推定)')");
-await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.startsWith("総合"));
+await page.click("#proc-body thead th button:has-text('評価')");
+await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.startsWith("評価"));
 await page.selectOption("#draft-group", "catcher");
 await page.waitForFunction(() => [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("捕手")));
 check(true, "ポジションの絞り込み 1 本で捕手だけになる");
@@ -891,13 +888,26 @@ await page.selectOption("#draft-group", "all");
 await page.waitForFunction(() => document.querySelectorAll("#proc-body tbody tr:not(.detail)").length > 50);
 await page.click("#proc-body .name-cell .link >> nth=0");
 await page.waitForSelector("#draft-panel");
-check((await page.textContent("#draft-panel")).includes("±") && Boolean(await page.$("#draft-pick")), "名前を押すと、項目別の推定値 ± ふれ幅と「指名する」が出る");
-const pickId = await page.getAttribute("#draft-panel", "data-player-id");
+check(!(await page.textContent("#draft-panel")).includes("±") && (await page.textContent("#draft-panel")).includes("スカウトの評価") && (await page.textContent("#draft-pick")) === "1 巡目に入札する", "名前を押すと、評価と一言(数値・ふれ幅はない)と「1 巡目に入札する」が出る");
 const pk0 = Date.now();
-await page.click("#draft-pick");
-await page.waitForFunction(() => document.querySelector("#proc-info").textContent.startsWith("2/6 巡"), null, { timeout: 60000 });
-procOps.push(["offseason_pick", [pickId]]);
-check((await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `「指名」で入団し、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
+let bids = 0;
+for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位。D-369)
+  const pickId = await page.getAttribute("#draft-panel", "data-player-id");
+  await page.click("#draft-pick");
+  await page.waitForFunction(() => document.querySelector("#proc-message").textContent.startsWith("1 巡目の入札の結果") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
+  procOps.push(["offseason_pick", [pickId]]);
+  bids += 1;
+  if ((await page.textContent("#proc-info")).startsWith("2/6 巡") || bids > 12) break;
+  check((await page.textContent("#proc-message")).includes("外れたので"), `抽選に外れたら、もう一度入札する(${await page.textContent("#proc-message")})`);
+  await page.click("#proc-body .name-cell .link >> nth=0");
+  await page.waitForSelector("#draft-panel");
+}
+const lotPy = pyAfter(`print(json.dumps([[x["name"], x["winner_name"], len(x["teams"])] for x in g.offseason_view()["lottery"]], ensure_ascii=False))`);
+await page.click("#draft-lottery summary");
+const lotUi = await page.$$eval("#draft-lottery tbody tr", (trs) => trs.map((tr) => tr.querySelector("td").textContent));
+check((await page.textContent("#proc-info")).startsWith("2/6 巡") && (await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `入札(${bids} 回)と抽選で 1 巡目が決まり、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
+check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotPy.length >= 12, `1 巡目の入札の結果(${lotPy.length} 人・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ`);
+await page.click("#draft-lottery summary");
 await page.selectOption("#draft-show", "all");
 await page.waitForFunction(() => document.querySelector("#proc-body thead").textContent.includes("状態"));
 check((await page.textContent("#proc-body")).includes("指名("), "「指名済みも」で、指名された候補も(状態つきで)見られる");
@@ -911,10 +921,10 @@ await page.click("#auto-log summary");
 const autoLogUi = await page.$$eval("#auto-log li", (ls) => ls.map((l) => l.textContent));
 check((await page.textContent("#auto-log summary")).includes(`おまかせの結果(${autoLogPy[0]})`) && JSON.stringify(autoLogUi) === JSON.stringify(autoLogPy[1]) && autoLogPy[1].length > 0 && autoLogPy[1].every((t) => t.startsWith("ドラフト")), `「この段階をおまかせ」(確認つき。D-284)でドラフトの残りを AI の方針で進め、市場の入口で止まる。AI が自球団の分として指名した選手の一覧(${autoLogPy[1].length} 人)が計算本体と同じ`);
 await page.click("#auto-log summary");
-// 市場(D-300):FA と同じ提示の方式。表は 名前・WAR・総合・天井・年齢・ポジション・加入後の序列・算定年俸・出場・前の所属・状態
+// 市場(D-370):年俸は自動。獲得の希望を入れ、締めると前年の順位が低い球団から 1 人ずつ。表は 名前・WAR・総合・年齢・ポジション・加入後の序列・算定年俸・出場・前の所属・状態
 await measureDecision("市場");
 const mk0 = await sameAsPy({ stage: "market" }, "市場");
-check(["WAR", "総合(推定)", "天井", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => mk0.heads[i + 1] === h), `市場の列は FA と同じ考え方(手放された選手の成績と、候補の評価が見られる。列:${mk0.heads.join("・")})`);
+check(["WAR", "総合", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => mk0.heads[i + 1] === h), `市場の列(プロの能力の総合と、候補の評価が見られる。列:${mk0.heads.join("・")})`);
 await page.selectOption("#market-group", "pitcher");
 await page.waitForFunction(() => document.querySelector("#market-kind") && document.querySelector("#proc-body thead").textContent.includes("WAR(失点版)"));
 const mkP = await sameAsPy({ stage: "market", group: "pitcher", kind: "war" }, "市場の投手(成績の種類の初期値は WAR。D-240)");
@@ -923,24 +933,23 @@ await page.waitForFunction(() => !document.querySelector("#market-kind"));
 await page.click("#proc-body thead th button:has-text('前の所属')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.startsWith("前の所属"));
 const mkF = await decisionUi(400);
-check(mkF.some((r) => r["前の所属"] === "候補" && r["WAR"] === "—" && /±/.test(r["総合(推定)"])) && mkF.some((r) => r["前の所属"] !== "候補" && r["WAR"] !== "—"), "指名されなかった候補(前の所属「候補」)は評価が、手放された選手は成績も見られる");
+check(mkF.some((r) => r["前の所属"] === "候補" && r["WAR"] === "—" && /^評価 [A-E]$/.test(r["総合"])) && mkF.some((r) => r["前の所属"] !== "候補" && r["WAR"] !== "—" && /^[SABCDEFG] \d+$/.test(r["総合"])), "指名されなかった候補(前の所属「候補」)は評価だけ、手放された選手は能力の総合と成績が見られる");
 const [mkName] = pyAfter(`t = g.decision_table("market")
 print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、算定年俸の最も安い選手
 await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${mkName}")`);
 await page.waitForSelector("#market-panel");
 const mkPid = await page.getAttribute("#market-panel", "data-player-id");
-check(Boolean(await page.$("#market-send")) && Boolean(await page.$("#offer-plus10")), "市場の提示のパネル:年数・年俸(±% のボタン)・提示する");
-const mkSalary = Number(await page.inputValue("#offer-salary"));
+check(Boolean(await page.$("#market-send")) && !(await page.$("#offer-salary")) && (await page.textContent("#market-panel")).includes("自動"), "市場のパネル:年俸は自動(入力欄はない)と「獲得を希望する」");
 await page.click("#market-send");
-await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("提示 1") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 30000 });
-check((await page.textContent("#proc-info")).includes("提示 1"), `市場の提示が通る(${await page.textContent("#proc-message")}。${await page.textContent("#proc-info")})`);
-procOps.push(["offseason_market_offer", [mkPid, 1, mkSalary]]);
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("希望 1") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 30000 });
+check((await page.textContent("#proc-info")).includes("希望 1"), `獲得の希望が通る(${await page.textContent("#proc-message")}。${await page.textContent("#proc-info")})`);
+procOps.push(["offseason_market_offer", [mkPid]]);
 await page.click("#market-close");
 await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("終了"), null, { timeout: 60000 });
 procOps.push(["offseason_market_close", []]);
 const mkPy = pyAfter(`print(json.dumps([[x["name"], x["team_name"]] for x in r["last_market"]["signed"]] + [len(g.state.procedure.market_log)], ensure_ascii=False))`);
 const mkMsg = await page.textContent("#proc-message");
-check(mkMsg.startsWith(`市場の結果:契約 ${mkPy.length - 1} 人`) && (await page.textContent("#market-results summary")).includes(`契約 ${mkPy.length - 1} 人`), `「市場を締める」(状態バー)で、AI 球団の提示(全 ${mkPy[mkPy.length - 1]} 件)と合わせて選手が選び、結果(契約 ${mkPy.length - 1} 人)が計算本体と同じ`);
+check(mkMsg.startsWith(`市場の結果:契約 ${mkPy.length - 1} 人`) && (await page.textContent("#market-results summary")).includes(`契約 ${mkPy.length - 1} 人`), `「市場を締める」(状態バー)で、AI 球団の希望(全 ${mkPy[mkPy.length - 1]} 件)と合わせて順番に獲得し、結果(契約 ${mkPy.length - 1} 人)が計算本体と同じ`);
 // 「全部おまかせ」はメニューの中(確認つき。D-271)
 check(await page.isHidden("#proc-auto"), "手続きの画面には「全部おまかせ」はない(メニューの中)");
 await page.click("#menu");
@@ -974,17 +983,17 @@ check(true, "2シーズン目を1日進められる");
 // ドラフトの振り返り(D-216):進行の画面のボタンから開く。計算本体と同じ行。オフなら真の値は出ない
 await page.click("#open-review");
 await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-table tbody tr").length > 0);
-const reviewPy = pyYear2(`v = g.draft_review()\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
+const reviewPy = pyYear2(`v = g.draft_review()\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_grade"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
 const reviewRows = async () => page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent, tr.children[4].textContent, tr.children[6].textContent, tr.children[8].textContent]));
 let reviewOnScreen = await reviewRows();
 const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
-check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の総合 ± ふれ幅・今の所属・WAR 累計)`);
+check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の評価・今の所属・WAR 累計)`);
 check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-note")), "振り返りに真の総合・差・実際の天井の列は出ない(答え合わせモードはなくした)");
-check(reviewOnScreen.every((r) => /^ドラフト \d 巡$|^市場$|^自動補充$/.test(r[1]) && /^\d+ ± \d+$/.test(r[2])), "経路は「ドラフト n 巡」「市場」「自動補充」、入団時の総合は「推定値 ± ふれ幅」の形");
+check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^市場$|^自動補充$/.test(r[1]) && /^[A-E]$/.test(r[2])), "経路は「ドラフト n 巡」「市場」「自動補充」、入団時の評価は A〜E");
 await grab();
 // 別の球団を選ぶと、その球団の入団者になる
 await page.selectOption("#review-team", "T05");
-const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
+const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_grade"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
 await page.waitForFunction(([n, top]) => document.querySelector("#review-loading").hidden && document.querySelectorAll("#review-table tbody tr").length === n && document.querySelector("#review-table tbody tr td").textContent === top, [reviewT05Py.length, reviewT05Py[0][0]], { timeout: 60000 });
 reviewOnScreen = await reviewRows();
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);
