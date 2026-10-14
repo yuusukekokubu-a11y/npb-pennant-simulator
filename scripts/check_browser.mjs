@@ -838,7 +838,12 @@ if (faStart[0] === "fa") {
   if (await page.$("#proc-body tbody tr")) await sameAsPy({ stage: "fa", group: "pitcher", kind: "saber" }, "FA の投手・セイバー");
   await page.selectOption("#fa-group", "all");
   await page.waitForFunction(() => !document.querySelector("#fa-kind") && document.querySelector("#proc-body tbody tr"));
-  await page.click("#proc-body tbody tr td .link >> nth=0");
+  // 資金の残りで出せる選手(算定年俸が資金の残り以下)を選ぶ(作り直し②。資金を超える提示はできない)
+  const [faName] = pyAfter(`b = g.budget_info(g.state.my_team_id)
+room = b["cap"] - b["total"]
+t = g.decision_table("fa")
+print(json.dumps(next(([r["name"]] for r in t["rows"] if r["deal"]["calc_salary"] <= room), [t["rows"][0]["name"]]), ensure_ascii=False))`);
+  await page.click(`#proc-body tbody tr .link:text-is("${faName}")`);
   await page.waitForSelector("#fa-panel");
   const faPid = await page.getAttribute("#fa-panel", "data-player-id");
   check(Boolean(await page.$("#offer-plus10")) && !(await page.textContent("#fa-panel")).includes("志望"), "FA の提示のパネル:年俸と ±% のボタンが出る。志望の重みは出ない");
