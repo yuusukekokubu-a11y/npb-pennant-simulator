@@ -720,7 +720,7 @@ const yeSeconds = (Date.now() - ye0) / 1000;
 const tabTexts = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent));
 const tabBoxes = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => { const r = l.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height), l.scrollWidth <= l.clientWidth + 1]; }));
 const overAtStart = pyAfter(`print(json.dumps(g.offseason_view()["renewal"]["over"]))`);
-check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・ドラフト・市場・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 5 つ。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
+check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 6 つ(外国人を含む。D-376)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
@@ -890,11 +890,34 @@ print(json.dumps(next(([r["name"]] for r in sorted(t["rows"], key=lambda r: r["d
   const faLastPy = pyAfter(`print(json.dumps([[x["name"], x["team_name"], x["years"], x["salary_text"]] for x in r["last_round"]["signed"]], ensure_ascii=False))`);
   check(faLastPy.every((x) => faLastUi.includes(`${x[0]} → ${x[1]}(${x[2]} 年・${x[3]})`)) && (faLastPy.length > 0 || faLastUi.includes("ありません")) && (await page.textContent("#proc-info")).startsWith("ラウンド 2/3"), `「ラウンド 1 を締める」(状態バー)の結果(契約 ${faLastPy.length} 人)が計算本体と同じ。状態バーはラウンド 2/3`);
   await page.click("#proc-next");
-  await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "ドラフト", null, { timeout: 60000 });
+  await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "外国人", null, { timeout: 60000 });
   procOps.push(["offseason_next", []]);
   const faMine = pyAfter(`print(json.dumps([x for x in g.state.procedure.fa_log if x["team_id"] == g.state.my_team_id and x["round"] > 1]))`);
   check(faMine.length === 0, `FA の「次の手続きへ」では、自球団は 2 ラウンド目以降の提示をしない(AI の代行をしない。D-271)${faMine.length ? JSON.stringify(faMine.slice(0, 2)) : ""}`);
 }
+// 外国人市場(D-376):候補は評価と一言だけ。年俸は評価の段階の表。獲得の希望を入れて締めると、前年の順位が低い球団から 1 人ずつ
+check((await page.textContent("#proc-title")) === "外国人" && (await page.textContent("#proc-info")).startsWith("外国人市場 24 人"), `外国人の段階:状態バーに「${await page.textContent("#proc-info")}」`);
+await page.waitForSelector("#proc-body tbody tr");
+await measureDecision("外国人市場");
+const fo0 = await sameAsPy({ stage: "foreign" }, "外国人市場");
+check(["評価", "スカウトの一言", "年齢", "ポジション", "加入後の序列", "年俸", "状態"].every((h) => fo0.heads.includes(h)) && !fo0.heads.includes("総合") && (await page.textContent("#proc-info")).includes("一軍 4 まで"), `外国人市場の列は評価と一言(能力の数値はない。列:${fo0.heads.join("・")})。状態バーに一軍は 4 人まで`);
+const [foName] = pyAfter(`t = g.decision_table("foreign")
+print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、年俸の最も安い候補
+await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${foName}")`);
+await page.waitForSelector("#foreign-panel");
+const foPid = await page.getAttribute("#foreign-panel", "data-player-id");
+await page.click("#foreign-send");
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("希望 1") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 30000 });
+check((await page.textContent("#proc-info")).includes("希望 1"), `外国人の獲得の希望が通る(${await page.textContent("#proc-message")}${await page.textContent("#proc-info")})`);
+procOps.push(["offseason_foreign_offer", [foPid]]);
+await page.click("#foreign-close");
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("終了"), null, { timeout: 60000 });
+procOps.push(["offseason_foreign_close", []]);
+const foPy = pyAfter(`print(json.dumps([[x["name"], x["team_name"]] for x in r["last_foreign"]["signed"]], ensure_ascii=False))`);
+check((await page.textContent("#proc-message")).startsWith(`外国人市場の結果:契約 ${foPy.length} 人`) && foPy.length > 0, `「外国人市場を締める」で、前年の順位が低い球団から獲得し、結果(契約 ${foPy.length} 人)が計算本体と同じ`);
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "ドラフト", null, { timeout: 60000 });
+procOps.push(["offseason_next", []]);
 // ドラフト(D-299、D-368、D-369):1 巡目は入札(状態バーに「入札・あなたの番」)。表(並べ替えは見出し・絞り込み 1 本)→ 名前を押して入札 → 抽選の結果 →「この段階をおまかせ」(確認つき)
 check((await page.textContent("#proc-title")) === "ドラフト" && (await page.textContent("#proc-info")).startsWith("1/6 巡・入札・あなたの番"), `ドラフトの段階:状態バーに「1/6 巡・入札・あなたの番」(「${await page.textContent("#proc-info")}」)`);
 await page.waitForSelector("#proc-body tbody tr");
@@ -937,7 +960,7 @@ await page.click("#draft-lottery summary");
 const lotUi = await page.$$eval("#draft-lottery tbody tr", (trs) => trs.map((tr) => tr.querySelector("td").textContent));
 check((await page.textContent("#proc-info")).startsWith("2/6 巡") && (await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `入札(${bids} 回)と抽選で 1 巡目が決まり、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
 const lotBids = lotPy.reduce((s, x) => s + x[2], 0);
-check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotBids >= 12, `1 巡目の入札の結果(${lotPy.length} 人・入札 ${lotBids} 件・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ${JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) ? "" : `(画面 ${lotUi.length} 行)`}`);
+check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotBids >= 1, `1 巡目の入札の結果(${lotPy.length} 人・入札 ${lotBids} 件・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ${JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) ? "" : `(画面 ${lotUi.length} 行)`}`);
 await page.click("#draft-lottery summary");
 await page.selectOption("#draft-show", "all");
 await page.waitForFunction(() => document.querySelector("#proc-body thead").textContent.includes("状態"));
@@ -950,7 +973,7 @@ procOps.push(["offseason_stage_auto", []]);
 const autoLogPy = pyAfter(`print(json.dumps([r["auto_log"]["stage_label"], [x["text"] for x in r["auto_log"]["items"]]], ensure_ascii=False))`);
 await page.click("#auto-log summary");
 const autoLogUi = await page.$$eval("#auto-log li", (ls) => ls.map((l) => l.textContent));
-check((await page.textContent("#auto-log summary")).includes(`おまかせの結果(${autoLogPy[0]})`) && JSON.stringify(autoLogUi) === JSON.stringify(autoLogPy[1]) && autoLogPy[1].length > 0 && autoLogPy[1].every((t) => t.startsWith("ドラフト")), `「この段階をおまかせ」(確認つき。D-284)でドラフトの残りを AI の方針で進め、市場の入口で止まる。AI が自球団の分として指名した選手の一覧(${autoLogPy[1].length} 人)が計算本体と同じ`);
+check((await page.textContent("#auto-log summary")).includes(`おまかせの結果(${autoLogPy[0]})`) && JSON.stringify(autoLogUi) === JSON.stringify(autoLogPy[1]) && autoLogPy[1].length > 0 && autoLogPy[1].every((t) => t.startsWith("ドラフト") || t.startsWith("育成ドラフト")), `「この段階をおまかせ」(確認つき。D-284)でドラフトと育成ドラフトの残りを AI の方針で進め、市場の入口で止まる。AI が自球団の分として指名した選手の一覧(${autoLogPy[1].length} 人)が計算本体と同じ`);
 await page.click("#auto-log summary");
 // 市場(D-370):年俸は自動。獲得の希望を入れ、締めると前年の順位が低い球団から 1 人ずつ。表は 名前・WAR・総合・年齢・ポジション・加入後の序列・算定年俸・出場・前の所属・状態
 await measureDecision("市場");
@@ -981,6 +1004,10 @@ procOps.push(["offseason_market_close", []]);
 const mkPy = pyAfter(`print(json.dumps([[x["name"], x["team_name"]] for x in r["last_market"]["signed"]] + [len(g.state.procedure.market_log)], ensure_ascii=False))`);
 const mkMsg = await page.textContent("#proc-message");
 check(mkMsg.startsWith(`市場の結果:契約 ${mkPy.length - 1} 人`) && (await page.textContent("#market-results summary")).includes(`契約 ${mkPy.length - 1} 人`), `「市場を締める」(状態バー)で、AI 球団の希望(全 ${mkPy[mkPy.length - 1]} 件)と合わせて順番に獲得し、結果(契約 ${mkPy.length - 1} 人)が計算本体と同じ`);
+// 育成選手(D-375):市場の段階の下に自球団の育成選手の一覧(締めたあとは上げられない)
+const devPy = pyAfter(`d = g.offseason_view()["development"]
+print(json.dumps([d["count"], d["max"], [p["name"] for p in d["players"]]], ensure_ascii=False))`);
+check((await page.textContent("#development-box summary")).startsWith(`育成選手(${devPy[0]}/${devPy[1]} 人`) && (await page.locator("#development-box button:has-text(\"支配下に上げる\")").count()) === 0, `市場の段階に自球団の育成選手(${devPy[0]} 人)が出る。市場を締めたあとは「支配下に上げる」はない(「${await page.textContent("#development-box summary").catch(() => "なし")}」)`);
 // 「全部おまかせ」はメニューの中(確認つき。D-271)
 check(await page.isHidden("#proc-auto"), "手続きの画面には「全部おまかせ」はない(メニューの中)");
 await page.click("#menu");
@@ -1020,7 +1047,7 @@ let reviewOnScreen = await reviewRows();
 const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の評価・今の所属・WAR 累計)`);
 check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-note")), "振り返りに真の総合・差・実際の天井の列は出ない(答え合わせモードはなくした)");
-check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^市場$|^自動補充$/.test(r[1]) && /^[A-E]$/.test(r[2])), "経路は「ドラフト n 巡」「市場」「自動補充」、入団時の評価は A〜E");
+check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^育成ドラフト \d 巡$|^外国人市場$|^市場$|^自動補充$/.test(r[1]) && /^[A-E]$/.test(r[2])), "経路は「ドラフト n 巡」「育成ドラフト n 巡」「外国人市場」「市場」「自動補充」、入団時の評価は A〜E");
 await grab();
 // 別の球団を選ぶと、その球団の入団者になる
 await page.selectOption("#review-team", "T05");

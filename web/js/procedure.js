@@ -9,7 +9,7 @@ import { buildStatsFilters } from "./stats.js";
 import { contractSection } from "./contract.js";
 import { faClose, faSection } from "./fa.js";
 import { draftSection } from "./draft.js";
-import { marketClose, marketSection } from "./market.js";
+import { developmentBox, marketClose, marketSection } from "./market.js";
 import { foreignClose, foreignSection } from "./foreign.js";
 import { outlookPanel } from "./decision.js";
 
@@ -71,6 +71,7 @@ export async function renderProcedure(token) {
   else if (v.phase === "market") parts = await marketSection(v, token);
   if (parts === null || token !== state.token) return;
   body.replaceChildren(...parts);
+  $("proc-development").replaceChildren(v.stage === "market" && v.development ? developmentBox(v.development) : ""); // 育成選手を支配下に上げる(D-375)
   renderProcedureContracts(v);
   $("proc-history").replaceChildren(historyTable(v.picks, v.released));
   $("proc-history-box").hidden = v.stage === "contract";
@@ -100,7 +101,7 @@ function renderProcedureBar(v) {
     info = `${dev}${Math.min(v.round, v.total_rounds)}/${v.total_rounds} 巡・${turn}${count}`;
   } else if (v.stage === "foreign" && v.foreign) {
     const f = v.foreign;
-    info = f.done ? `外国人市場 終了:契約 ${f.counts.signed} 人(自球団 ${f.counts.mine})` : `外国人市場 ${f.counts.pool} 人・希望 ${f.counts.offers}・空き枠 ${f.space ?? "-"}${mine ? `・外国人 ${mine.foreign} 人` : ""}`;
+    info = f.done ? `外国人市場 終了:契約 ${f.counts.signed} 人(自球団 ${f.counts.mine})` : `外国人市場 ${f.counts.pool} 人・希望 ${f.counts.offers}・空き枠 ${f.space ?? "-"}${mine ? `・外国人 ${mine.foreign} 人(一軍 ${f.active_max ?? "-"} まで)` : ""}`;
   } else if (v.stage === "market" && v.market) {
     const m = v.market;
     info = m.done ? `市場 終了:契約 ${m.counts.signed} 人(自球団 ${m.counts.mine})` : `市場 ${m.counts.pool} 人・希望 ${m.counts.offers}・空き枠 ${m.space ?? "-"}`;

@@ -173,7 +173,7 @@ def _plain(x):
 def _names_data(parts: NameParts) -> dict:
     data = {"format_version": 1}
     for f in dataclasses.fields(parts):
-        if f.name != "source":
+        if f.name != "source" and not (f.name.startswith("foreign_") and not getattr(parts, f.name)):  # 外国人の名前の部品は、あるときだけ(D-376)
             data[f.name] = list(getattr(parts, f.name))
     return data
 

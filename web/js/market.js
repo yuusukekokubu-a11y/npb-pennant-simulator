@@ -38,7 +38,6 @@ export async function marketSection(v, token) {
     decisionTable("market", data, truth, { onName, detail, rowClass: (p) => (p.offer ? "selected" : !p.open ? "muted" : "") }),
   ];
   if (m.results.length) out.push(resultsTable("market-results", `市場の結果(契約 ${m.results.length} 人)`, m.results, true, "希望した球団"));
-  if (v.development) out.push(developmentBox(v.development));
   return out;
 }
 
@@ -48,7 +47,7 @@ export async function marketClose() {
 }
 
 // 育成選手を支配下に上げる(D-375):70 人に空きがあれば、市場を締める前に選べる(年俸は最低年俸・1 年)
-function developmentBox(d) {
+export function developmentBox(d) {
   const columns = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合" }, { key: "year", label: "育成" }, { key: "action", label: "" }];
   const rows = d.players.map((p) => ({ ...p, values: {
     position: p.position_label, age: `${p.age}歳`, overall: p.overall, year: `${p.dev_seasons + 1} 年目(あと ${p.left} 年)`,

@@ -31,9 +31,7 @@ export async function foreignSection(v, token) {
     box.append(row);
     return box;
   };
-  const note = el("p", { className: "small muted", id: "foreign-note" }, `一軍に登録できる外国人は ${f.active_max ?? "-"} 人までです${f.my_foreign !== null ? `(自球団の外国人 ${f.my_foreign} 人)` : ""}。年俸:${f.salary_table.map((x) => `${x.grade} ${x.salary_text}`).join("・")}。`);
   const out = [
-    note,
     decisionFilters("foreign", data),
     decisionTable("foreign", data, truth, { onName, detail, rowClass: (p) => (p.offer ? "selected" : !p.open ? "muted" : "") }),
   ];

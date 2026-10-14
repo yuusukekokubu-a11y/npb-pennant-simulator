@@ -213,7 +213,7 @@ def test_ai_offseason_keeps_rules_and_is_reproducible():
         for t in league.teams:
             drafted = [x for x in proc.picks if x["team_id"] == t.id and x["player_id"]]
             assert len(drafted) <= MAX_ROSTER
-        assert all(p.scouting is not None for n in joined for p in [next(p for t in league.teams for p in t.players if p.id == n.player_id)])
+        assert all(p.scouting is not None for n in joined for p in [next(p for t in league.teams for p in t.players + t.development if p.id == n.player_id)])  # 育成ドラフトの選手は育成の一覧(D-375)
         assert all(p.scouting["team_id"] == p.team_id for t in league.teams for p in t.players if p.scouting)
     assert results[0] == results[1]  # 同じシードなら同じ結果
 
