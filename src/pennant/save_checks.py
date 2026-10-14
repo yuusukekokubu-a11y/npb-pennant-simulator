@@ -85,6 +85,11 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     fs = pd.get("fa_seasons")
     if fs is not None and not (isinstance(fs, int) and not isinstance(fs, bool) and 0 <= fs <= 60):
         p.add(f"{where}.fa_seasons", "FA 権の年数は 0〜60 の整数にしてください")
+    if not isinstance(pd.get("foreign", False), bool):
+        p.add(f"{where}.foreign", "外国人かどうかは true か false にしてください")
+    ds = pd.get("dev_seasons")
+    if ds is not None and not (isinstance(ds, int) and not isinstance(ds, bool) and 0 <= ds <= 20):
+        p.add(f"{where}.dev_seasons", "育成で過ごしたシーズン数は 0〜20 の整数にしてください")
     sk = pd.get("skills", [])
     if not (isinstance(sk, list) and all(isinstance(s, str) for s in sk)):
         p.add(f"{where}.skills", "特殊能力は文字の一覧にしてください")
@@ -163,6 +168,8 @@ def _player_from(pd: dict) -> Player:
         contract=copy.deepcopy(pd.get("contract")),
         fa_seasons=pd.get("fa_seasons", 0),
         skills=list(pd.get("skills", [])),
+        foreign=bool(pd.get("foreign", False)),
+        dev_seasons=pd.get("dev_seasons"),
         abilities={k: float(v) for k, v in pd["abilities"].items()},
         pitches=copy.deepcopy(pd.get("pitches")),
     )
@@ -197,13 +204,15 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
         p.add(where, "手続きのまとまり({ })が必要です")
         return None
     try:
-        if d["phase"] not in ("renewal", "release", "fa", "draft", "market", "done"):
+        from .procedure import PHASES
+
+        if d["phase"] not in PHASES:  # 外国人市場・育成ドラフトを含む(D-375、D-376)
             p.add(f"{where}.phase", f"段階が正しくありません(値: {d['phase']!r})")
         for i, tid in enumerate(d["order"]):
             if tid not in team_ids:
                 p.add(f"{where}.order[{i}]", "球団の一覧にない ID です")
         seen = set()
-        for key in ("candidates", "market", "fa_pool"):
+        for key in ("candidates", "market", "fa_pool", "foreign_pool"):
             for i, pd in enumerate(d.get(key, [])):
                 _check_player(pd, f"{where}.{key}[{i}]", None, p)
                 pid = pd.get("id") if isinstance(pd, dict) else None

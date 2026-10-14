@@ -56,14 +56,18 @@ def test_custom_lineup_validation_and_position_penalty(base):
     v = g.lineup_view()
     s = slots_of(v)
     s[0], s[3] = s[3], s[0]
-    catcher_bench = next(b for b in v["bench"] if b["position"] == "C")
+    catcher_bench = next((b for b in v["bench"] if b["position"] == "C"), None) or next(b for b in v["bench"] if b["position"] != "SS")  # 控えの捕手(いなければ遊撃手でない控え)
     dh = next(i for i, x in enumerate(s) if x["position"] == DH)
     ss = next(i for i, x in enumerate(s) if x["position"] == "SS")
-    s[dh]["player_id"], s[ss]["player_id"] = s[ss]["player_id"], catcher_bench["player_id"]  # 控えの捕手を遊撃手に
+    s[dh]["player_id"], s[ss]["player_id"] = s[ss]["player_id"], catcher_bench["player_id"]  # 控えの選手を遊撃手に
     v2 = g.set_lineup(s)
     assert v2["source"] == "user" and [x["player_id"] for x in v2["slots"]] == [x["player_id"] for x in s]
     row = v2["slots"][ss]
-    assert row["penalty"] == 10 and "本来は捕手" in row["warning"]  # 遠いポジションは −10
+    from pennant.abilities import POSITION_LABELS
+
+    assert row["penalty"] in (5, 10) and f"本来は{POSITION_LABELS[catcher_bench['position']]}" in row["warning"]  # 近いポジションは −5、遠いポジションは −10
+    if catcher_bench["position"] == "C":
+        assert row["penalty"] == 10
     assert v2["slots"][dh]["penalty"] == 0  # 指名打者は下げない
     # 試合で使う顔ぶれ:守備の能力が下がった写し
     season = g.state.season
@@ -114,7 +118,7 @@ def test_review_resets_to_ai_and_replay_and_save(base):
         assert (again.home_runs, again.away_runs, len(again.log)) == (pg.result.home_runs, pg.result.away_runs, len(pg.result.log))
     # 保存と読み込み(版 17)で、計画と試合ごとの記録が残る
     loaded = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 18
+    assert SAVE_FORMAT_VERSION == 19
     assert loaded.state.season.lineup_plans["T01"]["slots"] == [[x["player_id"], x["position"]] for x in s] and loaded.state.season.lineup_plans["T01"]["style"] == "speed"
     assert [pg.context.lineups for pg in loaded.state.season.played] == [pg.context.lineups for pg in season.played]
     # 見直し(7 日ごと):8 日目の試合の前に、型で AI が組み直す

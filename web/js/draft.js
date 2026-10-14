@@ -20,7 +20,7 @@ export async function draftSection(v, token) {
     const box = el("div", { className: "offer-panel", id: "draft-panel", dataset: { playerId: p.player_id } },
       el("p", { className: "small" }, `スカウトの評価 ${sc.grade || "-"}:「${sc.comment || ""}」(能力は入団すると見えます)`));
     if (p.open && v.is_my_turn) {
-      const label = v.bidding ? "1 巡目に入札する" : `${v.round} 巡目で指名する`;
+      const label = v.bidding ? "1 巡目に入札する" : v.development_draft ? `育成 ${v.round} 巡目で指名する` : `${v.round} 巡目で指名する`;
       box.append(el("div", { className: "row" }, el("button", { id: "draft-pick", type: "button", disabled: state.running, onclick: () => draftPick(p.player_id) }, label)));
     }
     return box;

@@ -11,6 +11,6 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import v16_to_v17, v17_to_v18
+from . import v16_to_v17, v17_to_v18, v18_to_v19
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {16: v16_to_v17.convert, 17: v17_to_v18.convert}
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {16: v16_to_v17.convert, 17: v17_to_v18.convert, 18: v18_to_v19.convert}

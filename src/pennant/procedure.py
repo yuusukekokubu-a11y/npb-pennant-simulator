@@ -15,9 +15,9 @@ from pathlib import Path
 from .abilities import BATTER, FIELDER_POSITIONS, PITCHER, PITCHER_POSITIONS
 from .config import ConfigError, GenerationConfig, NameParts, _Checker, _read_json
 from .game_config import load_game_config
-from .generate import make_rookie
+from .generate import make_foreign, make_rookie
 from .models import League, Player, Team
-from .names import NameGenerator
+from .names import ForeignNameGenerator, NameGenerator
 from .negotiation import standing_ranks
 from .offseason import PlayerNote
 from .abilities import ALL_ABILITIES
@@ -28,21 +28,23 @@ from .season import derive_seed
 SUPPORTED_FORMAT_VERSION = 1
 
 
-PHASES = ("renewal", "release", "fa", "draft", "market", "done")
+PHASES = ("renewal", "release", "fa", "foreign", "draft", "dev_draft", "market", "done")
 
 
-PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "draft": "ドラフト", "market": "自由契約市場", "done": "完了"}
+PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "done": "完了", "promote": "支配下登録"}
 
 
-# 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ
-STAGES = ("contract", "fa", "draft", "market", "done")
+# 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ。育成ドラフトはドラフトの段階の中(D-375)
+STAGES = ("contract", "fa", "foreign", "draft", "market", "done")
 
 
-STAGE_LABELS = {"contract": "契約", "fa": "FA", "draft": "ドラフト", "market": "市場", "done": "完了"}
+STAGE_LABELS = {"contract": "契約", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "done": "完了"}
 
 
 def stage_of(phase: str) -> str:
-    return "contract" if phase in ("renewal", "release") else phase
+    if phase in ("renewal", "release"):
+        return "contract"
+    return "draft" if phase == "dev_draft" else phase
 
 
 MAX_ROSTER = 70
@@ -87,6 +89,20 @@ class DraftSettings:
     @property
     def grade_shares(self) -> dict[str, float]:
         return {g: float(v) for g, v in self.data["scouting"]["grade_shares"].items()}
+
+    @property
+    def foreign(self) -> dict:
+        """外国人選手の設定(candidates・age_min・age_max・boost・spread_sd・salary・ai_target・ai_wishes・initial_min・initial_max。D-376)。"""
+        return self.data["foreign"]
+
+    @property
+    def development(self) -> dict:
+        """育成選手の設定(max・rounds・salary・seasons・ai_target・ai_max_age。D-375)。"""
+        return self.data["development"]
+
+    @property
+    def dev_seasons(self) -> int:
+        return int(self.development["seasons"])
 
     @property
     def comment(self) -> dict:
@@ -149,6 +165,30 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
         v = c.get(phrases, key, "scouting.comment.phrases")
         if v is not None and (not isinstance(v, str) or not v.strip()):
             c.add(f"scouting.comment.phrases.{key}", "言葉を書いてください")
+    f = c.section(c.get(root, "foreign", ""), "foreign")
+    c.integer(c.get(f, "candidates", "foreign"), "foreign.candidates", 0, 200)
+    lo = c.integer(c.get(f, "age_min", "foreign"), "foreign.age_min", 18, 45)
+    hi = c.integer(c.get(f, "age_max", "foreign"), "foreign.age_max", 18, 45)
+    if lo is not None and hi is not None and lo > hi:
+        c.add("foreign.age_min", "age_max 以下にしてください")
+    c.number(c.get(f, "boost", "foreign"), "foreign.boost", -30, 30)
+    c.number(c.get(f, "spread_sd", "foreign"), "foreign.spread_sd", 0, 30)
+    fs = c.section(c.get(f, "salary", "foreign"), "foreign.salary")
+    for g in GRADES:
+        c.integer(c.get(fs, g, "foreign.salary"), f"foreign.salary.{g}", 0, 10_000_000)
+    c.integer(c.get(f, "ai_target", "foreign"), "foreign.ai_target", 0, 70)
+    c.integer(c.get(f, "ai_wishes", "foreign"), "foreign.ai_wishes", 0, 20)
+    a1 = c.integer(c.get(f, "initial_min", "foreign"), "foreign.initial_min", 0, 70)
+    a2 = c.integer(c.get(f, "initial_max", "foreign"), "foreign.initial_max", 0, 70)
+    if a1 is not None and a2 is not None and a1 > a2:
+        c.add("foreign.initial_min", "initial_max 以下にしてください")
+    dv = c.section(c.get(root, "development", ""), "development")
+    c.integer(c.get(dv, "max", "development"), "development.max", 0, 100)
+    c.integer(c.get(dv, "rounds", "development"), "development.rounds", 0, 30)
+    c.integer(c.get(dv, "salary", "development"), "development.salary", 0, 1_000_000)
+    c.integer(c.get(dv, "seasons", "development"), "development.seasons", 1, 20)
+    c.integer(c.get(dv, "ai_target", "development"), "development.ai_target", 0, 100)
+    c.integer(c.get(dv, "ai_max_age", "development"), "development.ai_max_age", 15, 60)
     if c.problems:
         raise ConfigError(source, c.problems)
     return DraftSettings(copy.deepcopy(root), source)
@@ -247,6 +287,15 @@ class OffseasonProcedure:
     bid_done: bool = False  # ドラフトの 1 巡目の入札が終わったか(D-369)
     bid_step: int = 1  # 1 巡目の入札の回(外れた球団が入札し直すたびに 1 増える)
     lottery: list[dict] = field(default_factory=list)  # 1 巡目の入札の記録({step, player_id, name, position, teams, winner})
+    dev_rounds: int = 0  # 育成ドラフトの巡数(D-375)
+    foreign_pool: list[Player] = field(default_factory=list)  # 外国人市場の候補(まだ決まっていない。D-376)
+    foreign_cuts: list[float] = field(default_factory=list)  # 外国人の候補の評価の境目
+    foreign_stats: dict = field(default_factory=dict)  # 外国人の候補の能力の平均と標準偏差(一言の物差し)
+    foreign_salary: dict = field(default_factory=dict)  # 外国人の候補 → 年俸(評価の段階の表。D-376)
+    foreign_offers: dict = field(default_factory=dict)  # あなたの獲得の希望(選手 ID → {}。入れた順が優先)
+    foreign_results: list[dict] = field(default_factory=list)  # 外国人市場で成立した契約
+    foreign_done: bool = False  # 外国人市場を締めたか
+    promotions: list[dict] = field(default_factory=list)  # 育成から支配下に上げた選手({team_id, player_id, name, position, age, by})
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 評価)。保存しない
 
     def bidding(self) -> bool:
@@ -258,11 +307,13 @@ class OffseasonProcedure:
         ドラフトは 1 巡目が入札なので、2 巡目を前年の順位が低い球団から始めて往復する(D-369)。市場の順番の方式は 1 巡目から往復。"""
         if self.index >= len(self.order) or self.bidding():
             return None
-        forward = self.round % 2 == (0 if self.phase == "draft" else 1)
+        forward = self.round % 2 == (0 if self.phase == "draft" else 1)  # 育成ドラフトは前年の順位が低い球団から始める(D-375)
         order = self.order if forward else list(reversed(self.order))
         return order[self.index]
 
     def total_rounds(self) -> int:
+        if self.phase == "dev_draft":
+            return self.dev_rounds
         return self.rounds if self.phase == "draft" else self.market_rounds
 
     @property
@@ -289,6 +340,9 @@ class OffseasonProcedure:
             "market_offers": copy.deepcopy(self.market_offers), "market_results": [dict(x) for x in self.market_results],
             "market_log": [dict(x) for x in self.market_log], "market_done": self.market_done,
             "item_stats": copy.deepcopy(self.item_stats), "bid_done": self.bid_done, "bid_step": self.bid_step, "lottery": copy.deepcopy(self.lottery),
+            "dev_rounds": self.dev_rounds, "foreign_pool": [plain(p) for p in self.foreign_pool], "foreign_cuts": [round(c, 4) for c in self.foreign_cuts],
+            "foreign_stats": copy.deepcopy(self.foreign_stats), "foreign_salary": dict(self.foreign_salary), "foreign_offers": copy.deepcopy(self.foreign_offers),
+            "foreign_results": [dict(x) for x in self.foreign_results], "foreign_done": self.foreign_done, "promotions": [dict(x) for x in self.promotions],
         }
 
     @classmethod
@@ -327,6 +381,15 @@ class OffseasonProcedure:
         proc.bid_done = bool(d.get("bid_done", False))
         proc.bid_step = int(d.get("bid_step", 1))
         proc.lottery = copy.deepcopy(d.get("lottery", []))
+        proc.dev_rounds = int(d.get("dev_rounds", 0))  # 版 18 以前の手続き:育成ドラフト・外国人市場はない(D-377)
+        proc.foreign_pool = [player_from(x) for x in d.get("foreign_pool", [])]
+        proc.foreign_cuts = [float(c) for c in d.get("foreign_cuts", [])]
+        proc.foreign_stats = copy.deepcopy(d.get("foreign_stats", {}))
+        proc.foreign_salary = {str(k): int(v) for k, v in d.get("foreign_salary", {}).items()}
+        proc.foreign_offers = copy.deepcopy(d.get("foreign_offers", {}))
+        proc.foreign_results = [dict(x) for x in d.get("foreign_results", [])]
+        proc.foreign_done = bool(d.get("foreign_done", "foreign_pool" not in d))
+        proc.promotions = [dict(x) for x in d.get("promotions", [])]
         return proc
 
 
@@ -366,11 +429,35 @@ def make_candidates(league: League, seed: int, config: GenerationConfig, parts: 
     """ドラフトの候補(指名数 × 1.5 倍ほど)。既存の新人の生成で作り、校正の定数を足す(D-202)。"""
     count = int(math.ceil(settings.rounds * len(league.teams) * settings.candidate_factor))
     rng = random.Random(derive_seed(seed, "candidates"))
-    names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players()})
+    names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players() + league.development_players()})
     out = []
     for i, (role, pos) in enumerate(candidate_slots(config, count), start=1):
         out.append(make_rookie(config, names, rng, role, pos, f"{id_prefix}{year + 1:02d}C{i:03d}", (calibration or {}).get(role, 0.0)))
     return out
+
+
+def make_foreign_candidates(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: DraftSettings, year: int, calibration: dict[str, float] | None, id_prefix: str = "D") -> list[Player]:
+    """外国人市場の候補(D-376)。ポジションの構成は人数の目安の比率。名前はカタカナの部品(リーグの外国人と姓が重ならない)。"""
+    s = settings.foreign
+    count = int(s["candidates"])
+    if count <= 0 or not parts.foreign_surnames:
+        return []
+    rng = random.Random(derive_seed(seed, "foreign"))
+    everyone = league.all_players() + league.development_players()
+    names = ForeignNameGenerator(parts, rng, {(p.family_name, p.given_name) for p in everyone})
+    names.taken = {p.family_name for p in everyone if p.foreign}
+    out = []
+    for i, (role, pos) in enumerate(candidate_slots(config, count), start=1):
+        p = make_foreign(config, names, rng, role, pos, f"{id_prefix}{year + 1:02d}F{i:03d}", s, (calibration or {}).get(role, 0.0))
+        names.taken.add(p.family_name)
+        out.append(p)
+    return out
+
+
+def foreign_terms(proc: OffseasonProcedure, settings: DraftSettings, sd: dict) -> dict[str, int]:
+    """外国人の候補の年俸:評価の段階の表(評価は球団によらない「市場の見立て」で決める。能力から決めると隠した能力が分かるため。D-376)。"""
+    table = settings.foreign["salary"]
+    return {p.id: int(table[quick_value(p, "market", proc.seed, sd, proc.foreign_cuts)[1]]) for p in proc.foreign_pool}
 
 
 def start_procedure(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: DraftSettings, year: int, calibration: dict[str, float] | None, records: dict[str, tuple[int, int]] | None, id_prefix: str = "D") -> OffseasonProcedure:
@@ -378,7 +465,15 @@ def start_procedure(league: League, seed: int, config: GenerationConfig, parts: 
         object.__setattr__(settings, "gen_config", config)
     candidates = make_candidates(league, seed, config, parts, settings, year, calibration, id_prefix)
     cuts = grade_cuts(candidates, settings.grade_shares)
-    return OffseasonProcedure(year, seed, draft_order(league, records), settings.rounds, settings.market_rounds, cuts, candidates=candidates, ranks=standing_ranks(league.teams, records), item_stats=item_stats(candidates))
+    proc = OffseasonProcedure(year, seed, draft_order(league, records), settings.rounds, settings.market_rounds, cuts, candidates=candidates, ranks=standing_ranks(league.teams, records), item_stats=item_stats(candidates))
+    proc.dev_rounds = int(settings.development["rounds"])
+    proc.foreign_pool = make_foreign_candidates(league, seed, config, parts, settings, year, calibration, id_prefix)
+    proc.foreign_done = not proc.foreign_pool
+    if proc.foreign_pool:
+        proc.foreign_cuts = grade_cuts(proc.foreign_pool, settings.grade_shares)
+        proc.foreign_stats = item_stats(proc.foreign_pool)
+        proc.foreign_salary = foreign_terms(proc, settings, settings.level_sd(settings.default_level))
+    return proc
 
 
 # ---- 評価 ----
@@ -387,12 +482,18 @@ def scout_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: dic
     return report(player, team_id, proc.seed, sd, proc.cuts, proc.item_stats, settings.comment)
 
 
+def scout_report_foreign(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> ScoutReport:
+    """外国人の候補の評価(評価の境目と一言の物差しは、外国人の候補の中で。D-376)。"""
+    return report(player, team_id, proc.seed, sd, proc.foreign_cuts, proc.foreign_stats, settings.comment)
+
+
 def cached_value(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict) -> tuple[float, str]:
-    """総合の推定値と評価(手続きの間は使い回す。同じ入力なら同じ値)。"""
+    """総合の推定値と評価(手続きの間は使い回す。同じ入力なら同じ値)。外国人市場の候補は外国人の候補の中での評価。"""
     key = (team_id, player.id)
     v = proc._cache.get(key)
     if v is None:
-        v = quick_value(player, team_id, proc.seed, sd, proc.cuts)
+        foreign = proc.foreign_cuts and any(p is player for p in proc.foreign_pool)
+        v = quick_value(player, team_id, proc.seed, sd, proc.foreign_cuts if foreign else proc.cuts)
         proc._cache[key] = v
     return v
 
@@ -497,7 +598,9 @@ def apply_ai_releases(league: League, proc: OffseasonProcedure, scout_sd: dict[s
 
 
 def pool_of(proc: OffseasonProcedure) -> list[Player]:
-    return proc.candidates if proc.phase == "draft" else proc.market
+    if proc.phase == "foreign":
+        return proc.foreign_pool
+    return proc.candidates if proc.phase in ("draft", "dev_draft") else proc.market
 
 
 def pass_turn(proc: OffseasonProcedure, team_id: str, reason: str = "pass") -> None:
@@ -521,7 +624,13 @@ def next_phase(proc: OffseasonProcedure) -> None:
     proc.phase = PHASES[min(i + 1, len(PHASES) - 1)]
     if proc.phase == "fa" and (proc.fa_done or not proc.fa_pool):  # 宣言した選手がいなければ FA は飛ばす
         proc.fa_done = True
+        proc.phase = "foreign"
+    if proc.phase == "foreign" and (proc.foreign_done or not proc.foreign_pool):  # 外国人市場が済んでいれば(候補がいなければ)飛ばす(D-376)
+        proc.foreign_done = True
+        proc.foreign_pool = []
         proc.phase = "draft"
+    if proc.phase == "dev_draft" and (proc.dev_rounds <= 0 or not proc.candidates):  # 育成ドラフト(D-375)
+        proc.phase = "market"
     proc.round = 1
     proc.index = 0
     if proc.phase == "market":

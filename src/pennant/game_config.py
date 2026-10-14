@@ -92,6 +92,8 @@ def validate_game_config(data: Any, source: str = "(辞書)") -> GameConfig:
     fielders = c.integer(c.get(ar, "fielders", "active_roster"), "active_roster.fielders", 9, 20)
     if catchers is not None and fielders is not None and fielders < catchers + len(FIELDER_POSITIONS):
         c.add("active_roster.fielders", "捕手の人数と、捕手以外の7ポジションを1人ずつ入れられる人数にしてください")
+    if isinstance(ar, dict) and "foreign_max" in ar:  # 一軍に登録できる外国人の上限(D-376。なければ上限なし)
+        c.integer(ar["foreign_max"], "active_roster.foreign_max", 0, 40)
 
     # 打順の重み
     lineup = c.section(c.get(root, "lineup", ""), "lineup")

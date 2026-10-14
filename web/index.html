@@ -154,6 +154,7 @@
   .ability.rank-F .ability-value, .ability.rank-G .ability-value { color: var(--rank-f); }
   .skills { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-2); }
   .skill { border: 1px solid; border-radius: var(--radius); padding: 0 var(--space-1); font-size: var(--font-small); white-space: nowrap; }
+  .badge-foreign { font-size: var(--font-small); border: 1px solid var(--muted); border-radius: var(--radius); padding: 0 3px; margin-left: 4px; color: var(--muted); }
   .skills-inline { display: inline-flex; gap: var(--space-1); }
   .skill.good { color: var(--ok); } .skill.bad { color: var(--ng); }
   .contract-box { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); }
@@ -184,7 +185,7 @@
   #proc-autolog summary { min-height: 32px; }
   #proc-message { margin: var(--space-1) 0; font-size: var(--font-small); }
   #screen-procedure .page-head .back { min-height: 40px; padding: var(--space-1) var(--space-3); }
-  #screen-procedure .steps li { padding: var(--space-1) 2px; }
+  #screen-procedure .steps li { padding: var(--space-1) 2px; font-size: 0.75rem; } /* 段階のタブは 6 つ(D-376)。幅 390 でも省略されない大きさ */
   #screen-procedure .status-bar .bar-actions button { min-height: 36px; }
   #screen-procedure .page-head h1 { font-size: 1.4rem; }
   .compact-filters { display: flex; gap: var(--space-1); margin: var(--space-1) 0; }
@@ -499,6 +500,7 @@
   <p class="message" id="proc-message" role="status" aria-live="polite"></p>
   <div id="proc-autolog"></div>
   <div id="proc-body"></div>
+  <div id="proc-development"></div>
   <div id="proc-contracts"></div>
   <details id="proc-history-box"><summary>指名・自由契約の履歴</summary><div id="proc-history"></div></details>
 </main>
@@ -545,6 +547,10 @@
   <div id="team-pitchers"></div>
   <h2>野手</h2>
   <div id="team-batters"></div>
+  <div id="team-development-box" hidden>
+    <h2>育成選手</h2>
+    <div id="team-development"></div>
+  </div>
 </main>
 
 <!-- 球場のページ -->

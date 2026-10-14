@@ -121,6 +121,8 @@ class NameParts:
     stadium_suffixes: tuple[str, ...]
     league_names: tuple[str, ...]
     source: str
+    foreign_surnames: tuple[str, ...] = ()  # 外国人選手の姓(カタカナ。D-376)
+    foreign_given_names: tuple[str, ...] = ()  # 外国人選手の名(カタカナ。D-376)
 
 
 def _read_json(path: str | Path | None, default_name: str) -> tuple[Any, str]:
@@ -543,7 +545,9 @@ def validate_name_parts(data: Any, source: str = "(辞書)") -> NameParts:
     if version is not None and version != SUPPORTED_FORMAT_VERSION:
         c.add("format_version", f"対応していない形式のバージョンです(値: {version!r})")
     lists: dict[str, tuple[str, ...]] = {}
-    for key in ("surnames", "given_names", "places", "team_nicknames", "stadium_suffixes", "league_names"):
+    for key in ("surnames", "given_names", "places", "team_nicknames", "stadium_suffixes", "league_names", "foreign_surnames", "foreign_given_names"):
+        if key.startswith("foreign_") and key not in root:  # 外国人の名前の部品はなくてもよい(D-376)
+            continue
         value = c.get(root, key, "")
         if value is None:
             continue

@@ -112,6 +112,7 @@ class OffseasonResult:
     ability_changes: dict[str, dict[str, float]] = field(default_factory=dict)  # 選手 ID → 項目 → 増減(見せる能力の内部の目盛り。オフの結果の画面で見せる)
     ages: dict[str, int] = field(default_factory=dict)  # 選手 ID → 更新後の年齢(残った選手)
     skill_changes: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # 選手 ID → {gained, lost}(特殊能力の変化。D-374)
+    dev_released: list[str] = field(default_factory=list)  # 育成で上限のシーズンを過ごして自由契約になった選手 ID(retired にも入る。D-375)
 
     def to_dict(self) -> dict:
         return {
@@ -122,6 +123,7 @@ class OffseasonResult:
             "ability_changes": {pid: {k: round(v, 6) for k, v in d.items()} for pid, d in self.ability_changes.items()},
             "ages": dict(self.ages),
             "skill_changes": {pid: {k: list(v) for k, v in x.items()} for pid, x in self.skill_changes.items()},
+            "dev_released": list(self.dev_released),
         }
 
     @classmethod
@@ -132,6 +134,7 @@ class OffseasonResult:
             {pid: {k: float(v) for k, v in x.items()} for pid, x in d.get("ability_changes", {}).items()},
             {pid: int(v) for pid, v in d.get("ages", {}).items()},
             {pid: {k: [str(s) for s in v] for k, v in x.items()} for pid, x in d.get("skill_changes", {}).items()},
+            [str(x) for x in d.get("dev_released", [])],
         )
 
 
@@ -182,9 +185,10 @@ def replenish(team: Team, slots: list[tuple[str, str]], config: GenerationConfig
     return rookies
 
 
-def age_update_retire(league: League, seed: int, config: GenerationConfig, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None) -> tuple[OffseasonResult, dict[str, list[tuple[str, str]]]]:
+def age_update_retire(league: League, seed: int, config: GenerationConfig, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None, dev_limit: int = 3) -> tuple[OffseasonResult, dict[str, list[tuple[str, str]]]]:
     """年度の確定の前半(加齢 → 能力の更新 → 引退)。league を書き換える。戻り値は結果と、球団ごとに空いた枠(役割, ポジション)。
-    引退の判定は校正前の目盛りで行う(校正の定数を引く。事前運転と同じ基準にするため。D-197)。"""
+    引退の判定は校正前の目盛りで行う(校正の定数を引く。事前運転と同じ基準にするため。D-197)。
+    育成選手(D-375)は別の乱数の系列で加齢・能力の更新をし、育成で dev_limit シーズン過ごしたら自由契約(リーグを去る。引退の一覧に入れる)。"""
     rng = random.Random(seed)
     result = OffseasonResult(year, seed)
     vacated_by_team: dict[str, list[tuple[str, str]]] = {}
@@ -207,6 +211,20 @@ def age_update_retire(league: League, seed: int, config: GenerationConfig, setti
                     ability_model.refresh(config, p)
         team.players = kept
         vacated_by_team[team.id] = vacated
+    dev_rng = random.Random(derive_seed(seed, "development"))
+    for team in league.teams:
+        kept = []
+        for p in list(team.development):
+            changes = age_and_update(p, config, dev_rng)
+            p.dev_seasons = int(p.dev_seasons or 0) + 1
+            if p.dev_seasons >= dev_limit:
+                result.retired.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
+                result.dev_released.append(p.id)
+                continue
+            kept.append(p)
+            result.ability_changes[p.id] = changes
+            result.ages[p.id] = p.age
+        team.development = kept
     return result, vacated_by_team
 
 
@@ -245,7 +263,7 @@ def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts
     funds = initial_funds(tiers, contract_settings)
     for k in range(1, n + 1):
         year_seed = derive_seed(seed, f"prerun:{k}")
-        age_update_retire(league, year_seed, config, settings, k, None)
+        age_update_retire(league, year_seed, config, settings, k, None, draft_settings.dev_seasons)
         ctx = ContractContext(contract_settings, funds, tiers, lambda pid, role: [], sd_map.__getitem__, negotiation=None, league_seed=league.seed, slots=depth_slots(config))
         run_ai_offseason(league, year_seed, config, parts, settings, draft_settings, k, None, sd_map, order, id_prefix="B", ctx=ctx)
         if progress is not None:
@@ -255,7 +273,7 @@ def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts
 
 def apply_calibration(league: League, calibration: dict[str, float], config: GenerationConfig) -> None:
     """校正(D-197):全選手の強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を出し直す。"""
-    for p in league.all_players():
+    for p in league.all_players() + league.development_players():
         shift = float(calibration.get(p.role, 0.0))
         if shift:
             shift_potential(config, p, shift)

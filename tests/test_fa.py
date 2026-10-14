@@ -148,7 +148,7 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
     with pytest.raises(ValueError):
         g.offseason_fa_offer(proc.fa_results[0]["player_id"], 1) if proc.fa_results else g.offseason_fa_offer("nobody", 1)
     v = g.offseason_next()  # 残りのラウンドは、自球団は追加の提示をせずに締める(D-271)
-    assert v["phase"] == "draft" and proc.fa_done and not proc.fa_pool
+    assert v["phase"] == "foreign" and proc.fa_done and not proc.fa_pool  # FA の次は外国人市場(D-376)
     assert not any(x["team_id"] == "T01" and x["round"] > 1 for x in proc.fa_log)  # 2 ラウンド目以降、自球団は提示していない
     unsigned = [pid for pid, x in proc.fa_info.items() if x["status"] == "unsigned"]
     assert all(any(p.id == pid for p in proc.market) for pid in unsigned)  # 決まらなかった選手は市場へ
@@ -202,7 +202,7 @@ def test_fa_hidden_info_is_not_shown(season_end):
 def test_save_round_trip(season_end):
     g = _fresh(season_end)
     data = save_game(g.state)
-    assert SAVE_FORMAT_VERSION == 18
+    assert SAVE_FORMAT_VERSION == 19
     again = load_game(data)
     assert [p.fa_seasons for p in again.league.all_players()] == [p.fa_seasons for p in g.state.league.all_players()]
     assert again.procedure.fa_info == g.state.procedure.fa_info and [p.id for p in again.procedure.fa_pool] == [p.id for p in g.state.procedure.fa_pool]

@@ -48,9 +48,15 @@ export async function renderTeam(args, token) {
   ];
   // 能力の列(作り直し①。D-335):野手は弾道〜捕球、投手は球速〜変化球
   const rows = (role) => d.players.filter((p) => p.role === role).map((p) => ({ ...p, values: { position: p.position, age: String(p.age), hand: p.hand || "", games: String(p.games), ...p.abilities } }));
-  const first = (p) => [playerLink(p.name, p.player_id)];
+  // 外国人は名前の右に「外」(一軍に登録できるのは d.foreign_max 人まで。D-376)
+  const first = (p) => [playerLink(p.name, p.player_id), p.foreign ? el("span", { className: "badge-foreign", title: "外国人選手" }, "外") : ""];
   $("team-pitchers").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.pitcher], rows: rows("pitcher"), first }));
   $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.batter], rows: rows("batter"), first }));
+  // 育成選手(支配下 70 人とは別の枠。試合には出ない。D-375)
+  const dev = d.development || [];
+  $("team-development-box").hidden = !dev.length;
+  const devCols = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "hand", label: "投打" }, { key: "year", label: "育成" }];
+  $("team-development").replaceChildren(dev.length ? table({ firstLabel: "選手", columns: devCols, rows: dev.map((p) => ({ ...p, values: { position: p.position, age: `${p.age}歳`, hand: p.hand || "", year: `${p.dev_seasons + 1} 年目` } })), first, fluid: true }) : "");
 }
 
 // 総年俸と資金の表示(作り直し②。D-353):資金は年俸の合計の上限。球団の規模(大・中・小)と使用率

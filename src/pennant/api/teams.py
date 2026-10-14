@@ -7,6 +7,7 @@ from ..contracts import remaining_years
 from ..newgame import public_player
 from ..parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkTally, raw_ratio
 from ..war import war_totals
+from .abilities import skills_text
 from .common import BATS_LABELS, THROWS_LABELS, _gb_text, _pct_text, _war_text, raw_rate
 
 
@@ -118,9 +119,16 @@ class TeamsMixin:
                     "position": POSITION_LABELS[p.position],
                     "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
                     "games": counts.get("G", 0),
-                    "abilities": {a["key"]: a["text"] for a in self.player_abilities(p)},  # 見せる能力(作り直し①)
+                    "abilities": {**{a["key"]: a["text"] for a in self.player_abilities(p)}, "skills": skills_text(p)},  # 見せる能力(作り直し①)と特殊能力(D-374)
+                    "foreign": p.foreign,  # 外国人(D-376)
                 }
             )
+        development = [
+            {"player_id": p.id, "name": p.name, "age": p.age, "role": p.role, "position": POSITION_LABELS[p.position], "foreign": p.foreign,
+             "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws), "dev_seasons": int(p.dev_seasons or 0),
+             "abilities": {**{a["key"]: a["text"] for a in self.player_abilities(p)}, "skills": skills_text(p)}}
+            for p in sorted(team.development, key=lambda p: (order[p.position], p.id))
+        ]
         lines = {pid: v for pid, v in self.war_lines().items() if v.team_id == team_id}
         totals = war_totals(lines)
         salaries = sorted(({"player_id": p.id, "name": p.name, "position": POSITION_LABELS[p.position], "age": p.age, "salary": int(p.contract["salary"]), "salary_text": f"{int(p.contract['salary']):,}", "remaining": remaining_years(p.contract, self.state.year)} for p in team.players if p.contract), key=lambda r: (-r["salary"], r["player_id"]))
@@ -152,4 +160,7 @@ class TeamsMixin:
                 "runs_allowed": t.get("RA", 0),
             },
             "players": players,
+            "development": development,  # 育成選手(D-375)
+            "foreign_count": sum(1 for p in team.players if p.foreign),
+            "foreign_max": self.state.season.game_config["active_roster"].get("foreign_max"),
         }

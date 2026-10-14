@@ -107,6 +107,7 @@ from .contract import ContractMixin
 from .decisions import DecisionMixin
 from .draft import DraftMixin
 from .fa import FaMixin
+from .foreign import ForeignMixin
 from .games import GamesMixin
 from .lineup import LineupMixin
 from .market import MarketMixin
@@ -117,7 +118,7 @@ from .stats import StatsMixin
 from .teams import TeamsMixin
 
 
-class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
+class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 

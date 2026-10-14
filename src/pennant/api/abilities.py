@@ -96,7 +96,7 @@ class AbilitiesMixin:
         per_point = float(cfg["abilities"]["display"]["per_point"])
         kmh = float(cfg["abilities"]["velocity"]["per_point"])
         names = {t.id: t.name for t in self.state.league.teams}
-        players = {p.id: p for p in self.state.league.all_players()}
+        players = {p.id: p for p in self.state.league.all_players() + self.state.league.development_players()}  # 育成選手の増減も(D-375)
         rows = []
         for pid, changes in r.ability_changes.items():
             p = players.get(pid)

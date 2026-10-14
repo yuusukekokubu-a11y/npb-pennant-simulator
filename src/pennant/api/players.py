@@ -33,8 +33,11 @@ class PlayersMixin:
     def player(self, player_id: str) -> dict:
         """選手のページ:基本情報(公開用)、シーズン通算の成績(基本・セイバー)、試合ごとの成績(新しい順)。"""
         season = self.state.season
-        if player_id in season.players:
-            p = season.players[player_id]
+        current = season.players.get(player_id)
+        if current is None:  # 育成選手と、オフに入った選手は今のシーズンの一覧にいない(D-375)
+            current = next((x for t in self.state.league.teams for x in t.players + t.development if x.id == player_id), None)
+        if current is not None:
+            p = current
             team = self._team(p.team_id) if p.team_id is not None else None
             info = public_player(p, team.name if team is not None else self._unattached_label(p.id))
             info.update(
@@ -45,6 +48,8 @@ class PlayersMixin:
                 retired=False,
                 abilities=self.player_abilities(p),  # 見せる能力(作り直し①。プロのスカウト評価は見せない。D-352)
                 skills=public_skills(p),  # 特殊能力(D-374)
+                foreign=p.foreign,  # 外国人(D-376)
+                development=None if p.dev_seasons is None else {"seasons": int(p.dev_seasons), "label": f"育成 {int(p.dev_seasons) + 1} 年目"},  # 育成選手(D-375)
                 contract=self._contract_public(p),
             )
             role = p.role

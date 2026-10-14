@@ -222,7 +222,9 @@ def test_offseason_changes_are_public_and_hidden_info_is_not(two_seasons):
     text = json.dumps([summary, g.stats("batter", "basic", season="career"), g.player(summary["rookies"][0]["player_id"]), a], ensure_ascii=False)
     for key in ("ratings", "potential", "growth_type", "archetype", "ease", "trajectory_bias"):
         assert f'"{key}"' not in text
-    stayed = [p.id for p in g.state.league.all_players() if p.id in before["players"]]  # オフの前からいた選手(市場で拾われた選手も含む)
+    league = g.state.league
+    changed = g.state.offseasons[0].ability_changes  # オフの前からいた選手(市場で拾われた選手・育成選手も含む。D-375)
+    stayed = [p.id for p in league.all_players() + league.development_players() if p.id in changed]
     assert a["available"] and a["year"] == 1 and len(a["players"]) == len(stayed)
     row = a["players"][0]
     assert row["items"] and all(re.fullmatch(r"[+-]\d+", i["change"]) for i in row["items"])
@@ -231,7 +233,7 @@ def test_offseason_changes_are_public_and_hidden_info_is_not(two_seasons):
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 18
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 19
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)

@@ -65,7 +65,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 18  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)
+SAVE_FORMAT_VERSION = 19  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -119,6 +119,10 @@ class GameState:
 
         if self.draft_settings is None:
             self.draft_settings = load_draft_settings()
+        if getattr(self.draft_settings, "gen_config", None) is None and getattr(self, "gen_config", None) is not None:
+            # AI の判断が人数の目安を見るための生成の設定(手続きの開始時にも入れる)。読み込んだ状態でも同じにして、
+            # 保存して読み込んでも同じ結果にする
+            object.__setattr__(self.draft_settings, "gen_config", self.gen_config)
         if self.contract_settings is None:
             self.contract_settings = load_contract_settings()
         if self.negotiation_settings is None:
@@ -173,7 +177,7 @@ def _plain(x):
 def _names_data(parts: NameParts) -> dict:
     data = {"format_version": 1}
     for f in dataclasses.fields(parts):
-        if f.name != "source":
+        if f.name != "source" and not (f.name.startswith("foreign_") and not getattr(parts, f.name)):  # 外国人の名前の部品は、あるときだけ(D-376)
             data[f.name] = list(getattr(parts, f.name))
     return data
 
@@ -455,6 +459,19 @@ def load_game(data: bytes) -> GameState:
             if pid in player_ids:
                 p.add(f"{pw}.id", f"選手の ID {pid!r} が重複しています")
             player_ids.add(pid)
+        dev = td.get("development", [])
+        if not isinstance(dev, list):
+            p.add(f"{where}.development", "育成選手の一覧(リスト)が必要です")
+            dev = []
+        for pi, pd in enumerate(dev):
+            pw = f"{where}.development[{pi}]"
+            _check_player(pd, pw, tid, p)
+            if isinstance(pd, dict) and not (isinstance(pd.get("dev_seasons"), int) and not isinstance(pd.get("dev_seasons"), bool) and pd["dev_seasons"] >= 0):
+                p.add(f"{pw}.dev_seasons", "育成選手には、育成で過ごしたシーズン数(0 以上の整数)が必要です")
+            pid = pd.get("id") if isinstance(pd, dict) else None
+            if pid in player_ids:
+                p.add(f"{pw}.id", f"選手の ID {pid!r} が重複しています")
+            player_ids.add(pid)
     if len(teams_d) < 2:
         p.add("state.json.league.teams", "球団が2つ以上必要です")
     user = state.get("user", {"my_team_id": None})
@@ -534,6 +551,7 @@ def load_game(data: bytes) -> GameState:
             display_name=td.get("display_name"), park=ParkFactors(td["park"]["home_run"], td["park"]["babip"]),
         )
         team.players = [_player_from(pd) for pd in td["players"]]
+        team.development = [_player_from(pd) for pd in td.get("development", [])]  # 版 18 以前はない(D-377)
         teams.append(team)
     league = League(league_d.get("seed", seed), list(league_d["league_names"]), teams)
     try:
