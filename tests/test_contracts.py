@@ -176,7 +176,7 @@ def test_contract_pages_are_public_and_without_hidden_info(game):
 def test_save_has_funds_and_old_versions_are_rejected(game):
     data = save_game(game.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 15 and again.budget_tiers == game.state.budget_tiers and again.team_funds == game.state.team_funds and again.contract_rates == game.state.contract_rates
+    assert SAVE_FORMAT_VERSION == 16 and again.budget_tiers == game.state.budget_tiers and again.team_funds == game.state.team_funds and again.contract_rates == game.state.contract_rates
     assert all(p.contract == q.contract for p, q in zip(game.state.league.all_players(), again.league.all_players()))
     zin = zipfile.ZipFile(io.BytesIO(data))
     files = {n: zin.read(n) for n in zin.namelist()}
@@ -193,7 +193,7 @@ def test_save_has_funds_and_old_versions_are_rejected(game):
         return buf.getvalue()
 
     with pytest.raises(SaveDataError, match="作り直しの前の版"):
-        load_game(rezip(lambda m, s: m.update(format_version=14)))
+        load_game(rezip(lambda m, s: m.update(format_version=15)))
     with pytest.raises(SaveDataError, match="team_funds"):
         load_game(rezip(lambda m, s: s["team_funds"].pop("T01")))
     with pytest.raises(SaveDataError, match="team_funds"):
