@@ -689,7 +689,8 @@ await page.waitForFunction(() => !document.querySelector("#screen-procedure").hi
 const yeSeconds = (Date.now() - ye0) / 1000;
 const tabTexts = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent));
 const tabBoxes = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => { const r = l.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height), l.scrollWidth <= l.clientWidth + 1]; }));
-check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・ドラフト・市場・完了" && (await page.isDisabled("#proc-next")), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 5 つ。全員が決まるまで「次の手続きへ」は押せない(${yeSeconds.toFixed(1)} 秒。D-271)`);
+const overAtStart = pyAfter(`print(json.dumps(g.offseason_view()["renewal"]["over"]))`);
+check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・ドラフト・市場・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 5 つ。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
