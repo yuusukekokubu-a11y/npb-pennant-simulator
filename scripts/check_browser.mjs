@@ -736,7 +736,7 @@ let cPy = contractPy({});
 let cRows = await rosterCells(cPy.at(-1)[2]);
 check(cHead.join("|") === "選手|WAR|状態|新しい年俸|増減|ポジション|年齢|今の契約|出場" && cRows.length === cPy.length - 1 && cRows.every((r, i) => r.join("|") === cPy[i].join("|")) && cPy.at(-1)[1] === "asc", `契約の表に自球団の全選手(${cRows.length} 人)が WAR の低い順に出て、計算本体と同じ(列:${cHead.join("・")})`);
 const statusPy = () => pyAfter(`v = g.offseason_view()["renewal"]
-print(json.dumps([v["roster_counts"], v["status_labels"], v["players"], v["over"], v["can_next"]], ensure_ascii=False))`);
+print(json.dumps([v["roster_counts"], v["status_labels"], v["players"], v["over"], v["can_next"], v["cap"] - v["team_total"]], ensure_ascii=False))`);
 let rnPy = statusPy();
 const wantInfo = () => `${rnPy[2]} 人:` + ["accepted", "declared", "released", "contracted"].filter((k) => rnPy[0][k]).map((k) => `${rnPy[1][k]} ${rnPy[0][k]}`).join("・");
 check((await page.textContent("#proc-info")).startsWith(wantInfo()) && !(await page.textContent("#proc-info")).includes("未提示"), `更改は段階の始めに査定で済み、状態バーの内訳が計算本体と同じ(「${await page.textContent("#proc-info")}」。D-358)`);
@@ -760,7 +760,7 @@ check(keptPy[0] && keptPy[1] === null && (await page.textContent("#proc-info")).
 // 資金を超えていれば、年俸の高い選手から自由契約にして解消する(超えている間は「次の手続きへ」が押せない。D-361)
 rnPy = statusPy();
 check((await page.isDisabled("#proc-next")) === !rnPy[4], `「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(rnPy[3]).toLocaleString()} 万円)`);
-for (let i = 0; i < 40 && rnPy[3] > 0; i++) {
+for (let i = 0; i < 40 && (rnPy[3] > 0 || rnPy[5] < 20000); i++) { // 超過を解消し、あとのドラフト・FA・市場の分の資金(2 億円)も空ける
   const [pid, name] = pyAfter(`print(json.dumps(next([r["player_id"], r["name"]] for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]), ensure_ascii=False))`);
   await page.selectOption("#contract-status", "all");
   await page.waitForFunction(() => document.querySelector("#contract-status").value === "all");
@@ -772,7 +772,7 @@ for (let i = 0; i < 40 && rnPy[3] > 0; i++) {
   procOps.push(["offseason_contract_release", [pid]]);
   rnPy = statusPy();
 }
-check(rnPy[3] === 0 && !(await page.isDisabled("#proc-next")), "資金の中に収めると「次の手続きへ」が押せる");
+check(rnPy[3] === 0 && !(await page.isDisabled("#proc-next")), `資金の中に収めると「次の手続きへ」が押せる(資金の残り ${Number(rnPy[5]).toLocaleString()} 万円)`);
 // ポジション「投手」:種類(基本・セイバー・WAR)を選べる。見出しのタップで並べ替え
 await page.selectOption("#contract-status", "all");
 await page.selectOption("#contract-group", "pitcher");
@@ -842,7 +842,7 @@ if (faStart[0] === "fa") {
   const [faName] = pyAfter(`b = g.budget_info(g.state.my_team_id)
 room = b["cap"] - b["total"]
 t = g.decision_table("fa")
-print(json.dumps(next(([r["name"]] for r in t["rows"] if r["deal"]["calc_salary"] <= room), [t["rows"][0]["name"]]), ensure_ascii=False))`);
+print(json.dumps(next(([r["name"]] for r in sorted(t["rows"], key=lambda r: r["deal"]["calc_salary"]) if r["deal"]["calc_salary"] <= room // 3), [min(t["rows"], key=lambda r: r["deal"]["calc_salary"])["name"]]), ensure_ascii=False))`); // あとのドラフト・市場の分の資金を残す
   await page.click(`#proc-body tbody tr .link:text-is("${faName}")`);
   await page.waitForSelector("#fa-panel");
   const faPid = await page.getAttribute("#fa-panel", "data-player-id");

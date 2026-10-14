@@ -98,6 +98,10 @@ def new_league(
     gen_config = gen_config or load_generation_config()
     name_parts = name_parts or load_name_parts()
     league = generate_league(seed, gen_config, name_parts)
+    if tiers is None:  # 球団の規模は新規開始のシードから(Game.new と同じ割り当て。D-353)
+        from .contracts import assign_tiers, load_contract_settings
+
+        tiers = assign_tiers([t.id for t in league.teams], seed, contract_settings or load_contract_settings())
     if prerun:
         from .draft import load_draft_settings
 
