@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from .contracts import ContractSettings, assessed_salary, changed_funds, contract_years, expected_war, initial_funds, rate_for, salary_for, set_contract, team_salary
 from .fa import declare, declare_probability, is_holder
 from .models import League, Player, Team
-from .negotiation import NegotiationSettings, ensure_preferences
+from .negotiation import NegotiationSettings
 from .scouting import quick_value
 from .season import derive_seed
 from .stats import overall
@@ -32,8 +32,8 @@ class ContractContext:
     sd_of: object  # 球団 ID → ずれ({common, item})
     scout: object = None  # (選手, 球団) → (総合の推定値, 天井)。bind(proc) で手続きのシードと区切りから作る(FA の出場機会の見込みに使う)
     rate: float = 0.0
-    negotiation: NegotiationSettings | None = None  # 志望の判定の設定(FA と市場で選手が選ぶとき。None なら宣言も FA もしない:事前運転)
-    league_seed: int = 0  # 志望の乱数のもと
+    negotiation: NegotiationSettings | None = None  # FA の設定(宣言の確率・選手が選ぶ点数。D-365。None なら宣言も FA もしない:事前運転)
+    league_seed: int = 0  # リーグのシード
     slots: dict | None = None  # ポジション → 一軍の枠の目安(出場機会軸)
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # 選手 → 見込み(手続きの間は年齢も能力も変わらないので使い回す)
 
@@ -88,7 +88,7 @@ def update_funds(league: League, proc: OffseasonProcedure, ctx: ContractContext)
 
 def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: ContractContext, my_team_id: str | None, mins, min_batters) -> None:
     """手続きの最初の契約の処理(作り直し②。D-354〜D-360):資金の増減 → 単価を求め直す → 契約が満了した全員を査定で更改する(全球団。選手は受ける)。
-    FA 権保持者は確率で宣言し、宣言しなければ更改する(D-359。志望の設定がない事前運転では宣言しない)。
+    FA 権保持者は確率で宣言し、宣言しなければ更改する(D-359、D-366。FA の設定がない事前運転では宣言しない)。
     資金の超過の解消と自由契約は、契約の段階の終わり(finish_contract_stage)に行う(あなたの球団は契約の段階で手動)。"""
     if proc.contracts_done:
         return
@@ -102,9 +102,6 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
     ctx.rate = round(rate_for(list(expected.values()), total_funds, len(expected), ctx.settings), 4)
     proc.rate = ctx.rate
     neg = ctx.negotiation
-    if neg is not None:
-        ensure_preferences(league.all_players(), ctx.league_seed, neg)
-        ensure_preferences(proc.candidates, ctx.league_seed, neg)
     for team in league.teams:
         expiring = [p for p in team.players if p.contract is None or int(p.contract["until"]) <= proc.year]
         for p in expiring:

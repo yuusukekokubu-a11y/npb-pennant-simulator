@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .. import draft as draftmod
+from .. import draft as draftmod, market as marketmod
 from ..abilities import POSITION_LABELS
 from ..draft import PHASE_LABELS, stage_of
 from .common import ROLE_LABELS
@@ -43,12 +43,14 @@ class DraftMixin:
         return self.offseason_view()
 
     def offseason_pick(self, player_id: str) -> dict:
-        """自分の番に選手を指名(獲得)し、次の自分の番まで AI を進める。"""
+        """自分の番に選手を指名(獲得)し、次の自分の番まで AI を進める。1 巡目は入札(全球団が同時に入札し、重なったら抽選。D-369)。"""
         state = self.state
         proc = self._proc()
         team = self._my_team()
         mins, min_batters = self._mins()
         sd = state.scout_sd_map()
+        if proc.bidding():
+            return self._bid(player_id)
         if proc.phase != "draft" or proc.current_team() != team.id or draftmod.phase_finished(proc):
             raise ValueError("今は自分の番ではありません(「次の自分の番まで進める」を押してください)")
         player = next((p for p in draftmod.pool_of(proc) if p.id == player_id), None)
@@ -65,11 +67,42 @@ class DraftMixin:
         self.dirty = True
         return self.offseason_view()
 
+    def _bid(self, player_id: str) -> dict:
+        """1 巡目の入札(D-369):あなたの入札と AI の入札を合わせ、重なったら抽選。外れたら、もう一度入札を待つ。
+        戻り値の last_bid は、この入札で決まったこと(抽選の結果)。"""
+        state = self.state
+        proc = self._proc()
+        team = self._my_team()
+        mins, min_batters = self._mins()
+        if team.id not in draftmod.bid_pending(proc):
+            raise ValueError("1 巡目の入札は済んでいます")
+        player = next((p for p in proc.candidates if p.id == player_id), None)
+        if player is None:
+            raise ValueError("その選手は候補の一覧にいません")
+        why = draftmod.bid_blocked(team, proc, self._contract_ctx())
+        if why == "full":
+            raise ValueError("空き枠がありません(70 人)")
+        if why == "budget":
+            raise ValueError(f"1 巡目の年俸({state.contract_settings.rookie_salary(1):,} 万円)を結ぶと、資金(年俸の合計の上限)を超えます")
+        step = proc.bid_step
+        draftmod.run_bidding(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters, ctx=self._contract_ctx(), my_bid=player)
+        if not proc.bidding():
+            draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters, ctx=self._contract_ctx())
+        self.dirty = True
+        view = self.offseason_view()
+        view["last_bid"] = {"step": step, "results": [x for x in view["lottery"] if x["step"] >= step], "won": any(x["winner"] == team.id and x["step"] >= step for x in proc.lottery)}
+        return view
+
     def offseason_pass(self) -> dict:
         state = self.state
         proc = self._proc()
         team = self._my_team()
         mins, min_batters = self._mins()
+        if proc.bidding() and team.id in draftmod.bid_pending(proc):  # 1 巡目の入札をしない
+            draftmod.pass_bid(proc, team.id)
+            draftmod.run_ai_turns(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters, ctx=self._contract_ctx())
+            self.dirty = True
+            return self.offseason_view()
         if proc.phase != "draft" or proc.current_team() != team.id or draftmod.phase_finished(proc):
             raise ValueError("今は自分の番ではありません")
         draftmod.pass_turn(proc, team.id, "pass")
@@ -111,8 +144,8 @@ class DraftMixin:
             pool = {p.id: p for p in self.offseason_players(phase)}
             for r in table["rows"]:
                 r["former_team"] = former.get(r["player_id"], "")
-                if team is not None:  # 自球団が獲得したときの契約(ドラフトは巡ごとの表、市場は算定)
-                    offer = draftmod.offer_for(team, pool[r["player_id"]], proc, ctx)
+                if team is not None:  # 自球団が獲得したときの契約(ドラフトは巡ごとの表、市場は算定。指名されなかった候補は最低年俸)
+                    offer = marketmod.market_terms(proc, pool[r["player_id"]], team.id, ctx) if phase == "market" else draftmod.offer_for(team, pool[r["player_id"]], proc, ctx)
                     r["offer"] = None if offer is None else {"salary": offer[0], "years": offer[1], "affordable": draftmod.can_afford(team, offer[0], ctx)}
                     r["values"]["salary"] = f"{offer[0]:,}" if offer else "—"
                     r["values"]["years"] = str(offer[1]) if offer else "—"
@@ -154,7 +187,7 @@ class DraftMixin:
         return sorted(rows, key=lambda x: (order[x["phase"]], int(x.get("round") or 0), x["player_id"]))
 
     def draft_review(self, team_id: str | None = None, year: int | None = None) -> dict:
-        """ドラフトの振り返り(公開用):入団の経路、入団時の総合の推定値とふれ幅・天井、今の所属、出場と WAR の累計(D-216)。
+        """ドラフトの振り返り(公開用):入団の経路、入団時の評価(A〜E)と一言、今の所属、出場と WAR の累計(D-216、D-368)。
         真の能力は含めない(ドラフト候補の能力は見せない。D-342)。"""
         state = self.state
         names = self._team_names()
@@ -179,7 +212,7 @@ class DraftMixin:
             p = players.get(x["player_id"])
             sc = p.scouting if p is not None and p.scouting else None
             summary = dict(x)
-            if sc and "overall" not in summary:  # 版 8 の履歴には入団時の要約がない。選手が残っていれば評価から引く
+            if sc and "grade" not in summary:  # 履歴に要約がなければ、選手が残っていれば評価から引く
                 summary.update(draftmod.entry_summary(sc))
             if p is None:
                 status, status_label = "left", "引退・退団"
@@ -196,14 +229,11 @@ class DraftMixin:
                     "position": x["position"],
                     "position_label": POSITION_LABELS.get(x["position"], ""),
                     "route": x["phase"],
-                    "route_label": f"ドラフト {x['round']} 巡" if x["phase"] == "draft" else ("市場" if x["phase"] == "market" else "自動補充"),
+                    "route_label": (f"ドラフト {x['round']} 巡" + ("(抽選)" if x.get("lottery") else "")) if x["phase"] == "draft" else ("市場" if x["phase"] == "market" else "自動補充"),
                     "entry_age": x.get("age"),
                     "age": None if p is None else p.age,
-                    "entry_overall": summary.get("overall"),
-                    "entry_margin": summary.get("margin"),
-                    "entry_text": f"{summary['overall']} ± {float(summary['margin']):.0f}" if summary.get("overall") is not None else "-",
-                    "entry_ceiling": summary.get("ceiling", "-"),
-                    "method": summary.get("method"),
+                    "entry_grade": summary.get("grade", "-"),
+                    "entry_comment": summary.get("comment", ""),
                     "status": status,
                     "status_label": status_label,
                     "games": games.get(x["player_id"], 0),
@@ -212,7 +242,7 @@ class DraftMixin:
                 }
             )
         out["rows"] = rows
-        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の評価は、そのときの {names[team_id]} のスカウトの推定値 ± ふれ幅と天井(S〜D)。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。"
+        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の評価は、そのときの {names[team_id]} のスカウトの評価(A〜E)と一言。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。"
         return out
 
     def transactions(self, year: int | None = None) -> dict:

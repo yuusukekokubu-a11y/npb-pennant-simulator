@@ -1,36 +1,16 @@
 {
-  "format_version": 1,
-  "axes": {
-    "salary": {
-      "label": "年俸",
-      "reason": "年俸が低い",
-      "kind": "salary_ratio",
-      "weight_shape": 2.0,
-      "strength": 1.0,
-      "slope": 4.0,
-      "offset": -0.2
+  "format_version": 2,
+  "choice": {
+    "attachment": 0.1,
+    "playing_time": 0.1,
+    "winning": 0.05,
+    "years": {
+      "per_year": 0.03,
+      "age_start": 27,
+      "per_age_year": 0.005
     },
-    "playing_time": {
-      "label": "出場機会",
-      "reason": "出場機会が見込めない",
-      "kind": "depth",
-      "weight_shape": 2.0,
-      "strength": 1.2
-    },
-    "winning": {
-      "label": "勝利",
-      "reason": "優勝を争えない",
-      "kind": "standing",
-      "weight_shape": 2.0,
-      "strength": 0.25
-    }
-  },
-  "threshold": -0.6,
-  "noise_sd": 0.25,
-  "multi_year": {
-    "per_year": 0.03,
-    "age_start": 27,
-    "per_age_year": 0.005
+    "accept": -0.15,
+    "noise_sd": 0.03
   },
   "fa": {
     "seasons_required": 7,
@@ -48,7 +28,6 @@
     ],
     "ai_max_offers": 3,
     "ai_min_expected": 0.5,
-    "noise_sd": 0.1,
     "init": {
       "start_age": 21,
       "p_active": 0.7,
@@ -58,8 +37,7 @@
     "star": {
       "start": 1.0,
       "per_war": 0.1,
-      "max_multiplier": 1.25,
-      "reason": "主力としての評価を望んでいる"
+      "max_multiplier": 1.25
     }
   }
 }

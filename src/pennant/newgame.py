@@ -112,12 +112,11 @@ def new_league(
         # 初期選手の契約(校正の後の見せる能力から算定。残りの年数は事前運転から。D-232、D-356)
         from .contracts import initial_funds, load_contract_settings
         from .draft import ContractContext, initialize_contracts, load_draft_settings
-        from .negotiation import depth_slots, ensure_preferences, load_negotiation_settings
+        from .negotiation import depth_slots, load_negotiation_settings
 
         ds = draft_settings or load_draft_settings()
         sd = scout_sd if scout_sd is not None else ds.level_sd(ds.default_level)
         neg = negotiation_settings or load_negotiation_settings()
-        ensure_preferences(league.all_players(), league.seed, neg)  # 初期選手の志望(別の乱数系列。D-245)
         cs = contract_settings or load_contract_settings()
         t = dict(tiers) if tiers else {team.id: "medium" for team in league.teams}
         rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config)), settings.prerun_years)

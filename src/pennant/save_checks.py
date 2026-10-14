@@ -77,14 +77,11 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     if pd.get("team_id") != team_id:
         p.add(f"{where}.team_id", f"所属の球団 {pd.get('team_id')!r} が、入っている球団 {team_id!r} と違います")
     sc = pd.get("scouting")
-    if sc is not None and not (isinstance(sc, dict) and isinstance(sc.get("items"), dict) and isinstance(sc.get("ceiling"), str)):
+    if sc is not None and not (isinstance(sc, dict) and isinstance(sc.get("items"), dict) and isinstance(sc.get("sd"), dict) and isinstance(sc.get("grade"), str) and isinstance(sc.get("comment", ""), str)):
         p.add(f"{where}.scouting", "入団時のスカウト評価の形が違います")
     ct = pd.get("contract")
     if ct is not None and not (isinstance(ct, dict) and isinstance(ct.get("salary"), int) and not isinstance(ct.get("salary"), bool) and ct["salary"] >= 0 and isinstance(ct.get("until"), int) and isinstance(ct.get("history", []), list)):
         p.add(f"{where}.contract", "契約の形が違います(年俸は 0 以上の整数、満了シーズンは整数)")
-    pref = pd.get("preference")
-    if pref is not None and not (isinstance(pref, dict) and pref and all(isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 for k, v in pref.items())):
-        p.add(f"{where}.preference", "志望の形が違います(軸 → 0 以上の重み)")
     fs = pd.get("fa_seasons")
     if fs is not None and not (isinstance(fs, int) and not isinstance(fs, bool) and 0 <= fs <= 60):
         p.add(f"{where}.fa_seasons", "FA 権の年数は 0〜60 の整数にしてください")
@@ -155,7 +152,6 @@ def _player_from(pd: dict) -> Player:
         origin=pd.get("origin"),
         scouting=copy.deepcopy(pd.get("scouting")),
         contract=copy.deepcopy(pd.get("contract")),
-        preference=None if pd.get("preference") is None else {str(k): float(v) for k, v in pd["preference"].items()},
         fa_seasons=pd.get("fa_seasons", 0),
         abilities={k: float(v) for k, v in pd["abilities"].items()},
         pitches=copy.deepcopy(pd.get("pitches")),
@@ -218,6 +214,12 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
                         p.add(f"{w}.offers[{j}]", "提示の形が違います(年数・年俸は整数、受けたかは真偽)")
                 if e["status"] == "pending" and e["player_id"] not in league_ids:
                     p.add(w, "交渉中の選手が、リーグにいません")
+        lottery = d.get("lottery", [])
+        if not isinstance(lottery, list) or not all(isinstance(x, dict) and x.get("winner") in team_ids and isinstance(x.get("teams"), list) and all(t in team_ids for t in x["teams"]) for x in lottery):
+            p.add(f"{where}.lottery", "1 巡目の入札の記録の形が違います(入札した球団の一覧と、交渉権を得た球団)")
+        stats = d.get("item_stats", {})
+        if not isinstance(stats, dict) or not all(isinstance(v, dict) and all(isinstance(x, list) and len(x) == 2 and all(isinstance(y, (int, float)) and not isinstance(y, bool) for y in x) for x in v.values()) for v in stats.values()):
+            p.add(f"{where}.item_stats", "スカウトの一言の物差しの形が違います(役割 → 項目 → [平均, 標準偏差])")
         if p.items:
             return None
         return OffseasonProcedure.from_dict(d, _player_from)
