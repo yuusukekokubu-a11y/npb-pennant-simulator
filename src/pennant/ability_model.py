@@ -43,6 +43,12 @@ def engine_ratings(config: GenerationConfig, player: Player) -> dict[str, float]
             out[item] = float(rule)
         else:
             out[item] = 50.0 + sum(float(w) * (float(player.abilities[src]) - 50.0) for src, w in rule.items())
+    if player.skills:  # いつも効く特殊能力を足す(D-374)
+        from .skills import always_effects
+
+        for item, v in always_effects(player).items():
+            if item in out:
+                out[item] += v
     return out
 
 

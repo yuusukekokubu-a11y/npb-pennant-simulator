@@ -3,7 +3,7 @@
 import { $, GAMES_PAGE, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { el, kvTable, link, setPressed, table, teamLink } from "./parts.js";
+import { el, kvTable, link, setPressed, skillBadge, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 export async function renderPlayer(args, token) {
@@ -71,8 +71,11 @@ function renderPlayerAbilities(data) {
     $("player-abilities").replaceChildren();
     return;
   }
+  const skills = data.player.skills || [];
   $("player-abilities").replaceChildren(
     el("div", { className: "ability-grid" }, ...items.map((a) => el("div", { className: `ability rank-${a.rank || "none"}`, "data-key": a.key }, el("span", { className: "ability-label" }, a.label), el("strong", { className: "ability-value" }, a.text)))),
+    // 特殊能力(D-374)
+    el("div", { className: "skills", id: "player-skills" }, el("span", { className: "ability-label" }, "特殊能力"), ...(skills.length ? skills.map(skillBadge) : [el("span", { className: "muted small" }, "なし")])),
   );
 }
 

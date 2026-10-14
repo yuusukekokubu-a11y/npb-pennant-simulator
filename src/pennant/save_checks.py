@@ -85,6 +85,15 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     fs = pd.get("fa_seasons")
     if fs is not None and not (isinstance(fs, int) and not isinstance(fs, bool) and 0 <= fs <= 60):
         p.add(f"{where}.fa_seasons", "FA 権の年数は 0〜60 の整数にしてください")
+    sk = pd.get("skills", [])
+    if not (isinstance(sk, list) and all(isinstance(s, str) for s in sk)):
+        p.add(f"{where}.skills", "特殊能力は文字の一覧にしてください")
+    else:
+        from .skills import default_settings
+
+        unknown = [s for s in sk if s not in default_settings().skills]
+        if unknown:
+            p.add(f"{where}.skills", f"知らない特殊能力があります(値: {', '.join(map(repr, unknown))})")
     items = items_for(role)
     for group in ("ratings",):
         ratings = _need(pd, group, dict, where, p)
@@ -153,6 +162,7 @@ def _player_from(pd: dict) -> Player:
         scouting=copy.deepcopy(pd.get("scouting")),
         contract=copy.deepcopy(pd.get("contract")),
         fa_seasons=pd.get("fa_seasons", 0),
+        skills=list(pd.get("skills", [])),
         abilities={k: float(v) for k, v in pd["abilities"].items()},
         pitches=copy.deepcopy(pd.get("pitches")),
     )

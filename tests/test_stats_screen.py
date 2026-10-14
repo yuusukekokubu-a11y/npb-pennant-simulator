@@ -204,7 +204,7 @@ def test_game_page_matches_narrate(game):
 
 
 def test_narrate_text_is_unchanged():
-    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。作り直し①で選手が変わったので値を取り直した)。"""
+    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。作り直し①と特殊能力(D-374)で選手が変わったので値を取り直した)。"""
     from pennant.newgame import new_league
     from pennant.parks import neutralize_parks
     from pennant.season import Season
@@ -215,7 +215,7 @@ def test_narrate_text_is_unchanged():
     s.play_days(3)
     names = {t.id: t.name for t in s.league.teams}
     text = "".join(narrate(p.result, s.players, names) for p in s.played)
-    assert hashlib.sha256(text.encode()).hexdigest() == "5b15a905489a8d0708690d63937b16d9b897b01a5164312f888ee82c0b8fd48b"
+    assert hashlib.sha256(text.encode()).hexdigest() == "5929a9ee1a08f7e64bfbeedea4b1d332db22cb969a1c7b93a941418070c6a0de"
 
 
 def test_public_functions_have_no_hidden_info(game):
@@ -236,7 +236,7 @@ def test_public_functions_have_no_hidden_info(game):
 
 def test_ability_table(game):
     t = game.ability_table("pitcher", sort="control", order="desc", qualified=False)
-    assert [c["key"] for c in t["columns"]] == ["velocity", "control", "stamina", "breaking"]
+    assert [c["key"] for c in t["columns"]] == ["velocity", "control", "stamina", "breaking", "skills"]
     raw = [game.state.season.players[r["player_id"]].abilities["control"] for r in t["rows"]]
     assert raw == sorted(raw, reverse=True)
     assert {r["player_id"] for r in t["rows"]} == set(game.select_players("pitcher", qualified=False))

@@ -15,6 +15,7 @@ import math
 import random
 
 from . import ability_model, aging
+from .skills import initial_skills
 from .abilities import (
     BATTER,
     FIELDER_POSITIONS,
@@ -123,6 +124,7 @@ class _PlayerFactory:
             abilities=abilities,
             pitches=pitches,
         )
+        player.skills = initial_skills(player)  # 特殊能力(別の乱数の系列。D-374)
         ability_model.refresh(cfg, player)
         return player
 

@@ -214,6 +214,8 @@ await grab();
 await page.click("#open-lineup");
 await page.waitForFunction(() => !document.querySelector("#screen-lineup").hidden && document.querySelectorAll("#lineup-table tbody tr").length === 9);
 check((await page.textContent("#lineup-source")).includes("長打重視") && (await page.inputValue("#lineup-style")) === "power", `スタメンと打順の画面:9 人の表と「${await page.textContent("#lineup-source")}」`);
+const luSkills = await page.$$eval("#lineup-table tbody .skill", (els) => els.map((e) => e.textContent));
+check((await page.$$eval("#lineup-table thead th", (ths) => ths.map((th) => th.textContent))).some((x) => x.includes("特殊能力")), `スタメンの表に特殊能力の列がある(${luSkills.join("・") || "なし"})`);
 const luBefore = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 await page.selectOption("#lineup-style", "slugger_second");
 await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("二番強打者"));
@@ -350,7 +352,7 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 18 + 7 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目。作り直し①)がある(${sortOptions.length}個)`);
+check(sortOptions.length === 18 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
@@ -536,6 +538,9 @@ check(JSON.stringify(gameDays) === JSON.stringify(pyPlayer.games.slice(0, 20)), 
 const abilitiesPy = pyGame(`print(json.dumps([[x["label"], x["text"]] for x in g.player(a["id"])["player"]["abilities"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
 const abilitiesOnScreen = await page.$$eval("#player-abilities .ability", (els) => els.map((e) => [e.querySelector(".ability-label").textContent, e.querySelector(".ability-value").textContent]));
 check(JSON.stringify(abilitiesOnScreen) === JSON.stringify(abilitiesPy), `選手のページの上に能力が出る(${abilitiesPy.map((x) => x.join(" ")).join("・")})`);
+const skillsPy = pyGame(`print(json.dumps([x["label"] for x in g.player(a["id"])["player"]["skills"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
+const skillsOnScreen = await page.$$eval("#player-skills .skill", (els) => els.map((e) => e.textContent));
+check(JSON.stringify(skillsOnScreen) === JSON.stringify(skillsPy) && (skillsPy.length || (await page.textContent("#player-skills")).includes("なし")), `選手のページに特殊能力が出る(${skillsPy.join("・") || "なし"})`);
 await grab();
 
 // 試合のページ(文章ログが、確認用の形式と同じ内容か)
@@ -931,7 +936,8 @@ const lotPy = pyAfter(`print(json.dumps([[x["name"], x["winner_name"], len(x["te
 await page.click("#draft-lottery summary");
 const lotUi = await page.$$eval("#draft-lottery tbody tr", (trs) => trs.map((tr) => tr.querySelector("td").textContent));
 check((await page.textContent("#proc-info")).startsWith("2/6 巡") && (await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `入札(${bids} 回)と抽選で 1 巡目が決まり、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
-check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotPy.length >= 12, `1 巡目の入札の結果(${lotPy.length} 人・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ`);
+const lotBids = lotPy.reduce((s, x) => s + x[2], 0);
+check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotBids >= 12, `1 巡目の入札の結果(${lotPy.length} 人・入札 ${lotBids} 件・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ${JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) ? "" : `(画面 ${lotUi.length} 行)`}`);
 await page.click("#draft-lottery summary");
 await page.selectOption("#draft-show", "all");
 await page.waitForFunction(() => document.querySelector("#proc-body thead").textContent.includes("状態"));

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from .. import ability_model
+from ..skills import public_skills
 from ..abilities import ABILITY_LABELS, BATTER, abilities_for
 from .common import _values, column_info, is_sortable, metrics_config
 
@@ -14,12 +15,19 @@ from .common import _values, column_info, is_sortable, metrics_config
 def ability_columns(role: str) -> list[dict]:
     """能力の表の列(野手:弾道・ミート・パワー・走力・肩力・守備力・捕球、投手:球速・コントロール・スタミナ・変化球)。"""
     keys = (("trajectory",) if role == BATTER else ()) + abilities_for(role)
-    return [{"key": k, "label": ABILITY_LABELS[k], "type": "ability"} for k in keys]
+    return [{"key": k, "label": ABILITY_LABELS[k], "type": "ability"} for k in keys] + [{"key": "skills", "label": "特殊能力", "type": "ability"}]
+
+
+def skills_text(player) -> str:
+    """特殊能力を 1 つの文字に(表の列。D-374)。なければ空。"""
+    return "・".join(s["label"] for s in public_skills(player))
 
 
 def _sort_value(config, player, key: str):
     if key == "trajectory":
         return ability_model.trajectory(config, player)
+    if key == "skills":  # 特殊能力:良いものの数 − 悪いものの数
+        return sum(1 if s["good"] else -1 for s in public_skills(player))
     return float(player.abilities[key])
 
 
@@ -55,7 +63,7 @@ class AbilitiesMixin:
             p = self.state.season.players[pid]
             row = self._player_row(pid, owner[pid])
             shown = {a["key"]: a["text"] for a in ability_model.public_abilities(cfg, p)}
-            row["values"] = shown
+            row["values"] = {**shown, "skills": skills_text(p)}
             key: object = None if extra else _sort_value(cfg, p, sort)
             if extra:
                 value = _values(config, role, group[pid], base)[sort]
