@@ -214,6 +214,8 @@ await grab();
 await page.click("#open-lineup");
 await page.waitForFunction(() => !document.querySelector("#screen-lineup").hidden && document.querySelectorAll("#lineup-table tbody tr").length === 9);
 check((await page.textContent("#lineup-source")).includes("長打重視") && (await page.inputValue("#lineup-style")) === "power", `スタメンと打順の画面:9 人の表と「${await page.textContent("#lineup-source")}」`);
+const luSkills = await page.$$eval("#lineup-table tbody .skill", (els) => els.map((e) => e.textContent));
+check((await page.$$eval("#lineup-table thead th", (ths) => ths.map((th) => th.textContent))).some((x) => x.includes("特殊能力")), `スタメンの表に特殊能力の列がある(${luSkills.join("・") || "なし"})`);
 const luBefore = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 await page.selectOption("#lineup-style", "slugger_second");
 await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("二番強打者"));
@@ -536,6 +538,9 @@ check(JSON.stringify(gameDays) === JSON.stringify(pyPlayer.games.slice(0, 20)), 
 const abilitiesPy = pyGame(`print(json.dumps([[x["label"], x["text"]] for x in g.player(a["id"])["player"]["abilities"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
 const abilitiesOnScreen = await page.$$eval("#player-abilities .ability", (els) => els.map((e) => [e.querySelector(".ability-label").textContent, e.querySelector(".ability-value").textContent]));
 check(JSON.stringify(abilitiesOnScreen) === JSON.stringify(abilitiesPy), `選手のページの上に能力が出る(${abilitiesPy.map((x) => x.join(" ")).join("・")})`);
+const skillsPy = pyGame(`print(json.dumps([x["label"] for x in g.player(a["id"])["player"]["skills"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
+const skillsOnScreen = await page.$$eval("#player-skills .skill", (els) => els.map((e) => e.textContent));
+check(JSON.stringify(skillsOnScreen) === JSON.stringify(skillsPy) && (skillsPy.length || (await page.textContent("#player-skills")).includes("なし")), `選手のページに特殊能力が出る(${skillsPy.join("・") || "なし"})`);
 await grab();
 
 // 試合のページ(文章ログが、確認用の形式と同じ内容か)

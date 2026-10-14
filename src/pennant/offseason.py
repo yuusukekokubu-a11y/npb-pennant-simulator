@@ -23,6 +23,7 @@ from .generate import make_rookie, shift_potential
 from .models import League, Player, Team
 from .names import NameGenerator
 from .season import derive_seed
+from .skills import yearly_change
 from .stats import overall
 
 SUPPORTED_FORMAT_VERSION = 1
@@ -110,6 +111,7 @@ class OffseasonResult:
     rookies: list[PlayerNote] = field(default_factory=list)
     ability_changes: dict[str, dict[str, float]] = field(default_factory=dict)  # 選手 ID → 項目 → 増減(見せる能力の内部の目盛り。オフの結果の画面で見せる)
     ages: dict[str, int] = field(default_factory=dict)  # 選手 ID → 更新後の年齢(残った選手)
+    skill_changes: dict[str, dict[str, list[str]]] = field(default_factory=dict)  # 選手 ID → {gained, lost}(特殊能力の変化。D-374)
 
     def to_dict(self) -> dict:
         return {
@@ -119,6 +121,7 @@ class OffseasonResult:
             "rookies": [vars(n) for n in self.rookies],
             "ability_changes": {pid: {k: round(v, 6) for k, v in d.items()} for pid, d in self.ability_changes.items()},
             "ages": dict(self.ages),
+            "skill_changes": {pid: {k: list(v) for k, v in x.items()} for pid, x in self.skill_changes.items()},
         }
 
     @classmethod
@@ -128,6 +131,7 @@ class OffseasonResult:
             [PlayerNote(**n) for n in d.get("retired", [])], [PlayerNote(**n) for n in d.get("rookies", [])],
             {pid: {k: float(v) for k, v in x.items()} for pid, x in d.get("ability_changes", {}).items()},
             {pid: int(v) for pid, v in d.get("ages", {}).items()},
+            {pid: {k: [str(s) for s in v] for k, v in x.items()} for pid, x in d.get("skill_changes", {}).items()},
         )
 
 
@@ -197,6 +201,10 @@ def age_update_retire(league: League, seed: int, config: GenerationConfig, setti
                 kept.append(p)
                 result.ability_changes[p.id] = changes
                 result.ages[p.id] = p.age
+                sk = yearly_change(p, seed)  # 特殊能力の変化(別の乱数の系列。D-374)
+                if sk["gained"] or sk["lost"]:
+                    result.skill_changes[p.id] = sk
+                    ability_model.refresh(config, p)
         team.players = kept
         vacated_by_team[team.id] = vacated
     return result, vacated_by_team

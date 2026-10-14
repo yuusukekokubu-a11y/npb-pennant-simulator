@@ -22,6 +22,7 @@ from typing import Mapping, Protocol
 from .abilities import BATTER, FIELDER_POSITIONS, PITCHER
 from .models import NEUTRAL_PARK, ParkFactors, Player
 from .pa_config import BATTED_BALL_TYPES, HIT_TYPES, STAGE1_EVENTS, PlateAppearanceConfig, load_pa_config
+from .skills import shifted, situational
 
 IN_PLAY = "in_play"
 
@@ -342,6 +343,12 @@ class OddsRatioModel:
             "batter_side": batter_side(batter, pitcher),
             "base_out": base_out,
         }
+        if batter.skills or pitcher.skills:  # 条件つきの特殊能力(得点圏・相手が左。D-374)。乱数は使わない
+            risp = base_out.second or base_out.third
+            b = situational(batter, risp, pitcher.throws == "L")
+            pt = situational(pitcher, risp, common["batter_side"] == "L")
+            batter = shifted(batter, b) if b else batter
+            pitcher = shifted(pitcher, pt) if pt else pitcher
         event = _choose(rng, self.stage1(batter, pitcher, home, park))
         if event != IN_PLAY:
             return PlateAppearance(result=event, **common)

@@ -100,3 +100,8 @@ export function kvTable(rows) {
   }
   return el("div", { className: "table-wrap" }, el("table", { className: "kv" }, body));
 }
+
+// 特殊能力の札(D-374):良いものは緑、悪いものは赤
+export function skillBadge(s) {
+  return el("span", { className: `skill ${s.good ? "good" : "bad"}`, "data-key": s.key }, s.label);
+}

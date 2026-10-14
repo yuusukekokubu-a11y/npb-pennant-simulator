@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..abilities import POSITION_LABELS
 from ..newgame import public_player
 from ..records import qualified_batters, qualified_pitchers
+from ..skills import public_skills
 from .common import (
     BATS_LABELS,
     KIND_LABELS,
@@ -43,6 +44,7 @@ class PlayersMixin:
                 is_mine=team is not None and team.id == self.state.my_team_id,
                 retired=False,
                 abilities=self.player_abilities(p),  # 見せる能力(作り直し①。プロのスカウト評価は見せない。D-352)
+                skills=public_skills(p),  # 特殊能力(D-374)
                 contract=self._contract_public(p),
             )
             role = p.role

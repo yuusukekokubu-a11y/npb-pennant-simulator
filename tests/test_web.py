@@ -274,7 +274,7 @@ def test_bridge_queries_show_abilities_but_not_hidden_info(bridge):
     assert json.loads(bridge.query("offseason_table", "{}"))["ok"] is False  # 手続き中でなければ表示できない
     table = _ok(bridge.query("ability_table", json.dumps({"qualified": False})))
     assert table["rows"] and "meet" in table["rows"][0]["values"] and not any(f'"{k}"' in json.dumps(table) for k in HIDDEN_KEYS)
-    assert [c["key"] for c in _ok(bridge.query("ability_columns", json.dumps({"role": "pitcher"})))] == ["velocity", "control", "stamina", "breaking"]
+    assert [c["key"] for c in _ok(bridge.query("ability_columns", json.dumps({"role": "pitcher"})))] == ["velocity", "control", "stamina", "breaking", "skills"]  # 最後は特殊能力(D-374)
     assert json.loads(bridge.query("player", json.dumps({"player_id": "nobody"})))["ok"] is False
 
 

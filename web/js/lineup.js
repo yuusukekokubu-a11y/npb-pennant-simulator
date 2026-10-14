@@ -4,7 +4,7 @@
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, table } from "./parts.js";
+import { el, playerLink, skillBadge, table } from "./parts.js";
 import { setDirty } from "./progress.js";
 
 async function lineupCall(name, args = {}) {
@@ -58,15 +58,16 @@ export async function renderLineup(token) {
         power: (p.abilities || {}).power || "",
         speed: (p.abilities || {}).speed || "",
         defense: (p.abilities || {}).defense || "",
+        skills: el("span", { className: "skills-inline" }, ...(p.skills || []).map(skillBadge)),
       },
     };
   });
-  const columns = [{ key: "pos", label: "守備位置" }, { key: "player", label: "選手" }, { key: "native", label: "ポジション" }, { key: "meet", label: "ミート" }, { key: "power", label: "パワー" }, { key: "speed", label: "走力" }, { key: "defense", label: "守備力" }];
+  const columns = [{ key: "pos", label: "守備位置" }, { key: "player", label: "選手" }, { key: "native", label: "ポジション" }, { key: "meet", label: "ミート" }, { key: "power", label: "パワー" }, { key: "speed", label: "走力" }, { key: "defense", label: "守備力" }, { key: "skills", label: "特殊能力" }];
   $("lineup-table").replaceChildren(table({ firstLabel: "打順", columns, rows, first: (r) => [el("span", {}, `${r.order}`)], fluid: true }));
   const inDraft = new Set(ls.draft.map((d) => d.player_id));
   const bench = players.filter((p) => !inDraft.has(p.player_id));
-  $("lineup-bench").replaceChildren(bench.length ? table({ firstLabel: "選手", columns: [{ key: "pos", label: "ポジション" }, { key: "overall", label: "総合" }, { key: "meet", label: "ミート" }, { key: "power", label: "パワー" }, { key: "speed", label: "走力" }, { key: "defense", label: "守備力" }],
-    rows: bench.map((p) => ({ ...p, values: { pos: p.native_label || p.position_label, overall: p.overall, meet: p.abilities.meet, power: p.abilities.power, speed: p.abilities.speed, defense: p.abilities.defense } })), first: (p) => [playerLink(p.name, p.player_id), el("span", { className: "sub" }, p.hand || "")], fluid: true })
+  $("lineup-bench").replaceChildren(bench.length ? table({ firstLabel: "選手", columns: [{ key: "pos", label: "ポジション" }, { key: "overall", label: "総合" }, { key: "meet", label: "ミート" }, { key: "power", label: "パワー" }, { key: "speed", label: "走力" }, { key: "defense", label: "守備力" }, { key: "skills", label: "特殊能力" }],
+    rows: bench.map((p) => ({ ...p, values: { pos: p.native_label || p.position_label, overall: p.overall, meet: p.abilities.meet, power: p.abilities.power, speed: p.abilities.speed, defense: p.abilities.defense, skills: el("span", { className: "skills-inline" }, ...(p.skills || []).map(skillBadge)) } })), first: (p) => [playerLink(p.name, p.player_id), el("span", { className: "sub" }, p.hand || "")], fluid: true })
     : el("p", { className: "muted small" }, "控えはいません。"));
 }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 from .. import ability_model
 from ..abilities import POSITION_LABELS
 from ..manager import DEFAULT_LINEUP_STYLE, DH, LINEUP_POSITIONS, LINEUP_STYLES
+from ..skills import public_skills
 from .common import BATS_LABELS
 
 POSITION_NAMES = {**POSITION_LABELS, DH: "指名打者"}
@@ -50,7 +51,8 @@ class LineupMixin:
             shown = {a["key"]: a["text"] for a in ability_model.public_abilities(cfg, p)}
             ov = ability_model.display(cfg, ability_model.overall(p))
             return {"player_id": p.id, "name": p.name, "position": p.position, "position_label": POSITION_LABELS[p.position], "hand": BATS_LABELS.get(p.bats),
-                    "overall": f"{ability_model.rank(cfg, ov)} {ov}", "abilities": {k: shown.get(k, "") for k in ("trajectory",) + SHOWN_ABILITIES}}
+                    "overall": f"{ability_model.rank(cfg, ov)} {ov}", "abilities": {k: shown.get(k, "") for k in ("trajectory",) + SHOWN_ABILITIES},
+                    "skills": public_skills(p)}
 
         slots = []
         for order, (p, pos) in enumerate(ordered, start=1):

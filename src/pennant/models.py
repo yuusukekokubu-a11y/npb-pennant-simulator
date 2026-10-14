@@ -65,6 +65,7 @@ class Player:
     contract: dict | None = None  # 契約({salary: 年俸(万円), until: 満了シーズン, history: [{year, salary, years, reason, offers?}]}。F3-2a。D-232)。所属がなければ None でもよい
     abilities: dict[str, float] = field(default_factory=dict)  # 見せる能力(正本。内部と同じ目盛りの小数。D-336、D-349)
     pitches: list[dict] | None = None  # 投手の球種 [{type, weight}](D-351)。打者は None
+    skills: list[str] = field(default_factory=list)  # 特殊能力のキー(data/skills.json。D-374)
     fa_seasons: int | None = 0  # 一軍に登録されたシーズンの通算(FA 権の年数。宣言したら 0。F3-2c。D-258)。None は旧版で、読み込みのときに補う
 
     @property

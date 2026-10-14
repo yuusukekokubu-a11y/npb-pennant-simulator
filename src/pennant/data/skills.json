@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "yearly": {"gain": 0.04, "lose": 0.04},
+  "skills": {
+    "chance_plus": {"label": "チャンス◯", "role": "batter", "good": true, "pair": "chance", "when": "risp", "effects": {"contact": 8, "power": 8}, "probability": 0.10},
+    "chance_minus": {"label": "チャンス×", "role": "batter", "good": false, "pair": "chance", "when": "risp", "effects": {"contact": -8, "power": -8}, "probability": 0.08},
+    "vs_left_plus": {"label": "対左投手◯", "role": "batter", "good": true, "pair": "vs_left", "when": "vs_left", "effects": {"contact": 8, "eye": 8, "power": 8}, "probability": 0.10},
+    "vs_left_minus": {"label": "対左投手×", "role": "batter", "good": false, "pair": "vs_left", "when": "vs_left", "effects": {"contact": -8, "eye": -8, "power": -8}, "probability": 0.08},
+    "running_plus": {"label": "走塁◯", "role": "batter", "good": true, "pair": "running", "when": "always", "effects": {"baserunning": 15}, "probability": 0.10},
+    "running_minus": {"label": "走塁×", "role": "batter", "good": false, "pair": "running", "when": "always", "effects": {"baserunning": -15}, "probability": 0.08},
+    "power_hitter": {"label": "パワーヒッター", "role": "batter", "good": true, "pair": "power_hitter", "when": "always", "effects": {"power": 5}, "probability": 0.25, "requires": {"power": 60}},
+    "average_hitter": {"label": "アベレージヒッター", "role": "batter", "good": true, "pair": "average_hitter", "when": "always", "effects": {"contact": 5}, "probability": 0.25, "requires": {"meet": 60}},
+    "pinch_plus": {"label": "ピンチ◯", "role": "pitcher", "good": true, "pair": "pinch", "when": "risp", "effects": {"strikeout": 8, "contact_suppression": 8, "stuff": 8}, "probability": 0.10},
+    "pinch_minus": {"label": "ピンチ×", "role": "pitcher", "good": false, "pair": "pinch", "when": "risp", "effects": {"strikeout": -8, "contact_suppression": -8, "stuff": -8}, "probability": 0.08},
+    "vs_left_batter_plus": {"label": "対左打者◯", "role": "pitcher", "good": true, "pair": "vs_left_batter", "when": "vs_left", "effects": {"strikeout": 8, "contact_suppression": 8, "stuff": 8}, "probability": 0.10},
+    "vs_left_batter_minus": {"label": "対左打者×", "role": "pitcher", "good": false, "pair": "vs_left_batter", "when": "vs_left", "effects": {"strikeout": -8, "contact_suppression": -8, "stuff": -8}, "probability": 0.08},
+    "strikeout_plus": {"label": "奪三振◯", "role": "pitcher", "good": true, "pair": "strikeout", "when": "always", "effects": {"strikeout": 6}, "probability": 0.10},
+    "strikeout_minus": {"label": "奪三振×", "role": "pitcher", "good": false, "pair": "strikeout", "when": "always", "effects": {"strikeout": -6}, "probability": 0.08},
+    "heavy_ball": {"label": "重い球", "role": "pitcher", "good": true, "pair": "home_run", "when": "always", "effects": {"stuff": 6}, "probability": 0.10},
+    "homer_prone": {"label": "一発気味", "role": "pitcher", "good": false, "pair": "home_run", "when": "always", "effects": {"stuff": -6}, "probability": 0.08}
+  }
+}
