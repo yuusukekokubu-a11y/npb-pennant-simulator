@@ -231,7 +231,7 @@ def test_offseason_changes_are_public_and_hidden_info_is_not(two_seasons):
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 14
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 15
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)
@@ -317,7 +317,9 @@ def test_calibration_shifts_strength_items_only_and_hits_50():
 def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated():
     league = new_league(2, None, CONFIG, PARTS, prerun=True)
     manual = generate_league(2, CONFIG, PARTS)
-    prerun(manual, 2, CONFIG, PARTS, SETTINGS)
+    from pennant.contracts import assign_tiers, load_contract_settings
+
+    prerun(manual, 2, CONFIG, PARTS, SETTINGS, tiers=assign_tiers([t.id for t in manual.teams], 2, load_contract_settings()))  # 球団の規模はシードから(D-353)
     apply_calibration(manual, SETTINGS.calibration("medium"), CONFIG)
     assert [(p.id, dict(p.ratings)) for p in league.all_players()] == [(p.id, dict(p.ratings)) for p in manual.all_players()]
     plain = new_league(2, None, CONFIG, PARTS, prerun=False)

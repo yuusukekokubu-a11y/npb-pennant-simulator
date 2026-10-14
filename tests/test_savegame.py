@@ -119,7 +119,7 @@ def test_sample_file_from_another_version():
     data = (DATA / "sample-save.sav").read_bytes()
     state = load_game(data)
     assert state.season.day == info["save_day"]
-    assert read_manifest(data)["format_version"] == 14  # 見本は版 14(作り直し①で作り直した。13 以前は読まない。D-344)
+    assert read_manifest(data)["format_version"] == 15  # 見本は版 15(作り直し②で作り直した。14 以前は読まない。D-344、D-362)
     resaved = load_game(save_game(state, AT))
     assert save_game(resaved, AT) == save_game(state, AT) and resaved.my_team_id is None
     state.season.play_days(info["continue_to_day"] - state.season.day)
@@ -200,11 +200,11 @@ def test_failed_load_keeps_current_state(saved):
     assert save_game(current, AT) == before  # 今の状態は変わらない
 
 
-# ---- 受け入れ条件5:旧版の変換(作り直し①より前の版は読まない。D-344) ----
+# ---- 受け入れ条件5:旧版の変換(作り直しの途中の版は読まない。D-344、D-362) ----
 
-@pytest.mark.parametrize("version", [1, 13])
+@pytest.mark.parametrize("version", [1, 13, 14])
 def test_versions_before_the_rebuild_are_rejected(saved, version):
-    """版 13 以前(作り直し①の前)のファイルは、変換せずに分かりやすいエラーにする。"""
+    """版 14 以前(作り直し②の前)のファイルは、変換せずに分かりやすいエラーにする。"""
     files = _zip(saved[1])
     m = json.loads(files["manifest.json"])
     m["format_version"] = version
@@ -233,16 +233,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 15)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 14: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 16)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 15: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 16)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 14: lambda b: b})
-    _assert_error(saved[1], "バージョン 15 から 16 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 17)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 15: lambda b: b})
+    _assert_error(saved[1], "バージョン 16 から 17 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----

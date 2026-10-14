@@ -83,7 +83,7 @@ export function dealPanel(p, info, { prefix, onSend, onCancel }) {
   box.append(el("p", {}, `${d.former_team_name ? `前の所属 ${d.former_team_name}。` : ""}算定年俸 ${d.calc_text}。見込みの WAR ${Number(d.expected).toFixed(2)}。`));
   if (p.offer) box.append(el("p", { className: "small" }, `提示中:${p.offer.years} 年・${Number(p.offer.salary).toLocaleString()} 万円(出し直すと上書き)`));
   const years = el("select", { id: `${prefix}-years`, "aria-label": "契約年数" }, ...Array.from({ length: info.max_years - info.min_years + 1 }, (_, i) => info.min_years + i).map((y) => el("option", { value: String(y), selected: p.offer ? p.offer.years === y : y === 1 }, `${y} 年`)));
-  const si = salaryInput(p.offer ? p.offer.salary : d.calc_salary, info.none_max_ratio ? d.calc_salary : info.minimum_salary, info.rounding, info.none_max_ratio ? Math.floor(d.calc_salary * info.none_max_ratio) : null);
+  const si = salaryInput(p.offer ? p.offer.salary : d.calc_salary, info.minimum_salary, info.rounding);
   box.append(el("div", { className: "offer-fields" }, el("label", {}, "年数 ", years), si.wrap));
   const send = el("button", { id: `${prefix}-send`, type: "button", disabled: state.running, onclick: () => {
     const val = si.input.value.trim();

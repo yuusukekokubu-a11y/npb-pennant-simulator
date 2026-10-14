@@ -76,16 +76,10 @@ from .contract_stage import (  # noqa: F401
     CONTRACT_PHASES,
     finish_contract_stage,
     entry_player,
-    projected_total,
-    offers_left,
-    make_offer,
-    release_entry,
-    ai_negotiate_entry,
-    open_entries,
+    update_funds,
     initialize_contracts,
     state_war_history,
     state_context,
-    fill_missing_contracts,
     over_cap,
     resolve_overrun,
     can_afford,
@@ -143,7 +137,7 @@ def _choose_within_budget(team: Team, proc: OffseasonProcedure, sd: dict, settin
 
 def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose, ctx: ContractContext | None = None) -> bool:
     """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。
-    標準以上では、予算が足りない球団はパスする(note="budget")。"""
+    資金が足りない球団はパスする(note="budget")。"""
     teams = {t.id: t for t in league.teams}
     while not phase_finished(proc):
         tid = proc.current_team()
@@ -155,7 +149,7 @@ def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, d
                 pass_turn(proc, tid, "full")  # 空き枠がなければ自動でパス(D-203)
                 continue
             if proc.phase == "draft" and not affordable_pool(teams[tid], proc, ctx):
-                pass_turn(proc, tid, "budget")  # 予算が足りなければ自動でパス(D-235)
+                pass_turn(proc, tid, "budget")  # 資金が足りなければ自動でパス(D-235)
                 continue
             return True
         team = teams[tid]
@@ -228,7 +222,7 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
         for p in replenish(team, slots, config, names, rng, proc.year, counter, calibration, id_prefix):
             p.scouting = _entry_report(proc, p, team.id, scout_sd[team.id], settings)
             salary = None
-            if ctx is not None:  # 自動補充は最低年俸(予算に関わらず結べる。D-235)
+            if ctx is not None:  # 自動補充は最低年俸(資金に関わらず結べる。D-235)
                 salary = ctx.settings.minimum
                 set_contract(p, salary, ctx.settings.default_years, proc.year + 1, "fill")
                 if ctx.negotiation is not None:
@@ -266,7 +260,7 @@ def finish_fa_market(proc: OffseasonProcedure) -> None:
 
 
 def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
-    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。予算超過の解消も AI と同じ)。戻り値は自動補充で入った選手。"""
+    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。資金の超過の解消も AI と同じ)。戻り値は自動補充で入った選手。"""
     while proc.phase != "done":
         if proc.phase in CONTRACT_PHASES:  # 「おまかせ」:残りの交渉・超過の解消・自由契約を AI と同じ方針で(D-251、D-272)
             finish_contract_stage(league, proc, ctx, scout_sd, settings, my_team_id, mins, min_batters, my_ai=True)

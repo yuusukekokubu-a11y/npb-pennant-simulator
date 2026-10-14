@@ -226,7 +226,7 @@ class OffseasonProcedure:
     fa_results: list[dict] = field(default_factory=list)  # 成立した FA の契約
     fa_log: list[dict] = field(default_factory=list)  # 全球団の提示の記録({round, player_id, team_id, years, salary})
     fa_done: bool = False  # FA 市場が終わったか
-    budget_releases: list[dict] = field(default_factory=list)  # 予算超過の解消で自由契約になった選手({team_id, player_id, name, salary})
+    budget_releases: list[dict] = field(default_factory=list)  # 資金の超過の解消で自由契約になった選手({team_id, player_id, name, salary})
     contracts_done: bool = False  # 更改と AI の超過の解消を済ませたか
     market_offers: dict = field(default_factory=dict)  # あなたの球団の市場の提示(選手 ID → {years, salary})。①b。D-300
     market_results: list[dict] = field(default_factory=list)  # 市場で成立した契約
@@ -246,13 +246,12 @@ class OffseasonProcedure:
 
     @property
     def renewals(self) -> list[dict]:
-        """更改した選手(受けた交渉)の一覧(画面の「契約更改の結果」。F3-2a の形)。"""
+        """更改した選手の一覧(画面の「契約更改の結果」。F3-2a の形。作り直し②で査定の自動更改。D-358)。"""
         out = []
         for e in self.negotiations.values():
             if e["status"] != "accepted":
                 continue
-            last = e["offers"][-1] if e["offers"] else {"salary": e["auto_salary"], "years": e.get("ai_years", 1)}
-            out.append({k: e[k] for k in ("team_id", "player_id", "name", "role", "position", "age", "old_salary", "expected")} | {"salary": int(last["salary"]), "years": int(last["years"]), "offers": len(e["offers"])})
+            out.append({k: e[k] for k in ("team_id", "player_id", "name", "role", "position", "age", "old_salary", "expected")} | {"salary": int(e["auto_salary"]), "years": int(e.get("ai_years", 1))})
         return out
 
     def to_dict(self, plain) -> dict:

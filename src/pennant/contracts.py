@@ -1,10 +1,10 @@
-"""契約と年俸(F3-2a。D-230〜D-237)。
+"""契約と年俸(F3-2a。D-230〜D-237。作り直し②で資金と査定に作り直し。D-353〜D-361)。
 
-- 年俸(架空の「万円」)は見える情報だけで決める:見込みの WAR = 直近 3 シーズンの WAR の加重平均(新しいほど重い。出場の少ない年は重みを小さく)。
-  履歴がない選手は、所属球団のスカウト評価(総合の推定値と天井)から設定の表で見込みの WAR を求める。30 歳以上は年齢で割り引く。
-  年俸 = 最低年俸 + 単価 × max(0, 見込み) を丸めたもの(下限は最低年俸)。真の能力・潜在能力・成長タイプ・型は使わない(D-232)。
-- 単価(1 WAR あたり)は毎年のオフに、(基準予算 × 球団数 − 最低年俸 × 選手数)÷ リーグの見込みの WAR の合計 で求める(D-234)。
-- お金のルール:none(なし)/ loose(ゆるい:目安。警告のみ)/ standard(標準:上限)/ strict(きびしい:上限 + 球団ごとの格差)(D-230)。
+- 年俸(架空の「万円」)は見える情報だけで決める:見込みの WAR = 成績の分(直近 3 シーズンの WAR の加重平均。新しいほど重く、出場の少ない年は軽い)と
+  能力の分(見せる能力の平均から設定の直線で求めた WAR の目安)を重みで混ぜた値。30 歳以上は年齢で割り引く。
+  年俸 = 最低年俸 + 単価 × max(0, 見込み) を丸めたもの(下限は最低年俸)。更改では前の年俸の 75% を下回らない(D-356、D-357)。
+- 単価(1 WAR あたり)は毎年のオフに、(資金の合計 ÷ 1.1 − 最低年俸 × 選手数)÷ リーグの見込みの WAR の合計 で求める(D-355)。
+- 資金:球団の規模(大・中・小)ごとの基準額。毎年のオフの最初に、前のシーズンの順位で増減する(D-353、D-354)。
 - 契約の乱数は別の系列(contract:…)で、AI の判断には使わない(D-237)。
 """
 
@@ -20,14 +20,6 @@ from .config import ConfigError, _Checker, _read_json
 from .models import Player, Team
 from .season import derive_seed
 
-MONEY_RULES = ("none", "loose", "standard", "strict")
-RULE_LABELS = {"none": "なし", "loose": "ゆるい", "standard": "標準", "strict": "きびしい"}
-RULE_NOTES = {
-    "none": "予算の機能なし。更改と FA では、年俸を算定の 1.0〜1.3 倍で提示できます(年数も選べます。D-273)。",
-    "loose": "予算は目安。超えると警告が出るだけで、契約は結べます。全球団同額。",
-    "standard": "予算は上限。超える契約は結べません(あなたも AI も)。全球団同額。",
-    "strict": "標準に加えて、球団ごとの予算の格差(大・中・小)があります。",
-}
 TIERS = ("large", "medium", "small")
 TIER_LABELS = {"large": "大", "medium": "中", "small": "小"}
 
@@ -57,12 +49,18 @@ class ContractSettings:
         return self.data["salary"]["age_discount"]
 
     @property
-    def base_budget(self) -> int:
-        return int(self.data["budget"]["base"])
+    def ability_weight(self) -> float:
+        """能力の分の重み(成績の重みと同じ単位。直近の満の出場 1 シーズンが war_weights[0])。D-356。"""
+        return float(self.data["salary"]["ability_weight"])
 
     @property
-    def cap_factor(self) -> float:
-        return float(self.data["budget"]["cap_factor"])
+    def decline_floor(self) -> float:
+        """更改の年俸の下限(前の年俸に対する割合。D-357)。"""
+        return float(self.data["salary"]["decline_floor"])
+
+    @property
+    def base_budget(self) -> int:
+        return int(self.data["budget"]["base"])
 
     def tier_factor(self, tier: str) -> float:
         return float(self.data["budget"]["tiers"][tier])
@@ -72,8 +70,17 @@ class ContractSettings:
         return {t: int(n) for t, n in self.data["budget"]["tier_counts"].items()}
 
     @property
-    def default_rule(self) -> str:
-        return str(self.data["rules"]["default"])
+    def payroll_divisor(self) -> float:
+        return float(self.data["budget"]["payroll_divisor"])
+
+    @property
+    def change_by_rank(self) -> list[float]:
+        return [float(x) for x in self.data["budget"]["change_by_rank"]]
+
+    @property
+    def funds_range(self) -> tuple[float, float]:
+        lo, hi = self.data["budget"]["range"]
+        return float(lo), float(hi)
 
     def rookie_salary(self, round_no: int) -> int:
         table = self.data["rookie_salaries"]
@@ -96,8 +103,12 @@ class ContractSettings:
     def min_years(self) -> int:
         return int(self.data["years"]["min"])
 
-    def scouting_war(self, role: str) -> dict:
-        return self.data["scouting_war"][role]
+    @property
+    def multi_year(self) -> dict:
+        return self.data["years"]["multi_year"]
+
+    def ability_war(self, role: str) -> dict:
+        return self.data["ability_war"][role]
 
 
 def load_contract_settings(path: str | Path | None = None) -> ContractSettings:
@@ -109,13 +120,9 @@ def validate_contract_settings(root, source: str = "contracts.json") -> Contract
     c = _Checker()
     if not isinstance(root, dict):
         raise ConfigError(source, ["全体がまとまり({ })ではありません"])
-    rules = c.section(c.get(root, "rules", ""), "rules")
-    if rules is not None:
-        if c.get(rules, "default", "rules") not in MONEY_RULES:
-            c.add("rules.default", f"none / loose / standard / strict のどれかにしてください(値: {rules.get('default')!r})")
     b = c.section(c.get(root, "budget", ""), "budget")
     c.integer(c.get(b, "base", "budget"), "budget.base", 1, 100000000)
-    c.number(c.get(b, "cap_factor", "budget"), "budget.cap_factor", 1, 3)
+    c.number(c.get(b, "payroll_divisor", "budget"), "budget.payroll_divisor", 1, 3)
     tiers = c.section(c.get(b, "tiers", "budget"), "budget.tiers")
     counts = c.section(c.get(b, "tier_counts", "budget"), "budget.tier_counts")
     for t in TIERS:
@@ -123,9 +130,17 @@ def validate_contract_settings(root, source: str = "contracts.json") -> Contract
         c.integer(c.get(counts, t, "budget.tier_counts"), f"budget.tier_counts.{t}", 0, 12)
     if counts is not None and all(isinstance(counts.get(t), int) for t in TIERS) and sum(counts[t] for t in TIERS) != 12:
         c.add("budget.tier_counts", f"合計が 12 球団になるようにしてください(値: {sum(counts[t] for t in TIERS)})")
+    ch = c.get(b, "change_by_rank", "budget")
+    if not (isinstance(ch, list) and ch and all(isinstance(x, (int, float)) and not isinstance(x, bool) and -1 < x < 1 for x in ch)):
+        c.add("budget.change_by_rank", "順位ごとの増減の割合(−1〜1 の数)の一覧にしてください(1 位から順)")
+    rg = c.get(b, "range", "budget")
+    if not (isinstance(rg, list) and len(rg) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in rg) and 0 < rg[0] <= 1 <= rg[1] <= 3):
+        c.add("budget.range", "[下限, 上限] の 2 つの数(0 < 下限 ≦ 1 ≦ 上限 ≦ 3)にしてください")
     s = c.section(c.get(root, "salary", ""), "salary")
     c.integer(c.get(s, "minimum", "salary"), "salary.minimum", 1, 1000000)
     c.integer(c.get(s, "rounding", "salary"), "salary.rounding", 1, 100000)
+    c.number(c.get(s, "ability_weight", "salary"), "salary.ability_weight", 0, 10)
+    c.number(c.get(s, "decline_floor", "salary"), "salary.decline_floor", 0, 1)
     w = c.get(s, "war_weights", "salary")
     if not (isinstance(w, list) and w and all(isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in w)):
         c.add("salary.war_weights", "正の数の一覧(新しいシーズンから順)にしてください")
@@ -139,18 +154,20 @@ def validate_contract_settings(root, source: str = "contracts.json") -> Contract
     y = c.section(c.get(root, "years", ""), "years")
     for key in ("min", "max", "default", "rookie"):
         c.integer(c.get(y, key, "years"), f"years.{key}", 1, 10)
+    my = c.section(c.get(y, "multi_year", "years"), "years.multi_year")
+    c.integer(c.get(my, "max_age", "years.multi_year"), "years.multi_year.max_age", 18, 60)
+    table = c.get(my, "table", "years.multi_year")
+    if not (isinstance(table, list) and all(isinstance(r, list) and len(r) == 2 and isinstance(r[0], (int, float)) and isinstance(r[1], int) and 1 <= r[1] <= 10 for r in table)):
+        c.add("years.multi_year.table", "[見込みの WAR の下限, 年数] の一覧(高い順)にしてください")
     rs = c.section(c.get(root, "rookie_salaries", ""), "rookie_salaries")
     if rs is not None:
         for k, v in rs.items():
             c.integer(v, f"rookie_salaries.{k}", 1, 1000000)
-    sw = c.section(c.get(root, "scouting_war", ""), "scouting_war")
+    aw = c.section(c.get(root, "ability_war", ""), "ability_war")
     for role in ("batter", "pitcher"):
-        r = c.section(c.get(sw, role, "scouting_war"), f"scouting_war.{role}")
-        c.number(c.get(r, "intercept", f"scouting_war.{role}"), f"scouting_war.{role}.intercept", -10, 10)
-        c.number(c.get(r, "slope", f"scouting_war.{role}"), f"scouting_war.{role}.slope", 0, 5)
-        cb = c.section(c.get(r, "ceiling_bonus", f"scouting_war.{role}"), f"scouting_war.{role}.ceiling_bonus")
-        for g in ("S", "A", "B", "C", "D"):
-            c.number(c.get(cb, g, f"scouting_war.{role}.ceiling_bonus"), f"scouting_war.{role}.ceiling_bonus.{g}", -5, 5)
+        r = c.section(c.get(aw, role, "ability_war"), f"ability_war.{role}")
+        c.number(c.get(r, "intercept", f"ability_war.{role}"), f"ability_war.{role}.intercept", -10, 10)
+        c.number(c.get(r, "slope", f"ability_war.{role}"), f"ability_war.{role}.slope", 0, 5)
     if c.problems:
         raise ConfigError(source, c.problems)
     return ContractSettings(copy.deepcopy(root), source)
@@ -158,9 +175,9 @@ def validate_contract_settings(root, source: str = "contracts.json") -> Contract
 
 # ---- 見込みの WAR・年俸・契約年数 ----
 
-def history_war(season_wars: list[tuple[float, float]], role: str, settings: ContractSettings) -> float | None:
-    """直近のシーズンの (WAR, 出場) から見込みの WAR(履歴の分)。出場は打者が打席数、投手が投球回。
-    重みは新しいシーズンから順の設定値 × 出場の係数(出場 ÷ 設定値。上限 1)。出場がまったくなければ None。"""
+def history_parts(season_wars: list[tuple[float, float]], role: str, settings: ContractSettings) -> tuple[float, float]:
+    """直近のシーズンの (WAR, 出場) から、成績の分の (重みつきの WAR の合計, 重みの合計)。出場は打者が打席数、投手が投球回。
+    重みは新しいシーズンから順の設定値 × 出場の係数(出場 ÷ 設定値。上限 1)。"""
     full = settings.usage_full(role)
     num = 0.0
     den = 0.0
@@ -168,13 +185,19 @@ def history_war(season_wars: list[tuple[float, float]], role: str, settings: Con
         f = min(1.0, max(0.0, float(usage)) / full)
         num += w * f * float(war)
         den += w * f
+    return num, den
+
+
+def history_war(season_wars: list[tuple[float, float]], role: str, settings: ContractSettings) -> float | None:
+    """成績の分だけの見込み(出場がまったくなければ None)。"""
+    num, den = history_parts(season_wars, role, settings)
     return num / den if den > 0 else None
 
 
-def scouting_war(role: str, overall_estimate: float, ceiling: str, settings: ContractSettings) -> float:
-    """所属球団のスカウト評価(総合の推定値と天井)から見込みの WAR(履歴がない選手。D-232)。"""
-    t = settings.scouting_war(role)
-    return float(t["intercept"]) + float(t["slope"]) * (float(overall_estimate) - 50.0) + float(t["ceiling_bonus"].get(ceiling, 0.0))
+def ability_war(role: str, overall_value: float, settings: ContractSettings) -> float:
+    """見せる能力の平均(総合値)から求めた WAR の目安(D-356)。"""
+    t = settings.ability_war(role)
+    return float(t["intercept"]) + float(t["slope"]) * (float(overall_value) - 50.0)
 
 
 def age_factor(age: int, settings: ContractSettings) -> float:
@@ -185,16 +208,17 @@ def age_factor(age: int, settings: ContractSettings) -> float:
     return max(float(d["floor"]), 1.0 - float(d["per_year"]) * (age - start + 1))
 
 
-def expected_war(age: int, role: str, season_wars: list[tuple[float, float]], scouting: tuple[float, str] | None, settings: ContractSettings) -> tuple[float, str]:
-    """見込みの WAR と、その元(history / scouting)。年齢の割引を含む。"""
-    hist = history_war(season_wars, role, settings)
-    if hist is not None:
-        base, source = hist, "history"
-    elif scouting is not None:
-        base, source = scouting_war(role, scouting[0], scouting[1], settings), "scouting"
-    else:
-        base, source = 0.0, "none"
-    return base * age_factor(age, settings), source
+def expected_war(age: int, role: str, season_wars: list[tuple[float, float]], overall_value: float | None, settings: ContractSettings) -> tuple[float, str]:
+    """見込みの WAR と、その元(history:成績が中心 / ability:能力だけ / none)。成績の分と能力の分を重みで混ぜる。年齢の割引を含む(D-356)。"""
+    num, den = history_parts(season_wars, role, settings)
+    if overall_value is not None:
+        k = settings.ability_weight
+        num += k * ability_war(role, overall_value, settings)
+        den += k
+    if den <= 0:
+        return 0.0, "none"
+    source = "history" if num and den > settings.ability_weight else "ability"
+    return num / den * age_factor(age, settings), source
 
 
 def salary_for(expected: float, rate: float, settings: ContractSettings) -> int:
@@ -204,26 +228,40 @@ def salary_for(expected: float, rate: float, settings: ContractSettings) -> int:
     return max(settings.minimum, int(round(raw / step)) * step)
 
 
+def assessed_salary(expected: float, rate: float, settings: ContractSettings, old_salary: int | None = None) -> int:
+    """更改の査定の年俸:算定の年俸。前の年俸があれば、その 75%(設定値)を下回らない(丸めは切り上げ。D-357)。"""
+    salary = salary_for(expected, rate, settings)
+    if old_salary:
+        step = settings.rounding
+        floor = int(math.ceil(int(old_salary) * settings.decline_floor / step)) * step
+        salary = max(salary, floor)
+    return salary
+
+
 def contract_years(age: int, expected: float, settings: ContractSettings) -> int:
-    """既定の契約年数(F3-2b から 1 年。D-243)。複数年は、更改であなたが選んだ選手と、AI の若手だけ(negotiation.ai_years)。
-    引数の年齢と見込みは、F3-2a の形と合わせるために残している(使わない)。"""
+    """更改の契約年数(D-360):主力級(見込みの WAR が表の値以上で、年齢が上限以下)は複数年、ほかは既定(1 年)。新規開始の初期選手にも使う。"""
+    m = settings.multi_year
+    if int(age) <= int(m["max_age"]):
+        for low, n in m["table"]:
+            if float(expected) >= float(low):
+                return min(int(n), settings.max_years)
     return settings.default_years
 
 
-def rate_for(expected_wars: list[float], n_teams: int, n_players: int, settings: ContractSettings) -> float:
-    """単価(1 WAR あたりの万円)。(基準予算 × 球団数 − 最低年俸 × 選手数)÷ Σ max(0, 見込み)。
-    こうすると、全球団の総年俸の合計が基準予算 × 球団数にちょうど合う(年俸は見込みが 0 未満なら最低年俸のため)。"""
+def rate_for(expected_wars: list[float], total_funds: float, n_players: int, settings: ContractSettings) -> float:
+    """単価(1 WAR あたりの万円)。(資金の合計 ÷ 1.1 − 最低年俸 × 選手数)÷ Σ max(0, 見込み)(D-355)。
+    こうすると、全球団の総年俸の合計が資金の合計の約 9 割に合う(年俸は見込みが 0 未満なら最低年俸のため)。"""
     total = sum(max(0.0, float(w)) for w in expected_wars)
-    pool = settings.base_budget * n_teams - settings.minimum * n_players
+    pool = float(total_funds) / settings.payroll_divisor - settings.minimum * n_players
     if total <= 0:
         return 0.0
     return max(0.0, pool / total)
 
 
-# ---- 予算 ----
+# ---- 資金(D-353、D-354) ----
 
 def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings) -> dict[str, str]:
-    """きびしいの格差(大・中・小)を、新規開始のシードから割り当てる(別の乱数系列。D-231)。"""
+    """球団の規模(大・中・小)を、新規開始のシードから割り当てる(別の乱数系列。D-231、D-353)。"""
     rng = random.Random(derive_seed(seed, "budget-tiers"))
     ids = sorted(team_ids)
     rng.shuffle(ids)
@@ -240,22 +278,26 @@ def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings) -> 
     return out
 
 
-def budget_of(rule: str, tier: str | None, settings: ContractSettings) -> int | None:
-    """球団の予算(なしのときは None)。きびしいは格差を掛ける。"""
-    if rule == "none":
-        return None
-    factor = settings.tier_factor(tier or "medium") if rule == "strict" else 1.0
-    return int(round(settings.base_budget * factor))
+def base_funds(tier: str | None, settings: ContractSettings) -> int:
+    """規模の基準額(資金の初期値)。"""
+    return int(round(settings.base_budget * settings.tier_factor(tier or "medium")))
 
 
-def cap_of(rule: str, tier: str | None, settings: ContractSettings) -> int | None:
-    """予算の上限(標準・きびしい)か目安(ゆるい)。なしは None。"""
-    b = budget_of(rule, tier, settings)
-    return None if b is None else int(round(b * settings.cap_factor))
+def initial_funds(tiers: dict[str, str], settings: ContractSettings) -> dict[str, int]:
+    return {tid: base_funds(t, settings) for tid, t in tiers.items()}
 
 
-def is_hard(rule: str) -> bool:
-    return rule in ("standard", "strict")
+def changed_funds(funds: int, tier: str | None, rank: int | None, settings: ContractSettings) -> int:
+    """前のシーズンの順位(1 から)で増減した資金。規模の基準額の範囲に収め、丸める(D-354)。順位がなければそのまま。"""
+    if rank is None:
+        return int(funds)
+    table = settings.change_by_rank
+    change = table[min(max(int(rank), 1), len(table)) - 1]
+    base = base_funds(tier, settings)
+    lo, hi = settings.funds_range
+    step = settings.rounding
+    value = min(max(float(funds) * (1.0 + change), base * lo), base * hi)
+    return int(round(value / step)) * step
 
 
 def team_salary(team: Team) -> int:

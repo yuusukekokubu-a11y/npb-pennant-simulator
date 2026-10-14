@@ -144,7 +144,7 @@
   .wide .table-wrap.fluid tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
   .wide .table-wrap.fluid th.sticky + th, .wide .table-wrap.fluid td.sticky + td, .wide .table-wrap.fluid th.sticky2 + th, .wide .table-wrap.fluid td.sticky2 + td { padding-left: 5px; } /* 固定しないときは、ほかの列と同じ */
   .warn { color: var(--warn-line); font-weight: bold; }
-  /* 契約・予算(F3-2a。色・余白・文字は変数で指定。D-239) */
+  /* 契約・資金(F3-2a。色・余白・文字は変数で指定。D-239) */
   .ability-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--space-1) var(--space-2); background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); }
   .ability { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
   .ability-label { color: var(--muted); font-size: var(--font-small); }
@@ -307,11 +307,6 @@
     <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)</span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong></span></label>
-    <p class="small setting-head"><strong>お金のルール</strong></p>
-    <label class="radio"><input type="radio" name="money-rule" value="none" checked><span><strong>なし</strong>(おすすめ)</span></label>
-    <label class="radio"><input type="radio" name="money-rule" value="loose"><span><strong>ゆるい</strong></span></label>
-    <label class="radio"><input type="radio" name="money-rule" value="standard"><span><strong>標準</strong></span></label>
-    <label class="radio"><input type="radio" name="money-rule" value="strict"><span><strong>きびしい</strong></span></label>
   </details>
 
   <div class="card" id="trial-box" hidden>
@@ -488,7 +483,7 @@
 <main class="screen" id="screen-procedure" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1 id="proc-title">オフの手続き</h1></div>
   <ol class="steps" id="proc-steps"></ol>
-  <!-- 状態バー(1 つ。D-271):段階の要約・予算・主ボタン。説明の文は置かない(D-270) -->
+  <!-- 状態バー(1 つ。D-271):段階の要約・資金・主ボタン。説明の文は置かない(D-270) -->
   <div class="status-bar" id="proc-bar">
     <div class="bar-text"><span id="proc-info"></span><span id="proc-budget"></span></div>
     <div class="bar-actions" id="proc-actions">

@@ -29,7 +29,6 @@ class MarketMixin:
             "committed": committed, "committed_text": f"{committed:,} 万円",
             "space": None if team is None else MAX_ROSTER - len(team.players) - len(proc.market_offers),
             "total": None if team is None else team_salary(team), "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
-            "none_max_ratio": float(state.negotiation_settings.money_none["max_ratio"]) if state.money_rule == "none" else None,
             "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years, "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding,
             "results": results,
         }
@@ -44,7 +43,7 @@ class MarketMixin:
         return proc, player
 
     def offseason_market_offer(self, player_id: str, years: int, salary: int | None = None) -> dict:
-        """あなたの球団の市場の提示(出し直しは上書き)。年俸の決まりは FA と同じ(「なし」は算定の 1.0〜1.3 倍)。"""
+        """あなたの球団の市場の提示(出し直しは上書き)。年俸の決まりは FA と同じ。"""
         state = self.state
         proc, player = self._market_open_player(player_id)
         team = self._my_team()
@@ -59,8 +58,6 @@ class MarketMixin:
         calc = marketmod.offer_terms(player, team.id, ctx)[0]
         if salary in (None, ""):
             salary = calc
-        elif state.money_rule == "none":
-            salary = self._none_salary(salary, calc)
         else:
             try:
                 salary = int(salary)
@@ -76,7 +73,7 @@ class MarketMixin:
         cap = ctx.cap(team.id)
         if ctx.hard() and cap is not None and team_salary(team) + sum(int(o["salary"]) for o in others.values()) + salary > cap:
             room = cap - team_salary(team) - sum(int(o["salary"]) for o in others.values())
-            raise ValueError(f"総年俸と提示中の年俸の合計が予算の上限を超えます(この選手に出せるのは {max(0, room):,} 万円まで)")
+            raise ValueError(f"総年俸と提示中の年俸の合計が資金(年俸の合計の上限)を超えます(この選手に出せるのは {max(0, room):,} 万円まで)")
         proc.market_offers[player.id] = {"years": years, "salary": int(salary)}
         self.dirty = True
         return self.offseason_view()

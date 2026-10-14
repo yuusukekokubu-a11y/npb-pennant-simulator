@@ -40,13 +40,12 @@ class FaMixin:
             "committed": committed, "committed_text": f"{committed:,} 万円",
             "space": None if team is None else famod.MAX_ROSTER - len(team.players) - len(proc.fa_offers),
             "total": None if team is None else team_salary(team), "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
-            "salary_editable": True, "none_max_ratio": float(state.negotiation_settings.money_none["max_ratio"]) if state.money_rule == "none" else None,
+            "salary_editable": True,
             "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years, "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding,
             "results": results,
-            "note": f"FA を宣言した選手に、年数(1〜5 年)" + ("と年俸" if state.money_rule != "none" else "") + f"を提示できます。全 {int(fa['rounds'])} ラウンドで、各ラウンドの終わりに選手が受けた提示の中から志望(年俸・出場機会・勝利。出場機会と勝利は提示した球団での見込み)で一番よいものを選びます。"
+            "note": f"FA を宣言した選手に、年数(1〜5 年)と年俸を提示できます。全 {int(fa['rounds'])} ラウンドで、各ラウンドの終わりに選手が受けた提示の中から志望(年俸・出場機会・勝利。出場機会と勝利は提示した球団での見込み)で一番よいものを選びます。"
             + "決まらなければ次のラウンドへ、最後のラウンドでも決まらなければ自由契約市場に回ります。元の球団も同じ立場で提示します。補償はありません。"
-            + (f"お金のルール「なし」では年俸は算定の 1.0〜{float(state.negotiation_settings.money_none['max_ratio']):g} 倍です。" if state.money_rule == "none" else "")
-            + ("標準以上では、総年俸と提示中の年俸の合計が予算の上限を超える提示はできません。" if ctx.hard() else "")
+            + ("総年俸と提示中の年俸の合計が資金を超える提示はできません。" if ctx.hard() else "")
             + "「ラウンドを締める」で、AI 球団の提示と合わせて結果が出ます。「次の手続きへ」「おまかせ」は、残りのラウンドを AI と同じ方針で進めます。",
         }
 
@@ -99,8 +98,6 @@ class FaMixin:
         calc = int(info["calc_salary"])
         if salary in (None, ""):
             salary = calc
-        elif state.money_rule == "none":
-            salary = self._none_salary(salary, calc)
         else:
             try:
                 salary = int(salary)
@@ -117,7 +114,7 @@ class FaMixin:
         cap = ctx.cap(team.id)
         if ctx.hard() and cap is not None and team_salary(team) + sum(int(o["salary"]) for o in others.values()) + salary > cap:
             room = cap - team_salary(team) - sum(int(o["salary"]) for o in others.values())
-            raise ValueError(f"総年俸と提示中の年俸の合計が予算の上限を超えます(この選手に出せるのは {max(0, room):,} 万円まで)")
+            raise ValueError(f"総年俸と提示中の年俸の合計が資金(年俸の合計の上限)を超えます(この選手に出せるのは {max(0, room):,} 万円まで)")
         proc.fa_offers[str(player_id)] = {"years": years, "salary": int(salary)}
         self.dirty = True
         return self.offseason_view()

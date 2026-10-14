@@ -105,15 +105,16 @@ _WAR_SORT_KEYS = {role: [c["key"] for c in cols] for role, cols in WAR_COLUMNS.i
 
 
 # 契約の画面(D-272)の状態と、ポジションの絞り込み
-CONTRACT_STATUS_LABELS = {"unoffered": "未提示", "refused": "保留", "accepted": "更改済", "declared": "FA 宣言", "released": "自由契約", "contracted": "契約中"}
+CONTRACT_STATUS_LABELS = {"accepted": "更改済", "declared": "FA 宣言", "released": "自由契約", "contracted": "契約中"}
 
 
 CONTRACT_GROUPS = {"all": ("全員", None), "pitcher": ("投手", ("SP", "RP")), "catcher": ("捕手", ("C",)), "infield": ("内野手", ("1B", "2B", "3B", "SS")), "outfield": ("外野手", ("LF", "CF", "RF"))}
 
 
-CONTRACT_COLUMNS = [  # 「状態」と「今回の提示」を指標のすぐ右に(D-284)
+CONTRACT_COLUMNS = [  # 「状態」と更改の結果を指標のすぐ右に(D-284、D-358)
     {"key": "status", "label": "状態", "type": "text", "better": "low"},
-    {"key": "offer", "label": "今回の提示", "type": "count", "better": "high"},
+    {"key": "new", "label": "新しい年俸", "type": "count", "better": "high"},
+    {"key": "change", "label": "増減", "type": "count", "better": "high"},
     {"key": "pos", "label": "ポジション", "type": "text", "better": "low"},
     {"key": "age", "label": "年齢", "type": "metric", "better": "low"},
     {"key": "contract", "label": "今の契約", "type": "count", "better": "high"},

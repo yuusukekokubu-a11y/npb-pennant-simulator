@@ -1,6 +1,5 @@
 {
   "format_version": 1,
-  "max_offers": 3,
   "axes": {
     "salary": {
       "label": "年俸",
@@ -8,7 +7,6 @@
       "kind": "salary_ratio",
       "weight_shape": 2.0,
       "strength": 1.0,
-      "needs_money": true,
       "slope": 4.0,
       "offset": -0.2
     },
@@ -17,59 +15,31 @@
       "reason": "出場機会が見込めない",
       "kind": "depth",
       "weight_shape": 2.0,
-      "strength": 1.2,
-      "needs_money": false
+      "strength": 1.2
     },
     "winning": {
       "label": "勝利",
       "reason": "優勝を争えない",
       "kind": "standing",
       "weight_shape": 2.0,
-      "strength": 0.25,
-      "needs_money": false
+      "strength": 0.25
     }
   },
   "threshold": -0.6,
-  "threshold_without_money": -0.55,
-  "money_none": {
-    "salary_axis": true,
-    "max_ratio": 1.3
-  },
   "noise_sd": 0.25,
   "multi_year": {
     "per_year": 0.03,
     "age_start": 27,
     "per_age_year": 0.005
   },
-  "ai": {
-    "multi_year": {
-      "max_age": 28,
-      "table": [
-        [
-          3.0,
-          3
-        ],
-        [
-          2.0,
-          2
-        ]
-      ]
-    },
-    "retry_min_expected": 1.0,
-    "raises": [
-      1.0,
-      1.15,
-      1.3
-    ],
-    "extra_years": [
-      0,
-      1,
-      2
-    ]
-  },
   "fa": {
     "seasons_required": 7,
-    "threshold_add": 0.3,
+    "declare": {
+      "base": 0.12,
+      "per_war": 0.05,
+      "min": 0.03,
+      "max": 0.45
+    },
     "rounds": 3,
     "round_multipliers": [
       1.0,

@@ -1,0 +1,61 @@
+# 長い確認(30 年の安定。D-363)を GitHub 上で回す仕組み。Actions の画面の「Run workflow」で手動で始める(PR や取り込みでは動かない)。
+# - scripts/inspect_multiyear.py を、世界(リーグのシード)ごとに別々のプロセスで同時に回し(自球団 T01 は「おまかせ」)、
+#   最後に --load でまとめた表を、実行の結果のページ(Summary)とログに出す。
+# - Code の作業環境が片付けられても止まらない。手元(作業環境)で回す方法も残す。
+# 秘密情報は使わない。権限は読み取りのみ。外部の部品(Action)は test.yml と同じ 2 つだけ(結果はファイルを上げずに Summary に書く)。
+name: stability
+
+on:
+  workflow_dispatch:
+    inputs:
+      worlds:
+        description: "回す世界の数(リーグのシードは seed_start から順)"
+        default: "5"
+      years:
+        description: "年数"
+        default: "30"
+      seed_start:
+        description: "最初のリーグのシード"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  stability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      # 使う部品(Action)は、書き換えられないよう commit の番号で固定する(test.yml と同じ)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run worlds (世界ごとに同時に回す)
+        env:
+          WORLDS: ${{ inputs.worlds }}
+          YEARS: ${{ inputs.years }}
+          SEED_START: ${{ inputs.seed_start }}
+        run: |
+          mkdir -p out
+          pids=""
+          for i in $(seq 0 $((WORLDS - 1))); do
+            seed=$((SEED_START + i))
+            python scripts/inspect_multiyear.py --my-team --worlds 1 --seed-start "$seed" --years "$YEARS" --json "out/world-$seed.json" > "out/world-$seed.md" 2> "out/world-$seed.log" &
+            pids="$pids $!"
+          done
+          status=0
+          for p in $pids; do wait "$p" || status=1; done
+          tail -n 3 out/*.log
+          exit $status
+      - name: Summary (まとめた表)
+        run: |
+          python scripts/inspect_multiyear.py --load out/world-*.json > out/summary.md
+          cat out/summary.md
+          cat out/summary.md >> "$GITHUB_STEP_SUMMARY"

@@ -121,7 +121,7 @@ class OffseasonMixin:
 
     def offseason_next(self) -> dict:
         """「次の手続きへ」(D-271):自分の操作を終えて次の段階へ進む(AI の代行はしない)。
-        契約:全員が決まり、標準以上で上限を超えていなければ、AI 球団の予算超過の解消と自由契約を行って FA へ。
+        契約:資金を超えていなければ、AI 球団の資金の超過の解消と自由契約を行って FA へ(更改は段階の始めに自動で済んでいる。D-358)。
         FA:自球団は追加の提示をせず(今のラウンドの提示は有効)、残りのラウンドを締める。ドラフト:自球団の残りの番はパス。
         市場:まだ締めていなければ、今の提示で締める(AI の代行はしない。D-300)。
         市場の次は完了(自動補充 → 次のシーズン)。"""
@@ -133,11 +133,8 @@ class OffseasonMixin:
         my = state.my_team_id
         stage = stage_of(proc.phase)
         if stage == "contract":
-            if my is not None and draftmod.open_entries(proc, my):
-                n = len(draftmod.open_entries(proc, my))
-                raise ValueError(f"更改が決まっていない選手が {n} 人います。全員を更改か自由契約にしてから進めてください")
             if my is not None and ctx.hard() and draftmod.over_cap(self._my_team(), ctx) > 0:
-                raise ValueError(f"総年俸が予算の上限を {draftmod.over_cap(self._my_team(), ctx):,} 万円超えています。自由契約で減らしてから進めてください")
+                raise ValueError(f"総年俸が資金を {draftmod.over_cap(self._my_team(), ctx):,} 万円超えています。自由契約で減らしてから進めてください")
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=False)
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=False)
@@ -185,7 +182,6 @@ class OffseasonMixin:
         ctx = self._contract_ctx()
         stage = stage_of(proc.phase)
         names = self._team_names()
-        before_status = {pid: e["status"] for pid, e in proc.negotiations.items() if e["team_id"] == my}
         n_released, n_picks, n_fa = len(proc.released), len(proc.picks), len(proc.fa_results)
         if stage == "contract":
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=True)
@@ -202,20 +198,9 @@ class OffseasonMixin:
         else:
             raise ValueError("この段階には、おまかせできる操作がありません")
         log = []
-        for pid, old in before_status.items():
-            e = proc.negotiations[pid]
-            if e["status"] == old or old != "pending":
-                continue
-            if e["status"] == "accepted":
-                o = e["offers"][-1]
-                log.append({"kind": "renew", "player_id": pid, "name": e["name"], "text": f"更改:{e['name']}({o['years']} 年・{int(o['salary']):,} 万円)"})
-            elif e["status"] == "declared":
-                log.append({"kind": "declare", "player_id": pid, "name": e["name"], "text": f"FA 宣言:{e['name']}"})
-            elif e["status"] == "released":
-                log.append({"kind": "release", "player_id": pid, "name": e["name"], "text": f"自由契約(交渉決裂):{e['name']}"})
         for x in proc.released[n_released:]:
             if x["team_id"] == my and x.get("note") != "negotiation":
-                why = "予算超過" if x.get("note") == "budget" else "自由契約"
+                why = "資金超過" if x.get("note") == "budget" else "自由契約"
                 log.append({"kind": "release", "player_id": x["player_id"], "name": x["name"], "text": f"{why}:{x['name']}"})
         for x in proc.fa_results[n_fa:]:
             if x["team_id"] == my:
