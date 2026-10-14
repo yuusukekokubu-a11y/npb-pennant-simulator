@@ -4,11 +4,13 @@
 読み込み(savegame.load_game)は、版を 1 つずつ上げる。保存形式を新しくするときは、
 vNN_to_vMM.py を足して、下の MIGRATIONS に加える。
 
-作り直し①(版 14)で能力の仕組みが変わったため、版 13 までの変換は消した(13 以前は読まない。D-344)。
+作り直し①(版 14)で能力の仕組みが変わったため、版 13 までの変換は消した(13 以前は読まない。D-344)。版 15 以前は作り直しの途中の版なので読まない(D-362、D-371)。
 """
 
 from __future__ import annotations
 
 from typing import Callable
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {}
+from . import v16_to_v17
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {16: v16_to_v17.convert}

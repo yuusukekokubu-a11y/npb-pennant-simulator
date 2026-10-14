@@ -355,7 +355,7 @@
     <div class="mine-line"><strong id="mine-name"></strong></div>
     <div id="mine-record"></div>
   </div>
-  <p><button id="open-review" class="secondary" type="button">ドラフトの振り返り</button></p>
+  <p class="row"><button id="open-lineup" class="secondary" type="button" hidden>スタメンと打順</button><button id="open-review" class="secondary" type="button">ドラフトの振り返り</button></p>
 
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
@@ -500,6 +500,20 @@
 </main>
 
 <!-- ドラフトの振り返り(当たり外れの一覧。D-216) -->
+<main class="screen" id="screen-lineup" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>スタメンと打順</h1></div>
+  <div class="row">
+    <label>打順の型 <select id="lineup-style" aria-label="打順の型"></select></label>
+    <button id="lineup-auto" class="secondary" type="button">AI に組ませる</button>
+  </div>
+  <p class="small" id="lineup-source"></p>
+  <p class="message" id="lineup-message"></p>
+  <div id="lineup-table"></div>
+  <div class="row"><button id="lineup-save" type="button">このスタメンと打順にする</button></div>
+  <h2>控え(一軍の野手)</h2>
+  <div id="lineup-bench"></div>
+</main>
+
 <main class="screen" id="screen-review" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1>ドラフトの振り返り</h1></div>
   <div class="row">

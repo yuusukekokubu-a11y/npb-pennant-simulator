@@ -7,6 +7,7 @@ import { renderStats } from "./stats.js";
 import { renderGame, renderGames } from "./games.js";
 import { renderPlayer } from "./player.js";
 import { renderReview } from "./review.js";
+import { renderLineup } from "./lineup.js";
 import { renderProcedure } from "./procedure.js";
 import { renderOffseason, renderYearEnd } from "./yearend.js";
 import { renderStadium, renderTeam } from "./team.js";
@@ -66,12 +67,13 @@ export function renderCurrent() {
     offseason: () => renderOffseason(args, token),
     procedure: () => renderProcedure(token),
     review: () => renderReview(args, token),
+    lineup: () => renderLineup(token),
   }[name];
   Promise.resolve(job && job()).catch((err) => showError(name, err));
 }
 
 function showError(name, err) {
-  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", review: "review-table" }[name];
+  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", review: "review-table", lineup: "lineup-message" }[name];
   if (box) $(box).replaceChildren(el("p", { className: "message ng" }, `表示できませんでした:${err.message}`));
 }
 

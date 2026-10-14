@@ -97,6 +97,11 @@ def validate_game_config(data: Any, source: str = "(辞書)") -> GameConfig:
     lineup = c.section(c.get(root, "lineup", ""), "lineup")
     for key in ("on_base", "slugging", "offense"):
         _weights(c, c.get(lineup, key, "lineup"), f"lineup.{key}")
+    for key in ("connector", "speed"):  # 打順の型の重み(D-373。旧版の設定にはないので、なければ既定)
+        if isinstance(lineup, dict) and key in lineup:
+            _weights(c, lineup[key], f"lineup.{key}")
+    if isinstance(lineup, dict) and "review_days" in lineup:
+        c.integer(lineup["review_days"], "lineup.review_days", 1, 200)
 
     # 休養(D-061)
     rest = c.section(c.get(root, "rest", ""), "rest")

@@ -19,6 +19,12 @@ from .models import Player, Team
 from .stats import overall
 
 DH = "DH"
+LINEUP_POSITIONS = tuple(FIELDER_POSITIONS) + (DH,)  # スタメンの 9 つの枠(D-373)
+# 打順の型(D-373)。AI 球団と、型を選ばない自球団は長打重視(今までの組み方)
+LINEUP_STYLES = {"power": "長打重視", "slugger_second": "二番強打者", "contact_second": "二番つなぎ役", "speed": "機動力重視"}
+DEFAULT_LINEUP_STYLE = "power"
+DEFAULT_STYLE_WEIGHTS = {"connector": {"contact": 0.5, "speed": 0.5}, "speed": {"speed": 0.7, "contact": 0.15, "eye": 0.15}}
+DEFAULT_REVIEW_DAYS = 7
 RELIEF_ROLES = ("closer", "setup", "middle", "mopup")
 RELIEF_ROLE_LABELS = {"closer": "抑え", "setup": "中継ぎ(勝ち)", "middle": "中継ぎ", "mopup": "敗戦処理"}
 
@@ -80,7 +86,7 @@ class Manager(Protocol):
 
     def select_active(self, team: Team) -> ActiveRoster: ...
 
-    def starting_lineup(self, active: ActiveRoster, rng: random.Random) -> Lineup: ...
+    def starting_lineup(self, active: ActiveRoster, rng: random.Random, plan: Mapping | None = None) -> Lineup: ...
 
     def choose_starter(self, active: ActiveRoster, rotation_index: int) -> tuple[Player, int]: ...
 
@@ -184,24 +190,78 @@ class SimpleManager:
         starters.append((dh, DH))
         return starters
 
-    def batting_order(self, nine: list[tuple[Player, str]]) -> list[tuple[Player, str]]:
-        """打順:中軸(3〜5番)は長打の高い3人、1・2番は出塁の高い2人(足の速いほうが1番)、6〜9番は総合的な打撃の順。"""
+    def _weights(self, key: str) -> Mapping[str, float]:
         lw = self.config["lineup"]
+        return lw[key] if key in lw else DEFAULT_STYLE_WEIGHTS[key]
+
+    def batting_order(self, nine: list[tuple[Player, str]], style: str = DEFAULT_LINEUP_STYLE) -> list[tuple[Player, str]]:
+        """打順(型ごと。D-373)。どの型も中軸(3〜5番)は残りの中で長打の高い3人(最も高い打者が4番)、6〜9番は総合的な打撃の順。
+        - 長打重視:1・2番は出塁の高い2人(足の速いほうが1番)
+        - 二番強打者:2番は総合的な打撃が最も高い打者、1番は残りで出塁が最も高い打者
+        - 二番つなぎ役:1番は出塁が最も高い打者、2番は残りでミートと走力が最も高い打者
+        - 機動力重視:1・2番は走力が最も高い2人(速いほうが1番)"""
+        def score(key):
+            w = self._weights(key)
+            return lambda x: weighted_score(x[0], w)
+
         pool = list(nine)
-        by_slug = sorted(pool, key=lambda x: weighted_score(x[0], lw["slugging"]), reverse=True)
-        cleanup = by_slug[:3]
-        pool = [x for x in pool if x not in cleanup]
-        top = sorted(pool, key=lambda x: weighted_score(x[0], lw["on_base"]), reverse=True)[:2]
-        top.sort(key=lambda x: x[0].ratings["speed"], reverse=True)
+        if style == "slugger_second":
+            two = sorted(pool, key=score("offense"), reverse=True)[0]
+            pool.remove(two)
+            cleanup = sorted(pool, key=score("slugging"), reverse=True)[:3]
+            pool = [x for x in pool if x not in cleanup]
+            one = sorted(pool, key=score("on_base"), reverse=True)[0]
+            top = [one, two]
+        else:
+            cleanup = sorted(pool, key=score("slugging"), reverse=True)[:3]
+            pool = [x for x in pool if x not in cleanup]
+            if style == "contact_second":
+                one = sorted(pool, key=score("on_base"), reverse=True)[0]
+                rest = [x for x in pool if x is not one]
+                top = [one, sorted(rest, key=score("connector"), reverse=True)[0]]
+            elif style == "speed":
+                top = sorted(pool, key=score("speed"), reverse=True)[:2]
+            else:
+                top = sorted(pool, key=score("on_base"), reverse=True)[:2]
+                top.sort(key=lambda x: x[0].ratings["speed"], reverse=True)
         pool = [x for x in pool if x not in top]
-        bottom = sorted(pool, key=lambda x: weighted_score(x[0], lw["offense"]), reverse=True)
+        bottom = sorted(pool, key=score("offense"), reverse=True)
         return [top[0], top[1], cleanup[1], cleanup[0], cleanup[2]] + bottom
 
-    def starting_lineup(self, active: ActiveRoster, rng: random.Random) -> Lineup:
-        """打順を決めたうえで、主力を一定の確率で休ませ、控えを同じ打順・ポジションに入れる。"""
+    def position_penalty(self, player: Player, pos: str) -> float:
+        """守備位置が本来と違うときに下げる守備の能力(控えを入れるときと同じ。指名打者は下げない)。"""
+        if pos == DH or player.position == pos:
+            return 0.0
+        rest_cfg = self.config["rest"]
+        return float(rest_cfg["near_position_penalty"] if player.position in rest_cfg["near_positions"].get(pos, []) else rest_cfg["far_position_penalty"])
+
+    def custom_order(self, active: ActiveRoster, slots) -> list[tuple[Player, str]] | None:
+        """自分で組んだスタメンと打順([(選手 ID, 守備位置)] × 9)。一軍にいない選手がいれば None(AI が組み直す)。"""
+        by_id = {p.id: p for p in active.batters}
+        if not slots or len(slots) != len(LINEUP_POSITIONS) or any(pid not in by_id for pid, _ in slots):
+            return None
+        out = []
+        for pid, pos in slots:
+            p = by_id[pid]
+            penalty = self.position_penalty(p, pos)
+            out.append((with_fielding_penalty(p, penalty) if penalty else p, pos))
+        return out
+
+    def planned_order(self, active: ActiveRoster, plan: Mapping | None = None) -> list[tuple[Player, str]]:
+        """この試合のスタメンと打順(休養の前):自分で組んだものが使えればそれ、なければ型で AI が組む。"""
+        plan = plan or {}
+        ordered = self.custom_order(active, plan.get("slots"))
+        if ordered is None:
+            nine = self.regular_lineup(active)
+            style = plan.get("style") or DEFAULT_LINEUP_STYLE
+            ordered = self.batting_order(nine) if style == DEFAULT_LINEUP_STYLE else self.batting_order(nine, style)  # 既定の型は今までの呼び方(差し替えた監督のため)
+        return ordered
+
+    def starting_lineup(self, active: ActiveRoster, rng: random.Random, plan: Mapping | None = None) -> Lineup:
+        """打順を決めたうえで、主力を一定の確率で休ませ、控えを同じ打順・ポジションに入れる。plan は自球団の打順の型と、自分で組んだスタメン(D-373)。"""
         rest_cfg = self.config["rest"]
         lw = self.config["lineup"]
-        ordered = self.batting_order(self.regular_lineup(active))
+        ordered = self.planned_order(active, plan)
         in_lineup = {p.id for p, _ in ordered}
         bench = [p for p in active.batters if p.id not in in_lineup]
         slots = []
@@ -285,9 +345,9 @@ class SimpleManager:
 
     # ---- まとめ ----
 
-    def prepare(self, team: Team, rng: random.Random, rotation_index: int, active: ActiveRoster | None = None):
-        """1試合分の編成を作る。戻り値:(TeamSetup, 次のローテーションの位置)。"""
+    def prepare(self, team: Team, rng: random.Random, rotation_index: int, active: ActiveRoster | None = None, plan: Mapping | None = None):
+        """1試合分の編成を作る。戻り値:(TeamSetup, 次のローテーションの位置)。plan は自球団の打順(D-373)。"""
         active = active or self.select_active(team)
-        lineup = self.starting_lineup(active, rng)
+        lineup = self.starting_lineup(active, rng, plan)
         starter, nxt = self.choose_starter(active, rotation_index)
         return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter), nxt

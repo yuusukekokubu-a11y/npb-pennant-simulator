@@ -34,6 +34,7 @@ export function renderProgress() {
   $("games-text").textContent = `${s.games_played} / ${s.total_games} 試合`;
   const m = s.my_team;
   $("mine-card").hidden = !m;
+  $("open-lineup").hidden = !m || s.is_over || Boolean(off);
   if (m) {
     $("mine-name").textContent = m.name;
     $("mine-record").textContent = recordText(m);

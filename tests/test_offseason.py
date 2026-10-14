@@ -231,7 +231,7 @@ def test_offseason_changes_are_public_and_hidden_info_is_not(two_seasons):
 def test_save_v6_round_trip_and_log_policy(two_seasons):
     g, _, _ = two_seasons
     data = save_game(g.state)
-    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 16
+    assert read_manifest(data)["format_version"] == SAVE_FORMAT_VERSION == 17
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
     assert "logs/season-2.jsonl" in names and "logs/season-1.jsonl" not in names  # 直近 1 シーズン分だけ(D-189)
     again = api.Game(load_game(data), dirty=False)

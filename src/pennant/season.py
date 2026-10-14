@@ -43,10 +43,11 @@ def derive_seed(seed: int, label: str) -> int:
 
 @dataclass
 class GameContext:
-    """1試合を再現するための、試合前の状態(ローテーションの位置と、投手の疲労)。"""
+    """1試合を再現するための、試合前の状態(ローテーションの位置と、投手の疲労。自球団の打順の型と自分で組んだスタメン。D-373)。"""
 
     rotation: dict[str, int]
     fatigue: dict[str, float]
+    lineups: dict[str, dict] = field(default_factory=dict)  # 球団 → {style, slots}(型か自分のスタメンを決めた球団だけ)
 
 
 @dataclass
@@ -127,6 +128,7 @@ class Season:
         self.players = {p.id: p for p in league.all_players()}
         self.pitchers = [p for a in self.actives.values() for p in a.starters + a.relievers]
         self.day = 0
+        self.lineup_plans: dict[str, dict] = {}  # 球団 → {style, slots([[選手 ID, 守備位置]] × 9 か None), set_day, notice}(D-373)
         self.played: list[PlayedGame] = []
         self._records: dict[str, _Record] = {t.id: _Record() for t in league.teams}
 
@@ -155,14 +157,45 @@ class Season:
         setups = {}
         for team in (home, away):
             active = self.actives[team.id]
+            plan = self._lineup_plan(team.id)
+            if plan is not None:
+                context.lineups[team.id] = {"style": plan["style"], "slots": None if plan.get("slots") is None else [list(x) for x in plan["slots"]]}
             expected = active.starters[self.rotation[team.id] % len(active.starters)]
-            setup, self.rotation[team.id] = self.manager.prepare(team, rng, self.rotation[team.id], active)
+            setup, self.rotation[team.id] = self.manager.prepare(team, rng, self.rotation[team.id], active, plan)
             skipped[team.id] = setup.starter is not expected
             setups[team.id] = setup
         result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park)
         apply_game_fatigue(result.batters_faced(), self.players, self.game_config)
         self._record(result)
         return PlayedGame(g, result, context, skipped)
+
+    def _lineup_plan(self, team_id: str) -> dict | None:
+        """球団の打順の計画(D-373)。自分で組んだスタメンに一軍でない選手がいれば、AI が組み直す(知らせを残す)。"""
+        plan = self.lineup_plans.get(team_id)
+        if plan is not None and plan.get("slots") is not None:
+            ids = {p.id for p in self.actives[team_id].batters}
+            if any(pid not in ids for pid, _ in plan["slots"]):
+                plan["slots"] = None
+                plan["notice"] = {"day": self.day + 1, "reason": "roster"}
+        return plan
+
+    def review_days(self) -> int:
+        return int(self.game_config["lineup"].get("review_days", 7))
+
+    def next_review(self, set_day: int | None) -> int:
+        """次に見直す日(この日数の試合をした後、次の日の試合の前。0 から数えた日数)。"""
+        n = self.review_days()
+        m = max(self.day, (set_day if set_day is not None else -1) + 1, 1)
+        return -(-m // n) * n
+
+    def _review_lineups(self) -> None:
+        """見直しの日(review_days ごと)に、自分で組んだスタメンを外し、型で AI が組み直す(D-373)。"""
+        if self.day == 0 or self.day % self.review_days() != 0:
+            return
+        for plan in self.lineup_plans.values():
+            if plan.get("slots") is not None and (plan.get("set_day") is None or int(plan["set_day"]) < self.day):  # その日に組んだばかりなら次の見直しまで
+                plan["slots"] = None
+                plan["notice"] = {"day": self.day + 1, "reason": "review"}
 
     def _active_pitchers(self, team_id: str):
         a = self.actives[team_id]
@@ -192,6 +225,7 @@ class Season:
         """1日分の試合を行い、1日を進めて投手の疲労を回復させる。"""
         if self.is_over:
             raise ValueError("シーズンは終わっています")
+        self._review_lineups()
         games = [self._play(g) for g in self.schedule.days[self.day]]
         self.played.extend(games)
         advance_day(self.pitchers, self.game_config)
@@ -229,7 +263,7 @@ class Season:
                 p.state.fatigue = played.context.fatigue[p.id]
         rng = self.game_rng(number)
         setups = [
-            self.manager.prepare(t, rng, played.context.rotation[t.id], a)[0] for t, a in zip(copied_teams, copied_actives)
+            self.manager.prepare(t, rng, played.context.rotation[t.id], a, played.context.lineups.get(t.id))[0] for t, a in zip(copied_teams, copied_actives)
         ]
         return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager, park=copied_teams[0].park)
 

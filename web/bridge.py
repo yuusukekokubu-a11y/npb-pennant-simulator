@@ -129,6 +129,26 @@ def offseason(name: str, args_json: str = "{}") -> str:
     return _ok(result)
 
 
+_LINEUP = {
+    "view": lambda a: _game.lineup_view(),
+    "set": lambda a: _game.set_lineup(list(a.get("slots", []))),
+    "style": lambda a: _game.set_lineup_style(str(a.get("style", ""))),
+    "auto": lambda a: _game.lineup_auto(),
+}
+
+
+def lineup(name: str, args_json: str = "{}") -> str:
+    """自球団のスタメンと打順(D-373)。戻り値は打順の画面の情報。"""
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in _LINEUP:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(_LINEUP[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"操作できませんでした({exc})")
+
+
 # ---- 見る画面(公開用の関数だけ。D-114) ----
 _QUERIES = {
     "stats": lambda a: _game.stats(a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id"), a.get("season")),
