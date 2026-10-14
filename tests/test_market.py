@@ -56,6 +56,8 @@ def test_market_wishes_and_order(season_end):
     minimum = g.state.contract_settings.minimum
     assert all(r["amateur"] and r["values"]["ability"].startswith("評価 ") and r["deal"]["calc_salary"] == minimum and r["deal"]["expected"] is None for r in cands)
     assert all(not r["amateur"] and r["scouting"] is None and r["values"]["ability"][0] in "SABCDEFG" for r in pros)
+    for tid in g.state.team_funds:  # 資金を超えていると希望を入れられないので、全球団に残りを作る(資金をほぼ使い切る球団が多い)
+        g.state.team_funds[tid] += 100000
     room = g.budget_info("T01")["cap"] - g.budget_info("T01")["total"]
     cheap = [r for r in t["rows"] if r["deal"]["calc_salary"] <= room][:2]  # 希望は 1 人ずつ資金の中か見る(育成の年俸も総年俸に入るので、残りは少ないことがある)
     for r in cheap:
@@ -126,6 +128,8 @@ def test_market_wish_needs_room_in_funds(season_end):
     if over is not None:
         with pytest.raises(ValueError, match="資金"):
             g.offseason_market_offer(over["player_id"])
+    g.state.team_funds["T01"] += 100000  # 残りを作る(資金を超えていることがある)
+    room = g.budget_info("T01")["cap"] - g.budget_info("T01")["total"]
     ok = next(r for r in rows if r["deal"]["calc_salary"] <= room)
     v = g.offseason_market_offer(ok["player_id"])
     assert v["market"]["offers"][0]["salary"] == ok["deal"]["calc_salary"]

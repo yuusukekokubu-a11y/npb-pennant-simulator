@@ -242,7 +242,7 @@ await page.waitForSelector("#open-trade:not([hidden])");
 await page.click("#open-trade");
 await page.waitForFunction(() => !document.querySelector("#screen-trade").hidden && document.querySelectorAll("#trade-mine tbody tr").length > 0 && document.querySelectorAll("#trade-theirs tbody tr").length > 0);
 check((await page.textContent("#trade-window")).includes("日目まで"), `トレードの画面:「${await page.textContent("#trade-window")}」`);
-const tradeRows = (sel) => page.$$eval(`${sel} tbody tr`, (trs) => trs.map((tr, i) => ({ i, name: tr.querySelector("a")?.textContent || "", v: Number((tr.children[3]?.textContent || "").replace(/[^0-9]/g, "")), locked: tr.querySelector("input").disabled })));
+const tradeRows = (sel) => page.$$eval(`${sel} tbody tr`, (trs) => trs.map((tr, i) => ({ i, name: tr.querySelector("button.link")?.textContent || "", v: Number((tr.children[3]?.textContent || "").replace(/[^0-9]/g, "")), locked: tr.querySelector("input").disabled })));
 const mineBefore = (await tradeRows("#trade-mine")).map((r) => r.name);
 const giveRow = (await tradeRows("#trade-mine")).filter((r) => !r.locked).sort((a, b) => a.v - b.v)[0];
 const getRow = (await tradeRows("#trade-theirs")).filter((r) => !r.locked).sort((a, b) => b.v - a.v)[0];

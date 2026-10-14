@@ -647,7 +647,8 @@ def load_game(data: bytes) -> GameState:
         p.add("state.json.season.trades", "トレードの記録の形が違います")
     elif not (isinstance(offers_d, list) and all(isinstance(x, dict) and x.get("team_id") in season.teams for x in offers_d)):
         p.add("state.json.season.trade_offers", "トレードの提案の形が違います")
-    elif not (isinstance(hist_d, dict) and all(tid in season.teams and isinstance(h, list) and all(isinstance(s, dict) and isinstance(s.get("day"), int) and all(x in season.players for k in ("starters", "relievers", "batters") for x in s.get(k, [])) for s in h) for tid, h in hist_d.items())):
+    # 終わったシーズン(オフ)は、引退・退団した選手も記録に残るので、形だけ確かめる
+    elif not (isinstance(hist_d, dict) and all(tid in season.teams and isinstance(h, list) and all(isinstance(s, dict) and isinstance(s.get("day"), int) and all(isinstance(x, str) and (season.is_over or x in season.players) for k in ("starters", "relievers", "batters") for x in s.get(k, [])) for s in h) for tid, h in hist_d.items())):
         p.add("state.json.season.active_history", "一軍の顔ぶれの記録の形が違います(知らない選手がいます)")
     else:
         season.trades = [dict(x) for x in trades_d]

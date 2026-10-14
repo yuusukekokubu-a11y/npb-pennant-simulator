@@ -79,7 +79,7 @@ async function run(fn) {
     setDirty(true);
     state.cache.clear();
   } catch (err) {
-    t.message = { ok: false, text: `操作できませんでした:${err.message}` };
+    t.message = { ok: false, text: err.message };
   } finally {
     state.running = false;
   }

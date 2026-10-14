@@ -82,7 +82,7 @@ def test_file_layout(saved):
     assert manifest["format_version"] == savegame.SAVE_FORMAT_VERSION and manifest["saved_at"].startswith("2026-10-02")
     state = json.loads(files["state.json"])
     assert {"seed", "rng", "configs", "league", "season"} <= set(state)
-    assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season", "baselines", "offseason", "draft", "contracts", "negotiation"}
+    assert set(state["configs"]) == {"generation", "names", "plate_appearance", "game", "season", "baselines", "offseason", "draft", "contracts", "negotiation", "trade"}
     assert state["baselines"]["source"] == "default" and len(state["baselines"]["re24"]) == 24  # 第2弾①の基準値(版 3)
     player = state["league"]["teams"][0]["players"][0]
     assert "ease" in player["hidden"] and "potential" not in player["hidden"] and player["abilities"]  # 見せる能力と伸びやすさ(版 14。D-350)

@@ -58,7 +58,7 @@ def test_funds_change_and_automatic_renewal(contract_game):
         assert p.contract["salary"] == e["auto_salary"] and p.contract["until"] == proc.year + e["ai_years"] and p.contract["history"][-1]["reason"] == "renew"
         if e["old_salary"]:
             assert e["auto_salary"] >= e["old_salary"] * cs.decline_floor  # 1 年で下がるのは 25% まで(D-357)
-        assert e["ai_years"] == contract_years(e["age"], e["expected"], cs)  # 主力級だけ複数年(D-360)
+        assert e["ai_years"] in {contract_years(e["age"], e["expected"] + d, cs) for d in (-0.005, 0.005)}  # 主力級だけ複数年(D-360。expected は小数 2 桁に丸めてある)
     assert any(e["ai_years"] > 1 for e in negs if e["status"] == "accepted")
     assert any(e["old_salary"] and e["auto_salary"] > e["old_salary"] for e in negs) and any(e["old_salary"] and e["auto_salary"] < e["old_salary"] for e in negs)
     assert 3 <= sum(1 for e in negs if e["status"] == "declared") <= 50  # 1 年目は初期選手の年数の補い方で多め(このシードは育成・外国人の後で 46。30 年の平均は年 12.5 人)
