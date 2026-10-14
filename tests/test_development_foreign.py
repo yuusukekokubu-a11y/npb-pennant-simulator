@@ -54,7 +54,8 @@ def test_foreign_names_and_initial_counts(base):
         assert len({p.family_name for p in fs}) == len(fs)
     # 新規開始(事前運転の後)でも各球団に外国人がいる
     counts = [sum(p.foreign for p in t.players) for t in base.state.league.teams]
-    assert min(counts) >= 2 and 4 <= sum(counts) / len(counts) <= 7
+    # トレード(D-378)で外国人が偏り、0 人の球団が出ることもある(バランス調整で見る。D-364)
+    assert sum(c >= 2 for c in counts) >= len(counts) - 2 and 4 <= sum(counts) / len(counts) <= 7
     assert all(len(t.players) == 70 for t in base.state.league.teams)
     assert any(t.development for t in base.state.league.teams)
 
@@ -160,7 +161,7 @@ def test_save_round_trip_and_old_version(at_offseason):
     go_to(g, "foreign")
     data = save_game(g.state)
     s = load_game(data)
-    assert SAVE_FORMAT_VERSION == 19
+    assert SAVE_FORMAT_VERSION == 20
     assert [[p.id for p in t.development] for t in s.league.teams] == [[p.id for p in t.development] for t in g.state.league.teams]
     assert [p.foreign for p in s.league.all_players()] == [p.foreign for p in g.state.league.all_players()]
     assert [p.id for p in s.procedure.foreign_pool] == [p.id for p in g.state.procedure.foreign_pool] and s.procedure.foreign_salary == g.state.procedure.foreign_salary

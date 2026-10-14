@@ -116,9 +116,10 @@ from .players import PlayersMixin
 from .progress import ProgressMixin, check_team_names, preview_teams
 from .stats import StatsMixin
 from .teams import TeamsMixin
+from .trade import TradeMixin
 
 
-class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
+class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, TradeMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 

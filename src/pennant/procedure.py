@@ -28,17 +28,17 @@ from .season import derive_seed
 SUPPORTED_FORMAT_VERSION = 1
 
 
-PHASES = ("renewal", "release", "fa", "foreign", "draft", "dev_draft", "market", "done")
+PHASES = ("renewal", "release", "fa", "foreign", "draft", "dev_draft", "market", "trade", "done")
 
 
-PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "done": "完了", "promote": "支配下登録"}
+PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "trade": "トレード", "done": "完了", "promote": "支配下登録"}
 
 
 # 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ。育成ドラフトはドラフトの段階の中(D-375)
-STAGES = ("contract", "fa", "foreign", "draft", "market", "done")
+STAGES = ("contract", "fa", "foreign", "draft", "market", "trade", "done")
 
 
-STAGE_LABELS = {"contract": "契約", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "done": "完了"}
+STAGE_LABELS = {"contract": "契約", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "trade": "トレード", "done": "完了"}
 
 
 def stage_of(phase: str) -> str:
@@ -296,6 +296,9 @@ class OffseasonProcedure:
     foreign_results: list[dict] = field(default_factory=list)  # 外国人市場で成立した契約
     foreign_done: bool = False  # 外国人市場を締めたか
     promotions: list[dict] = field(default_factory=list)  # 育成から支配下に上げた選手({team_id, player_id, name, position, age, by})
+    trades: list[dict] = field(default_factory=list)  # このオフのトレード(trade.execute の記録。D-378)
+    trade_offers: list[dict] = field(default_factory=list)  # AI からあなたへのトレードの提案(まだ答えていないもの)
+    trade_started: bool = False  # トレードの段階の AI どうしのトレードと提案を済ませたか
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 評価)。保存しない
 
     def bidding(self) -> bool:
@@ -343,6 +346,7 @@ class OffseasonProcedure:
             "dev_rounds": self.dev_rounds, "foreign_pool": [plain(p) for p in self.foreign_pool], "foreign_cuts": [round(c, 4) for c in self.foreign_cuts],
             "foreign_stats": copy.deepcopy(self.foreign_stats), "foreign_salary": dict(self.foreign_salary), "foreign_offers": copy.deepcopy(self.foreign_offers),
             "foreign_results": [dict(x) for x in self.foreign_results], "foreign_done": self.foreign_done, "promotions": [dict(x) for x in self.promotions],
+            "trades": copy.deepcopy(self.trades), "trade_offers": copy.deepcopy(self.trade_offers), "trade_started": self.trade_started,
         }
 
     @classmethod
@@ -390,6 +394,9 @@ class OffseasonProcedure:
         proc.foreign_results = [dict(x) for x in d.get("foreign_results", [])]
         proc.foreign_done = bool(d.get("foreign_done", "foreign_pool" not in d))
         proc.promotions = [dict(x) for x in d.get("promotions", [])]
+        proc.trades = copy.deepcopy(d.get("trades", []))  # 版 19 以前の手続き:トレードはない(D-379)
+        proc.trade_offers = copy.deepcopy(d.get("trade_offers", []))
+        proc.trade_started = bool(d.get("trade_started", False))
         return proc
 
 

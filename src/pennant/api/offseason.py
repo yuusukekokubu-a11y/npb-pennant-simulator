@@ -34,6 +34,8 @@ class OffseasonMixin:
             state.transactions.append({"year": proc.year, "phase": "fa", **{k: v for k, v in x.items() if k != "offers"}})
         for x in proc.promotions:
             state.transactions.append({"year": proc.year, "phase": "promote", "round": 0, **{k: v for k, v in x.items() if k != "by"}})
+        for x in proc.trades:  # トレード(D-378)
+            self._add_trade_transactions(x)
         self.last_negotiations = proc.negotiations  # 終わった手続きの更改の交渉(保存しない。指紋 (p) と開発者向けの集計用)
         self.last_fa = {"info": proc.fa_info, "results": proc.fa_results, "log": proc.fa_log, "ranks": dict(proc.ranks), "budget_releases": list(proc.budget_releases)}  # 終わった FA(保存しない。指紋 (q) と集計用)
         self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log)}  # 終わった市場(保存しない。集計用。D-300)
@@ -96,7 +98,7 @@ class OffseasonMixin:
             "released": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.released],
             "counts": {"candidates": len(proc.candidates), "market": len(proc.market), "released": len(proc.released), "picked": sum(1 for x in proc.picks if x["player_id"])},
             "rosters": [{"team_id": t.id, "team_name": t.name, "players": len(t.players), "is_mine": t.id == my} for t in state.league.teams],
-            "note": "手続きは 契約 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
+            "note": "手続きは 契約 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → トレード → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
         }
         if my is not None and stage_of(proc.phase) == "contract":
             view["renewal"] = self._renewal_info(proc)
@@ -107,6 +109,8 @@ class OffseasonMixin:
         if proc.phase == "market":
             view["market"] = self._market_info(proc)
             view["development"] = self._development_info(proc)
+        if proc.phase == "trade":
+            view["trade"] = {"offers": len(proc.trade_offers), "trades": [self._trade_public(x) for x in proc.trades]}
         if my is not None:
             team = self._team(my)
             view["my_team"]["development"] = len(team.development)
@@ -148,6 +152,9 @@ class OffseasonMixin:
             if not proc.market_done:
                 marketmod.close_market(state.league, proc, ctx, my, sd, state.draft_settings, my_ai=False)
             draftmod.next_phase(proc)
+        elif stage == "trade":  # 答えていない提案は断ったことにする(D-378)
+            proc.trade_offers = []
+            draftmod.next_phase(proc)
         elif stage in ("draft", "market"):  # ドラフトの次は育成ドラフト(同じ段階の中。D-375)。育成ドラフトの次は市場
             self._run_turns(my_ai=False)
             draftmod.next_phase(proc)
@@ -174,6 +181,11 @@ class OffseasonMixin:
     def _after_stage(self) -> dict:
         state = self.state
         proc = self._proc()
+        if proc.phase == "trade" and not proc.trade_started:  # トレードの段階の始め:AI どうしのトレードと、あなたへの提案(D-378)
+            from ..trade import start_offseason_trades
+
+            mins, min_batters = self._mins()
+            start_offseason_trades(state.league, proc, self._contract_ctx(), state.gen_config, state.my_team_id, mins, min_batters, proposals=True, settings=state.trade_settings)
         if proc.phase == "done":
             mins, min_batters = self._mins()
             filled = draftmod.finalize(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, mins, min_batters, ctx=self._contract_ctx())
@@ -203,6 +215,9 @@ class OffseasonMixin:
         elif stage == "foreign":
             if not proc.foreign_done:
                 foreignmod.close_foreign(state.league, proc, ctx, my, sd, state.draft_settings, mins, min_batters, my_ai=True)
+            draftmod.next_phase(proc)
+        elif stage == "trade":  # おまかせ:提案は断ったことにする(AI どうしのトレードは段階の始めに済んでいる)
+            proc.trade_offers = []
             draftmod.next_phase(proc)
         elif stage == "draft":  # ドラフトと育成ドラフトの両方を進める(D-375)
             while stage_of(proc.phase) == "draft":

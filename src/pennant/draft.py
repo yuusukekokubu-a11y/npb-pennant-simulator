@@ -368,6 +368,12 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
 
             run_dev_turns(league, proc, scout_sd, settings, my_team_id, ctx, my_ai=True)
             next_phase(proc)
+        elif proc.phase == "trade":  # トレード(D-378):AI どうしだけ(提案はおまかせなので断ったことにする)
+            from .trade import start_offseason_trades
+
+            start_offseason_trades(league, proc, ctx, config, my_team_id, mins, min_batters, proposals=False)
+            proc.trade_offers = []
+            next_phase(proc)
         elif proc.phase == "market" and uses_offers(ctx):  # 市場は年俸が自動で、前年の順位が低い球団から 1 人ずつ(D-370)
             if not proc.market_done:
                 close_market(league, proc, ctx, my_team_id, scout_sd, settings, my_ai=True)

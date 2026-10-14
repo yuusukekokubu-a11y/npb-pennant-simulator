@@ -29,6 +29,7 @@ from .parkfactors import ParkTally, history_to_dict
 from .contracts import TIERS, load_contract_settings, validate_contract_settings
 from .negotiation import load_negotiation_settings, validate_negotiation_settings
 from .draft import load_draft_settings, validate_draft_settings
+from .trade import load_trade_settings, validate_trade_settings
 from .config import (
     ConfigError,
     GenerationConfig,
@@ -65,7 +66,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 19  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)
+SAVE_FORMAT_VERSION = 20  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -113,6 +114,7 @@ class GameState:
     contract_rates: dict = field(default_factory=dict)  # 年俸の単価の推移(シーズン番号(文字)→ 1 WAR あたりの万円。D-234)
     contract_settings: object | None = None  # 契約の設定(None は設定ファイル)
     negotiation_settings: object | None = None  # FA で選手が選ぶ点数と FA の設定(None は設定ファイル。D-365)
+    trade_settings: object | None = None  # トレードの設定(None は設定ファイル。D-378)
 
     def __post_init__(self) -> None:
         from .draft import load_draft_settings
@@ -127,6 +129,8 @@ class GameState:
             self.contract_settings = load_contract_settings()
         if self.negotiation_settings is None:
             self.negotiation_settings = load_negotiation_settings()
+        if self.trade_settings is None:
+            self.trade_settings = load_trade_settings()
         if self.baseline_settings is None:
             self.baseline_settings = load_baseline_settings()
         if self.baselines is None:
@@ -202,6 +206,7 @@ def build_state(state: GameState) -> dict:
             "draft": copy.deepcopy(state.draft_settings.data),
             "contracts": copy.deepcopy(state.contract_settings.data),
             "negotiation": copy.deepcopy(state.negotiation_settings.data),
+            "trade": copy.deepcopy(state.trade_settings.data),
         },
         "league": {
             "seed": s.league.seed,
@@ -226,6 +231,9 @@ def build_state(state: GameState) -> dict:
             "day": s.day,
             "rotation": dict(s.rotation),
             "lineup_plans": {tid: _plain_plan(plan) for tid, plan in s.lineup_plans.items()},
+            "trades": [dict(x) for x in s.trades],  # シーズン中のトレード(D-378。版 20)
+            "trade_offers": [dict(x) for x in s.trade_offers],
+            "active_history": {tid: [dict(h) for h in hist] for tid, hist in s.active_history.items()},
             "games": [
                 {
                     "number": p.scheduled.number,
@@ -400,6 +408,7 @@ def load_game(data: bytes) -> GameState:
         "draft": validate_draft_settings,
         "contracts": validate_contract_settings,
         "negotiation": validate_negotiation_settings,
+        "trade": validate_trade_settings,
     }
     if "offseason" not in configs:
         configs["offseason"] = load_offseason_settings().data  # 版5以前は設定ファイルの値
@@ -409,6 +418,8 @@ def load_game(data: bytes) -> GameState:
         configs["contracts"] = load_contract_settings().data  # 版9以前は設定ファイルの値
     if "negotiation" not in configs:
         configs["negotiation"] = load_negotiation_settings().data  # 版10以前は設定ファイルの値
+    if "trade" not in configs:
+        configs["trade"] = load_trade_settings().data  # 版19以前は設定ファイルの値(D-379)
     cfg = {}
     for key, validate in validators.items():
         if key not in configs:
@@ -608,7 +619,7 @@ def load_game(data: bytes) -> GameState:
         try:
             context = GameContext(dict(gd["rotation"]), {k: float(v) for k, v in gd["fatigue"].items()})
             for tid, x in (gd.get("lineups") or {}).items():
-                plan = _check_plan(x, f"state.json.season.games[{i}].lineups.{tid}", {pl.id for pl in season.teams[tid].players} if tid in season.teams else set(), p)
+                plan = _check_plan(x, f"state.json.season.games[{i}].lineups.{tid}", set(season.players) if tid in season.teams else set(), p)  # トレードで今は別の球団の選手もいる(D-378)
                 if plan is not None:
                     context.lineups[tid] = plan
             skipped = {k: bool(v) for k, v in gd["starter_skipped"].items()}
@@ -629,6 +640,20 @@ def load_game(data: bytes) -> GameState:
         plan = _check_plan(x, f"state.json.season.lineup_plans.{tid}", {pl.id for pl in season.teams[tid].players}, p)
         if plan is not None:
             season.lineup_plans[tid] = plan
+    trades_d = season_d.get("trades") or []  # 版 19 以前はない(トレードなし。D-379)
+    offers_d = season_d.get("trade_offers") or []
+    hist_d = season_d.get("active_history") or {}
+    if not (isinstance(trades_d, list) and all(isinstance(x, dict) and x.get("team_a") in season.teams and x.get("team_b") in season.teams for x in trades_d)):
+        p.add("state.json.season.trades", "トレードの記録の形が違います")
+    elif not (isinstance(offers_d, list) and all(isinstance(x, dict) and x.get("team_id") in season.teams for x in offers_d)):
+        p.add("state.json.season.trade_offers", "トレードの提案の形が違います")
+    # 終わったシーズン(オフ)は、引退・退団した選手も記録に残るので、形だけ確かめる
+    elif not (isinstance(hist_d, dict) and all(tid in season.teams and isinstance(h, list) and all(isinstance(s, dict) and isinstance(s.get("day"), int) and all(isinstance(x, str) and (season.is_over or x in season.players) for k in ("starters", "relievers", "batters") for x in s.get(k, [])) for s in h) for tid, h in hist_d.items())):
+        p.add("state.json.season.active_history", "一軍の顔ぶれの記録の形が違います(知らない選手がいます)")
+    else:
+        season.trades = [dict(x) for x in trades_d]
+        season.trade_offers = [dict(x) for x in offers_d]
+        season.active_history = {tid: [dict(s) for s in h] for tid, h in hist_d.items()}
     if p.items:
         raise SaveDataError(p.items)
     for pg in played:
@@ -656,7 +681,7 @@ def load_game(data: bytes) -> GameState:
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"])
+    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"], trade_settings=cfg["trade"])
     if any(p_.fa_seasons is None for p_ in out.league.all_players()):
         from .fa import initialize_seasons
 

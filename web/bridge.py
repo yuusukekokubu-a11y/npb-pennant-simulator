@@ -153,6 +153,25 @@ def lineup(name: str, args_json: str = "{}") -> str:
         return _ng(f"操作できませんでした({exc})")
 
 
+_TRADE = {
+    "view": lambda a: _game.trade_view(a.get("team_id")),
+    "propose": lambda a: _game.trade_propose(str(a.get("team_id", "")), list(a.get("gives", [])), list(a.get("gets", []))),
+    "answer": lambda a: _game.trade_offer_answer(str(a.get("offer_id", "")), bool(a.get("accept", False))),
+}
+
+
+def trade(name: str, args_json: str = "{}") -> str:
+    """トレード(D-378)。戻り値はトレードの画面の情報(交換を持ちかけたときは結果つき)。"""
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in _TRADE:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(_TRADE[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"操作できませんでした({exc})")
+
+
 # ---- 見る画面(公開用の関数だけ。D-114) ----
 _QUERIES = {
     "stats": lambda a: _game.stats(a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id"), a.get("season")),

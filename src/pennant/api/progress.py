@@ -127,7 +127,16 @@ class ProgressMixin:
         season = self.state.season
         n = max(0, min(int(days), season.total_days - season.day))
         if n:
-            season.play_days(n)
+            from ..trade import deadline_day, season_check_days
+
+            ts = self.state.trade_settings  # 決まった日と期限の日(期限で提案は消える)
+            checks = sorted({d for d in season_check_days(season.total_days, ts) + [deadline_day(season.total_days, ts)] if d > season.day})
+            end = season.day + n
+            while season.day < end:  # トレードの決まった日(D-378)で区切って進める
+                stop = min([d for d in checks if d > season.day] + [end])
+                season.play_days(stop - season.day)
+                if season.day in checks:
+                    self._season_trade_check()
             self.dirty = True
         return self.status()
 
@@ -163,6 +172,7 @@ class ProgressMixin:
             "seasons": self.season_choices(),
             "offseason": None if self.state.procedure is None else {"active": True, "phase": self.state.procedure.phase, "phase_label": STAGE_LABELS[stage_of(self.state.procedure.phase)], "year": self.state.procedure.year},
             "scout_level": self.state.scout_level,
+            "trade": self._trade_status(),
         }
 
     def season_choices(self) -> list[dict]:

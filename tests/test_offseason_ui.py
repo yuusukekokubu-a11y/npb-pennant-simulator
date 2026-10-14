@@ -58,7 +58,7 @@ def test_funds_change_and_automatic_renewal(contract_game):
         assert p.contract["salary"] == e["auto_salary"] and p.contract["until"] == proc.year + e["ai_years"] and p.contract["history"][-1]["reason"] == "renew"
         if e["old_salary"]:
             assert e["auto_salary"] >= e["old_salary"] * cs.decline_floor  # 1 年で下がるのは 25% まで(D-357)
-        assert e["ai_years"] == contract_years(e["age"], e["expected"], cs)  # 主力級だけ複数年(D-360)
+        assert e["ai_years"] in {contract_years(e["age"], e["expected"] + d, cs) for d in (-0.005, 0.005)}  # 主力級だけ複数年(D-360。expected は小数 2 桁に丸めてある)
     assert any(e["ai_years"] > 1 for e in negs if e["status"] == "accepted")
     assert any(e["old_salary"] and e["auto_salary"] > e["old_salary"] for e in negs) and any(e["old_salary"] and e["auto_salary"] < e["old_salary"] for e in negs)
     assert 3 <= sum(1 for e in negs if e["status"] == "declared") <= 50  # 1 年目は初期選手の年数の補い方で多め(このシードは育成・外国人の後で 46。30 年の平均は年 12.5 人)
@@ -68,7 +68,7 @@ def test_funds_change_and_automatic_renewal(contract_game):
 def test_stages_and_contract_table(contract_game):
     g = _fresh(contract_game)
     v = g.offseason_view()
-    assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "外国人", "ドラフト", "市場", "完了"]
+    assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "外国人", "ドラフト", "市場", "トレード", "完了"]
     rn = v["renewal"]
     assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"]
     for gone in ("none_max_ratio", "max_offers", "unoffered", "axes", "projected_total"):
@@ -160,8 +160,10 @@ def test_stage_auto_and_next_semantics(contract_game):
     v = g.offseason_next()
     assert v["stage"] == "market" and not _picks(g, "draft") and not _picks(g, "dev_draft")
     assert any(x["team_id"] == "T01" and x["phase"] == "draft" and x["player_id"] is None for x in g.state.procedure.picks)
-    r = g.offseason_stage_auto()  # 市場は、AI の方針で自球団も獲得して、完了まで
-    assert r["finished"] and r["auto_log"]["stage"] == "market" and g.status()["year"] == 2
+    v = g.offseason_stage_auto()  # 市場は、AI の方針で自球団も獲得して、トレードの段階へ(D-378)
+    assert v["auto_log"]["stage"] == "market" and v["stage"] == "trade"
+    r = g.offseason_stage_auto()  # トレード:提案は断ったことにして、完了まで
+    assert r["finished"] and r["auto_log"]["stage"] == "trade" and g.status()["year"] == 2
     assert all(len(t.players) == 70 for t in g.state.league.teams)
     # 同じ操作なら同じ結果
     g2 = _fresh(contract_game)
@@ -172,6 +174,7 @@ def test_stage_auto_and_next_semantics(contract_game):
     g2.offseason_next()  # ドラフト
     g2.offseason_next()  # 育成ドラフト
     g2.offseason_stage_auto()
+    g2.offseason_stage_auto()  # トレード
     assert [p.id for p in g2._team("T01").players] == [p.id for p in g._team("T01").players]
 
 

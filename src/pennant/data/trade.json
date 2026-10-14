@@ -1,0 +1,21 @@
+{
+  "format_version": 1,
+  "max_players": 3,
+  "deadline_ratio": 0.667,
+  "value": {
+    "salary_weight": 0.5,
+    "young_age": 28,
+    "young_per_year": 0.1
+  },
+  "ai": {
+    "accept_margin": 0.3,
+    "need_bonus": 0.5,
+    "season_checks": [0.2, 0.4, 0.6],
+    "season_ai_trades": 1,
+    "season_proposal_probability": 0.8,
+    "offseason_ai_trades": 2,
+    "offseason_proposals": 2,
+    "offseason_proposal_probability": 0.7,
+    "attempts": 40
+  }
+}
