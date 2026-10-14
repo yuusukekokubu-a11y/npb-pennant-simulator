@@ -148,7 +148,7 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
     with pytest.raises(ValueError):
         g.offseason_fa_offer(proc.fa_results[0]["player_id"], 1) if proc.fa_results else g.offseason_fa_offer("nobody", 1)
     v = g.offseason_next()  # 残りのラウンドは、自球団は追加の提示をせずに締める(D-271)
-    assert v["phase"] == "draft" and proc.fa_done and not proc.fa_pool
+    assert v["phase"] == "foreign" and proc.fa_done and not proc.fa_pool  # FA の次は外国人市場(D-376)
     assert not any(x["team_id"] == "T01" and x["round"] > 1 for x in proc.fa_log)  # 2 ラウンド目以降、自球団は提示していない
     unsigned = [pid for pid, x in proc.fa_info.items() if x["status"] == "unsigned"]
     assert all(any(p.id == pid for p in proc.market) for pid in unsigned)  # 決まらなかった選手は市場へ

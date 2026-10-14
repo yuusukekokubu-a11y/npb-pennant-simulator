@@ -61,14 +61,14 @@ def test_funds_change_and_automatic_renewal(contract_game):
         assert e["ai_years"] == contract_years(e["age"], e["expected"], cs)  # 主力級だけ複数年(D-360)
     assert any(e["ai_years"] > 1 for e in negs if e["status"] == "accepted")
     assert any(e["old_salary"] and e["auto_salary"] > e["old_salary"] for e in negs) and any(e["old_salary"] and e["auto_salary"] < e["old_salary"] for e in negs)
-    assert 3 <= sum(1 for e in negs if e["status"] == "declared") <= 40
+    assert 3 <= sum(1 for e in negs if e["status"] == "declared") <= 50  # 1 年目は初期選手の年数の補い方で多め(このシードは育成・外国人の後で 46。30 年の平均は年 12.5 人)
 
 
 @pytest.mark.slow
 def test_stages_and_contract_table(contract_game):
     g = _fresh(contract_game)
     v = g.offseason_view()
-    assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "ドラフト", "市場", "完了"]
+    assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "外国人", "ドラフト", "市場", "完了"]
     rn = v["renewal"]
     assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"]
     for gone in ("none_max_ratio", "max_offers", "unoffered", "axes", "projected_total"):
@@ -146,15 +146,19 @@ def test_stage_auto_and_next_semantics(contract_game):
     g = _fresh(contract_game)
     v = g.offseason_stage_auto()  # 契約の段階だけを AI の方針で(自球団の分も。超過の解消と自由契約)
     log = v["auto_log"]
-    assert log["stage"] == "contract" and v["stage"] in ("fa", "draft")
+    assert log["stage"] == "contract" and v["stage"] in ("fa", "foreign")
     assert all(x["kind"] == "release" for x in log["items"])
     assert team_salary(g._team("T01")) <= g.state.team_funds["T01"]
     if v["stage"] == "fa":
         v = g.offseason_stage_auto()
-        assert v["auto_log"]["stage"] == "fa" and v["stage"] == "draft"
-    # 「次の手続きへ」は AI の代行をしない:ドラフトの自球団の番はパス
+        assert v["auto_log"]["stage"] == "fa" and v["stage"] == "foreign"
+    v = g.offseason_stage_auto()  # 外国人市場(D-376)
+    assert v["auto_log"]["stage"] == "foreign" and v["stage"] == "draft"
+    # 「次の手続きへ」は AI の代行をしない:ドラフトの自球団の番はパス(育成ドラフトも。D-375)
     v = g.offseason_next()
-    assert v["stage"] == "market" and not _picks(g, "draft")
+    assert v["phase"] == "dev_draft" and v["stage"] == "draft"
+    v = g.offseason_next()
+    assert v["stage"] == "market" and not _picks(g, "draft") and not _picks(g, "dev_draft")
     assert any(x["team_id"] == "T01" and x["phase"] == "draft" and x["player_id"] is None for x in g.state.procedure.picks)
     r = g.offseason_stage_auto()  # 市場は、AI の方針で自球団も獲得して、完了まで
     assert r["finished"] and r["auto_log"]["stage"] == "market" and g.status()["year"] == 2
@@ -164,7 +168,9 @@ def test_stage_auto_and_next_semantics(contract_game):
     g2.offseason_stage_auto()
     if g2.offseason_view()["stage"] == "fa":
         g2.offseason_stage_auto()
-    g2.offseason_next()
+    g2.offseason_stage_auto()  # 外国人市場
+    g2.offseason_next()  # ドラフト
+    g2.offseason_next()  # 育成ドラフト
     g2.offseason_stage_auto()
     assert [p.id for p in g2._team("T01").players] == [p.id for p in g._team("T01").players]
 
@@ -190,9 +196,11 @@ def test_whole_offseason_keeps_funds_and_save_round_trip(contract_game):
     assert [p.contract for p in g.state.league.all_players()] == [p.contract for p in again.state.league.all_players()]
     fills = [x for x in g.state.transactions if x["year"] == 1 and x["phase"] == "fill"]
     assert all(x["salary"] == g.state.contract_settings.minimum for x in fills)
-    for t in g.state.league.teams:  # 超えているのは最低年俸の自動補充の分だけ(補充は例外。D-235)
+    promoted = [x for x in g.state.transactions if x["year"] == 1 and x["phase"] == "promote"]
+    for t in g.state.league.teams:  # 超えているのは、最低年俸の自動補充と、育成の年俸の分だけ(どちらも例外。D-235、D-375)
         over = team_salary(t) - g.state.team_funds[t.id]
-        assert over <= sum(x["salary"] for x in fills if x["team_id"] == t.id)
+        dev = sum(int(p.contract["salary"]) for p in t.development if p.contract)
+        assert over <= sum(x["salary"] for x in fills if x["team_id"] == t.id) + dev + g.state.contract_settings.minimum * sum(1 for x in promoted if x["team_id"] == t.id)
     lo, hi = g.state.contract_settings.funds_range
     assert all(base_funds(g.state.budget_tiers[tid], g.state.contract_settings) * lo <= v <= base_funds(g.state.budget_tiers[tid], g.state.contract_settings) * hi for tid, v in g.state.team_funds.items())
 

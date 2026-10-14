@@ -89,7 +89,7 @@ def test_foreign_market_shows_grade_only_and_signs_in_order(at_offseason):
         assert f'"{key}"' not in text  # 能力・隠し情報・特殊能力は見せない
     proc = g.state.procedure
     assert all(proc.foreign_salary[p.id] in DS.foreign["salary"].values() for p in proc.foreign_pool)
-    pid = t["rows"][0]["player_id"]
+    pid = min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["player_id"]  # 資金の残りで結べる、年俸の最も安い候補
     g.offseason_foreign_offer(pid)
     with pytest.raises(ValueError, match="候補ではありません"):
         g.offseason_foreign_offer("nobody")

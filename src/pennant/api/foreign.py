@@ -114,6 +114,9 @@ class ForeignMixin:
             raise ValueError("その選手は、自球団の育成選手ではありません")
         if len(team.players) + len(proc.market_offers) >= MAX_ROSTER:
             raise ValueError("支配下の枠(70 人。市場で希望中の選手も数えます)に空きがありません")
-        devmod.promote(team, player, proc, self._contract_ctx(), "you")
+        ctx = self._contract_ctx()
+        if not devmod.promote_fits(team, player, ctx):
+            raise ValueError("支配下に上げる(年俸は最低年俸)と、資金(年俸の合計の上限)を超えます")
+        devmod.promote(team, player, proc, ctx, "you")
         self.dirty = True
         return self.offseason_view()

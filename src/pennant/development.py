@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from .contracts import set_contract
+from .contracts import set_contract, team_salary
 from .models import League, Player, Team
 from .procedure import (
     MAX_ROSTER,
@@ -104,11 +104,20 @@ def promote(team: Team, player: Player, proc: OffseasonProcedure, ctx, by: str) 
     proc.promotions.append({"team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age, "by": by})
 
 
+def promote_fits(team: Team, player: Player, ctx) -> bool:
+    """支配下に上げても資金の中か(育成の年俸が最低年俸に変わる差だけ増える)。自動補充で上げるときは見ない(D-235)。"""
+    cap = ctx.cap(team.id) if ctx is not None else None
+    if ctx is None or not ctx.hard() or cap is None:
+        return True
+    now = int(player.contract["salary"]) if player.contract else 0
+    return team_salary(team) - now + int(ctx.settings.minimum) <= cap
+
+
 def ai_promote(team: Team, proc: OffseasonProcedure, sd: dict, ctx) -> list[Player]:
     """AI:空きがあれば、支配下の最も低い選手(推定値)より高い育成選手を、高い順に上げる。そのオフに指名した選手は上げない(育成で 1 シーズン以上)。"""
     out = []
     while len(team.players) < MAX_ROSTER:
-        pool = [p for p in team.development if (p.dev_seasons or 0) >= 1]
+        pool = [p for p in team.development if (p.dev_seasons or 0) >= 1 and promote_fits(team, p, ctx)]
         if not pool:
             break
         best = max(pool, key=lambda p: (cached_value(proc, p, team.id, sd)[0], p.id))

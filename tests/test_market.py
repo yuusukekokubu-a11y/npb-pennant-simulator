@@ -29,9 +29,9 @@ def _fresh(g):
 
 
 def _to_stage(g, stage):
-    """その段階の入口まで進める(契約・FA は「この段階をおまかせ」、ドラフトは自球団の番をパスして空き枠を残す)。"""
+    """その段階の入口まで進める(契約・FA は「この段階をおまかせ」、外国人市場とドラフトは自球団は取らずに空き枠と資金を残す)。"""
     while g.offseason_view()["stage"] != stage:
-        if g.offseason_view()["stage"] == "draft":
+        if g.offseason_view()["stage"] in ("foreign", "draft"):
             g.offseason_next()
         else:
             g.offseason_stage_auto()
@@ -57,7 +57,7 @@ def test_market_wishes_and_order(season_end):
     assert all(r["amateur"] and r["values"]["ability"].startswith("評価 ") and r["deal"]["calc_salary"] == minimum and r["deal"]["expected"] is None for r in cands)
     assert all(not r["amateur"] and r["scouting"] is None and r["values"]["ability"][0] in "SABCDEFG" for r in pros)
     room = g.budget_info("T01")["cap"] - g.budget_info("T01")["total"]
-    cheap = [r for r in t["rows"] if r["deal"]["calc_salary"] <= room // 3][:2]
+    cheap = [r for r in t["rows"] if r["deal"]["calc_salary"] <= room][:2]  # 希望は 1 人ずつ資金の中か見る(育成の年俸も総年俸に入るので、残りは少ないことがある)
     for r in cheap:
         v = g.offseason_market_offer(r["player_id"])
     assert [o["player_id"] for o in v["market"]["offers"]] == [r["player_id"] for r in cheap] and [o["rank"] for o in v["market"]["offers"]] == [1, 2]
@@ -81,7 +81,7 @@ def test_market_wishes_and_order(season_end):
     holder = next((x["team_id"] for x in signed if x["player_id"] == first), None)
     assert holder is not None
     assert all(len(t2.players) <= 70 for t2 in g.state.league.teams)
-    assert sum(len(t2.players) for t2 in g.state.league.teams) == sum(before.values()) + len(signed)
+    assert sum(len(t2.players) for t2 in g.state.league.teams) == sum(before.values()) + len(signed) + len(proc.promotions)  # AI は締めるときに育成選手も上げる(D-375)
     assert {x["team_id"] for x in proc.market_log} - {"T01"}  # AI 球団も希望を出す(FA と同じ方針)
     with pytest.raises(ValueError):
         g.offseason_market_offer(cheap[0]["player_id"])  # 締めた後は希望できない
@@ -153,6 +153,10 @@ def test_decision_tables_columns_depth_and_thin(season_end):
             c = famod._context(player, team, g.state.procedure, ctx, sizes)
             assert r["values"]["depth"].startswith(f"{c['rank'] + 1} 番手") and r["in_slots"] == (c["rank"] < c["slots"])
         g.offseason_stage_auto()
+    if g.offseason_view()["stage"] == "foreign":  # 外国人市場(D-376)
+        f = g.decision_table("foreign")
+        assert [c["label"] for c in f["columns"]] == ["評価", "スカウトの一言", "年齢", "ポジション", "加入後の序列", "年俸", "状態"]
+        g.offseason_next()
     d = g.decision_table("draft")
     assert [c["label"] for c in d["columns"]] == ["評価", "スカウトの一言", "年齢", "出身", "ポジション", "加入後の序列"]
     assert d["sort"]["key"] == "grade" and d["show"] == "open" and not d["kinds"] and not d["seasons"]

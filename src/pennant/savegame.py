@@ -119,6 +119,10 @@ class GameState:
 
         if self.draft_settings is None:
             self.draft_settings = load_draft_settings()
+        if getattr(self.draft_settings, "gen_config", None) is None and getattr(self, "gen_config", None) is not None:
+            # AI の判断が人数の目安を見るための生成の設定(手続きの開始時にも入れる)。読み込んだ状態でも同じにして、
+            # 保存して読み込んでも同じ結果にする
+            object.__setattr__(self.draft_settings, "gen_config", self.gen_config)
         if self.contract_settings is None:
             self.contract_settings = load_contract_settings()
         if self.negotiation_settings is None:

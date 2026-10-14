@@ -57,9 +57,11 @@ def roster_rows(g):
 
 
 def skip_fa(g):
-    """FA の段階(F3-2c)に入っていたら、残りのラウンドを AI と同じ方針で済ませてドラフトへ。戻り値は画面の情報。"""
+    """FA の段階(F3-2c)と外国人市場(D-376)に入っていたら、自球団の分は何もせずに済ませてドラフトへ。戻り値は画面の情報。"""
     v = g.offseason_view()
-    return g.offseason_next() if v["phase"] == "fa" else v
+    while v["phase"] in ("fa", "foreign"):
+        v = g.offseason_next()
+    return v
 
 
 # ---- 設定 ----
@@ -348,7 +350,7 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
     assert g.review_years() == [2, 3]
     v = g.draft_review()
     assert v["team_id"] == "T01" and v["year"] == 3 and v["years"] == [2, 3] and len(v["teams"]) == 12  # 観戦のみ:最初の球団・最新の年度
-    assert v["rows"] and all(r["route"] in ("draft", "market", "fill") and r["entry_grade"] in GRADES and r["entry_comment"] for r in v["rows"])
+    assert v["rows"] and all(r["route"] in ("foreign", "draft", "dev_draft", "market", "fill") and r["entry_grade"] in GRADES and r["entry_comment"] for r in v["rows"])
     assert all(r["status"] in ("same", "moved", "left") and isinstance(r["games"], int) for r in v["rows"])
     text = json.dumps(v, ensure_ascii=False)
     for key in ("ratings", "potential", "growth_type", "archetype", "hidden", "cuts", "items", "overall"):
@@ -361,8 +363,8 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
     prerun_ids = {p.id for p in players.values() if p.scouting and p.scouting.get("year") is None}
     assert prerun_ids and not any(pid in prerun_ids for y in (2, 3) for t in g.state.league.teams for pid in {r["player_id"] for r in g.draft_review(t.id, y)["rows"]})
     v2 = g.draft_review("T05", 2)
-    assert v2["team_id"] == "T05" and v2["year"] == 2 and v2["rows"] and all(r["route_label"].startswith(("ドラフト", "市場", "自動補充")) for r in v2["rows"])
-    assert sum(len(g.draft_review(t.id, 2)["rows"]) for t in g.state.league.teams) == sum(1 for x in g.state.transactions if x["player_id"] and x["year"] == 1 and x["phase"] not in ("release", "fa_declare", "fa"))  # FA の宣言・契約は入団ではない(F3-2c)
+    assert v2["team_id"] == "T05" and v2["year"] == 2 and v2["rows"] and all(r["route_label"].startswith(("ドラフト", "育成ドラフト", "外国人市場", "市場", "自動補充")) for r in v2["rows"])
+    assert sum(len(g.draft_review(t.id, 2)["rows"]) for t in g.state.league.teams) == sum(1 for x in g.state.transactions if x["player_id"] and x["year"] == 1 and x["phase"] not in ("release", "fa_declare", "fa", "promote"))  # FA の宣言・契約と、育成から支配下に上げたのは入団ではない(F3-2c、D-375)
     with pytest.raises(ValueError):
         g.draft_review("T01", 9)
     with pytest.raises(ValueError):
@@ -440,6 +442,7 @@ def test_market_table_marks_candidates_without_stats(release_game):
     skip_fa(g)
     g.offseason_advance()
     g.offseason_next()
+    g.offseason_next()  # 育成ドラフト(D-375)
     m = g.offseason_table("market", "batter", "basic")
     assert m["phase"] == "market" and len(m["rows"]) == sum(1 for p in g.state.procedure.market if p.role == "batter")
     with_stats = [r for r in m["rows"] if r["has_stats"]]
