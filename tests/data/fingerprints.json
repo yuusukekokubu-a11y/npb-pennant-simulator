@@ -1,43 +1,43 @@
 {
-  "fingerprint_version": 25,
-  "league": "fac70777f85db94fda9a7353e8207616baab60c9b719f6e7f1d84ba3f81eeb57",
-  "game": "261210c5f50c2292d3d949160381d94d08706c1c10f4c1c6b62ed517925b3f33",
-  "days": "4068330950efc305e878ed356c04c59030d23b0d9e06c9506c8f9e6e2468c2ec",
-  "season": "b5bbd1efb67db6bf5d665c52c843e6dce70badaa6946cc05cdcbca2b9ea03cfd",
-  "records": "d938fe593a4ca4a6fbd870111ee3a173d7cad7c057a54af8aaf3b3912a85b4e1",
-  "save": "e36288be486032430b07918625afd15c771429f8f79bff40bc5c173b643c823e",
-  "baselines": "6c73bb580c2ab2f69249cb3d3053ce4fa0ac4cfa9e14b396092fbe6564c113ea",
-  "metrics2": "f1351ba09f314f76b41e132c4c9feb0ed1ee85a48a496b92f4dddb685e429dad",
+  "fingerprint_version": 26,
+  "league": "8a32beb52f71da21039878c915ceaf6c7e59e122696ae91718752079d8486aaa",
+  "game": "019a4bf7983a0d6bd2243d4f2e56a342dba0c757cf748d0d5586b3e73c9088c3",
+  "days": "afed62b8a1acfc23ea3ed45cd5fb70377a030c1501c9d2efe6cc437118018a05",
+  "season": "ff77519289e60691d9650f1fa3c519fcae2dc4c2698ffc7c169bbb786337cca1",
+  "records": "65d40b8e029fd8dead43eff3ab3c2db672b3b09e5563de7942ff9e72fe616a19",
+  "save": "875069a01ab395daaa4e48d4da050dd11f078dbf4bcea584783cbe496f8fd766",
+  "baselines": "2d006770c9c1b8d8b22b2725550c3d06ebd4a2ff28d6936d8309947025d9c78c",
+  "metrics2": "55f4b2c5e35e918608acc2898f402f1ae426f692d52ce73787c65a836fd0f487",
   "parks": "a86126c37d301394d514e0ef3f598f0cc48bc418f472c67c014763c002798693",
-  "park_estimates": "b4ab48e1644102703fbc77869b95fcaecb05768625f113d1599bf3d97eeea512",
-  "run_values": "c3a243a41c482161d9ddfd6ab18ebdd20e723f627f3af85c046626be1b1b60be",
-  "war": "782f22adcc86a1c3b839e34fd01ac1fe27276f5fdff435c4db1ec0a864088d1a",
-  "multiyear": "f30261a22cd890235135618ccf319512087d65bdcc7e105185b7ae5548fa943b",
-  "procedure": "fce41bd346d0de9a6e330ef2fb54f7cef983ac82cdacf6b87f5978427a0a8a18",
-  "contracts": "56f4c270adf9f08367510400dca7afd2973921e7823f83c1d5b6c7b70e4c280a",
-  "negotiation": "828e0138be47af59fa82b16ae804552eb592b6124285b1cb5de4147e0f78768a",
-  "fa": "df07292535364f650689ead5fca014a0f68ec85ec8e8bd165a8bbf705d7ce268",
+  "park_estimates": "fb36679c2c12ef662f4f34e8b5bb929195dec70b576470b8627c565276e2d6e0",
+  "run_values": "aef72828348f0a12b5aeadb52ad135f3ce792100ea4fcc6c45fa3a6c057c07e8",
+  "war": "646a85a8139888db9765fe5cbb3342b11777300644b70930122eb78cc39ecd37",
+  "multiyear": "c1797a57975324b42db16b7c7f07f2f9937dc6a196f25661a09a4d8dfa9b0eb0",
+  "procedure": "00fafe027db04f5c14dde156bca1cf3b54600cb8d603aab6ac5e35053c11bb54",
+  "contracts": "eb71c6c1d7acb9378d01cee20d234ae7a20bd5fb1f24744de2777d3cffcbae40",
+  "negotiation": "58577f3d8737fdea812761dd745da8b2ccbae435a2caf463951e18f3c55a1cc0",
+  "fa": "8b3886cd385a09c1809d3542dbdc057c11e6da67b164aeb060fd355c9f4b7be0",
   "counts": {
     "players": 840,
-    "game_plate_appearances": 82,
-    "game_score": "5-3",
+    "game_plate_appearances": 73,
+    "game_score": "1-5",
     "days": 30,
     "days_games": 180,
-    "days_plate_appearances": 14118,
-    "days_runs": 1624,
+    "days_plate_appearances": 14271,
+    "days_runs": 1536,
     "season_games": 750,
-    "season_plate_appearances": 59168,
+    "season_plate_appearances": 59379,
     "season_champions": [
-      "T04",
-      "T07"
+      "T06",
+      "T09"
     ],
     "records_totals": {
-      "R": 6697,
-      "RBI": 6555,
-      "W": 741,
-      "SV": 326,
-      "HLD": 816,
-      "ER": 6303
+      "R": 6648,
+      "RBI": 6498,
+      "W": 731,
+      "SV": 333,
+      "HLD": 807,
+      "ER": 6280
     },
     "save_days": [
       1,
@@ -50,10 +50,10 @@
       true
     ],
     "baselines": {
-      "trial_plate_appearances": 58724,
-      "batters": 167,
+      "trial_plate_appearances": 59291,
+      "batters": 166,
       "pitchers": 168,
-      "weight": "1849/2474"
+      "weight": "59379/79379"
     },
     "parks": {
       "teams": 12,
@@ -76,23 +76,23 @@
     },
     "run_values": {
       "seasons": 3,
-      "players": 331,
-      "fielding_chances": 35085
+      "players": 330,
+      "fielding_chances": 35396
     },
     "war": {
       "seasons": 3,
-      "players": 337,
-      "total_war_x100": 31129
+      "players": 333,
+      "total_war_x100": 30749
     },
     "multiyear": {
       "year_ends": 2,
       "retired": [
-        63,
-        59
+        48,
+        50
       ],
       "rookies": [
-        121,
-        126
+        104,
+        113
       ],
       "players": 840,
       "seasons": 3,
@@ -101,16 +101,16 @@
     "procedure": {
       "year_ends": 2,
       "picked": [
-        27,
-        36
+        31,
+        19
       ],
       "released": [
-        74,
-        55
+        57,
+        61
       ],
       "market": [
         0,
-        1
+        0
       ],
       "players": 840,
       "scouted": 840
@@ -118,57 +118,57 @@
     "contracts": {
       "year_ends": 2,
       "budget_releases": [
-        43,
-        25
+        22,
+        26
       ],
       "rates": [
-        12612,
-        11126,
-        11083
+        12090,
+        10780,
+        10995
       ],
       "totals": [
-        388558,
-        400692
+        401883,
+        404217
       ],
       "players": 840
     },
     "negotiation": {
       "year_ends": 2,
       "renewed": [
-        796,
-        747
+        795,
+        762
       ],
       "declared": [
-        11,
-        29
+        23,
+        26
       ],
       "multi_year": [
-        27,
-        14
+        25,
+        15
       ],
       "floored": [
-        258,
-        215
+        260,
+        257
       ],
       "players": 840
     },
     "fa": {
       "year_ends": 2,
       "declared": [
-        11,
-        29
+        23,
+        26
       ],
       "signed": [
-        7,
-        16
+        17,
+        15
       ],
       "moved": [
-        6,
-        10
+        13,
+        13
       ],
       "offers": [
-        16,
-        41
+        35,
+        28
       ],
       "players": 840
     }
