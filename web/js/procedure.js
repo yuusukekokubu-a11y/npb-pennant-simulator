@@ -40,6 +40,11 @@ export async function renderProcedure(token) {
     const lr = ps.lastRound;
     $("proc-message").className = "message ok";
     $("proc-message").textContent = lr.signed.length ? `ラウンド ${lr.round} の結果:${lr.signed.map((x) => `${x.name} → ${x.team_name}(${x.years} 年・${x.salary_text})`).join("、")}` : `ラウンド ${lr.round} の結果:成立した契約はありません。`;
+  } else if (ps.lastBid && v.stage === "draft") {
+    const lb = ps.lastBid;
+    const mine = lb.results.filter((x) => x.is_mine);
+    $("proc-message").className = lb.won ? "message ok" : "message";
+    $("proc-message").textContent = `1 巡目の入札の結果:${mine.map((x) => (x.teams.length > 1 ? `${x.name} は ${x.teams.length} 球団が入札し、抽選で ${x.winner_name} が交渉権` : `${x.name} は単独で ${x.winner_name}`)).join("、")}。${lb.won ? "" : "外れたので、残りの候補からもう一度入札してください。"}`;
   } else if (ps.lastMarket && v.stage === "market") {
     const mine = ps.lastMarket.signed.filter((x) => x.is_mine);
     $("proc-message").className = "message ok";
@@ -83,11 +88,11 @@ function renderProcedureBar(v) {
     const f = v.fa;
     info = f.done ? `FA 終了:宣言 ${f.counts.declared}・契約 ${f.counts.signed}・市場へ ${f.counts.unsigned}` : `ラウンド ${f.round}/${f.rounds}:宣言 ${f.counts.declared}・契約 ${f.counts.signed}・残り ${f.counts.open}${mine ? `・提示 ${f.offers.length}・空き枠 ${f.space ?? "-"}` : ""}`;
   } else if (v.stage === "draft") {
-    const turn = v.phase_finished ? "終了" : v.is_my_turn ? "あなたの番" : `${(v.order.find((o) => o.team_id === v.current_team) || {}).team_name || ""} の番`;
+    const turn = v.phase_finished ? "終了" : v.bidding ? (v.is_my_turn ? `入札${v.bid_step > 1 ? `(${v.bid_step} 回目)` : ""}・あなたの番` : "入札") : v.is_my_turn ? "あなたの番" : `${(v.order.find((o) => o.team_id === v.current_team) || {}).team_name || ""} の番`;
     info = `${Math.min(v.round, v.total_rounds)}/${v.total_rounds} 巡・${turn}${mine ? `・${mine.players}/${mine.max} 人` : `・候補 ${v.counts.candidates} 人`}`;
   } else if (v.stage === "market" && v.market) {
     const m = v.market;
-    info = m.done ? `市場 終了:契約 ${m.counts.signed} 人(自球団 ${m.counts.mine})` : `市場 ${m.counts.pool} 人・提示 ${m.counts.offers}・空き枠 ${m.space ?? "-"}`;
+    info = m.done ? `市場 終了:契約 ${m.counts.signed} 人(自球団 ${m.counts.mine})` : `市場 ${m.counts.pool} 人・希望 ${m.counts.offers}・空き枠 ${m.space ?? "-"}`;
   }
   const canOutlook = Boolean(mine) && DECISION_STAGES.includes(v.stage);
   const text = $("proc-info").parentElement;
@@ -119,10 +124,10 @@ function renderProcedureBar(v) {
   if (v.stage === "fa" && v.fa && mine && !v.fa.done) {
     acts.prepend(btn("fa-close", `ラウンド${v.fa.round}を締める`, "AI 球団の提示と合わせて、選手が選びます(結果が出ます)", () => faClose()));
   } else if (v.stage === "draft" && mine && !v.phase_finished) {
-    if (v.is_my_turn) acts.prepend(btn("draft-pass", "パス", "今の巡は指名しない", () => runProc("pass")));
+    if (v.is_my_turn) acts.prepend(btn("draft-pass", "パス", v.bidding ? "1 巡目は入札しない" : "今の巡は指名しない", () => runProc("pass")));
     else acts.prepend(btn("draft-advance", "自分の番まで", "次の自分の番まで、AI 球団の指名を進めます", () => runProc("advance")));
   } else if (v.stage === "market" && v.market && mine && !v.market.done) {
-    acts.prepend(btn("market-close", "市場を締める", "AI 球団の提示と合わせて、選手が選びます(結果が出ます)", () => marketClose()));
+    acts.prepend(btn("market-close", "市場を締める", "AI 球団の希望と合わせて、前年の順位が低い球団から 1 人ずつ獲得します(結果が出ます)", () => marketClose()));
   }
 }
 
@@ -152,10 +157,6 @@ function renderProcedureContracts(v) {
     parts.push(det);
   }
   box.replaceChildren(...parts);
-}
-
-export function ceilingText(g) {
-  return { S: "S(上位 5%)", A: "A", B: "B", C: "C", D: "D" }[g] || g;
 }
 
 export async function runProc(name, args = {}, onResult = null) {
@@ -212,10 +213,11 @@ export async function procStageAuto() {
 // 「次の手続きへ」(D-271):自分の操作を終えて進む(AI の代行はしない)
 export async function procNext() {
   const stage = state.proc.stage;
-  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: "ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?", market: "市場を今の提示で締めて(提示していなければ、自球団は獲得なし)、手続きを完了します。よろしいですか?" }[stage];
+  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: "ドラフトの自球団の残りの番(1 巡目の入札を含む)は、すべてパスします。次へ進みますか?", market: "市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、手続きを完了します。よろしいですか?" }[stage];
   if (ask && !confirm(ask)) return;
   state.proc.lastRound = null;
   state.proc.lastMarket = null;
+  state.proc.lastBid = null;
   state.proc.autoLog = null;
   await runProc("next");
 }
@@ -224,7 +226,7 @@ export async function procNext() {
 function historyTable(picks, released) {
   const rows = [];
   for (const x of released) rows.push({ k: "自由契約", team: x.team_name, name: x.name, pos: x.position_label, age: x.age, mine: x.is_mine });
-  for (const x of picks) rows.push({ k: x.phase === "draft" ? `ドラフト ${x.round} 巡` : "市場", team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
+  for (const x of picks) rows.push({ k: x.phase === "draft" ? `ドラフト ${x.round} 巡${x.lottery ? "(抽選)" : ""}` : "市場", team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : x.note === "budget" ? "資金不足" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
   if (!rows.length) return el("p", { className: "muted small" }, "まだありません。");
   const body = el("tbody", {}, ...rows.map((r) => el("tr", { className: r.mine ? "mine" : "" }, el("td", {}, r.k), el("td", {}, r.team), el("td", {}, r.name), el("td", {}, r.pos || ""), el("td", {}, r.age ? `${r.age}歳` : ""))));
   return el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "手続き"), el("th", {}, "球団"), el("th", {}, "選手"), el("th", {}, "ポジション"), el("th", {}, "年齢"))), body));

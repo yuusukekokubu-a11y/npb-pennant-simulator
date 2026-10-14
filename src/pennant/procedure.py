@@ -20,7 +20,8 @@ from .models import League, Player, Team
 from .names import NameGenerator
 from .negotiation import standing_ranks
 from .offseason import PlayerNote
-from .scouting import GRADES, SCOUT_METHOD, ScoutReport, ceiling_cuts, quick_value, report
+from .abilities import ALL_ABILITIES
+from .scouting import GRADES, ScoutReport, grade_cuts, item_stats, quick_value, report
 from .season import derive_seed
 
 
@@ -84,12 +85,13 @@ class DraftSettings:
         return tuple(self.data["scouting"]["levels"])
 
     @property
-    def margin_z(self) -> float:
-        return float(self.data["scouting"]["margin_z"])
+    def grade_shares(self) -> dict[str, float]:
+        return {g: float(v) for g, v in self.data["scouting"]["grade_shares"].items()}
 
     @property
-    def ceiling_shares(self) -> dict[str, float]:
-        return {g: float(v) for g, v in self.data["scouting"]["ceiling_shares"].items()}
+    def comment(self) -> dict:
+        """スカウトの一言の設定(min_z・second_gap・none・phrases。D-368)。"""
+        return self.data["scouting"]["comment"]
 
 
 def load_draft_settings(path: str | Path | None = None) -> DraftSettings:
@@ -117,9 +119,9 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
     c.number(c.get(a, "need_bonus", "ai"), "ai.need_bonus", 0, 100)
     c.number(c.get(a, "market_gain_min", "ai"), "ai.market_gain_min", -50, 50)
     c.number(c.get(a, "surplus_penalty", "ai"), "ai.surplus_penalty", 0, 100)
-    bonus = c.section(c.get(a, "ceiling_bonus", "ai"), "ai.ceiling_bonus")
+    bonus = c.section(c.get(a, "grade_bonus", "ai"), "ai.grade_bonus")
     for g in GRADES:
-        c.number(c.get(bonus, g, "ai.ceiling_bonus"), f"ai.ceiling_bonus.{g}", -50, 50)
+        c.number(c.get(bonus, g, "ai.grade_bonus"), f"ai.grade_bonus.{g}", -50, 50)
     s = c.section(c.get(root, "scouting", ""), "scouting")
     levels = c.section(c.get(s, "levels", "scouting"), "scouting.levels")
     for level in ("small", "medium", "large"):
@@ -129,14 +131,24 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
     default = c.get(s, "default_level", "scouting")
     if default not in ("small", "medium", "large"):
         c.add("scouting.default_level", f"small / medium / large のどれかにしてください(値: {default!r})")
-    c.number(c.get(s, "margin_z", "scouting"), "scouting.margin_z", 0, 5)
-    shares = c.section(c.get(s, "ceiling_shares", "scouting"), "scouting.ceiling_shares")
+    shares = c.section(c.get(s, "grade_shares", "scouting"), "scouting.grade_shares")
     total = 0.0
     for g in GRADES:
-        v = c.number(c.get(shares, g, "scouting.ceiling_shares"), f"scouting.ceiling_shares.{g}", 0, 1)
+        v = c.number(c.get(shares, g, "scouting.grade_shares"), f"scouting.grade_shares.{g}", 0, 1)
         total += v or 0
     if shares is not None and abs(total - 1) > 1e-6:
-        c.add("scouting.ceiling_shares", f"合計が 1 になるようにしてください(値: {total:.3f})")
+        c.add("scouting.grade_shares", f"合計が 1 になるようにしてください(値: {total:.3f})")
+    cm = c.section(c.get(s, "comment", "scouting"), "scouting.comment")
+    c.number(c.get(cm, "min_z", "scouting.comment"), "scouting.comment.min_z", -5, 5)
+    c.number(c.get(cm, "second_gap", "scouting.comment"), "scouting.comment.second_gap", 0, 5)
+    none = c.get(cm, "none", "scouting.comment")
+    if none is not None and (not isinstance(none, str) or not none.strip()):
+        c.add("scouting.comment.none", "目立つ長所がないときの言葉を書いてください")
+    phrases = c.section(c.get(cm, "phrases", "scouting.comment"), "scouting.comment.phrases")
+    for key in ALL_ABILITIES:
+        v = c.get(phrases, key, "scouting.comment.phrases")
+        if v is not None and (not isinstance(v, str) or not v.strip()):
+            c.add(f"scouting.comment.phrases.{key}", "言葉を書いてください")
     if c.problems:
         raise ConfigError(source, c.problems)
     return DraftSettings(copy.deepcopy(root), source)
@@ -203,9 +215,8 @@ class OffseasonProcedure:
     order: list[str]  # 1 巡目の指名の順番(前年の勝率が低い順)
     rounds: int
     market_rounds: int
-    cuts: list[float]  # 天井の段階の境目
+    cuts: list[float]  # 評価(A〜E)の段階の境目
     phase: str = "renewal"
-    method: int = SCOUT_METHOD  # 評価方式の版(D-215。版 8 の手続きは 1)
     round: int = 1  # 今の巡(1 から)
     index: int = 0  # 今の巡の中の何番目か(0 から。往復は current_team で解決)
     candidates: list[Player] = field(default_factory=list)  # ドラフトの候補(まだ指名されていない)
@@ -232,13 +243,23 @@ class OffseasonProcedure:
     market_results: list[dict] = field(default_factory=list)  # 市場で成立した契約
     market_log: list[dict] = field(default_factory=list)  # 全球団の市場の提示の記録({player_id, team_id, years, salary})
     market_done: bool = False  # 市場を締めたか
-    _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 天井)。保存しない
+    item_stats: dict = field(default_factory=dict)  # 役割 → 項目 → [平均, 標準偏差](候補の能力。スカウトの一言の物差し。D-368)
+    bid_done: bool = False  # ドラフトの 1 巡目の入札が終わったか(D-369)
+    bid_step: int = 1  # 1 巡目の入札の回(外れた球団が入札し直すたびに 1 増える)
+    lottery: list[dict] = field(default_factory=list)  # 1 巡目の入札の記録({step, player_id, name, position, teams, winner})
+    _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 評価)。保存しない
+
+    def bidding(self) -> bool:
+        """ドラフトの 1 巡目の入札の途中か(D-369)。"""
+        return self.phase == "draft" and not self.bid_done
 
     def current_team(self) -> str | None:
-        """今の指名権を持つ球団(段階が draft / market のとき)。巡の終わりなら None。"""
-        if self.index >= len(self.order):
+        """今の指名権を持つ球団(段階が draft / market のとき)。巡の終わり・1 巡目の入札の途中なら None。
+        ドラフトは 1 巡目が入札なので、2 巡目を前年の順位が低い球団から始めて往復する(D-369)。市場の順番の方式は 1 巡目から往復。"""
+        if self.index >= len(self.order) or self.bidding():
             return None
-        order = self.order if self.round % 2 == 1 else list(reversed(self.order))
+        forward = self.round % 2 == (0 if self.phase == "draft" else 1)
+        order = self.order if forward else list(reversed(self.order))
         return order[self.index]
 
     def total_rounds(self) -> int:
@@ -257,7 +278,7 @@ class OffseasonProcedure:
     def to_dict(self, plain) -> dict:
         return {
             "year": self.year, "seed": self.seed, "order": list(self.order), "rounds": self.rounds, "market_rounds": self.market_rounds,
-            "cuts": [round(c, 4) for c in self.cuts], "phase": self.phase, "method": self.method, "round": self.round, "index": self.index,
+            "cuts": [round(c, 4) for c in self.cuts], "phase": self.phase, "round": self.round, "index": self.index,
             "candidates": [plain(p) for p in self.candidates], "market": [plain(p) for p in self.market],
             "picks": [dict(x) for x in self.picks], "released": [dict(x) for x in self.released],
             "my_release_done": self.my_release_done, "ai_release_done": self.ai_release_done,
@@ -267,13 +288,13 @@ class OffseasonProcedure:
             "fa_results": [dict(x) for x in self.fa_results], "fa_log": [dict(x) for x in self.fa_log], "fa_done": self.fa_done,
             "market_offers": copy.deepcopy(self.market_offers), "market_results": [dict(x) for x in self.market_results],
             "market_log": [dict(x) for x in self.market_log], "market_done": self.market_done,
+            "item_stats": copy.deepcopy(self.item_stats), "bid_done": self.bid_done, "bid_step": self.bid_step, "lottery": copy.deepcopy(self.lottery),
         }
 
     @classmethod
     def from_dict(cls, d: dict, player_from) -> "OffseasonProcedure":
         proc = cls(int(d["year"]), int(d["seed"]), [str(t) for t in d["order"]], int(d["rounds"]), int(d["market_rounds"]), [float(c) for c in d["cuts"]])
         proc.phase = str(d["phase"])
-        proc.method = int(d.get("method", 1))
         proc.round = int(d["round"])
         proc.index = int(d["index"])
         proc.candidates = [player_from(x) for x in d["candidates"]]
@@ -302,6 +323,10 @@ class OffseasonProcedure:
         proc.market_results = [dict(x) for x in d.get("market_results", [])]
         proc.market_log = [dict(x) for x in d.get("market_log", [])]
         proc.market_done = bool(d.get("market_done", False))
+        proc.item_stats = copy.deepcopy(d.get("item_stats", {}))
+        proc.bid_done = bool(d.get("bid_done", False))
+        proc.bid_step = int(d.get("bid_step", 1))
+        proc.lottery = copy.deepcopy(d.get("lottery", []))
         return proc
 
 
@@ -352,22 +377,22 @@ def start_procedure(league: League, seed: int, config: GenerationConfig, parts: 
     if settings.gen_config is None:
         object.__setattr__(settings, "gen_config", config)
     candidates = make_candidates(league, seed, config, parts, settings, year, calibration, id_prefix)
-    cuts = ceiling_cuts(candidates, settings.ceiling_shares)
-    return OffseasonProcedure(year, seed, draft_order(league, records), settings.rounds, settings.market_rounds, cuts, candidates=candidates, ranks=standing_ranks(league.teams, records))
+    cuts = grade_cuts(candidates, settings.grade_shares)
+    return OffseasonProcedure(year, seed, draft_order(league, records), settings.rounds, settings.market_rounds, cuts, candidates=candidates, ranks=standing_ranks(league.teams, records), item_stats=item_stats(candidates))
 
 
 # ---- 評価 ----
 
 def scout_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> ScoutReport:
-    return report(player, team_id, proc.seed, sd, proc.cuts, settings.margin_z, proc.method)
+    return report(player, team_id, proc.seed, sd, proc.cuts, proc.item_stats, settings.comment)
 
 
 def cached_value(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict) -> tuple[float, str]:
-    """総合の推定値と天井(手続きの間は使い回す。同じ入力なら同じ値)。"""
+    """総合の推定値と評価(手続きの間は使い回す。同じ入力なら同じ値)。"""
     key = (team_id, player.id)
     v = proc._cache.get(key)
     if v is None:
-        v = quick_value(player, team_id, proc.seed, sd, proc.cuts, proc.method)
+        v = quick_value(player, team_id, proc.seed, sd, proc.cuts)
         proc._cache[key] = v
     return v
 
@@ -395,9 +420,9 @@ def ai_release(team: Team, proc: OffseasonProcedure, sd: dict, settings: DraftSe
 
 
 def ai_value(player: Player, team: Team, proc: OffseasonProcedure, sd: dict, settings: DraftSettings, need: dict[str, int], surplus: set[str] | None = None) -> float:
-    """AI が候補につける点数:総合の推定値 + 天井の加点 + 足りないポジションなら加点 − 人数の目安を超えているポジションなら減点。"""
-    est, ceiling = cached_value(proc, player, team.id, sd)
-    v = est + float(settings.ai("ceiling_bonus")[ceiling])
+    """AI が候補につける点数:総合の推定値 + 評価の加点 + 足りないポジションなら加点 − 人数の目安を超えているポジションなら減点。"""
+    est, grade = cached_value(proc, player, team.id, sd)
+    v = est + float(settings.ai("grade_bonus")[grade])
     if player.position in need or (player.role == BATTER and "batter" in need):
         v += float(settings.ai("need_bonus"))
     elif surplus and player.position in surplus:
@@ -436,12 +461,11 @@ def _entry_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: di
 
 
 def entry_summary(scouting: dict | None) -> dict:
-    """入団時の評価の要約(履歴に残す公開用の値:総合の推定値・ふれ幅・天井・方式の版。D-216)。"""
+    """入団時の評価の要約(履歴に残す公開用の値:評価(A〜E)と一言。D-216、D-368)。"""
     if not scouting:
         return {}
     r = ScoutReport.from_dict(scouting)
-    pub = r.to_public()
-    return {"overall": pub["overall"], "margin": pub["margin"], "ceiling": pub["ceiling"], "method": r.method}
+    return {"grade": r.grade, "comment": r.comment}
 
 
 def join(team: Team, player: Player, proc: OffseasonProcedure, sd: dict, settings: DraftSettings) -> None:

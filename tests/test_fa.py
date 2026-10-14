@@ -11,7 +11,7 @@ from pennant import api
 from pennant import fa as famod
 from pennant.config import ConfigError
 from pennant.contracts import team_salary
-from pennant.negotiation import judge, load_negotiation_settings, validate_negotiation_settings
+from pennant.negotiation import load_negotiation_settings, offer_score, validate_negotiation_settings
 from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 
 NEG = load_negotiation_settings()
@@ -160,12 +160,12 @@ def test_fa_market_rounds_offers_and_constraints(season_end):
 
 
 def test_player_prefers_better_offer():
-    """同じ球団の条件で、年俸を上げた提示の方が満足度が高い。"""
-    pref = {"salary": 0.6, "playing_time": 0.2, "winning": 0.2}
+    """同じ球団の条件で、年俸を上げた提示の方が点数が高い。元の球団は愛着の分だけ高い(D-365)。"""
     ctx = {"rank": 0, "slots": 2.0, "standing": 3, "league_size": 6}
-    low = judge(NEG, pref, 1, 10000, 10000, 30, ctx, 0.0)
-    high = judge(NEG, pref, 1, 12000, 10000, 30, ctx, 0.0)
-    assert high["score"] > low["score"]
+    low = offer_score(NEG, 10000, 10000, 1.0, False, 1, 30, ctx, 0.0)
+    high = offer_score(NEG, 12000, 10000, 1.0, False, 1, 30, ctx, 0.0)
+    home = offer_score(NEG, 10000, 10000, 1.0, True, 1, 30, ctx, 0.0)
+    assert high > home > low
     assert famod.round_salary(10000, 1.2, 100) == 12000 and famod.round_salary(10000, 0.9, 100) == 10000  # 算定を下回らない
 
 
@@ -202,7 +202,7 @@ def test_fa_hidden_info_is_not_shown(season_end):
 def test_save_round_trip(season_end):
     g = _fresh(season_end)
     data = save_game(g.state)
-    assert SAVE_FORMAT_VERSION == 15
+    assert SAVE_FORMAT_VERSION == 16
     again = load_game(data)
     assert [p.fa_seasons for p in again.league.all_players()] == [p.fa_seasons for p in g.state.league.all_players()]
     assert again.procedure.fa_info == g.state.procedure.fa_info and [p.id for p in again.procedure.fa_pool] == [p.id for p in g.state.procedure.fa_pool]

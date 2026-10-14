@@ -1,10 +1,10 @@
-// ドラフトの画面(判断の画面。①b。D-296〜D-299):列は 名前・総合の推定値とふれ幅・天井・年齢・出身・ポジション・加入後の序列。
-// 並べ替えは列見出しのタップ。絞り込みの既定は「未指名だけ」。手薄なポジションに ◆。「次の自分の番まで進める」「パス」は状態バー(procedure.js)。
-// 名前を押すと項目別の推定値と「指名」のボタン(自分の番のとき)
+// ドラフトの画面(判断の画面。①b。作り直し③。D-296〜D-299、D-368、D-369):列は 名前・評価(A〜E)・スカウトの一言・年齢・出身・ポジション・加入後の序列。
+// 能力の数値は見せない(入団したら見える)。並べ替えは列見出しのタップ。絞り込みの既定は「未指名だけ」。手薄なポジションに ◆。
+// 1 巡目は全球団の入札と抽選:名前を押すと「入札する」のボタン。2 巡目からは順番に指名(「次の自分の番まで進める」「パス」は状態バー。procedure.js)
 
 import { state } from "./core.js";
 import { renderCurrent } from "./screens.js";
-import { el } from "./parts.js";
+import { el, playerLink, table } from "./parts.js";
 import { runProc } from "./procedure.js";
 import { decisionFilters, decisionTable, fetchDecision } from "./decision.js";
 
@@ -16,13 +16,32 @@ export async function draftSection(v, token) {
   const onName = (p) => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); };
   const detail = (p) => {
     if (ps.open !== p.player_id) return null;
+    const sc = p.scouting || {};
     const box = el("div", { className: "offer-panel", id: "draft-panel", dataset: { playerId: p.player_id } },
-      el("p", { className: "small" }, `項目別の推定値 ± ふれ幅:${p.scouting.items.map((i) => `${i.label} ${i.text}`).join(" / ")}`));
-    if (p.open && v.is_my_turn) box.append(el("div", { className: "row" }, el("button", { id: "draft-pick", type: "button", disabled: state.running, onclick: () => runProc("pick", { player_id: p.player_id }) }, `${v.round} 巡目で指名する`)));
+      el("p", { className: "small" }, `スカウトの評価 ${sc.grade || "-"}:「${sc.comment || ""}」(能力は入団すると見えます)`));
+    if (p.open && v.is_my_turn) {
+      const label = v.bidding ? "1 巡目に入札する" : `${v.round} 巡目で指名する`;
+      box.append(el("div", { className: "row" }, el("button", { id: "draft-pick", type: "button", disabled: state.running, onclick: () => draftPick(p.player_id) }, label)));
+    }
     return box;
   };
-  return [
+  const out = [
     decisionFilters("draft", data),
     decisionTable("draft", data, truth, { onName, detail, rowClass: (p) => (ps.open === p.player_id ? "selected" : !p.open ? "muted" : "") }),
   ];
+  if (v.lottery && v.lottery.length) out.push(lotteryTable(v.lottery));
+  return out;
+}
+
+async function draftPick(playerId) {
+  await runProc("pick", { player_id: playerId }, (view) => { state.proc.lastBid = view.last_bid || null; });
+}
+
+// 1 巡目の入札の結果(閉じた形で、表の下に置く)
+function lotteryTable(rows) {
+  const columns = [{ key: "step", label: "回" }, { key: "teams", label: "入札した球団" }, { key: "winner", label: "交渉権" }, { key: "position", label: "ポジション" }];
+  const list = rows.map((x) => ({ ...x, values: { step: `${x.step} 回目`, teams: x.team_names.join("、"), winner: x.teams.length > 1 ? `${x.winner_name}(抽選)` : x.winner_name, position: x.position_label } }));
+  const contested = rows.filter((x) => x.teams.length > 1).length;
+  return el("details", { id: "draft-lottery" }, el("summary", {}, `1 巡目の入札の結果(${rows.length} 人・抽選 ${contested} 回)`),
+    table({ firstLabel: "選手", columns, rows: list, first: (x) => [playerLink(x.name, x.player_id)], rowClass: (x) => (x.won ? "mine" : x.is_mine ? "selected" : ""), fluid: true }));
 }

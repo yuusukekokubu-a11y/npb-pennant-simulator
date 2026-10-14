@@ -64,8 +64,8 @@ from .save_checks import (  # RATING_RANGE・GROWTH_TYPES は、分ける前と�
 from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
-FIRST_REBUILT_VERSION = 15  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362)
-SAVE_FORMAT_VERSION = 15  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)
+FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
+SAVE_FORMAT_VERSION = 16  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -112,7 +112,7 @@ class GameState:
     team_funds: dict = field(default_factory=dict)  # 球団の資金(球団 → 万円。年俸の合計の上限。毎年のオフの最初に増減する。D-353、D-354)
     contract_rates: dict = field(default_factory=dict)  # 年俸の単価の推移(シーズン番号(文字)→ 1 WAR あたりの万円。D-234)
     contract_settings: object | None = None  # 契約の設定(None は設定ファイル)
-    negotiation_settings: object | None = None  # 交渉(志望の判定)の設定(None は設定ファイル。F3-2b)
+    negotiation_settings: object | None = None  # FA で選手が選ぶ点数と FA の設定(None は設定ファイル。D-365)
 
     def __post_init__(self) -> None:
         from .draft import load_draft_settings
@@ -286,7 +286,7 @@ def _upgrade(manifest: dict, state: dict, p: _Problems) -> tuple[dict, dict] | N
     if version < FIRST_REBUILT_VERSION:
         p.add(
             "manifest.json.format_version",
-            f"このセーブデータは作り直しの前の版(バージョン {version})で作られているため、使えません(能力やお金の仕組みが変わりました)。新しく始めてください",
+            f"このセーブデータは作り直しの前の版(バージョン {version})で作られているため、使えません(能力・お金・FA とドラフトの仕組みが変わりました)。新しく始めてください",
         )
         return None
     bundle = {"manifest": manifest, "state": state}
@@ -591,11 +591,6 @@ def load_game(data: bytes) -> GameState:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
     out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"])
-    from .negotiation import ensure_preferences
-
-    ensure_preferences(out.league.all_players(), out.league.seed, out.negotiation_settings)  # 版10以前:志望をシードから補う(D-253)
-    if out.procedure is not None:
-        ensure_preferences(list(out.procedure.candidates) + list(out.procedure.market) + list(out.procedure.fa_pool), out.league.seed, out.negotiation_settings)
     if any(p_.fa_seasons is None for p_ in out.league.all_players()):
         from .fa import initialize_seasons
 

@@ -1,15 +1,16 @@
-"""オフの手続き(F3-1。D-201〜D-207):契約更改(F3-2b)→ 自由契約 → FA(F3-2c)→ ドラフト → 自由契約市場 → 自動補充。
+"""オフの手続き(F3-1。D-201〜D-207):契約(更改と自由契約)→ FA → ドラフト → 自由契約市場 → 自動補充。
 
 年度の確定(加齢・能力の更新・引退)の後に、OffseasonProcedure を作って段階ごとに進める。
-  - 契約更改(renewal):契約が満了した選手に提示し、選手が志望で受ける・断るを決める(F3-2b。negotiation.py。D-243〜D-252)
-  - 自由契約(release):球団が選手を手放す。AI は自球団のスカウト評価の低い選手を上限まで(方針は ai_release)
-  - FA(fa):更改を断った FA 権保持者の提示ラウンド制の市場(F3-2c。fa.py。D-258〜D-264)
-  - ドラフト(draft):ウェーバー方式(前年の勝率が低い順。巡ごとに往復)。空き枠がない球団はパス。AI は ai_choose
-  - 市場(market):手放された選手 + FA で決まらなかった選手 + 指名されなかった候補。FA と同じ提示の方式で 1 ラウンド(market.py。D-300)。
-    志望の判定がない事前運転は今までの順番の方式(D-301)。残った選手はリーグを去る
+  - 契約(renewal / release):満了した選手は査定の年俸で自動で更改し、FA 権保持者は確率で宣言する。球団は選手を手放せる
+    (contract_stage.py。作り直し②。AI の自由契約の方針は ai_release)
+  - FA(fa):宣言した選手の提示ラウンド制の市場。選手は金額を中心に選ぶ(fa.py。D-258〜D-264、D-365)
+  - ドラフト(draft):1 巡目は全球団の入札と抽選(run_bidding。D-369)。2 巡目から前年の勝率が低い球団から順に往復。
+    空き枠・資金がない球団はパス。AI は ai_choose
+  - 市場(market):手放された選手 + FA で決まらなかった選手 + 指名されなかった候補。年俸は自動で、各球団の獲得の希望を
+    前年の順位が低い球団から 1 人ずつ(market.py。D-370)。残った選手はリーグを去る
   - 完了(done):70 人に満たない球団を自動補充(offseason.replenish。F2 の穴埋め)
 AI の判断は、真の能力ではなく、球団ごとのスカウト評価(scouting.quick_value)を使う(D-205)。判断の関数は差し替え可能。
-評価のずれ(sd)は {"common", "item"} の 2 層(D-212)。手続きは評価方式の版(method)を持つ(D-215)。
+評価のずれ(sd)は {"common", "item"} の 2 層(D-212)。
 操作する球団がないとき(観戦のみ)は、run_ai_offseason で一気に進める。事前運転も同じ関数を使う(D-210)。
 """
 
@@ -22,7 +23,6 @@ from .config import GenerationConfig, NameParts
 from .contracts import set_contract, team_salary
 from .models import League, Player, Team
 from .names import NameGenerator
-from .negotiation import ensure_preferences
 from .offseason import OffseasonSettings, PlayerNote, replenish
 from .season import derive_seed
 from .market import close_market, uses_offers
@@ -87,8 +87,8 @@ from .contract_stage import (  # noqa: F401
 )
 
 
-def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, dict], settings: DraftSettings, ctx: ContractContext | None = None) -> None:
-    """今の球団が選手を指名(獲得)して契約し、次の順番へ。ドラフトは巡ごとの年俸、市場は算定した年俸(D-235)。"""
+def _sign(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, dict], settings: DraftSettings, ctx: ContractContext | None, extra: dict | None = None) -> None:
+    """球団が選手を指名(獲得)して契約する(順番は進めない)。ドラフトは巡ごとの年俸、市場は算定した年俸(D-235)。"""
     pool = pool_of(proc)
     offer = offer_for(team, player, proc, ctx)
     pool.remove(player)
@@ -97,8 +97,86 @@ def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[st
     if offer is not None:
         salary, years, _ = offer
         set_contract(player, salary, years, proc.year + 1, proc.phase)
-    proc.picks.append({"phase": proc.phase, "round": proc.round, "team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age, "salary": salary, **entry_summary(player.scouting)})
+    proc.picks.append({"phase": proc.phase, "round": proc.round, "team_id": team.id, "player_id": player.id, "name": player.name, "role": player.role, "position": player.position, "age": player.age, "salary": salary, **entry_summary(player.scouting), **(extra or {})})
+
+
+def take(proc: OffseasonProcedure, team: Team, player: Player, scout_sd: dict[str, dict], settings: DraftSettings, ctx: ContractContext | None = None) -> None:
+    """今の球団が選手を指名(獲得)して契約し、次の順番へ。"""
+    _sign(proc, team, player, scout_sd, settings, ctx)
     advance_turn(proc)
+
+
+# ---- 1 巡目の入札と抽選(D-369) ----
+
+def bid_pending(proc: OffseasonProcedure) -> list[str]:
+    """1 巡目がまだ決まっていない球団(指名の順番の並び。パスした球団は決まった扱い)。"""
+    done = {x["team_id"] for x in proc.picks if x["phase"] == "draft" and int(x["round"]) == 1}
+    return [tid for tid in proc.order if tid not in done]
+
+
+def _bid_pass(proc: OffseasonProcedure, team_id: str, reason: str) -> None:
+    proc.picks.append({"phase": "draft", "round": 1, "team_id": team_id, "player_id": None, "name": "", "role": "", "position": "", "age": None, "note": reason, "step": proc.bid_step})
+
+
+def bid_blocked(team: Team, proc: OffseasonProcedure, ctx: ContractContext | None) -> str | None:
+    """入札できない理由(空き枠なし full・資金不足 budget・候補なし skip)。入札できるなら None。"""
+    if len(team.players) >= MAX_ROSTER:
+        return "full"
+    if not proc.candidates:
+        return "skip"
+    if ctx is not None and ctx.hard() and not can_afford(team, ctx.settings.rookie_salary(1), ctx):
+        return "budget"
+    return None
+
+
+def pass_bid(proc: OffseasonProcedure, team_id: str) -> None:
+    """あなたの球団が 1 巡目の入札をしない(「パス」「次の手続きへ」)。"""
+    if team_id in bid_pending(proc):
+        _bid_pass(proc, team_id, "pass")
+
+
+def run_bidding(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose, ctx: ContractContext | None = None, my_bid: Player | None = None) -> bool:
+    """1 巡目の入札を進める(D-369)。全球団が同時に 1 人ずつ入札し、同じ候補に重なったら抽選(乱数は derive_seed(手続きのシード,
+    "lottery:<回>:<選手>"))。外れた球団は残りの候補から入札し直す。あなたの入札が要るときは True で止まる(my_bid を渡すと、それを入札にする)。
+    全球団が決まったら 2 巡目へ進めて False。"""
+    teams = {t.id: t for t in league.teams}
+    while not proc.bid_done:
+        for tid in bid_pending(proc):
+            why = bid_blocked(teams[tid], proc, ctx)
+            if why is not None:
+                _bid_pass(proc, tid, why)
+        pending = bid_pending(proc)
+        if not pending:
+            break
+        bids: dict[str, Player] = {}
+        if my_team_id in pending:
+            if my_bid is None:
+                return True
+            bids[my_team_id] = my_bid
+            my_bid = None
+        for tid in pending:
+            if tid == my_team_id:
+                continue
+            choice = policy(teams[tid], proc.candidates, proc, scout_sd[tid], settings, mins, min_batters, "draft")
+            if choice is None:
+                _bid_pass(proc, tid, "skip")
+            else:
+                bids[tid] = choice
+        by_player: dict[str, list[str]] = {}
+        for tid in proc.order:
+            if tid in bids:
+                by_player.setdefault(bids[tid].id, []).append(tid)
+        for pid in sorted(by_player):
+            tids = by_player[pid]
+            player = bids[tids[0]]
+            winner = tids[0] if len(tids) == 1 else random.Random(derive_seed(proc.seed, f"lottery:{proc.bid_step}:{pid}")).choice(tids)
+            proc.lottery.append({"step": proc.bid_step, "player_id": pid, "name": player.name, "position": player.position, "teams": list(tids), "winner": winner})
+            _sign(proc, teams[winner], player, scout_sd, settings, ctx, {"step": proc.bid_step, "lottery": len(tids) > 1})
+        proc.bid_step += 1
+    proc.bid_done = True
+    proc.round = 2
+    proc.index = 0
+    return False
 
 
 def affordable_pool(team: Team, proc: OffseasonProcedure, ctx: ContractContext | None) -> list[Player]:
@@ -137,8 +215,10 @@ def _choose_within_budget(team: Team, proc: OffseasonProcedure, sd: dict, settin
 
 def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose, ctx: ContractContext | None = None) -> bool:
     """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。
-    資金が足りない球団はパスする(note="budget")。"""
+    資金が足りない球団はパスする(note="budget")。ドラフトの 1 巡目は入札(run_bidding)で、あなたの入札が要るときも True で止まる。"""
     teams = {t.id: t for t in league.teams}
+    if proc.bidding() and run_bidding(league, proc, scout_sd, settings, my_team_id, mins, min_batters, policy, ctx):
+        return True
     while not phase_finished(proc):
         tid = proc.current_team()
         if tid is None:
@@ -225,8 +305,6 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
             if ctx is not None:  # 自動補充は最低年俸(資金に関わらず結べる。D-235)
                 salary = ctx.settings.minimum
                 set_contract(p, salary, ctx.settings.default_years, proc.year + 1, "fill")
-                if ctx.negotiation is not None:
-                    ensure_preferences([p], ctx.league_seed, ctx.negotiation)
             added.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
             proc.filled.append({"phase": "fill", "round": 0, "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, "salary": salary, **entry_summary(p.scouting)})
     proc.market = []
@@ -272,7 +350,7 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
             else:
                 finish_fa_market(proc)
             next_phase(proc)
-        elif proc.phase == "market" and uses_offers(ctx):  # 市場は提示の方式(D-300)。志望の判定がない事前運転は今までの順番の方式(D-301)
+        elif proc.phase == "market" and uses_offers(ctx):  # 市場は年俸が自動で、前年の順位が低い球団から 1 人ずつ(D-370)
             if not proc.market_done:
                 close_market(league, proc, ctx, my_team_id, scout_sd, settings, my_ai=True)
             next_phase(proc)

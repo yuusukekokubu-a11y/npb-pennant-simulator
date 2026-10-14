@@ -43,8 +43,8 @@ class FaMixin:
             "salary_editable": True,
             "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years, "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding,
             "results": results,
-            "note": f"FA を宣言した選手に、年数(1〜5 年)と年俸を提示できます。全 {int(fa['rounds'])} ラウンドで、各ラウンドの終わりに選手が受けた提示の中から志望(年俸・出場機会・勝利。出場機会と勝利は提示した球団での見込み)で一番よいものを選びます。"
-            + "決まらなければ次のラウンドへ、最後のラウンドでも決まらなければ自由契約市場に回ります。元の球団も同じ立場で提示します。補償はありません。"
+            "note": f"FA を宣言した選手に、年数(1〜5 年)と年俸を提示できます。全 {int(fa['rounds'])} ラウンドで、各ラウンドの終わりに選手が受けた提示の中から、金額を中心に、年数・出場機会・勝てるチームも考えて一番よいものを選びます。"
+            + "決まらなければ次のラウンドへ、最後のラウンドでも決まらなければ自由契約市場に回ります。元の球団も同じ条件で提示します(選手は元の球団に少し愛着があります)。補償はありません。"
             + ("総年俸と提示中の年俸の合計が資金を超える提示はできません。" if ctx.hard() else "")
             + "「ラウンドを締める」で、AI 球団の提示と合わせて結果が出ます。「次の手続きへ」「おまかせ」は、残りのラウンドを AI と同じ方針で進めます。",
         }

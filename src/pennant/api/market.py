@@ -1,4 +1,8 @@
-"""画面から呼ぶ操作の関数のうち、自由契約市場の提示(FA と同じ提示の方式で 1 ラウンド。①b。D-300)。"""
+"""画面から呼ぶ操作の関数のうち、自由契約市場(獲得の希望・取り消し・締める。作り直し③。D-370)。
+
+年俸は自動(プロの選手は算定、指名されなかった候補は最低年俸。1 年)。希望は入れた順が優先の順。
+市場を締めると、前年の順位が低い球団から 1 人ずつ獲得する(market.close_market)。
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from ..fa import MAX_ROSTER
 
 
 class MarketMixin:
-    """Game の一部:自由契約市場の提示(提示・取り消し・締める)。"""
+    """Game の一部:自由契約市場(獲得の希望・取り消し・締める)。"""
 
     def _market_info(self, proc) -> dict:
         """市場の段階の情報(公開用)。"""
@@ -25,56 +29,38 @@ class MarketMixin:
         return {
             "done": bool(proc.market_done), "uses_offers": marketmod.uses_offers(ctx),
             "counts": {"pool": len(proc.market), "signed": len(proc.market_results), "offers": len(proc.market_offers), "mine": sum(1 for x in proc.market_results if x["team_id"] == my)},
-            "offers": [{"player_id": pid, "name": by_id[pid].name if pid in by_id else "", "years": o["years"], "salary": o["salary"], "salary_text": f"{int(o['salary']):,} 万円"} for pid, o in proc.market_offers.items()],
+            "offers": [{"player_id": pid, "rank": i, "name": by_id[pid].name if pid in by_id else "", "years": o["years"], "salary": o["salary"], "salary_text": f"{int(o['salary']):,} 万円"} for i, (pid, o) in enumerate(proc.market_offers.items(), start=1)],
             "committed": committed, "committed_text": f"{committed:,} 万円",
             "space": None if team is None else MAX_ROSTER - len(team.players) - len(proc.market_offers),
             "total": None if team is None else team_salary(team), "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
-            "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years, "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding,
+            "order": [{"team_id": t, "team_name": names.get(t, ""), "is_mine": t == my} for t in proc.order],
             "results": results,
         }
 
     def _market_open_player(self, player_id: str):
         proc = self._proc()
         if proc.phase != "market" or proc.market_done:
-            raise ValueError("今は市場で提示できる段階ではありません")
+            raise ValueError("今は市場で獲得を希望できる段階ではありません")
         player = next((p for p in proc.market if p.id == str(player_id)), None)
         if player is None:
-            raise ValueError("その選手は、市場で交渉できる選手ではありません")
+            raise ValueError("その選手は、市場で獲得できる選手ではありません")
         return proc, player
 
-    def offseason_market_offer(self, player_id: str, years: int, salary: int | None = None) -> dict:
-        """あなたの球団の市場の提示(出し直しは上書き)。年俸の決まりは FA と同じ。"""
-        state = self.state
+    def offseason_market_offer(self, player_id: str, years: int | None = None, salary: int | None = None) -> dict:
+        """あなたの球団の獲得の希望(D-370)。年俸と年数は自動(years・salary は前の形の呼び出しのため受け取るが使わない)。
+        すでに希望している選手は、そのまま(順番は変えない)。"""
         proc, player = self._market_open_player(player_id)
         team = self._my_team()
-        cs = state.contract_settings
-        try:
-            years = int(years)
-        except (TypeError, ValueError):
-            raise ValueError("年数は整数で入れてください") from None
-        if not cs.min_years <= years <= cs.max_years:
-            raise ValueError(f"年数は {cs.min_years}〜{cs.max_years} 年にしてください(値: {years})")
+        if player.id in proc.market_offers:
+            return self.offseason_view()
+        if len(team.players) + len(proc.market_offers) + 1 > MAX_ROSTER:
+            raise ValueError("空き枠が足りません(70 人。希望中の選手も数えます)")
         ctx = self._contract_ctx()
-        calc = marketmod.offer_terms(player, team.id, ctx)[0]
-        if salary in (None, ""):
-            salary = calc
-        else:
-            try:
-                salary = int(salary)
-            except (TypeError, ValueError):
-                raise ValueError("年俸は整数(万円)で入れてください") from None
-            if salary < cs.minimum:
-                raise ValueError(f"年俸は最低年俸({cs.minimum:,} 万円)以上にしてください")
-            if salary > cs.base_budget:
-                raise ValueError(f"年俸が大きすぎます({cs.base_budget:,} 万円まで)")
-        others = {pid: o for pid, o in proc.market_offers.items() if pid != player.id}
-        if len(team.players) + len(others) + 1 > MAX_ROSTER:
-            raise ValueError("空き枠が足りません(70 人。提示中の選手も数えます)")
+        salary, years, _ = marketmod.market_terms(proc, player, team.id, ctx)
         cap = ctx.cap(team.id)
-        if ctx.hard() and cap is not None and team_salary(team) + sum(int(o["salary"]) for o in others.values()) + salary > cap:
-            room = cap - team_salary(team) - sum(int(o["salary"]) for o in others.values())
-            raise ValueError(f"総年俸と提示中の年俸の合計が資金(年俸の合計の上限)を超えます(この選手に出せるのは {max(0, room):,} 万円まで)")
-        proc.market_offers[player.id] = {"years": years, "salary": int(salary)}
+        if ctx.hard() and cap is not None and team_salary(team) + salary > cap:
+            raise ValueError(f"この選手の年俸({salary:,} 万円)を足すと、資金(年俸の合計の上限)を超えます(あと {max(0, cap - team_salary(team)):,} 万円まで)")
+        proc.market_offers[player.id] = {"years": int(years), "salary": int(salary)}
         self.dirty = True
         return self.offseason_view()
 
@@ -85,7 +71,7 @@ class MarketMixin:
         return self.offseason_view()
 
     def offseason_market_close(self) -> dict:
-        """市場を締める:AI 球団の提示と合わせて、選手が選ぶ。戻り値は画面の情報と、成立した契約。"""
+        """市場を締める:AI 球団の希望と合わせて、前年の順位が低い球団から 1 人ずつ獲得する。戻り値は画面の情報と、成立した契約。"""
         state = self.state
         proc = self._proc()
         if proc.phase != "market" or proc.market_done:

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import math
-from fractions import Fraction
 
-from .. import draft as draftmod
+from .. import ability_model, draft as draftmod
 from ..abilities import POSITION_LABELS
 from ..draft import stage_of
-from ..market import offer_terms
+from ..market import market_terms
 from .common import (
     BATS_LABELS,
     CONTRACT_GROUPS,
@@ -25,7 +24,7 @@ from .common import (
 )
 
 DECISION_STAGES = ("fa", "draft", "market")
-GRADE_ORDER = {"S": 5, "A": 4, "B": 3, "C": 2, "D": 1}
+GRADE_ORDER = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}
 SHOW_LABELS = {"fa": ("未契約だけ", "契約した選手も"), "draft": ("未指名だけ", "指名済みも"), "market": ("未契約だけ", "契約した選手も")}
 THIN_BOTTOM = 9  # 手薄の印:一軍相当の見込みの WAR が、12 球団の中で下から 4 番目以内(自球団より強い球団が 9 つ以上。D-303)
 THIN_SHORT = 2  # 手薄の印:人数が人数の目安より 2 人以上少ない(目安の合計が 70 人なので、1 人の差はどこかに必ず出る。D-303)
@@ -39,13 +38,14 @@ COL = {
     "usage": {"key": "usage", "label": "出場", "type": "count", "better": "high"},
     "former": {"key": "former", "label": "前の所属", "type": "text", "better": "low"},
     "status": {"key": "status", "label": "状態", "type": "text", "better": "low"},
-    "overall": {"key": "overall", "label": "総合(推定)", "type": "metric", "better": "high"},
-    "ceiling": {"key": "ceiling", "label": "天井", "type": "metric", "better": "high"},
+    "grade": {"key": "grade", "label": "評価", "type": "metric", "better": "high"},
+    "comment": {"key": "comment", "label": "スカウトの一言", "type": "text", "better": "low"},
+    "ability": {"key": "ability", "label": "総合", "type": "metric", "better": "high"},
 }
 STAGE_COLUMNS = {
-    "fa": ["age", "pos", "depth", "calc", "usage", "former", "status"],
-    "draft": ["overall", "ceiling", "age", "origin", "pos", "depth"],
-    "market": ["overall", "ceiling", "age", "pos", "depth", "calc", "usage", "former", "status"],
+    "fa": ["ability", "age", "pos", "depth", "calc", "usage", "former", "status"],
+    "draft": ["grade", "comment", "age", "origin", "pos", "depth"],
+    "market": ["ability", "age", "pos", "depth", "calc", "usage", "former", "status"],
 }
 WAR_ALL = {"key": "war_all", "label": "WAR", "type": "metric", "category": "war", "better": "high"}
 
@@ -54,7 +54,7 @@ class DecisionMixin:
     """Game の一部:判断の画面の表(FA・ドラフト・市場)と、加入後の序列・手薄なポジション・自球団の状況。"""
 
     def _depth(self, player, team, ctx) -> tuple[int, bool]:
-        """加入後の序列(1 から)と、一軍の枠の目安に入るか(志望の出場機会の軸と同じ計算。D-250、D-297)。"""
+        """加入後の序列(1 から)と、一軍の枠の目安に入るか(FA の点数の出場機会と同じ計算。D-297、D-365)。"""
         est = ctx.scout(player, team.id)[0]
         rank = sum(1 for q in team.players if q.id != player.id and q.position == player.position and ctx.scout(q, team.id)[0] > est)
         slots = (ctx.slots or {}).get(player.position, 1.0)
@@ -171,7 +171,7 @@ class DecisionMixin:
         columns = ([metric] if metric else []) + base + [c for c in kind_cols if not metric or c["key"] != metric["key"]]
         keys = {c["key"]: c for c in columns}
         if not sort:
-            sort = metric["key"] if metric else "overall"
+            sort = metric["key"] if metric else "grade"
             order = "desc"
         if sort in keys:
             info = keys[sort]
@@ -191,6 +191,7 @@ class DecisionMixin:
         former = {x["player_id"]: x["team_id"] for x in proc.released}
         former.update({pid: x["former_team"] for pid, x in proc.fa_info.items()})
         picks = {x["player_id"]: x for x in proc.picks if x["player_id"]}
+        cfg = state.gen_config
         rows = []
         for p, holder in self._decision_players(stage, show):
             if role is not None and p.position not in CONTRACT_GROUPS[group][1]:
@@ -200,13 +201,19 @@ class DecisionMixin:
             cells["pos"] = (positions.index(p.position), POSITION_LABELS[p.position] + (" ◆" if p.position in thin else ""))
             depth, in_slots = self._depth(p, team, ctx)
             cells["depth"] = (depth, f"{depth} 番手" + (" ●" if in_slots else ""))
-            sc = self._report_public(p, my)
-            cells["overall"] = (Fraction(str(sc["overall"])), sc["overall_text"])
-            cells["ceiling"] = (GRADE_ORDER.get(sc["ceiling"], 0), sc["ceiling"])
+            amateur = stage == "draft" or (stage == "market" and holder is None and p.id not in former)  # 市場に並ぶ、指名されなかった候補は評価と一言だけ(D-368)
+            sc = self._report_public(p, my) if amateur else None
+            if sc is not None:
+                cells["grade"] = (GRADE_ORDER.get(sc["grade"], 0), sc["grade"])
+                cells["comment"] = (sc["comment"], sc["comment"])
+                cells["ability"] = ((0, GRADE_ORDER.get(sc["grade"], 0)), f"評価 {sc['grade']}")
+            else:  # プロの選手は能力が見える(D-335、D-370)
+                shown = ability_model.display(cfg, ability_model.overall(p))
+                cells["ability"] = ((1, shown), f"{ability_model.rank(cfg, shown)} {shown}")
             cells["origin"] = (p.origin or "", ORIGIN_LABELS.get(p.origin, "") if p.origin else "—")
             row = {"player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "position_label": POSITION_LABELS[p.position], "age": p.age,
                    "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws), "thin": p.position in thin, "in_slots": in_slots,
-                   "scouting": sc, "open": holder is None}
+                   "scouting": sc, "amateur": amateur, "open": holder is None}
             if stage == "fa":
                 info_fa = proc.fa_info[p.id]
                 calc = int(info_fa["calc_salary"])
@@ -216,23 +223,23 @@ class DecisionMixin:
                 row["offer"] = proc.fa_offers.get(p.id)
                 row["deal"] = {"calc_salary": calc, "calc_text": f"{calc:,} 万円", "expected": round(float(info_fa["expected"]), 2), "former_team_name": names.get(info_fa["former_team"], ""), "status": info_fa["status"]}
             elif stage == "market":
-                calc, years, exp = offer_terms(p, my, ctx)
+                calc, years, exp = market_terms(proc, p, my, ctx, former)
                 mine = proc.market_offers.get(p.id)
                 if holder is not None:
                     x = picks.get(p.id, {})
-                    cells["status"] = (3, f"契約({names.get(holder, '')}・{x.get('years', 1)} 年・{int(x.get('salary') or 0):,})")
+                    cells["status"] = (3, f"契約({names.get(holder, '')}・{int(x.get('salary') or 0):,})")
                 elif mine:
-                    cells["status"] = (0, f"提示中({mine['years']} 年・{int(mine['salary']):,})")
+                    cells["status"] = (0, f"希望 {list(proc.market_offers).index(p.id) + 1} 番目")
                 else:
                     cells["status"] = (1, "未契約")
                 fid = former.get(p.id)
                 cells["former"] = (names.get(fid, "") if fid else "~", names.get(fid, "") if fid else "候補")
                 row["offer"] = mine
-                row["deal"] = {"calc_salary": calc, "calc_text": f"{calc:,} 万円", "expected": round(exp, 2), "former_team_name": names.get(fid, "") if fid else "", "status": "signed" if holder else "open"}
+                row["deal"] = {"calc_salary": calc, "calc_text": f"{calc:,} 万円", "expected": None if amateur else round(exp, 2), "former_team_name": names.get(fid, "") if fid else "", "status": "signed" if holder else "open"}
             else:
                 if holder is not None:
                     x = picks.get(p.id, {})
-                    cells["status"] = (1, f"指名({names.get(holder, '')}・{x.get('round', '-')} 巡)")
+                    cells["status"] = (1, f"指名({names.get(holder, '')}・{x.get('round', '-')} 巡{'・抽選' if x.get('lottery') else ''})")
                 else:
                     cells["status"] = (0, "未指名")
             if stage != "draft":

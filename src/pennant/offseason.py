@@ -220,7 +220,7 @@ def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts
     """新規開始のとき、試合をせずに年度の確定の処理だけを years 回回す(事前運転)。履歴は作らない。
     F3-1 からは、オフの手続き(自由契約・ドラフト・市場・自動補充。全球団 AI)を使う(D-210)。
     契約は資金つきで扱う(査定の更改・資金の超過の解消。成績がないので見込みは見せる能力から。順位がないので資金は増減しない)。
-    志望の判定と FA は行わない(新規開始の時間のため。D-254)。tiers は球団 → 規模(なければ全球団が中)。
+    FA は行わない(宣言しない。新規開始の時間のため。D-254)。ドラフト(1 巡目の入札)と市場(希望と順番)はゲームの中と同じ方式(D-370)。tiers は球団 → 規模(なければ全球団が中)。
     乱数は derive_seed(seed, "prerun:<年>")。戻り値は回した年数。progress には (終わった年数, 全年数) を知らせる。"""
     from .contracts import initial_funds, load_contract_settings
     from .draft import ContractContext, load_draft_settings, run_ai_offseason
