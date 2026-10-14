@@ -14,7 +14,7 @@ export const TABS = [
   { id: "games", label: "試合" },
 ];
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "review"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "review", "lineup"];
 export const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
 
 export const $ = (id) => document.getElementById(id);

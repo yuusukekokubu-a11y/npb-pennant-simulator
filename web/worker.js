@@ -54,6 +54,9 @@ const handlers = {
   offseason({ name, args }) {
     return parse(bridge.offseason(name, JSON.stringify(args || {})));
   },
+  lineup({ name, args }) {
+    return parse(bridge.lineup(name, JSON.stringify(args || {})));
+  },
 
   load({ bytes }) {
     const py = pyodide.toPy(bytes);

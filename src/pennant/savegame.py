@@ -65,7 +65,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 16  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)
+SAVE_FORMAT_VERSION = 17  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -221,17 +221,51 @@ def build_state(state: GameState) -> dict:
         "season": {
             "day": s.day,
             "rotation": dict(s.rotation),
+            "lineup_plans": {tid: _plain_plan(plan) for tid, plan in s.lineup_plans.items()},
             "games": [
                 {
                     "number": p.scheduled.number,
                     "rotation": p.context.rotation,
                     "fatigue": p.context.fatigue,
                     "starter_skipped": p.starter_skipped,
+                    **({"lineups": {tid: _plain_plan(x) for tid, x in p.context.lineups.items()}} if p.context.lineups else {}),
                 }
                 for p in s.played
             ],
         },
     }
+
+
+def _plain_plan(plan: dict) -> dict:
+    """打順の計画(D-373)を保存する形に。"""
+    out = {"style": str(plan.get("style") or "power"), "slots": None if plan.get("slots") is None else [[str(pid), str(pos)] for pid, pos in plan["slots"]]}
+    if plan.get("set_day") is not None:
+        out["set_day"] = int(plan["set_day"])
+    if plan.get("notice"):
+        out["notice"] = {"day": int(plan["notice"]["day"]), "reason": str(plan["notice"]["reason"])}
+    return out
+
+
+def _check_plan(d, where: str, team_players: set, p) -> dict | None:
+    """打順の計画の点検(D-373):型は決まったもの、スタメンは 9 つの枠に 1 人ずつ、そのチームの選手。"""
+    from .manager import LINEUP_POSITIONS, LINEUP_STYLES
+
+    if not isinstance(d, dict) or d.get("style") not in LINEUP_STYLES:
+        p.add(where, f"打順の型が正しくありません(使えるもの: {' / '.join(LINEUP_STYLES)})")
+        return None
+    slots = d.get("slots")
+    if slots is not None:
+        ok = isinstance(slots, list) and len(slots) == len(LINEUP_POSITIONS) and all(isinstance(x, list) and len(x) == 2 and all(isinstance(y, str) for y in x) for x in slots)
+        if not ok or sorted(pos for _, pos in slots) != sorted(LINEUP_POSITIONS) or len({pid for pid, _ in slots}) != len(slots) or any(pid not in team_players for pid, _ in slots):
+            p.add(f"{where}.slots", "スタメンの形が違います(9 つの守備位置に 1 人ずつ、そのチームの別々の選手)")
+            return None
+    out = {"style": d["style"], "slots": None if slots is None else [[pid, pos] for pid, pos in slots]}
+    if isinstance(d.get("set_day"), int):
+        out["set_day"] = d["set_day"]
+    n = d.get("notice")
+    if isinstance(n, dict) and isinstance(n.get("day"), int) and n.get("reason") in ("review", "roster"):
+        out["notice"] = {"day": n["day"], "reason": n["reason"]}
+    return out
 
 
 def _json_bytes(data, indent=None) -> bytes:
@@ -555,6 +589,10 @@ def load_game(data: bytes) -> GameState:
             continue
         try:
             context = GameContext(dict(gd["rotation"]), {k: float(v) for k, v in gd["fatigue"].items()})
+            for tid, x in (gd.get("lineups") or {}).items():
+                plan = _check_plan(x, f"state.json.season.games[{i}].lineups.{tid}", {pl.id for pl in season.teams[tid].players} if tid in season.teams else set(), p)
+                if plan is not None:
+                    context.lineups[tid] = plan
             skipped = {k: bool(v) for k, v in gd["starter_skipped"].items()}
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             p.add(f"state.json.season.games[{i}]", f"試合の前の状態の形が違います({exc})")
@@ -565,6 +603,16 @@ def load_game(data: bytes) -> GameState:
 
     season.day = day
     season.rotation = {tid: rotation.get(tid, 0) for tid in season.rotation}
+    plans_d = season_d.get("lineup_plans") or {}  # 版 16 にはない(打順の計画なし)
+    for tid, x in (plans_d.items() if isinstance(plans_d, dict) else []):
+        if tid not in season.teams:
+            p.add(f"state.json.season.lineup_plans.{tid}", "知らない球団です")
+            continue
+        plan = _check_plan(x, f"state.json.season.lineup_plans.{tid}", {pl.id for pl in season.teams[tid].players}, p)
+        if plan is not None:
+            season.lineup_plans[tid] = plan
+    if p.items:
+        raise SaveDataError(p.items)
     for pg in played:
         season._record(pg.result)
     season.played = played
