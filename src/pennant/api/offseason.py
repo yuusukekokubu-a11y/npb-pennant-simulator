@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .. import draft as draftmod, fa as famod, market as marketmod
+from .. import development as devmod, draft as draftmod, fa as famod, foreign as foreignmod, market as marketmod
 from ..abilities import POSITION_LABELS
 from ..draft import STAGES, STAGE_LABELS, stage_of
 from ..season import Season, derive_seed
@@ -32,6 +32,8 @@ class OffseasonMixin:
             state.transactions.append({"year": proc.year, "phase": "fa_declare", "round": 0, "team_id": x["former_team"], "player_id": pid, "name": x["name"], "role": x["role"], "position": x["position"], "age": x["age"], "salary": x.get("old_salary")})
         for x in proc.fa_results:
             state.transactions.append({"year": proc.year, "phase": "fa", **{k: v for k, v in x.items() if k != "offers"}})
+        for x in proc.promotions:
+            state.transactions.append({"year": proc.year, "phase": "promote", "round": 0, **{k: v for k, v in x.items() if k != "by"}})
         self.last_negotiations = proc.negotiations  # 終わった手続きの更改の交渉(保存しない。指紋 (p) と開発者向けの集計用)
         self.last_fa = {"info": proc.fa_info, "results": proc.fa_results, "log": proc.fa_log, "ranks": dict(proc.ranks), "budget_releases": list(proc.budget_releases)}  # 終わった FA(保存しない。指紋 (q) と集計用)
         self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log)}  # 終わった市場(保存しない。集計用。D-300)
@@ -75,13 +77,14 @@ class OffseasonMixin:
             "phases": [{"key": k, "label": STAGE_LABELS[k]} for k in STAGES],
             "order": [{"team_id": t, "team_name": names[t], "is_mine": t == my} for t in proc.order],
             "round": proc.round,
-            "total_rounds": proc.total_rounds() if proc.phase == "draft" else 0,
-            "current_team": proc.current_team() if proc.phase == "draft" else None,
-            "is_my_turn": proc.phase == "draft" and (my in draftmod.bid_pending(proc) if proc.bidding() else proc.current_team() == my and not draftmod.phase_finished(proc)),
+            "total_rounds": proc.total_rounds() if proc.phase in ("draft", "dev_draft") else 0,
+            "current_team": proc.current_team() if proc.phase in ("draft", "dev_draft") else None,
+            "is_my_turn": proc.phase in ("draft", "dev_draft") and (my in draftmod.bid_pending(proc) if proc.bidding() else proc.current_team() == my and not draftmod.phase_finished(proc)),
+            "development_draft": proc.phase == "dev_draft",
             "bidding": proc.bidding(),
             "bid_step": proc.bid_step,
             "lottery": [{**x, "team_names": [names.get(t, "") for t in x["teams"]], "winner_name": names.get(x["winner"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": my in x["teams"], "won": x["winner"] == my} for x in proc.lottery],
-            "phase_finished": draftmod.phase_finished(proc) if proc.phase == "draft" else proc.market_done if proc.phase == "market" else proc.phase == "done",
+            "phase_finished": draftmod.phase_finished(proc) if proc.phase in ("draft", "dev_draft") else proc.market_done if proc.phase == "market" else proc.foreign_done if proc.phase == "foreign" else proc.phase == "done",
             "my_team": None if my is None else {"team_id": my, "team_name": names[my], "players": len(self._team(my).players), "max": draftmod.MAX_ROSTER, "shortages": self._shortage_text(self._team(my).players, mins, min_batters)},
             "my_release_done": proc.my_release_done,
             "contracts": self._procedure_contracts(proc),
@@ -93,14 +96,22 @@ class OffseasonMixin:
             "released": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.released],
             "counts": {"candidates": len(proc.candidates), "market": len(proc.market), "released": len(proc.released), "picked": sum(1 for x in proc.picks if x["player_id"])},
             "rosters": [{"team_id": t.id, "team_name": t.name, "players": len(t.players), "is_mine": t.id == my} for t in state.league.teams],
-            "note": "手続きは 契約 → FA → ドラフト → 自由契約市場 → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
+            "note": "手続きは 契約 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → 完了(自動補充)の順です。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
         }
         if my is not None and stage_of(proc.phase) == "contract":
             view["renewal"] = self._renewal_info(proc)
         if proc.phase == "fa":
             view["fa"] = self._fa_info(proc)
+        if proc.phase == "foreign":
+            view["foreign"] = self._foreign_info(proc)
         if proc.phase == "market":
             view["market"] = self._market_info(proc)
+            view["development"] = self._development_info(proc)
+        if my is not None:
+            team = self._team(my)
+            view["my_team"]["development"] = len(team.development)
+            view["my_team"]["development_max"] = int(state.draft_settings.development["max"])
+            view["my_team"]["foreign"] = foreignmod.foreign_count(team)
         return view
 
     def _shortage_text(self, players, mins, min_batters) -> list[str]:
@@ -129,11 +140,15 @@ class OffseasonMixin:
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=False)
             draftmod.next_phase(proc)
+        elif stage == "foreign":
+            if not proc.foreign_done:
+                foreignmod.close_foreign(state.league, proc, ctx, my, sd, state.draft_settings, mins, min_batters, my_ai=False)
+            draftmod.next_phase(proc)
         elif stage == "market" and marketmod.uses_offers(ctx):
             if not proc.market_done:
                 marketmod.close_market(state.league, proc, ctx, my, sd, state.draft_settings, my_ai=False)
             draftmod.next_phase(proc)
-        elif stage in ("draft", "market"):
+        elif stage in ("draft", "market"):  # ドラフトの次は育成ドラフト(同じ段階の中。D-375)。育成ドラフトの次は市場
             self._run_turns(my_ai=False)
             draftmod.next_phase(proc)
         return self._after_stage()
@@ -146,6 +161,10 @@ class OffseasonMixin:
         sd = state.scout_sd_map()
         ctx = self._contract_ctx()
         my = None if my_ai else state.my_team_id
+        if proc.phase == "dev_draft":  # 育成ドラフト(D-375)
+            while devmod.run_dev_turns(state.league, proc, sd, state.draft_settings, state.my_team_id, ctx, my_ai=my_ai):
+                draftmod.pass_turn(proc, state.my_team_id, "pass")
+            return
         while draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, my, mins, min_batters, ctx=ctx):
             if proc.bidding():
                 draftmod.pass_bid(proc, my)
@@ -175,12 +194,20 @@ class OffseasonMixin:
         ctx = self._contract_ctx()
         stage = stage_of(proc.phase)
         names = self._team_names()
-        n_released, n_picks, n_fa = len(proc.released), len(proc.picks), len(proc.fa_results)
+        n_released, n_picks, n_fa, n_prom = len(proc.released), len(proc.picks), len(proc.fa_results), len(proc.promotions)
         if stage == "contract":
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=True)
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=True)
             draftmod.next_phase(proc)
+        elif stage == "foreign":
+            if not proc.foreign_done:
+                foreignmod.close_foreign(state.league, proc, ctx, my, sd, state.draft_settings, mins, min_batters, my_ai=True)
+            draftmod.next_phase(proc)
+        elif stage == "draft":  # ドラフトと育成ドラフトの両方を進める(D-375)
+            while stage_of(proc.phase) == "draft":
+                self._run_turns(my_ai=True)
+                draftmod.next_phase(proc)
         elif stage == "market" and marketmod.uses_offers(ctx):
             if not proc.market_done:
                 marketmod.close_market(state.league, proc, ctx, my, sd, state.draft_settings, my_ai=True)
@@ -202,8 +229,11 @@ class OffseasonMixin:
                 log.append({"kind": "fa_out", "player_id": x["player_id"], "name": x["name"], "text": f"FA で移籍:{x['name']} → {names.get(x['team_id'], '')}"})
         for x in proc.picks[n_picks:]:
             if x["team_id"] == my and x["player_id"]:
-                where = (f"ドラフト {x['round']} 巡" + ("(抽選)" if x.get("lottery") else "")) if x["phase"] == "draft" else "市場"
+                where = {"draft": f"ドラフト {x['round']} 巡" + ("(抽選)" if x.get("lottery") else ""), "dev_draft": f"育成ドラフト {x['round']} 巡", "foreign": "外国人市場"}.get(x["phase"], "市場")
                 log.append({"kind": x["phase"], "player_id": x["player_id"], "name": x["name"], "text": f"{where}:{x['name']}"})
+        for x in proc.promotions[n_prom:]:
+            if x["team_id"] == my:
+                log.append({"kind": "promote", "player_id": x["player_id"], "name": x["name"], "text": f"支配下に上げた:{x['name']}"})
         out = self._after_stage()
         out["auto_log"] = {"stage": stage, "stage_label": STAGE_LABELS[stage], "items": log}
         return out

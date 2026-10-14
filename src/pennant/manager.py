@@ -123,8 +123,14 @@ class SimpleManager:
 
     def select_active(self, team: Team) -> ActiveRoster:
         ar = self.config["active_roster"]
-        pitchers = [p for p in team.players if p.role == PITCHER]
-        batters = [p for p in team.players if p.role == BATTER]
+        players = team.players
+        limit = ar.get("foreign_max") if hasattr(ar, "get") else None
+        foreign = [p for p in players if p.foreign]
+        if limit is not None and len(foreign) > int(limit):  # 一軍の外国人は上限まで:総合の高い順に上限の人数だけ候補に残す(D-376)
+            keep = {p.id for p in sorted(foreign, key=lambda p: (-overall(p), p.id))[: int(limit)]}
+            players = [p for p in players if not p.foreign or p.id in keep]
+        pitchers = [p for p in players if p.role == PITCHER]
+        batters = [p for p in players if p.role == BATTER]
 
         def best(pool, n, chosen):
             pool = sorted((p for p in pool if p.id not in chosen), key=overall, reverse=True)

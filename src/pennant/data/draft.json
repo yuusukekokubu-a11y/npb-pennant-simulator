@@ -62,5 +62,31 @@
         "breaking": "変化球のキレがよい"
       }
     }
+  },
+  "foreign": {
+    "candidates": 24,
+    "age_min": 25,
+    "age_max": 33,
+    "boost": 2.0,
+    "spread_sd": 4.0,
+    "salary": {
+      "A": 20000,
+      "B": 12000,
+      "C": 7000,
+      "D": 4000,
+      "E": 2500
+    },
+    "ai_target": 7,
+    "ai_wishes": 3,
+    "initial_min": 5,
+    "initial_max": 6
+  },
+  "development": {
+    "max": 20,
+    "rounds": 4,
+    "salary": 300,
+    "seasons": 3,
+    "ai_target": 10,
+    "ai_max_age": 22
   }
 }

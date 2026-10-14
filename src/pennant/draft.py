@@ -52,6 +52,7 @@ from .procedure import (  # noqa: F401
     make_candidates,
     start_procedure,
     scout_report,
+    scout_report_foreign,
     cached_value,
     ai_release,
     ai_value,
@@ -271,8 +272,10 @@ def make_room(team: Team, count: int, proc: OffseasonProcedure, sd: dict, mins: 
 
 def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
     """完了:70 人に満たない球団を自動補充(最低人数を満たすポジションから、次に人数の目安との差が大きいポジション)。市場の残りはリーグを去る。"""
+    from .development import take_for_slot
+
     rng = random.Random(derive_seed(proc.seed, "fill"))
-    names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players()})
+    names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players() + league.development_players()})
     counter = [0]
     target = {pos: int(n) for pos, n in config["roster"]["pitchers"].items()}
     target.update({pos: int(n) for pos, n in config["roster"]["fielders"].items()})
@@ -299,7 +302,11 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
             pos = max(target, key=lambda k: (target[k] - current.get(k, 0), -list(target).index(k)))
             slots.append((PITCHER if pos in PITCHER_POSITIONS else BATTER, pos))
             current[pos] = current.get(pos, 0) + 1
-        for p in replenish(team, slots, config, names, rng, proc.year, counter, calibration, id_prefix):
+        rest = []
+        for role, pos in slots:  # 育成選手のうち、同じポジションで推定値の高い選手を先に支配下に上げる(D-375)
+            if take_for_slot(team, role, pos, proc, scout_sd[team.id], ctx) is None:
+                rest.append((role, pos))
+        for p in replenish(team, rest, config, names, rng, proc.year, counter, calibration, id_prefix):
             p.scouting = _entry_report(proc, p, team.id, scout_sd[team.id], settings)
             salary = None
             if ctx is not None:  # 自動補充は最低年俸(資金に関わらず結べる。D-235)
@@ -349,6 +356,17 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
                 run_all_rounds(league, proc, ctx, my_team_id, my_ai=True)
             else:
                 finish_fa_market(proc)
+            next_phase(proc)
+        elif proc.phase == "foreign":  # 外国人市場(D-376)
+            if not proc.foreign_done:
+                from .foreign import close_foreign
+
+                close_foreign(league, proc, ctx, my_team_id, scout_sd, settings, mins, min_batters, my_ai=True)
+            next_phase(proc)
+        elif proc.phase == "dev_draft":  # 育成ドラフト(D-375)
+            from .development import run_dev_turns
+
+            run_dev_turns(league, proc, scout_sd, settings, my_team_id, ctx, my_ai=True)
             next_phase(proc)
         elif proc.phase == "market" and uses_offers(ctx):  # 市場は年俸が自動で、前年の順位が低い球団から 1 人ずつ(D-370)
             if not proc.market_done:

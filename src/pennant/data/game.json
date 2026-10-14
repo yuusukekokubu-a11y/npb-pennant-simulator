@@ -10,7 +10,8 @@
     "starters": 6,
     "relievers": 8,
     "catchers": 2,
-    "fielders": 15
+    "fielders": 15,
+    "foreign_max": 4
   },
   "lineup": {
     "on_base": {"contact": 0.5, "eye": 0.5},

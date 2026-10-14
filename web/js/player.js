@@ -14,7 +14,7 @@ export async function renderPlayer(args, token) {
   $("player-info").replaceChildren(
     teamLink(p.team_name, p.team_id),
     p.is_mine ? " ★" : "",
-    ` / ${p.position_label} / ${p.age}歳${p.hand ? ` / ${p.hand}` : ""}${p.retired ? "(引退)" : ""}`,
+    ` / ${p.position_label} / ${p.age}歳${p.hand ? ` / ${p.hand}` : ""}${p.foreign ? " / 外国人" : ""}${p.development ? ` / ${p.development.label}` : ""}${p.retired ? "(引退)" : ""}`,
   );
   renderPlayerHistory(data);
   renderPlayerContract(data);

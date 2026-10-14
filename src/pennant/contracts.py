@@ -301,7 +301,8 @@ def changed_funds(funds: int, tier: str | None, rank: int | None, settings: Cont
 
 
 def team_salary(team: Team) -> int:
-    return sum(int(p.contract["salary"]) for p in team.players if p.contract)
+    """総年俸(育成選手の年俸も含む。D-375)。"""
+    return sum(int(p.contract["salary"]) for p in team.players + team.development if p.contract)
 
 
 # ---- 契約の付け替え ----

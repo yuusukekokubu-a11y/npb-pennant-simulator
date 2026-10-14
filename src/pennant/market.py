@@ -65,7 +65,12 @@ def ai_wishes(team: Team, proc: OffseasonProcedure, ctx, sizes: dict[int, int]) 
 def close_market(league: League, proc: OffseasonProcedure, ctx, my_team_id: str | None, scout_sd: dict[str, dict], settings, my_ai: bool = False) -> list[dict]:
     """市場を締める:あなたの希望(proc.market_offers)と AI の希望を合わせて、順番に 1 人ずつ獲得する。my_ai=True なら、あなたの球団も AI と同じ方針。
     戻り値は成立した契約。獲得した選手は入団し(入団時の評価を残す)、指名の履歴(picks)に phase="market" で残る。"""
+    from .development import ai_promote
+
     teams = {t.id: t for t in league.teams}
+    for team in league.teams:  # AI は、空きがあれば育成選手を支配下に上げてから獲得する(D-375)
+        if team.id != my_team_id or my_ai:
+            ai_promote(team, proc, scout_sd[team.id], ctx)
     sizes = league_sizes(league)
     wishes: dict[str, list[str]] = {}
     for team in league.teams:

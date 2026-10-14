@@ -67,10 +67,18 @@ class Player:
     pitches: list[dict] | None = None  # 投手の球種 [{type, weight}](D-351)。打者は None
     skills: list[str] = field(default_factory=list)  # 特殊能力のキー(data/skills.json。D-374)
     fa_seasons: int | None = 0  # 一軍に登録されたシーズンの通算(FA 権の年数。宣言したら 0。F3-2c。D-258)。None は旧版で、読み込みのときに補う
+    foreign: bool = False  # 外国人選手(D-376)。一軍に登録できる人数に上限がある
+    dev_seasons: int | None = None  # 育成選手なら育成で過ごしたシーズン数(0 から)。支配下なら None(D-375)
 
     @property
     def name(self) -> str:
+        if self.foreign:  # 外国人選手は姓だけを出す(D-376)
+            return self.family_name
         return f"{self.family_name} {self.given_name}"
+
+    @property
+    def developmental(self) -> bool:
+        return self.dev_seasons is not None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -86,6 +94,7 @@ class Team:
     players: list[Player] = field(default_factory=list)
     display_name: str | None = None  # 利用者が入力した球団名(セーブデータにだけ入る。D-104)。なければ架空の初期名
     park: ParkFactors = field(default_factory=ParkFactors)  # 本拠地の球場の真の倍率(隠し情報。D-138)
+    development: list[Player] = field(default_factory=list)  # 育成選手(支配下 70 人とは別の枠。試合に出ない。D-375)
 
     @property
     def name(self) -> str:
@@ -107,7 +116,12 @@ class League:
     teams: list[Team]
 
     def all_players(self) -> list[Player]:
+        """支配下の選手(育成選手は含まない。D-375)。"""
         return [p for t in self.teams for p in t.players]
+
+    def development_players(self) -> list[Player]:
+        """育成選手(D-375)。"""
+        return [p for t in self.teams for p in t.development]
 
     def to_dict(self) -> dict:
         return asdict(self)

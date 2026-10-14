@@ -36,6 +36,26 @@ class NameGenerator:
         )
 
 
+class ForeignNameGenerator:
+    """外国人選手の名前(カタカナの名と姓。D-376)。(姓, 名) はリーグ全体で重複させず、姓は taken(同じ球団の外国人の姓)と重ならないようにする。"""
+
+    def __init__(self, parts: NameParts, rng: random.Random, used: set[tuple[str, str]] | None = None):
+        if not parts.foreign_surnames or not parts.foreign_given_names:
+            raise ConfigError(parts.source, ["外国人選手の名前の部品(foreign_surnames・foreign_given_names)がありません"])
+        self.parts = parts
+        self.rng = rng
+        self.used: set[tuple[str, str]] = set(used or ())
+        self.taken: set[str] = set()
+
+    def person(self) -> tuple[str, str]:
+        for _ in range(MAX_TRIES):
+            name = (self.rng.choice(self.parts.foreign_surnames), self.rng.choice(self.parts.foreign_given_names))
+            if name not in self.used and name[0] not in self.taken:
+                self.used.add(name)
+                return name
+        raise ConfigError(self.parts.source, ["重複しない外国人選手の名前を作れませんでした。部品を増やしてください"])
+
+
 def team_identities(parts: NameParts, rng: random.Random, count: int) -> list[tuple[str, str, str]]:
     """(地名, 愛称, 球場名) を count 球団分作る。地名・愛称は重複させない。"""
     problems = []

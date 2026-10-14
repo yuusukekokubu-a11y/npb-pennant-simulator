@@ -23,9 +23,9 @@ from .common import (
     table_cols,
 )
 
-DECISION_STAGES = ("fa", "draft", "market")
+DECISION_STAGES = ("fa", "foreign", "draft", "market")
 GRADE_ORDER = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}
-SHOW_LABELS = {"fa": ("未契約だけ", "契約した選手も"), "draft": ("未指名だけ", "指名済みも"), "market": ("未契約だけ", "契約した選手も")}
+SHOW_LABELS = {"fa": ("未契約だけ", "契約した選手も"), "foreign": ("未契約だけ", "契約した選手も"), "draft": ("未指名だけ", "指名済みも"), "market": ("未契約だけ", "契約した選手も")}
 THIN_BOTTOM = 9  # 手薄の印:一軍相当の見込みの WAR が、12 球団の中で下から 4 番目以内(自球団より強い球団が 9 つ以上。D-303)
 THIN_SHORT = 2  # 手薄の印:人数が人数の目安より 2 人以上少ない(目安の合計が 70 人なので、1 人の差はどこかに必ず出る。D-303)
 
@@ -41,9 +41,11 @@ COL = {
     "grade": {"key": "grade", "label": "評価", "type": "metric", "better": "high"},
     "comment": {"key": "comment", "label": "スカウトの一言", "type": "text", "better": "low"},
     "ability": {"key": "ability", "label": "総合", "type": "metric", "better": "high"},
+    "salary": {"key": "salary", "label": "年俸", "type": "count", "better": "low"},
 }
 STAGE_COLUMNS = {
     "fa": ["ability", "age", "pos", "depth", "calc", "usage", "former", "status"],
+    "foreign": ["grade", "comment", "age", "pos", "depth", "salary", "status"],
     "draft": ["grade", "comment", "age", "origin", "pos", "depth"],
     "market": ["ability", "age", "pos", "depth", "calc", "usage", "former", "status"],
 }
@@ -121,10 +123,17 @@ class DecisionMixin:
             if show == "all":
                 out += [league_players[pid] for pid in proc.fa_info if pid in league_players]
             return out
+        if stage == "foreign":
+            out = [(p, None) for p in proc.foreign_pool]
+            if show == "all":
+                out += [league_players[x["player_id"]] for x in proc.foreign_results if x["player_id"] in league_players]
+            return out
         if stage == "draft":
+            dev_players = {p.id: (p, t.id) for t in self.state.league.teams for p in t.development}
             out = [(p, None) for p in proc.candidates]
             if show == "all":
                 out += [league_players[x["player_id"]] for x in proc.picks if x["phase"] == "draft" and x["player_id"] in league_players]
+                out += [dev_players[x["player_id"]] for x in proc.picks if x["phase"] == "dev_draft" and x["player_id"] in dev_players]
             return out
         out = [(p, None) for p in proc.market]
         if show == "all":
@@ -150,7 +159,7 @@ class DecisionMixin:
         view = self._season_view(None if season in (None, "current") else season)
         config = metrics_config()
         role = None if group == "all" else ("pitcher" if group == "pitcher" else "batter")
-        with_stats = stage != "draft"
+        with_stats = stage not in ("draft", "foreign")
         kind_cols: list[dict] = []
         metric = None
         if with_stats:
@@ -201,8 +210,11 @@ class DecisionMixin:
             cells["pos"] = (positions.index(p.position), POSITION_LABELS[p.position] + (" ◆" if p.position in thin else ""))
             depth, in_slots = self._depth(p, team, ctx)
             cells["depth"] = (depth, f"{depth} 番手" + (" ●" if in_slots else ""))
-            amateur = stage == "draft" or (stage == "market" and holder is None and p.id not in former)  # 市場に並ぶ、指名されなかった候補は評価と一言だけ(D-368)
-            sc = self._report_public(p, my) if amateur else None
+            amateur = stage in ("draft", "foreign") or (stage == "market" and holder is None and p.id not in former)  # 市場に並ぶ、指名されなかった候補は評価と一言だけ(D-368)。外国人の候補も(D-376)
+            if stage == "foreign":
+                sc = draftmod.scout_report_foreign(proc, p, my, state.scout_sd_of(my), state.draft_settings).to_public()
+            else:
+                sc = self._report_public(p, my) if amateur else None
             if sc is not None:
                 cells["grade"] = (GRADE_ORDER.get(sc["grade"], 0), sc["grade"])
                 cells["comment"] = (sc["comment"], sc["comment"])
@@ -236,13 +248,26 @@ class DecisionMixin:
                 cells["former"] = (names.get(fid, "") if fid else "~", names.get(fid, "") if fid else "候補")
                 row["offer"] = mine
                 row["deal"] = {"calc_salary": calc, "calc_text": f"{calc:,} 万円", "expected": None if amateur else round(exp, 2), "former_team_name": names.get(fid, "") if fid else "", "status": "signed" if holder else "open"}
+            elif stage == "foreign":
+                salary = int(proc.foreign_salary.get(p.id, 0)) if holder is None else int(picks.get(p.id, {}).get("salary") or 0)
+                cells["salary"] = (salary, f"{salary:,}")
+                mine = p.id in proc.foreign_offers
+                if holder is not None:
+                    cells["status"] = (3, f"契約({names.get(holder, '')})")
+                elif mine:
+                    cells["status"] = (0, f"希望 {list(proc.foreign_offers).index(p.id) + 1} 番目")
+                else:
+                    cells["status"] = (1, "未契約")
+                row["offer"] = {} if mine else None
+                row["deal"] = {"calc_salary": salary, "calc_text": f"{salary:,} 万円", "expected": None, "former_team_name": "", "status": "signed" if holder else "open"}
             else:
                 if holder is not None:
                     x = picks.get(p.id, {})
-                    cells["status"] = (1, f"指名({names.get(holder, '')}・{x.get('round', '-')} 巡{'・抽選' if x.get('lottery') else ''})")
+                    where = f"育成 {x.get('round', '-')} 巡" if x.get("phase") == "dev_draft" else f"{x.get('round', '-')} 巡{'・抽選' if x.get('lottery') else ''}"
+                    cells["status"] = (1, f"指名({names.get(holder, '')}・{where})")
                 else:
                     cells["status"] = (0, "未指名")
-            if stage != "draft":
+            if stage not in ("draft", "foreign"):
                 cells["calc"] = (row["deal"]["calc_salary"], f"{row['deal']['calc_salary']:,}")
             row["values"] = {c["key"]: (cells.get(c["key"]) or (None, "—"))[1] for c in columns}
             row["_sort"] = (cells.get(sort) or (None, ""))[0]

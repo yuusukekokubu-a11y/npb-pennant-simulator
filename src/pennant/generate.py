@@ -143,8 +143,9 @@ def generate_league(
     seed: int,
     config: GenerationConfig | None = None,
     names: NameParts | None = None,
+    foreign: dict | None = None,
 ) -> League:
-    """ゲーム開始時のリーグ(全球団・全選手)を作る。"""
+    """ゲーム開始時のリーグ(全球団・全選手)を作る。foreign は外国人選手の設定(draft.json の foreign。省略すると既定。D-376)。"""
     config = config or load_generation_config()
     names = names or load_name_parts()
     rng = random.Random(seed)
@@ -169,6 +170,8 @@ def generate_league(
             team.players.append(player)
         teams.append(team)
     league = League(seed=seed, league_names=list(names.league_names[:n_leagues]), teams=teams)
+    if names.foreign_surnames:
+        add_initial_foreign(league, seed, config, names, foreign)
     assign_parks(league, config)  # 球場の倍率(別の乱数。既存の生成の乱数は変えない。D-137)
     return league
 
@@ -215,6 +218,38 @@ def make_rookie(config: GenerationConfig, names: NameGenerator, rng: random.Rand
     player.id = player_id
     if potential_shift:
         shift_potential(config, player, potential_shift)
+    return player
+
+
+def add_initial_foreign(league: League, seed: int, config: GenerationConfig, names: NameParts, foreign: dict | None = None) -> None:
+    """新規開始の外国人選手(D-376):各球団 initial_min〜initial_max 人を、同じ役割・ポジションの選手と入れ替えて作る。
+    別の乱数の系列(ほかの選手の生成は変えない)。"""
+    from .config import _read_json
+    from .names import ForeignNameGenerator
+    from .season import derive_seed
+
+    s = foreign if foreign is not None else _read_json(None, "draft.json")[0]["foreign"]
+    rng = random.Random(derive_seed(seed, "foreign:initial"))
+    gen = ForeignNameGenerator(names, rng, {(p.family_name, p.given_name) for p in league.all_players()})
+    for team in league.teams:  # 外国人の姓はリーグ全体で重ねない(同じ球団の中で重ならないように。D-376)
+        k = rng.randint(int(s["initial_min"]), int(s["initial_max"]))
+        for i in sorted(rng.sample(range(len(team.players)), k)):
+            old = team.players[i]
+            p = make_foreign(config, gen, rng, old.role, old.position, old.id, s)
+            gen.taken.add(p.family_name)
+            p.team_id = team.id
+            team.players[i] = p
+
+
+def make_foreign(config: GenerationConfig, names, rng: random.Random, role: str, position: str, player_id: str, settings: dict, potential_shift: float = 0.0) -> Player:
+    """外国人選手を1人作る(D-376)。年齢は settings の age_min〜age_max、初期選手と同じ作り方(年齢に合わせた今の能力)に、
+    水準の上げ幅(boost)と、1 人ごとのふれ(spread_sd の正規分布。当たり外れ)と校正の定数を足す。names は ForeignNameGenerator。"""
+    factory = _PlayerFactory(config, names, rng, id_prefix="")
+    age = rng.randint(int(settings["age_min"]), int(settings["age_max"]))
+    player = factory.make(role, position, age, initial=True, origin="foreign")
+    player.id = player_id
+    player.foreign = True
+    shift_potential(config, player, potential_shift + float(settings["boost"]) + rng.gauss(0, float(settings["spread_sd"])))
     return player
 
 

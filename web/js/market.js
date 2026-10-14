@@ -4,7 +4,7 @@
 
 import { state } from "./core.js";
 import { renderCurrent } from "./screens.js";
-import { el } from "./parts.js";
+import { el, playerLink, table } from "./parts.js";
 import { runProc } from "./procedure.js";
 import { decisionFilters, decisionTable, fetchDecision, resultsTable } from "./decision.js";
 
@@ -38,10 +38,23 @@ export async function marketSection(v, token) {
     decisionTable("market", data, truth, { onName, detail, rowClass: (p) => (p.offer ? "selected" : !p.open ? "muted" : "") }),
   ];
   if (m.results.length) out.push(resultsTable("market-results", `市場の結果(契約 ${m.results.length} 人)`, m.results, true, "希望した球団"));
+  if (v.development) out.push(developmentBox(v.development));
   return out;
 }
 
 export async function marketClose() {
   state.proc.open = null;
   await runProc("market_close", {}, (view) => { state.proc.lastMarket = view.last_market || null; });
+}
+
+// 育成選手を支配下に上げる(D-375):70 人に空きがあれば、市場を締める前に選べる(年俸は最低年俸・1 年)
+function developmentBox(d) {
+  const columns = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合" }, { key: "year", label: "育成" }, { key: "action", label: "" }];
+  const rows = d.players.map((p) => ({ ...p, values: {
+    position: p.position_label, age: `${p.age}歳`, overall: p.overall, year: `${p.dev_seasons + 1} 年目(あと ${p.left} 年)`,
+    action: d.can_promote ? el("button", { type: "button", className: "secondary", disabled: state.running, onclick: () => runProc("promote", { player_id: p.player_id }) }, "支配下に上げる") : "",
+  } }));
+  const title = `育成選手(${d.count}/${d.max} 人・支配下の空き ${d.space} 人)${d.promoted.length ? `・上げた選手 ${d.promoted.map((x) => x.name).join("、")}` : ""}`;
+  return el("details", { id: "development-box", open: d.can_promote && d.players.length > 0 }, el("summary", {}, title),
+    d.players.length ? table({ firstLabel: "選手", columns, rows, first: (p) => [playerLink(p.name, p.player_id)], fluid: true }) : el("p", { className: "muted small" }, "育成選手はいません。"));
 }
