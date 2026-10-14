@@ -821,7 +821,7 @@ if (faStart[0] === "fa") {
   await page.waitForSelector("#proc-body tbody tr");
   await measureDecision("FA");
   const fa0 = await sameAsPy({ stage: "fa" }, "FA");
-  check(["WAR", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => fa0.heads[i + 1] === h) && !fa0.heads.includes("真の総合"), "FA の列は 名前・WAR・年齢・ポジション・加入後の序列・算定年俸・出場・前の所属・状態(答え合わせモードがオフなので真の総合はない)");
+  check(["WAR", "総合", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => fa0.heads[i + 1] === h) && !fa0.heads.includes("真の総合"), "FA の列は 名前・WAR・総合(見せる能力)・年齢・ポジション・加入後の序列・算定年俸・出場・前の所属・状態");
   check(fa0.ui.every((r) => /^\d+ 番手( ●)?$/.test(r["加入後の序列"])), "加入後の序列は「N 番手」(一軍の枠の目安に入るなら ●)");
   // 自球団の状況のパネル(状態バーを押すと開く。D-298)
   await page.click("#proc-bar .bar-text");
