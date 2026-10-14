@@ -760,7 +760,7 @@ check(keptPy[0] && keptPy[1] === null && (await page.textContent("#proc-info")).
 // 資金を超えていれば、年俸の高い選手から自由契約にして解消する(超えている間は「次の手続きへ」が押せない。D-361)
 rnPy = statusPy();
 check((await page.isDisabled("#proc-next")) === !rnPy[4], `「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(rnPy[3]).toLocaleString()} 万円)`);
-for (let i = 0; i < 40 && (rnPy[3] > 0 || rnPy[5] < 20000); i++) { // 超過を解消し、あとのドラフト・FA・市場の分の資金(2 億円)も空ける
+for (let i = 0; i < 40 && (rnPy[3] > 0 || rnPy[5] < 20000 || rnPy[2] > 61); i++) { // 超過を解消し、あとのドラフト・FA・市場の分の資金(2 億円)と枠(FA 1・ドラフト 6・市場 1)も空ける
   const [pid, name] = pyAfter(`print(json.dumps(next([r["player_id"], r["name"]] for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]), ensure_ascii=False))`);
   await page.selectOption("#contract-status", "all");
   await page.waitForFunction(() => document.querySelector("#contract-status").value === "all");
