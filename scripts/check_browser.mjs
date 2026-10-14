@@ -237,6 +237,22 @@ await page.waitForFunction(() => document.querySelector("#lineup-message").textC
 const luAfter = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 check(JSON.stringify(luAfter) === JSON.stringify(luBefore) && (await page.textContent("#lineup-source")).includes("AI"), "長打重視に戻すと、最初の AI の打順に戻る");
 await page.click("#screen-lineup .back");
+// トレード(D-378):画面を開き、釣り合わない交換を持ちかけると断られて、何も変わらない
+await page.waitForSelector("#open-trade:not([hidden])");
+await page.click("#open-trade");
+await page.waitForFunction(() => !document.querySelector("#screen-trade").hidden && document.querySelectorAll("#trade-mine tbody tr").length > 0 && document.querySelectorAll("#trade-theirs tbody tr").length > 0);
+check((await page.textContent("#trade-window")).includes("日目まで"), `トレードの画面:「${await page.textContent("#trade-window")}」`);
+const tradeRows = (sel) => page.$$eval(`${sel} tbody tr`, (trs) => trs.map((tr, i) => ({ i, name: tr.querySelector("a")?.textContent || "", v: Number((tr.children[3]?.textContent || "").replace(/[^0-9]/g, "")), locked: tr.querySelector("input").disabled })));
+const mineBefore = (await tradeRows("#trade-mine")).map((r) => r.name);
+const giveRow = (await tradeRows("#trade-mine")).filter((r) => !r.locked).sort((a, b) => a.v - b.v)[0];
+const getRow = (await tradeRows("#trade-theirs")).filter((r) => !r.locked).sort((a, b) => b.v - a.v)[0];
+await page.locator("#trade-mine tbody tr").nth(giveRow.i).locator("input").check();
+await page.locator("#trade-theirs tbody tr").nth(getRow.i).locator("input").check();
+check(!(await page.isDisabled("#trade-propose")), `出す選手(${giveRow.name})と欲しい選手(${getRow.name})を選ぶと、持ちかけられる`);
+await page.click("#trade-propose");
+await page.waitForFunction(() => document.querySelector("#trade-message").className.includes("ng"));
+check(JSON.stringify((await tradeRows("#trade-mine")).map((r) => r.name)) === JSON.stringify(mineBefore), `釣り合わない交換は断られ、選手は変わらない(「${await page.textContent("#trade-message")}」)`);
+await page.click("#screen-trade .back");
 // 最後まで → 少し待って止める。止めている間も画面が動くかを確かめる
 await page.evaluate(() => (window.__runLog = []));
 const runStart = await page.evaluate(() => performance.now());
@@ -720,7 +736,7 @@ const yeSeconds = (Date.now() - ye0) / 1000;
 const tabTexts = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent));
 const tabBoxes = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => { const r = l.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height), l.scrollWidth <= l.clientWidth + 1]; }));
 const overAtStart = pyAfter(`print(json.dumps(g.offseason_view()["renewal"]["over"]))`);
-check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 6 つ(外国人を含む。D-376)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
+check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・トレード・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 7 つ(外国人・トレードを含む。D-376、D-378)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {

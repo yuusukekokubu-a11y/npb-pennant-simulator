@@ -57,6 +57,9 @@ const handlers = {
   lineup({ name, args }) {
     return parse(bridge.lineup(name, JSON.stringify(args || {})));
   },
+  trade({ name, args }) {
+    return parse(bridge.trade(name, JSON.stringify(args || {})));
+  },
 
   load({ bytes }) {
     const py = pyodide.toPy(bytes);

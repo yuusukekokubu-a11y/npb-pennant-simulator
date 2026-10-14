@@ -49,6 +49,7 @@ $("year-end").addEventListener("click", () => openPage("yearend"));
 $("open-offseason").addEventListener("click", () => openPage("procedure"));
 $("open-review").addEventListener("click", () => openPage("review"));
 $("open-lineup").addEventListener("click", () => { state.lineup = null; openPage("lineup"); });
+$("open-trade").addEventListener("click", () => { state.trade = null; openPage("trade"); });
 $("team-review").addEventListener("click", () => openPage("review", { team_id: current().args.id }));
 $("review-team").addEventListener("change", () => {
   state.review.team = $("review-team").value;

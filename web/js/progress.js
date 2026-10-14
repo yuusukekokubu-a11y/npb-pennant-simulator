@@ -35,6 +35,9 @@ export function renderProgress() {
   const m = s.my_team;
   $("mine-card").hidden = !m;
   $("open-lineup").hidden = !m || s.is_over || Boolean(off);
+  const tr = s.trade;  // トレード(D-378):シーズン中の期限まで。提案があれば件数を出す
+  $("open-trade").hidden = !m || !tr || !tr.open;
+  if (tr) $("open-trade").textContent = tr.offers ? `トレード(提案 ${tr.offers} 件)` : "トレード";
   if (m) {
     $("mine-name").textContent = m.name;
     $("mine-record").textContent = recordText(m);

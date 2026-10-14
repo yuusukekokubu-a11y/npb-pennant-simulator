@@ -129,6 +129,9 @@ class Season:
         self.pitchers = [p for a in self.actives.values() for p in a.starters + a.relievers]
         self.day = 0
         self.lineup_plans: dict[str, dict] = {}  # 球団 → {style, slots([[選手 ID, 守備位置]] × 9 か None), set_day, notice}(D-373)
+        self.trades: list[dict] = []  # シーズン中のトレード(trade.execute の記録。D-378)
+        self.trade_offers: list[dict] = []  # AI からあなたへのトレードの提案(まだ答えていないもの)
+        self.active_history: dict[str, list[dict]] = {}  # トレードした球団 → 一軍の顔ぶれの移り変わり [{day, starters, relievers, batters, roles}](試合の再現用)
         self.played: list[PlayedGame] = []
         self._records: dict[str, _Record] = {t.id: _Record() for t in league.teams}
 
@@ -250,6 +253,35 @@ class Season:
         self.play_days(self.total_days - self.day, progress)
         return self.result()
 
+    # ---- トレード(D-378) ----
+
+    def _active_snapshot(self, team_id: str, day: int) -> dict:
+        a = self.actives[team_id]
+        return {"day": int(day), "starters": [p.id for p in a.starters], "relievers": [p.id for p in a.relievers], "batters": [p.id for p in a.batters], "roles": dict(a.relief_roles)}
+
+    def reselect_actives(self, team_ids) -> None:
+        """トレードの後、球団の一軍を選び直す。試合の再現のため、選び直す前と後の顔ぶれを記録する(この日数の試合から新しい顔ぶれ)。"""
+        for tid in team_ids:
+            if tid not in self.active_history:
+                self.active_history[tid] = [self._active_snapshot(tid, 0)]
+            self.actives[tid] = self.manager.select_active(self.teams[tid])
+            snap = self._active_snapshot(tid, self.day)
+            hist = self.active_history[tid]
+            if hist[-1]["day"] == self.day:
+                hist[-1] = snap
+            else:
+                hist.append(snap)
+        self.pitchers = [p for a in self.actives.values() for p in a.starters + a.relievers]
+
+    def active_on(self, team_id: str, day: int) -> ActiveRoster:
+        """その日の試合の一軍(トレードした球団は記録から。D-378)。"""
+        hist = self.active_history.get(team_id)
+        if not hist:
+            return self.actives[team_id]
+        snap = [h for h in hist if h["day"] <= day][-1]
+        pl = self.players
+        return ActiveRoster(starters=[pl[x] for x in snap["starters"]], relievers=[pl[x] for x in snap["relievers"]], relief_roles=dict(snap["roles"]), batters=[pl[x] for x in snap["batters"]])
+
     # ---- 再現 ----
 
     def replay_game(self, number: int) -> GameResult:
@@ -257,7 +289,7 @@ class Season:
         played = next(p for p in self.played if p.scheduled.number == number)
         g = played.scheduled
         teams = [self.teams[g.home_id], self.teams[g.away_id]]
-        copied_teams, copied_actives = copy.deepcopy((teams, [self.actives[t.id] for t in teams]))
+        copied_teams, copied_actives = copy.deepcopy((teams, [self.active_on(t.id, g.day) for t in teams]))
         for t, a in zip(copied_teams, copied_actives):
             for p in a.starters + a.relievers:
                 p.state.fatigue = played.context.fatigue[p.id]

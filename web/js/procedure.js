@@ -69,6 +69,7 @@ export async function renderProcedure(token) {
   else if (v.phase === "foreign") parts = await foreignSection(v, token);
   else if (v.phase === "draft" || v.phase === "dev_draft") parts = await draftSection(v, token);
   else if (v.phase === "market") parts = await marketSection(v, token);
+  else if (v.phase === "trade") parts = tradeStageSection(v);
   if (parts === null || token !== state.token) return;
   body.replaceChildren(...parts);
   $("proc-development").replaceChildren(v.stage === "market" && v.development ? developmentBox(v.development) : ""); // 育成選手を支配下に上げる(D-375)
@@ -102,6 +103,8 @@ function renderProcedureBar(v) {
   } else if (v.stage === "foreign" && v.foreign) {
     const f = v.foreign;
     info = f.done ? `外国人市場 終了:契約 ${f.counts.signed} 人(自球団 ${f.counts.mine})` : `外国人市場 ${f.counts.pool} 人・希望 ${f.counts.offers}・空き枠 ${f.space ?? "-"}${mine ? `・外国人 ${mine.foreign} 人(一軍 ${f.active_max ?? "-"} まで)` : ""}`;
+  } else if (v.stage === "trade" && v.trade) {
+    info = `トレード:提案 ${v.trade.offers} 件・成立 ${v.trade.trades.length} 件`;
   } else if (v.stage === "market" && v.market) {
     const m = v.market;
     info = m.done ? `市場 終了:契約 ${m.counts.signed} 人(自球団 ${m.counts.mine})` : `市場 ${m.counts.pool} 人・希望 ${m.counts.offers}・空き枠 ${m.space ?? "-"}`;
@@ -227,7 +230,7 @@ export async function procStageAuto() {
 // 「次の手続きへ」(D-271):自分の操作を終えて進む(AI の代行はしない)
 export async function procNext() {
   const stage = state.proc.stage;
-  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: state.proc.phase === "dev_draft" ? "育成ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?" : "ドラフトの自球団の残りの番(1 巡目の入札を含む)は、すべてパスして、育成ドラフトへ進みます。よろしいですか?", foreign: "外国人市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、ドラフトへ進みます。よろしいですか?", market: "市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、手続きを完了します。よろしいですか?" }[stage];
+  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: state.proc.phase === "dev_draft" ? "育成ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?" : "ドラフトの自球団の残りの番(1 巡目の入札を含む)は、すべてパスして、育成ドラフトへ進みます。よろしいですか?", foreign: "外国人市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、ドラフトへ進みます。よろしいですか?", market: "市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、トレードの段階へ進みます。よろしいですか?", trade: "答えていないトレードの提案は断ったことにして、手続きを完了します。よろしいですか?" }[stage];
   if (ask && !confirm(ask)) return;
   state.proc.lastRound = null;
   state.proc.lastMarket = null;
@@ -246,4 +249,12 @@ function historyTable(picks, released) {
   if (!rows.length) return el("p", { className: "muted small" }, "まだありません。");
   const body = el("tbody", {}, ...rows.map((r) => el("tr", { className: r.mine ? "mine" : "" }, el("td", {}, r.k), el("td", {}, r.team), el("td", {}, r.name), el("td", {}, r.pos || ""), el("td", {}, r.age ? `${r.age}歳` : ""))));
   return el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "手続き"), el("th", {}, "球団"), el("th", {}, "選手"), el("th", {}, "ポジション"), el("th", {}, "年齢"))), body));
+}
+
+// オフのトレードの段階(D-378):このオフのトレードと、提案の件数。交換はトレードの画面で
+function tradeStageSection(v) {
+  const tr = v.trade || { offers: 0, trades: [] };
+  const box = [el("div", { className: "row" }, el("button", { id: "proc-open-trade", type: "button", disabled: state.running || !v.my_team, onclick: () => { state.trade = null; openPage("trade"); } }, tr.offers ? `トレードの画面を開く(提案 ${tr.offers} 件)` : "トレードの画面を開く"))];
+  box.push(tr.trades.length ? el("ul", { className: "offer-history", id: "proc-trades" }, ...tr.trades.map((x) => el("li", { className: x.is_mine ? "mine" : "" }, x.text))) : el("p", { className: "muted small" }, "このオフのトレードはまだありません。"));
+  return box;
 }

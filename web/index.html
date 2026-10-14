@@ -185,7 +185,8 @@
   #proc-autolog summary { min-height: 32px; }
   #proc-message { margin: var(--space-1) 0; font-size: var(--font-small); }
   #screen-procedure .page-head .back { min-height: 40px; padding: var(--space-1) var(--space-3); }
-  #screen-procedure .steps li { padding: var(--space-1) 2px; font-size: 0.75rem; } /* 段階のタブは 6 つ(D-376)。幅 390 でも省略されない大きさ */
+  #screen-procedure .steps { gap: 2px; }
+  #screen-procedure .steps li { padding: var(--space-1) 1px; font-size: 0.7rem; } /* 段階のタブは 7 つ(D-376、D-378)。幅 390 でも省略されない大きさ */
   #screen-procedure .status-bar .bar-actions button { min-height: 36px; }
   #screen-procedure .page-head h1 { font-size: 1.4rem; }
   .compact-filters { display: flex; gap: var(--space-1); margin: var(--space-1) 0; }
@@ -360,7 +361,7 @@
     <div class="mine-line"><strong id="mine-name"></strong></div>
     <div id="mine-record"></div>
   </div>
-  <p class="row"><button id="open-lineup" class="secondary" type="button" hidden>スタメンと打順</button><button id="open-review" class="secondary" type="button">ドラフトの振り返り</button></p>
+  <p class="row"><button id="open-lineup" class="secondary" type="button" hidden>スタメンと打順</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">ドラフトの振り返り</button></p>
 
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
@@ -503,6 +504,22 @@
   <div id="proc-development"></div>
   <div id="proc-contracts"></div>
   <details id="proc-history-box"><summary>指名・自由契約の履歴</summary><div id="proc-history"></div></details>
+</main>
+
+<!-- トレード(D-378) -->
+<main class="screen" id="screen-trade" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>トレード</h1></div>
+  <p class="small" id="trade-window"></p>
+  <p class="message" id="trade-message"></p>
+  <h2>AI 球団からの提案</h2>
+  <div id="trade-offers"></div>
+  <h2>交換を持ちかける</h2>
+  <div class="row"><label>相手の球団 <select id="trade-partner" aria-label="相手の球団"></select></label></div>
+  <div id="trade-mine"></div>
+  <div id="trade-theirs"></div>
+  <p class="small" id="trade-summary"></p>
+  <div class="row"><button id="trade-propose" type="button">この交換を持ちかける</button></div>
+  <details id="trade-history-box"><summary>このシーズン(オフ)のトレード</summary><div id="trade-history"></div></details>
 </main>
 
 <!-- ドラフトの振り返り(当たり外れの一覧。D-216) -->
