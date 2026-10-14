@@ -58,7 +58,7 @@ export async function outlookPanel(token) {
   const o = await query("team_outlook", {});
   if (token !== state.token) return null;
   const b = o.budget;
-  const head = el("p", { className: "small" }, `${o.team_name}:${o.players}/${o.max} 人・空き枠 ${o.space}${o.pending_offers ? `(提示中 ${o.pending_offers} 人を除く)` : ""}・総年俸 ${b.total_text}${b.cap ? `(${b.hard ? "上限" : "目安"} ${b.cap_text}・${b.usage}%)` : ""}`);
+  const head = el("p", { className: "small" }, `${o.team_name}:${o.players}/${o.max} 人・空き枠 ${o.space}${o.pending_offers ? `(提示・希望中の ${o.pending_offers} 人を除く)` : ""}・総年俸 ${b.total_text}${b.cap ? `(${b.hard ? "上限" : "目安"} ${b.cap_text}・${b.usage}%)` : ""}`);
   const rows = o.positions.map((r) => ({
     ...r,
     values: {
@@ -76,7 +76,7 @@ export async function outlookPanel(token) {
     table({ firstLabel: "ポジション", columns, rows, first: (r) => [el("span", {}, r.label)], fluid: true }));
 }
 
-// 提示のパネル(FA と市場で共通。年数・年俸と ±% のボタン・提示する・取り消す。D-257、D-300)
+// 提示のパネル(FA。年数・年俸と ±% のボタン・提示する・取り消す。D-257)
 export function dealPanel(p, info, { prefix, onSend, onCancel }) {
   const d = p.deal;
   const box = el("div", { className: "offer-panel", id: `${prefix}-panel`, dataset: { playerId: p.player_id } });
@@ -101,8 +101,8 @@ export function dealPanel(p, info, { prefix, onSend, onCancel }) {
 }
 
 // 結果の一覧(FA・市場)。閉じた形で、表の下に置く
-export function resultsTable(id, title, results, withRound) {
-  const columns = [...(withRound ? [{ key: "round", label: "ラウンド" }] : []), { key: "team", label: "契約した球団" }, { key: "years", label: "年数" }, { key: "salary", label: "年俸" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "former", label: "前の所属" }, { key: "offers", label: "提示の数" }];
+export function resultsTable(id, title, results, withRound, offersLabel = "提示の数") {
+  const columns = [...(withRound ? [{ key: "round", label: "ラウンド" }] : []), { key: "team", label: "契約した球団" }, { key: "years", label: "年数" }, { key: "salary", label: "年俸" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "former", label: "前の所属" }, { key: "offers", label: offersLabel }];
   const rows = results.map((x) => ({ ...x, values: { round: String(x.round ?? ""), team: x.stayed ? `${x.team_name}(残留)` : x.team_name, years: `${x.years} 年`, salary: x.salary_text, position: x.position_label, age: `${x.age}歳`, former: x.former_team_name, offers: `${x.offers} 球団` } }));
   return el("details", { id }, el("summary", {}, title), table({ firstLabel: "選手", columns, rows, first: (x) => [playerLink(x.name, x.player_id)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true }));
 }

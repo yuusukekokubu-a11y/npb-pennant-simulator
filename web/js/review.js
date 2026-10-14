@@ -3,7 +3,6 @@
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
 import { el, playerLink, table } from "./parts.js";
-import { ceilingText } from "./procedure.js";
 
 // ---- ドラフトの振り返り(当たり外れの一覧。D-216) ----
 
@@ -40,8 +39,8 @@ export async function renderReview(args, token) {
     { key: "route", label: "経路" },
     { key: "position", label: "ポジション" },
     { key: "age", label: "年齢" },
-    { key: "entry", label: "入団時の総合" },
-    { key: "ceiling", label: "天井" },
+    { key: "grade", label: "入団時の評価" },
+    { key: "comment", label: "スカウトの一言" },
     { key: "status", label: "今の所属" },
     { key: "games", label: "出場" },
     { key: "war", label: "WAR 累計" },
@@ -53,8 +52,8 @@ export async function renderReview(args, token) {
         route: r.route_label,
         position: r.position_label,
         age: r.age !== null ? `${r.age}歳` : r.entry_age !== null ? `(${r.entry_age}歳)` : "",
-        entry: r.entry_text,
-        ceiling: ceilingText(r.entry_ceiling),
+        grade: r.entry_grade,
+        comment: r.entry_comment || "—",
         status: r.status_label,
         games: String(r.games),
         war: r.war,
