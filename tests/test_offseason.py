@@ -317,7 +317,9 @@ def test_calibration_shifts_strength_items_only_and_hits_50():
 def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated():
     league = new_league(2, None, CONFIG, PARTS, prerun=True)
     manual = generate_league(2, CONFIG, PARTS)
-    prerun(manual, 2, CONFIG, PARTS, SETTINGS)
+    from pennant.contracts import assign_tiers, load_contract_settings
+
+    prerun(manual, 2, CONFIG, PARTS, SETTINGS, tiers=assign_tiers([t.id for t in manual.teams], 2, load_contract_settings()))  # 球団の規模はシードから(D-353)
     apply_calibration(manual, SETTINGS.calibration("medium"), CONFIG)
     assert [(p.id, dict(p.ratings)) for p in league.all_players()] == [(p.id, dict(p.ratings)) for p in manual.all_players()]
     plain = new_league(2, None, CONFIG, PARTS, prerun=False)
