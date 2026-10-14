@@ -12,13 +12,13 @@ from pennant import fa as famod
 from pennant import market as marketmod
 from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 
-HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "preference")
+HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "preference", "ease", "trajectory_bias")
 
 
 @pytest.fixture(scope="module")
 def season_end():
-    """お金のルール「標準」で、自球団 T01 の 1 シーズン目を終えて年度を確定した直後(契約の段階)。"""
-    g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default", money_rule="standard")
+    """自球団 T01 の 1 シーズン目を終えて年度を確定した直後(契約の段階)。"""
+    g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default")
     g.advance(125)
     g.year_end()
     return g
@@ -94,19 +94,18 @@ def test_market_ai_uses_the_fa_policy(season_end):
 
 
 @pytest.mark.slow
-def test_none_rule_market_salary_range():
-    g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default", money_rule="none")
-    g.advance(125)
-    g.year_end()
-    _to_stage(g, "market")
+def test_market_salary_needs_room_in_funds(season_end):
+    g = _to_stage(_fresh(season_end), "market")
     row = g.decision_table("market")["rows"][0]
     calc = row["deal"]["calc_salary"]
-    with pytest.raises(ValueError, match="倍"):
-        g.offseason_market_offer(row["player_id"], 1, int(calc * 1.3) + 1000)
-    with pytest.raises(ValueError, match="低い"):
-        g.offseason_market_offer(row["player_id"], 1, calc - 100)
-    v = g.offseason_market_offer(row["player_id"], 1, int(calc * 1.2))
-    assert v["market"]["offers"][0]["salary"] >= calc
+    with pytest.raises(ValueError, match="最低年俸"):
+        g.offseason_market_offer(row["player_id"], 1, 100)
+    room = g.budget_info("T01")["cap"] - g.budget_info("T01")["total"]
+    with pytest.raises(ValueError, match="資金"):
+        g.offseason_market_offer(row["player_id"], 1, max(room, 0) + 100)
+    if calc <= room:
+        v = g.offseason_market_offer(row["player_id"], 1, calc)
+        assert v["market"]["offers"][0]["salary"] == calc and "none_max_ratio" not in v["market"]
 
 
 @pytest.mark.slow

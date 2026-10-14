@@ -1,4 +1,5 @@
-"""UI の整理①a(D-270〜D-273):オフの手続きの段階・契約の画面の表・「この段階をおまかせ」と「次の手続きへ」の意味・「なし」の年俸。"""
+"""オフの手続きの契約の段階(UI の整理①a。D-270〜D-272。作り直し②で更改は査定の自動に。D-353〜D-361):
+資金の増減・査定の更改と FA 宣言・契約の画面の表・資金の超過の関所・「この段階をおまかせ」と「次の手続きへ」の意味。"""
 
 import copy
 import json
@@ -6,19 +7,18 @@ import json
 import pytest
 
 from pennant import api
-from pennant.contracts import remaining_years
+from pennant.contracts import base_funds, changed_funds, contract_years, remaining_years, team_salary
 from pennant.savegame import load_game, save_game
 
 
 @pytest.fixture(scope="module")
-def contract_games():
-    out = {}
-    for rule in ("none", "standard"):
-        g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default", money_rule=rule)
-        g.advance(125)
-        g.year_end()
-        out[rule] = g
-    return out
+def contract_game():
+    g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default")
+    funds_before = dict(g.state.team_funds)
+    g.advance(125)
+    g.year_end()
+    g.funds_before = funds_before
+    return g
 
 
 def _fresh(g):
@@ -29,23 +29,65 @@ def _picks(g, phase):
     return [x for x in g.state.procedure.picks if x["team_id"] == g.state.my_team_id and x["phase"] == phase and x["player_id"]]
 
 
+def _clear_overrun(g):
+    while g.offseason_view()["renewal"]["over"] > 0:
+        rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
+        g.offseason_contract_release(rows[0]["player_id"])
+
+
 @pytest.mark.slow
-def test_stages_and_contract_table(contract_games):
-    g = _fresh(contract_games["none"])
+def test_funds_change_and_automatic_renewal(contract_game):
+    g = _fresh(contract_game)
+    state = g.state
+    proc = state.procedure
+    cs = state.contract_settings
+    # 資金は前のシーズンの順位で増減した(D-354)
+    for t in state.league.teams:
+        assert state.team_funds[t.id] == changed_funds(contract_game.funds_before[t.id], state.budget_tiers[t.id], proc.ranks[t.id], cs)
+    assert any(state.team_funds[t] != contract_game.funds_before[t] for t in state.team_funds)
+    # 満了した全員が、全球団とも査定で更改済か FA 宣言(未決定はない。D-358、D-359)
+    negs = list(proc.negotiations.values())
+    assert negs and all(e["status"] in ("accepted", "declared") for e in negs)
+    assert {e["team_id"] for e in negs if e["status"] == "accepted"} == {t.id for t in state.league.teams}
+    players = {p.id: p for p in state.league.all_players()}
+    for e in negs:
+        if e["status"] != "accepted":
+            assert e["context"].get("fa_holder") and e["player_id"] in proc.fa_info  # 宣言できるのは FA 権保持者だけ
+            continue
+        p = players[e["player_id"]]
+        assert p.contract["salary"] == e["auto_salary"] and p.contract["until"] == proc.year + e["ai_years"] and p.contract["history"][-1]["reason"] == "renew"
+        if e["old_salary"]:
+            assert e["auto_salary"] >= e["old_salary"] * cs.decline_floor  # 1 年で下がるのは 25% まで(D-357)
+        assert e["ai_years"] == contract_years(e["age"], e["expected"], cs)  # 主力級だけ複数年(D-360)
+    assert any(e["ai_years"] > 1 for e in negs if e["status"] == "accepted")
+    assert any(e["old_salary"] and e["auto_salary"] > e["old_salary"] for e in negs) and any(e["old_salary"] and e["auto_salary"] < e["old_salary"] for e in negs)
+    assert 3 <= sum(1 for e in negs if e["status"] == "declared") <= 40
+
+
+@pytest.mark.slow
+def test_stages_and_contract_table(contract_game):
+    g = _fresh(contract_game)
     v = g.offseason_view()
     assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "ドラフト", "市場", "完了"]
-    assert "note" not in v["renewal"] and not v["renewal"]["can_next"] and v["renewal"]["none_max_ratio"] == 1.3
+    rn = v["renewal"]
+    assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"]
+    for gone in ("none_max_ratio", "max_offers", "unoffered", "axes", "projected_total"):
+        assert gone not in rn
     t = g.contract_table()
-    assert [c["label"] for c in t["columns"]] == ["WAR", "状態", "今回の提示", "ポジション", "年齢", "今の契約", "出場"]  # 「全員」は共通の列だけ
+    assert [c["label"] for c in t["columns"]] == ["WAR", "状態", "新しい年俸", "増減", "ポジション", "年齢", "今の契約", "出場"]  # 「全員」は共通の列だけ
     assert t["sort"]["key"] == "war_all" and t["order"] == "asc" and not t["kinds"]  # 初期は WAR の低い順
     team = g._team("T01")
-    assert len(t["rows"]) == len(team.players) == v["renewal"]["players"]
+    assert len(t["rows"]) == len(team.players) + rn["counts"]["declared"]
     wars = [float(r["values"]["war_all"]) for r in t["rows"] if r["values"]["war_all"] not in ("—", "-")]
     assert wars == sorted(wars)
-    assert {r["values"]["status"] for r in t["rows"]} <= {"未提示", "契約中"}
+    assert {r["values"]["status"] for r in t["rows"]} <= {"更改済", "契約中", "FA 宣言"}
+    assert [x["key"] for x in t["statuses"]] == ["all", "accepted", "declared", "released", "contracted"]
+    accepted = g.contract_table("all", status="accepted")["rows"]
+    assert accepted and all(r["renewal"]["status"] == "accepted" and r["values"]["new"].endswith("年") for r in accepted)
+    assert all("can_offer" not in r for r in t["rows"])
     # 種類を選べるのは、投手・捕手・内野手・外野手を選んだとき。選んだ指標は名前のすぐ右(D-272)
     p = g.contract_table("pitcher", "saber", "fip")
-    assert [c["key"] for c in p["columns"]][:4] == ["fip", "status", "offer", "pos"] and len(p["kinds"]) == 3
+    assert [c["key"] for c in p["columns"]][:5] == ["fip", "status", "new", "change", "pos"] and len(p["kinds"]) == 3
     assert all(r["position"] in ("SP", "RP") for r in p["rows"])
     c = g.contract_table("catcher", "basic")
     assert c["rows"] and all(r["position"] == "C" for r in c["rows"]) and c["columns"][0]["key"] == "war"
@@ -54,49 +96,59 @@ def test_stages_and_contract_table(contract_games):
     with pytest.raises(ValueError):
         g.contract_table("bench")
     with pytest.raises(ValueError):
-        g.contract_table("all", status="unknown")
-    text = json.dumps(t, ensure_ascii=False)
-    for key in ("ratings", "potential", "growth_type", "archetype", "preference"):
+        g.contract_table("all", status="refused")
+    text = json.dumps([t, v], ensure_ascii=False)
+    for key in ("ratings", "potential", "growth_type", "archetype", "preference", "ease", "trajectory_bias"):
         assert f'"{key}"' not in text
+    rt = g.offseason_table("renewal", "batter", "basic")
+    assert [c["label"] for c in rt["columns"]][3:8] == ["前の年俸", "新しい年俸", "増減", "状態", "FA 権"]
 
 
 @pytest.mark.slow
-def test_contract_stage_gate_release_and_ai_at_the_end(contract_games):
-    g = _fresh(contract_games["standard"])
+def test_overrun_gate_release_and_ai_at_the_end(contract_game):
+    g = _fresh(contract_game)
     proc = g.state.procedure
-    with pytest.raises(ValueError, match="決まっていない"):
+    team = g._team("T01")
+    # 資金を超えるようにして、関所を確かめる(D-361)
+    g.state.team_funds["T01"] = team_salary(team) - 1000
+    assert g.offseason_view()["renewal"]["over"] == 1000 and not g.offseason_view()["renewal"]["can_next"]
+    with pytest.raises(ValueError, match="資金"):
         g.offseason_next()
-    g.offseason_renew_auto()
-    st = g.contract_table("all", status="refused")
-    assert all(r["values"]["status"].startswith("保留") for r in st["rows"])
-    for r in st["rows"]:
-        g.offseason_contract_release(r["player_id"])  # 交渉中の選手は、交渉をやめて自由契約
-    released = g.contract_table("all", status="released")["rows"]
-    assert {r["player_id"] for r in st["rows"]} <= {r["player_id"] for r in released} and all(not r["in_team"] and not r["can_release"] for r in released)
-    # 契約が残る選手(複数年の途中。いなければ更改済)も、自由契約にできる(残りの契約は消える)
+    # 契約が残る選手(更改済・複数年の途中)も自由契約にできる(残りの契約は消える)
     rows = [r for r in g.contract_table("all", status="contracted")["rows"] + g.contract_table("all", status="accepted")["rows"] if r["can_release"]]
-    target = next(p for p in g._team("T01").players if p.id == rows[0]["player_id"])
+    target = next(p for p in team.players if p.id == rows[0]["player_id"])
     assert remaining_years(target.contract, proc.year + 1) >= 1
     g.offseason_contract_release(target.id)
-    assert target.contract is None and target in proc.market and g.contract_table("all")["rows"]
+    assert target.contract is None and target in proc.market
     assert not proc.budget_releases and not proc.ai_release_done  # AI の超過の解消と自由契約は、まだ(契約の段階の終わりに。D-272)
-    while g.offseason_view()["renewal"]["over"] > 0:
-        rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
-        g.offseason_contract_release(rows[0]["player_id"])
+    _clear_overrun(g)
     assert g.offseason_view()["renewal"]["can_next"]
     v = g.offseason_next()
     assert v["stage"] in ("fa", "draft") and proc.ai_release_done
-    assert any(x["team_id"] != "T01" and x.get("note") not in ("negotiation", "budget") for x in proc.released)  # AI の自由契約
+    assert all(team_salary(t) <= g.state.team_funds[t.id] for t in g.state.league.teams)  # AI 球団は資金の中に収めた
+    assert all(x["team_id"] != "T01" for x in proc.budget_releases)
+    assert any(x["team_id"] != "T01" and x.get("note") != "budget" for x in proc.released)  # AI の自由契約
 
 
 @pytest.mark.slow
-def test_stage_auto_and_next_semantics(contract_games):
-    g = _fresh(contract_games["standard"])
-    v = g.offseason_stage_auto()  # 契約の段階だけを AI の方針で(自球団の分も)
+def test_released_after_renewal_counts_as_released(contract_game):
+    """更改済の選手を自由契約にすると、状態の内訳でも「自由契約」に数える(更改の記録は更改済のまま)。"""
+    g = _fresh(contract_game)
+    before = g.offseason_view()["renewal"]["roster_counts"]
+    row = next(r for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"])
+    g.offseason_contract_release(row["player_id"])
+    after = g.offseason_view()["renewal"]["roster_counts"]
+    assert after["released"] == before["released"] + 1 and after["accepted"] == before["accepted"] - 1
+
+
+@pytest.mark.slow
+def test_stage_auto_and_next_semantics(contract_game):
+    g = _fresh(contract_game)
+    v = g.offseason_stage_auto()  # 契約の段階だけを AI の方針で(自球団の分も。超過の解消と自由契約)
     log = v["auto_log"]
-    assert log["stage"] == "contract" and log["items"] and v["stage"] in ("fa", "draft")
-    assert all(x["kind"] in ("renew", "declare", "release") for x in log["items"])
-    assert not g.state.procedure.negotiations or all(e["status"] != "pending" for e in g.state.procedure.negotiations.values())
+    assert log["stage"] == "contract" and v["stage"] in ("fa", "draft")
+    assert all(x["kind"] == "release" for x in log["items"])
+    assert team_salary(g._team("T01")) <= g.state.team_funds["T01"]
     if v["stage"] == "fa":
         v = g.offseason_stage_auto()
         assert v["auto_log"]["stage"] == "fa" and v["stage"] == "draft"
@@ -108,7 +160,7 @@ def test_stage_auto_and_next_semantics(contract_games):
     assert r["finished"] and r["auto_log"]["stage"] == "market" and g.status()["year"] == 2
     assert all(len(t.players) == 70 for t in g.state.league.teams)
     # 同じ操作なら同じ結果
-    g2 = _fresh(contract_games["standard"])
+    g2 = _fresh(contract_game)
     g2.offseason_stage_auto()
     if g2.offseason_view()["stage"] == "fa":
         g2.offseason_stage_auto()
@@ -118,8 +170,8 @@ def test_stage_auto_and_next_semantics(contract_games):
 
 
 @pytest.mark.slow
-def test_fa_next_makes_no_more_offers(contract_games):
-    g = _fresh(contract_games["standard"])
+def test_fa_next_makes_no_more_offers(contract_game):
+    g = _fresh(contract_game)
     g.offseason_stage_auto()
     proc = g.state.procedure
     if g.offseason_view()["stage"] != "fa":
@@ -129,34 +181,20 @@ def test_fa_next_makes_no_more_offers(contract_games):
 
 
 @pytest.mark.slow
-def test_none_salary_range_and_reasons(contract_games):
-    g = _fresh(contract_games["none"])
-    proc = g.state.procedure
-    e = next(e for e in proc.negotiations.values() if e["team_id"] == "T01")
-    auto = int(e["auto_salary"])
-    with pytest.raises(ValueError, match="倍"):
-        g.offseason_offer(e["player_id"], 1, int(auto * 1.3) + 100)
-    with pytest.raises(ValueError, match="低い"):
-        g.offseason_offer(e["player_id"], 1, auto - 100)
-    g.offseason_renew_auto()
-    reasons = {o["reason"] for x in proc.negotiations.values() for o in x["offers"] if not o["accepted"]}
-    assert "salary" in reasons  # 「なし」でも「年俸が低い」が出る(全球団の最初の提示。D-273)
-
-
-@pytest.mark.slow
-def test_old_release_phase_resumes_as_contract(contract_games):
-    """旧版で「自由契約」の段階にいたセーブは、「契約」の段階として再開する(D-272)。保存形式は版 12 のまま。"""
-    g = _fresh(contract_games["none"])
-    g.offseason_renew_auto()
-    for e in [e for e in g.state.procedure.negotiations.values() if e["team_id"] == "T01" and e["status"] == "pending"]:
-        g.offseason_renew_release(e["player_id"])
-    g.state.procedure.phase = "release"  # 旧版の手続き(更改の後、自由契約の段階)
-    again = api.Game(load_game(save_game(g.state)), dirty=False)
-    v = again.offseason_view()
-    assert v["phase"] == "release" and v["stage"] == "contract" and v["phase_label"] == "契約" and v["renewal"]["can_next"]
-    assert again.contract_table()["rows"]
-    v = again.offseason_next()
-    assert v["stage"] in ("fa", "draft") and again.state.procedure.ai_release_done
+def test_whole_offseason_keeps_funds_and_save_round_trip(contract_game):
+    g = _fresh(contract_game)
+    again = api.Game(load_game(save_game(g.state)), dirty=False)  # 手続きの途中で保存しても同じ
+    assert again.state.team_funds == g.state.team_funds and again.state.procedure.negotiations == g.state.procedure.negotiations
+    g.offseason_auto()
+    again.offseason_auto()
+    assert [p.contract for p in g.state.league.all_players()] == [p.contract for p in again.state.league.all_players()]
+    fills = [x for x in g.state.transactions if x["year"] == 1 and x["phase"] == "fill"]
+    assert all(x["salary"] == g.state.contract_settings.minimum for x in fills)
+    for t in g.state.league.teams:  # 超えているのは最低年俸の自動補充の分だけ(補充は例外。D-235)
+        over = team_salary(t) - g.state.team_funds[t.id]
+        assert over <= sum(x["salary"] for x in fills if x["team_id"] == t.id)
+    lo, hi = g.state.contract_settings.funds_range
+    assert all(base_funds(g.state.budget_tiers[tid], g.state.contract_settings) * lo <= v <= base_funds(g.state.budget_tiers[tid], g.state.contract_settings) * hi for tid, v in g.state.team_funds.items())
 
 
 def test_bridge_has_new_operations():
@@ -167,15 +205,4 @@ def test_bridge_has_new_operations():
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
     assert {"stage_auto", "contract_release", "auto", "next"} <= set(bridge._OFFSEASON) and "contract_table" in bridge._QUERIES
-
-
-@pytest.mark.slow
-def test_released_after_renewal_counts_as_released(contract_games):
-    """更改済の選手を自由契約にすると、状態の内訳でも「自由契約」に数える(交渉の記録は更改済のまま)。"""
-    g = api.Game(copy.deepcopy(contract_games["none"].state), dirty=False)
-    g.offseason_renew_auto()
-    before = g.offseason_view()["renewal"]["roster_counts"]
-    row = next(r for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"])
-    g.offseason_contract_release(row["player_id"])
-    after = g.offseason_view()["renewal"]["roster_counts"]
-    assert after["released"] == before["released"] + 1 and after["accepted"] == before["accepted"] - 1
+    assert not {"renew_auto", "offer", "renew_release"} & set(bridge._OFFSEASON)  # 更改の提示はなくした(D-358)

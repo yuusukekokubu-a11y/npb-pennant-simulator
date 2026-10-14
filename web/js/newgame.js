@@ -154,8 +154,7 @@ export async function startNewGame() {
     $("trial-text").textContent = "リーグの歴史を作っています(数十年分の選手の入れ替わり)…";
     const t0 = performance.now();
     const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
-    const moneyRule = document.querySelector("input[name=money-rule]:checked").value;
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, moneyRule }).finally(() => ($("trial-box").hidden = true));
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel }).finally(() => ($("trial-box").hidden = true));
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");
@@ -192,7 +191,7 @@ export function helpIdFor(target) {
   if (target.name === "my-team") return target.value === "-1" ? "setting.watch" : "setting.my_team";
   if (target.id === "league-seed") return "setting.league_seed";
   if (target.id === "season-seed") return "setting.season_seed";
-  const groups = { "baseline-mode": "setting.baseline", "scout-level": "setting.scout", "money-rule": "setting.money_rule" };
+  const groups = { "baseline-mode": "setting.baseline", "scout-level": "setting.scout" };
   if (groups[target.name]) return `${groups[target.name]}.${target.value}`;
   return null;
 }

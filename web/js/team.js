@@ -53,18 +53,18 @@ export async function renderTeam(args, token) {
   $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.batter], rows: rows("batter"), first }));
 }
 
-// 総年俸と予算の表示(F3-2a。D-231):なしは総年俸だけ、ゆるいは目安、標準・きびしいは上限
+// 総年俸と資金の表示(作り直し②。D-353):資金は年俸の合計の上限。球団の規模(大・中・小)と使用率
 function budgetLines(b) {
-  const lines = [el("div", {}, el("span", { className: "big" }, `総年俸 ${b.total_text}`), b.tier_label ? el("span", { className: "sub" }, `予算の格差:${b.tier_label}`) : null)];
+  const lines = [el("div", {}, el("span", { className: "big" }, `総年俸 ${b.total_text}`), b.tier_label ? el("span", { className: "sub" }, `球団の規模:${b.tier_label}`) : null)];
   if (b.cap) {
     const over = b.over > 0;
     lines.push(
-      el("div", {}, `${b.hard ? "予算の上限" : "予算の目安"} ${b.cap_text}(使用率 ${b.usage}%)`),
+      el("div", {}, `資金 ${b.cap_text}(使用率 ${b.usage}%)`),
       el("div", { className: over ? "budget-bar over" : "budget-bar" }, el("span", { style: `width: ${Math.min(100, b.usage)}%` })),
-      over ? el("div", { className: "warn" }, `${b.hard ? "上限" : "目安"}を ${b.over.toLocaleString()} 万円超えています${b.hard ? "" : "(ゆるいなので契約は結べます)"}`) : null,
+      over ? el("div", { className: "warn" }, `資金を ${b.over.toLocaleString()} 万円超えています`) : null,
     );
   }
-  lines.push(el("dl", {}, el("dt", {}, `お金のルール:${b.rule_label}`), el("dd", {}, b.rate ? `年俸の単価:1 WAR あたり約 ${(b.rate / 10000).toFixed(2)} 億円` : "")));
+  lines.push(el("dl", {}, el("dt", {}, "年俸の単価"), el("dd", {}, b.rate ? `1 WAR あたり約 ${(b.rate / 10000).toFixed(2)} 億円` : "-")));
   return lines.filter((x) => x !== null);
 }
 

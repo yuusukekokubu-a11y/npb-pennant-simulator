@@ -1,4 +1,4 @@
-"""画面から呼ぶ操作の関数のうち、契約(予算・契約更改・契約の画面の表・自由契約)。"""
+"""画面から呼ぶ操作の関数のうち、契約(資金・契約更改の結果・契約の画面の表・自由契約)。作り直し②で更改は査定の自動に(D-353〜D-361)。"""
 
 from __future__ import annotations
 
@@ -6,19 +6,9 @@ from fractions import Fraction
 
 from .. import draft as draftmod, fa as famod
 from ..abilities import POSITION_LABELS
-from ..contracts import (
-    RULE_LABELS,
-    RULE_NOTES,
-    TIER_LABELS,
-    budget_of,
-    cap_of,
-    is_hard,
-    remaining_years,
-    team_salary,
-)
+from ..contracts import TIER_LABELS, base_funds, remaining_years, team_salary
 from ..draft import stage_of
 from ..metrics import innings_text
-from ..negotiation import reason_text
 from .common import (
     BATS_LABELS,
     CONTRACT_COLUMNS,
@@ -40,21 +30,28 @@ from .common import (
 )
 
 
+def _change_text(old: int | None, new: int) -> str:
+    if old is None:
+        return "新規"
+    d = int(new) - int(old)
+    return "±0" if d == 0 else f"{d:+,}"
+
+
 class ContractMixin:
-    """Game の一部:契約(予算・契約更改・契約の画面の表・自由契約)。"""
+    """Game の一部:契約(資金・契約更改の結果・契約の画面の表・自由契約)。"""
 
     def budget_info(self, team_id: str) -> dict:
-        """球団の総年俸・予算・上限・使用率(公開情報。なしのときは総年俸だけ)。"""
+        """球団の総年俸・資金(年俸の合計の上限)・規模・使用率(公開情報。D-353)。"""
         state = self.state
         team = self._team(team_id)
         total = team_salary(team)
         tier = state.budget_tiers.get(team_id)
-        budget = budget_of(state.money_rule, tier, state.contract_settings)
-        cap = cap_of(state.money_rule, tier, state.contract_settings)
+        cap = state.team_funds.get(team_id)
+        cap = None if cap is None else int(cap)
         return {
-            "team_id": team_id, "rule": state.money_rule, "rule_label": RULE_LABELS[state.money_rule], "total": total, "total_text": f"{total:,} 万円",
-            "budget": budget, "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "tier": tier, "tier_label": TIER_LABELS.get(tier) if tier else None,
-            "usage": None if cap is None else round(100.0 * total / cap, 1), "over": None if cap is None else max(0, total - cap), "hard": is_hard(state.money_rule),
+            "team_id": team_id, "total": total, "total_text": f"{total:,} 万円",
+            "budget": base_funds(tier, state.contract_settings) if tier else None, "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "tier": tier, "tier_label": TIER_LABELS.get(tier) if tier else None,
+            "usage": None if not cap else round(100.0 * total / cap, 1), "over": None if cap is None else max(0, total - cap), "hard": cap is not None,
             "rate": state.contract_rates.get(str(state.year)) or (max(state.contract_rates.values()) if state.contract_rates else None),
         }
 
@@ -68,7 +65,7 @@ class ContractMixin:
         return {"fa_seasons": seasons, "fa_required": need, "fa_holder": seasons >= need, "fa_text": f"FA 権あり(一軍 {seasons} シーズン)" if seasons >= need else f"一軍 {seasons} シーズン(FA 権まであと {need - seasons})", "salary": int(c["salary"]), "salary_text": f"{int(c['salary']):,} 万円", "until": int(c["until"]), "remaining": remaining_years(c, y), "history": [{"year": h["year"], "salary": h["salary"], "salary_text": f"{int(h['salary']):,} 万円", "years": h["years"], "reason": h["reason"], "reason_label": CONTRACT_REASONS.get(h["reason"], h["reason"]), "offers": h.get("offers")} for h in c.get("history", [])]}
 
     def _procedure_contracts(self, proc) -> dict:
-        """手続きの画面に出す契約の情報:ルール、自球団の総年俸と予算、更改の結果、予算超過で自由契約になった選手。"""
+        """手続きの画面に出す契約の情報:自球団の総年俸と資金、更改の結果、資金の超過で自由契約になった選手、各球団の資金。"""
         state = self.state
         names = self._team_names()
         my = state.my_team_id
@@ -81,74 +78,59 @@ class ContractMixin:
             mine = info
         renew = lambda x: {**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my, "old_text": None if x.get("old_salary") is None else f"{x['old_salary']:,} 万円", "salary_text": f"{x['salary']:,} 万円", "change": None if x.get("old_salary") is None else x["salary"] - x["old_salary"]}
         return {
-            "rule": state.money_rule, "rule_label": RULE_LABELS[state.money_rule], "rule_note": RULE_NOTES[state.money_rule], "hard": ctx.hard(),
+            "hard": ctx.hard(),
             "rate": proc.rate, "rate_text": f"{proc.rate / 10000:.2f} 億円 / WAR" if proc.rate else "-",
             "mine": mine,
             "renewals": [renew(x) for x in proc.renewals],
             "budget_releases": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my, "salary_text": f"{x['salary']:,} 万円"} for x in proc.budget_releases],
-            "negotiation_releases": [{"player_id": e["player_id"], "name": e["name"], "team_id": e["team_id"], "team_name": names.get(e["team_id"], ""), "position_label": POSITION_LABELS.get(e["position"], ""), "age": e["age"], "is_mine": e["team_id"] == my, "offers": len(e["offers"]), "reason": self._renewal_status({**e, "status": "pending"})[2] if e["offers"] else ""} for e in proc.negotiations.values() if e["status"] == "released"],
             "teams": [{"team_id": t.id, "team_name": t.name, "is_mine": t.id == my, **{k: v for k, v in self.budget_info(t.id).items() if k in ("total", "total_text", "cap", "cap_text", "usage", "tier_label")}} for t in state.league.teams],
-            "note": "契約が満了した選手に、見込みの WAR(直近 3 シーズンの加重平均。履歴がなければスカウト評価)から算定した年俸で提示し、選手が志望で受けるか断るかを決めました(AI 球団は、断られたら見込みの高い選手にだけ条件を上げて再提示し、ほかは自由契約)。" + ("標準以上では、予算の上限を超える球団は、見込みの WAR あたりの年俸が高い選手から自由契約にして超過を解消します(あなたの球団は自由契約の画面で自分で選びます)。" if ctx.hard() else ""),
+            "note": "契約が満了した選手は、成績(出番が少なければ能力も)から査定した年俸で自動的に更改しました(1 年で下がるのは 25% まで)。FA 権を持つ選手の一部は FA を宣言しました。総年俸が資金を超える球団は、見込みの WAR あたりの年俸が高い選手から自由契約にして超過を解消します(あなたの球団は契約の画面で自分で選びます)。",
         }
 
     def _contract_ctx(self):
         """進行中の手続きの契約の文脈(評価は手続きのシードと区切りで引く)。"""
         return draftmod.state_context(self.state, self.state.procedure)
 
-    def _renewal_status(self, e) -> tuple[int, str, str]:
-        """交渉の状態の (並び順, 状態の文, 理由の文)。理由は最後に断られた理由(公開。D-245)。"""
-        neg = self.state.negotiation_settings
+    def _renewal_status(self, e) -> tuple[int, str]:
+        """更改の状態の (並び順, 状態の文)。"""
         if e["status"] == "accepted":
-            last = e["offers"][-1] if e["offers"] else {"years": e.get("ai_years", 1), "salary": e["auto_salary"]}
-            return 2, f"更改済({last['years']} 年・{int(last['salary']):,})", ""
-        if e["status"] == "released":
-            return 3, "自由契約", ""
+            return 2, f"更改済({int(e.get('ai_years', 1))} 年・{int(e['auto_salary']):,})"
         if e["status"] == "declared":
-            return 3, "FA 宣言", reason_text(neg, e["offers"][-1]) if e["offers"] and e["offers"][-1].get("reason") in neg.axes else ""
-        if not e["offers"]:
-            return 1, "未提示", ""
-        left = draftmod.offers_left(e, neg)
-        return 0, f"断られた(残り {left} 回)", reason_text(neg, e["offers"][-1])
+            return 3, "FA 宣言"
+        return 3, "自由契約"
 
     def _renewal_public(self, e) -> dict:
-        neg = self.state.negotiation_settings
-        order, status, reason = self._renewal_status(e)
+        order, status = self._renewal_status(e)
+        old = e["old_salary"]
+        new = int(e["auto_salary"])
         return {
             "player_id": e["player_id"], "name": e["name"], "role": e["role"], "position": e["position"], "position_label": POSITION_LABELS.get(e["position"], ""), "age": e["age"],
-            "old_salary": e["old_salary"], "old_text": "-" if e["old_salary"] is None else f"{int(e['old_salary']):,} 万円",
-            "auto_salary": int(e["auto_salary"]), "auto_text": f"{int(e['auto_salary']):,} 万円", "expected": e["expected"],
-            "status": e["status"] if e["status"] != "pending" else ("refused" if e["offers"] else "pending"), "status_label": status, "reason": reason,
-            "offers": [{"years": o["years"], "salary": o["salary"], "salary_text": f"{int(o['salary']):,} 万円", "accepted": o["accepted"], "reason": "" if o["accepted"] else reason_text(neg, o)} for o in e["offers"]],
-            "offers_left": draftmod.offers_left(e, neg), "max_offers": neg.max_offers,
+            "old_salary": old, "old_text": "-" if old is None else f"{int(old):,} 万円",
+            "new_salary": new, "new_text": f"{new:,} 万円", "years": int(e.get("ai_years", 1)), "change": None if old is None else new - int(old), "change_text": _change_text(old, new),
+            "expected": e["expected"], "status": e["status"], "status_label": status,
         }
 
     def _renewal_info(self, proc) -> dict:
-        """契約更改の段階の、自球団の情報(公開用)。"""
+        """契約の段階の、自球団の情報(公開用)。"""
         state = self.state
         my = state.my_team_id
         ctx = self._contract_ctx()
         entries = [e for e in proc.negotiations.values() if e["team_id"] == my]
-        counts = {"pending": 0, "refused": 0, "accepted": 0, "released": 0, "declared": 0}
+        counts = {"accepted": 0, "released": 0, "declared": 0}
         for e in entries:
-            counts[e["status"] if e["status"] in ("accepted", "released", "declared") else "refused" if e["offers"] else "pending"] += 1
+            counts[e["status"] if e["status"] in counts else "released"] += 1
         team = self._team(my)
         cap = ctx.cap(my)
         status = {pid: st for pid, (st, _, _) in self._contract_statuses(proc).items()}
         roster_counts = {k: sum(1 for v in status.values() if v == k) for k in CONTRACT_STATUS_LABELS}
         over = draftmod.over_cap(team, ctx) if ctx.hard() else 0
-        open_n = counts["pending"] + counts["refused"]
+        total = team_salary(team)
         return {
-            "counts": counts, "total": len(entries), "open": open_n, "fa_required": int(famod.fa_settings(state.negotiation_settings)["seasons_required"]),
-            "unoffered": counts["pending"],
+            "counts": counts, "total": len(entries), "fa_required": int(famod.fa_settings(state.negotiation_settings)["seasons_required"]),
             "roster_counts": roster_counts, "status_labels": dict(CONTRACT_STATUS_LABELS), "players": len(team.players), "over": over, "over_text": f"{over:,} 万円",
-            "can_next": open_n == 0 and over <= 0,
-            "none_max_ratio": float(state.negotiation_settings.money_none["max_ratio"]) if state.money_rule == "none" else None,
-            "salary_editable": True, "max_years": state.contract_settings.max_years, "min_years": state.contract_settings.min_years,
-            "minimum_salary": state.contract_settings.minimum, "rounding": state.contract_settings.rounding, "max_offers": state.negotiation_settings.max_offers,
-            "projected_total": draftmod.projected_total(team, proc), "projected_text": f"{draftmod.projected_total(team, proc):,} 万円", "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
-            "released": [self._renewal_public(e) for e in entries if e["status"] == "released"],
+            "can_next": over <= 0,
+            "team_total": total, "team_total_text": f"{total:,} 万円", "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "hard": ctx.hard(),
             "declared": [self._renewal_public(e) for e in entries if e["status"] == "declared"],
-            "axes": [{"key": k, "label": state.negotiation_settings.label(k), "reason": state.negotiation_settings.reason(k)} for k in state.negotiation_settings.axes],
         }
 
     def _renewal_table(self, role: str, kind: str, sort: str | None, order: str | None, season: str | None) -> dict:
@@ -156,21 +138,22 @@ class ContractMixin:
         usage = ROSTER_BASE_COLUMNS[role][2]
         cols = [
             ROSTER_BASE_COLUMNS[role][0], ROSTER_BASE_COLUMNS[role][1], usage,
-            {"key": "salary", "label": "現在の年俸", "type": "count", "better": "high"},
-            {"key": "auto", "label": "自動案の年俸", "type": "count", "better": "high"},
+            {"key": "salary", "label": "前の年俸", "type": "count", "better": "high"},
+            {"key": "new", "label": "新しい年俸", "type": "count", "better": "high"},
+            {"key": "change", "label": "増減", "type": "count", "better": "high"},
             {"key": "status", "label": "状態", "type": "text", "better": "low"},
-            {"key": "reason", "label": "理由", "type": "text", "better": "low"},
             {"key": "fa", "label": "FA 権", "type": "count", "better": "high"},
         ]
         extra = {}
+        players = {p.id: p for p in self._contract_players(proc)}
         for e in proc.negotiations.values():
-            if e["team_id"] != self.state.my_team_id or e["status"] == "released":
+            if e["team_id"] != self.state.my_team_id or e["player_id"] not in players:
                 continue
-            o, status, reason = self._renewal_status(e)
+            o, status = self._renewal_status(e)
             old = e["old_salary"]
-            pl = next((q for q in self._my_team().players if q.id == e["player_id"]), None)
-            seasons = famod.seasons_of(pl) if pl is not None else 0
-            extra[e["player_id"]] = {"salary": (None, "—") if old is None else (int(old), f"{int(old):,}"), "auto": (int(e["auto_salary"]), f"{int(e['auto_salary']):,}"), "status": (o, status), "reason": (reason or "~", reason or ""), "fa": (seasons, f"あり({seasons})" if e["context"].get("fa_holder") else str(seasons))}
+            new = int(e["auto_salary"])
+            seasons = famod.seasons_of(players[e["player_id"]])
+            extra[e["player_id"]] = {"salary": (None, "—") if old is None else (int(old), f"{int(old):,}"), "new": (new, f"{new:,}"), "change": (None if old is None else new - int(old), _change_text(old, new)), "status": (o, status), "fa": (seasons, f"あり({seasons})" if e["context"].get("fa_holder") else str(seasons))}
         if not sort:
             sort, order = "status", "asc"
         table = self.roster_table(self.offseason_players("renewal"), role, kind, sort, order, season, base_columns=cols, extra_values=extra)
@@ -179,90 +162,6 @@ class ContractMixin:
             r["renewal"] = pub.get(r["player_id"])
         table["phase"] = "renewal"
         return table
-
-    def _renewal_entry(self, player_id: str):
-        proc = self._proc()
-        if stage_of(proc.phase) != "contract":
-            raise ValueError("今は契約の段階ではありません")
-        team = self._my_team()
-        e = proc.negotiations.get(str(player_id))
-        if e is None or e["team_id"] != team.id:
-            raise ValueError("その選手は、自球団の更改の対象ではありません")
-        if e["status"] != "pending":
-            raise ValueError("その選手の更改は、もう決まっています")
-        return proc, team, e
-
-    def offseason_renew_auto(self) -> dict:
-        """「自動案でまとめて更改」:未提示の全員に自動案(1 年・算定した年俸)を提示する(D-244)。"""
-        proc = self._proc()
-        if stage_of(proc.phase) != "contract":
-            raise ValueError("今は契約の段階ではありません")
-        team = self._my_team()
-        ctx = self._contract_ctx()
-        default_years = self.state.contract_settings.default_years
-        for e in [e for e in draftmod.open_entries(proc, team.id) if not e["offers"]]:
-            draftmod.make_offer(team, e, default_years, int(e["auto_salary"]), proc, ctx)
-        self.dirty = True
-        return self.offseason_view()
-
-    def offseason_offer(self, player_id: str, years: int, salary: int | None = None) -> dict:
-        """個別の提示(年数 1〜5、年俸はゆるい以上で変えられる。D-244、D-246、D-252)。戻り値は画面の情報と、この提示の答え。"""
-        state = self.state
-        proc, team, e = self._renewal_entry(player_id)
-        cs = state.contract_settings
-        try:
-            years = int(years)
-        except (TypeError, ValueError):
-            raise ValueError("年数は整数で入れてください") from None
-        if not cs.min_years <= years <= cs.max_years:
-            raise ValueError(f"年数は {cs.min_years}〜{cs.max_years} 年にしてください(値: {years})")
-        auto = int(e["auto_salary"])
-        if salary is None or salary == "":
-            salary = auto
-        elif state.money_rule == "none":
-            salary = self._none_salary(salary, auto)
-        else:
-            try:
-                salary = int(salary)
-            except (TypeError, ValueError):
-                raise ValueError("年俸は整数(万円)で入れてください") from None
-            if salary < cs.minimum:
-                raise ValueError(f"年俸は最低年俸({cs.minimum:,} 万円)以上にしてください")
-            if salary > cs.base_budget:
-                raise ValueError(f"年俸が大きすぎます({cs.base_budget:,} 万円まで)")
-            ctx = self._contract_ctx()
-            cap = ctx.cap(team.id)
-            if ctx.hard() and salary > auto and cap is not None and draftmod.projected_total(team, proc) - auto + salary > cap:
-                room = cap - (draftmod.projected_total(team, proc) - auto)
-                raise ValueError(f"この年俸では、見込みの総年俸が予算の上限を超えます(この選手に出せるのは {max(auto, room):,} 万円まで)")
-        if draftmod.offers_left(e, state.negotiation_settings) <= 0:
-            raise ValueError("提示の回数を使い切りました")
-        rec = draftmod.make_offer(team, e, years, int(salary), proc, self._contract_ctx())
-        self.dirty = True
-        view = self.offseason_view()
-        view["last_offer"] = {"player_id": e["player_id"], "name": e["name"], "accepted": rec["accepted"], "years": rec["years"], "salary": rec["salary"], "reason": "" if rec["accepted"] else reason_text(state.negotiation_settings, rec), "released": e["status"] == "released"}
-        return view
-
-    def _none_salary(self, salary, calc: int) -> int:
-        """お金のルール「なし」の提示の年俸:算定の 1.0〜1.3 倍(設定値)。D-273。"""
-        try:
-            salary = int(salary)
-        except (TypeError, ValueError):
-            raise ValueError("年俸は整数(万円)で入れてください") from None
-        ratio = float(self.state.negotiation_settings.money_none["max_ratio"])
-        top = int(calc * ratio)
-        if salary < calc:
-            raise ValueError(f"お金のルール「なし」では、算定({calc:,} 万円)より低い年俸は出せません")
-        if salary > top:
-            raise ValueError(f"お金のルール「なし」では、年俸は算定の {ratio:g} 倍({top:,} 万円)までです")
-        return salary
-
-    def offseason_renew_release(self, player_id: str) -> dict:
-        """交渉をやめて自由契約にする(市場へ)。"""
-        proc, team, e = self._renewal_entry(player_id)
-        draftmod.release_entry(team, e, proc)
-        self.dirty = True
-        return self.offseason_view()
 
     def _over_hard_cap(self, team) -> bool:
         ctx = self._contract_ctx()
@@ -285,25 +184,17 @@ class ContractMixin:
     def _contract_statuses(self, proc) -> dict:
         """選手 ID → (状態のキー, 並び順, 表示)。"""
         my = self.state.my_team_id
-        neg = self.state.negotiation_settings
         team_ids = {p.id for p in self._my_team().players}
         released = {x["player_id"] for x in proc.released if x["team_id"] == my}
         out = {}
         for p in self._contract_players(proc):
             e = proc.negotiations.get(p.id)
             if p.id in released and p.id not in team_ids:
-                out[p.id] = ("released", 5, "自由契約")  # 更改済のあとで自由契約にした選手も「自由契約」(交渉の記録は更改済のまま)
-            elif e is not None and e["team_id"] == my:
-                if e["status"] == "accepted":
-                    out[p.id] = ("accepted", 3, "更改済")
-                elif e["status"] == "declared":
-                    out[p.id] = ("declared", 4, "FA 宣言")
-                elif e["status"] == "released":
-                    out[p.id] = ("released", 5, "自由契約")
-                elif e["offers"]:
-                    out[p.id] = ("refused", 0, f"保留(残り {draftmod.offers_left(e, neg)} 回)")
-                else:
-                    out[p.id] = ("unoffered", 1, "未提示")
+                out[p.id] = ("released", 5, "自由契約")  # 更改済のあとで自由契約にした選手も「自由契約」(更改の記録は更改済のまま)
+            elif e is not None and e["team_id"] == my and e["status"] == "declared":
+                out[p.id] = ("declared", 4, "FA 宣言")
+            elif e is not None and e["team_id"] == my and e["status"] == "accepted":
+                out[p.id] = ("accepted", 3, "更改済")
             elif p.id in team_ids:
                 out[p.id] = ("contracted", 2, "契約中")
             elif p.id in released:
@@ -331,7 +222,7 @@ class ContractMixin:
         return cells
 
     def contract_table(self, group: str = "all", kind: str = "war", sort: str | None = None, order: str | None = None, season: str | None = None, status: str = "all") -> dict:
-        """契約の画面の表(公開用。D-272):自球団の全選手。列は 名前・選んだ指標(既定は WAR)・状態・今回の提示・ポジション・年齢・今の契約・出場(D-284)
+        """契約の画面の表(公開用。D-272、D-358):自球団の全選手。列は 名前・選んだ指標(既定は WAR)・状態・新しい年俸・増減・ポジション・年齢・今の契約・出場
         (投手・捕手・内野手・外野手を選んだときは、選んだ種類の成績の列も)。初期は WAR の低い順。"""
         proc = self._proc()
         if stage_of(proc.phase) != "contract":
@@ -345,7 +236,6 @@ class ContractMixin:
         view = self._season_view(None if season in (None, "current") else season)
         config = metrics_config()
         my = self.state.my_team_id
-        neg = self.state.negotiation_settings
         role = None if group == "all" else ("pitcher" if group == "pitcher" else "batter")
         war_col = {"key": "war_all", "label": "WAR", "type": "metric", "category": "war", "better": "high"}
         if role is None:
@@ -398,31 +288,33 @@ class ContractMixin:
             e = proc.negotiations.get(p.id) if p.id in proc.negotiations and proc.negotiations[p.id]["team_id"] == my else None
             if e is not None:
                 old = e["old_salary"]
+                new = int(e["auto_salary"])
                 cells["contract"] = (old, "—" if old is None else f"{int(old):,}(満了)")
-                if e["status"] == "accepted" or e["offers"]:
-                    last = e["offers"][-1] if e["offers"] else {"years": e.get("ai_years", 1), "salary": e["auto_salary"]}
-                    cells["offer"] = (int(last["salary"]), f"{int(last['salary']):,}・{last['years']} 年")
+                if e["status"] == "accepted" and p.id in in_team:
+                    cells["new"] = (new, f"{new:,}・{int(e.get('ai_years', 1))} 年")
+                    cells["change"] = (None, "新規") if old is None else (new - int(old), _change_text(old, new))
                 else:
-                    cells["offer"] = (int(e["auto_salary"]), f"{int(e['auto_salary']):,}・{self.state.contract_settings.default_years} 年(案)")
+                    cells["new"] = (None, "—")
+                    cells["change"] = (None, "—")
             elif p.contract and p.id in in_team:
                 n = remaining_years(p.contract, next_year)
                 cells["contract"] = (int(p.contract["salary"]), f"{int(p.contract['salary']):,}(残り {n} 年)")
-                cells["offer"] = (None, "—")
+                cells["new"] = (int(p.contract["salary"]), f"{int(p.contract['salary']):,}(契約中)")
+                cells["change"] = (0, "±0")
             else:
                 cells["contract"] = (None, "—")
-                cells["offer"] = (None, "—")
+                cells["new"] = (None, "—")
+                cells["change"] = (None, "—")
             cells["pos"] = (positions.index(p.position), POSITION_LABELS[p.position])
             cells["age"] = (p.age, f"{p.age}歳")
             cells["status"] = (st_order, st_label)
             keys = [c["key"] for c in columns]
             values = {k: (cells.get(k) or (None, "—"))[1] for k in keys}
-            pending = e is not None and e["status"] == "pending"
             rows.append({
                 "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "position_label": POSITION_LABELS[p.position], "age": p.age,
                 "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
                 "values": values, "status": st, "in_team": p.id in in_team,
-                "can_release": pending or (p.id in in_team and (p.id in ok or over)),
-                "can_offer": pending and draftmod.offers_left(e, neg) > 0,
+                "can_release": p.id in in_team and (p.id in ok or over),
                 "renewal": self._renewal_public(e) if e is not None else None,
                 "contract": self._contract_public(p, next_year) if p.id in in_team and p.contract else None,
                 "_sort": (cells.get(sort) or (None, ""))[0],
@@ -442,16 +334,9 @@ class ContractMixin:
         }
 
     def offseason_contract_release(self, player_id: str) -> dict:
-        """契約の画面の「自由契約にする」(D-272):交渉中の選手は交渉をやめて、契約が残る選手(複数年の途中・更改済)は残りの契約を消して、市場へ。
-        最低人数を割る選手は外せない(標準以上で上限を超えている間は外せる。D-255)。"""
+        """契約の画面の「自由契約にする」(D-272):契約が残る選手(更改済・複数年の途中)の残りの契約を消して、市場へ。
+        最低人数を割る選手は外せない(資金を超えている間は外せる。D-255、D-361)。"""
         proc = self._proc()
         if stage_of(proc.phase) != "contract":
             raise ValueError("今は契約の段階ではありません")
-        team = self._my_team()
-        pid = str(player_id)
-        e = proc.negotiations.get(pid)
-        if e is not None and e["team_id"] == team.id and e["status"] == "pending":
-            draftmod.release_entry(team, e, proc)
-            self.dirty = True
-            return self.offseason_view()
-        return self.offseason_release([pid])
+        return self.offseason_release([str(player_id)])

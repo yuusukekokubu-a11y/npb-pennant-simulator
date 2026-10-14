@@ -42,12 +42,12 @@ MIN_BATTERS = minimum_batters()
 
 
 def finish_renewal(g):
-    """契約の段階(D-272)の更改を済ませる:自動案でまとめて提示し、断った選手は自由契約にする(段階は契約のまま。自由契約はこの後に同じ画面で)。"""
+    """契約の段階(D-272)の更改を済ませる。作り直し②で更改は段階の始めに自動で済むので、資金を超えていれば年俸の高い選手から自由契約にするだけ(段階は契約のまま)。"""
     proc = g.state.procedure
     if proc is not None and g.offseason_view()["stage"] == "contract":
-        g.offseason_renew_auto()
-        for e in [e for e in proc.negotiations.values() if e["team_id"] == g.state.my_team_id and e["status"] == "pending"]:
-            g.offseason_renew_release(e["player_id"])
+        while g.offseason_view()["renewal"]["over"] > 0:
+            rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
+            g.offseason_contract_release(rows[0]["player_id"])
 
 
 def roster_rows(g):
@@ -282,7 +282,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     # 保存して読み込むと、途中から再開できる(版 9)
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 14 and again.state.procedure.method == 2
+    assert SAVE_FORMAT_VERSION == 15 and again.state.procedure.method == 2
     v2 = again.offseason_view()
     assert v2["phase"] == "draft" and v2["round"] == v["round"] and v2["is_my_turn"] and [p["player_id"] for p in v2["pool"]] == [p["player_id"] for p in v["pool"]]
     assert v2["pool"][0]["scouting"] == v["pool"][0]["scouting"]  # 評価も同じ(シードから導く)

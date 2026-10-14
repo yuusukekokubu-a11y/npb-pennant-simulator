@@ -21,7 +21,7 @@ export const $ = (id) => document.getElementById(id);
 
 // オフの手続きの画面の状態の初期値(新規開始・読み込みのたびに作り直す)
 export function freshProc() {
-  return { selected: new Set(), open: null, renewalOpen: null, phase: null, stage: null, lastOffer: null, faOpen: null, lastRound: null, lastMarket: null, autoLog: null, outlookOpen: false, decision: {}, contract: { group: "all", kind: "war", status: "all", season: "current", sortBy: { key: null, order: null }, shown: null } };
+  return { selected: new Set(), open: null, renewalOpen: null, phase: null, stage: null, faOpen: null, lastRound: null, lastMarket: null, autoLog: null, outlookOpen: false, decision: {}, contract: { group: "all", kind: "war", status: "all", season: "current", sortBy: { key: null, order: null }, shown: null } };
 }
 
 export const state = {

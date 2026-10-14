@@ -17,7 +17,7 @@
     teams.py      順位表・チーム・球場
     games.py      試合
     players.py    選手のページ
-    contract.py   契約(予算・契約更改・契約の画面・自由契約)
+    contract.py   契約(資金・契約更改の結果・契約の画面・自由契約)
     fa.py         FA
     draft.py      ドラフト(指名の番)・ドラフトの振り返り・入退団の記録
     decisions.py  判断の画面の表(FA・ドラフト・市場)・加入後の序列・手薄なポジション・自球団の状況(①b)
@@ -51,7 +51,7 @@ from ..offseason import OffseasonResult, age_update_retire, load_offseason_setti
 from .. import draft as draftmod
 from ..draft import PHASE_LABELS, STAGE_LABELS, STAGES, load_draft_settings, stage_of
 from ..scouting import ScoutReport
-from ..contracts import MONEY_RULES, RULE_LABELS, RULE_NOTES, TIER_LABELS, assign_tiers, budget_of, cap_of, is_hard, load_contract_settings, remaining_years, team_salary
+from ..contracts import TIER_LABELS, assign_tiers, base_funds, initial_funds, load_contract_settings, remaining_years, team_salary
 from .. import fa as famod
 from ..negotiation import load_negotiation_settings
 from ..season import derive_seed

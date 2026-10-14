@@ -10,7 +10,7 @@ from typing import Sequence
 from .. import draft as draftmod, fa as famod
 from ..baselines import Baselines, load_baseline_settings, trial_baselines
 from ..config import load_generation_config, load_name_parts
-from ..contracts import MONEY_RULES, RULE_LABELS, assign_tiers, load_contract_settings
+from ..contracts import assign_tiers, initial_funds, load_contract_settings
 from ..draft import STAGE_LABELS, load_draft_settings, stage_of
 from ..history import ArchivedStanding, SeasonArchive
 from ..negotiation import load_negotiation_settings
@@ -75,7 +75,6 @@ class ProgressMixin:
         progress=None,
         prerun_progress=None,
         scout_level: str | None = None,
-        money_rule: str | None = None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -93,12 +92,9 @@ class ProgressMixin:
             raise ValueError(f"スカウト評価のずれの大きさは small / medium / large です(値: {scout_level!r})")
         contract_settings = load_contract_settings()
         negotiation_settings = load_negotiation_settings()
-        rule = contract_settings.default_rule if money_rule is None else str(money_rule)
-        if rule not in MONEY_RULES:
-            raise ValueError(f"お金のルールは none / loose / standard / strict です(値: {money_rule!r})")
-        tiers = assign_tiers([f"T{i:02d}" for i in range(1, 13)], seed, contract_settings) if rule == "strict" else {}
+        tiers = assign_tiers([f"T{i:02d}" for i in range(1, 13)], seed, contract_settings)  # 球団の規模(D-353)
         contract_info: dict = {}
-        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), money_rule=rule, tiers=tiers, contract_settings=contract_settings, contract_info=contract_info, negotiation_settings=negotiation_settings)
+        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), tiers=tiers, contract_settings=contract_settings, contract_info=contract_info, negotiation_settings=negotiation_settings)
         tiers = {tid: t for tid, t in tiers.items() if any(team.id == tid for team in league.teams)}
         if my_team_index is not None and (isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams)):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
@@ -107,7 +103,7 @@ class ProgressMixin:
         season = Season(league, seed if season_seed is None else season_seed)
         famod.initialize_seasons(league, season.actives, league.seed, negotiation_settings)  # 初期選手の FA 権の年数(D-264)
         my_team_id = None if my_team_index is None else league.teams[my_team_index].id
-        state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings, money_rule=rule, budget_tiers=tiers, contract_settings=contract_settings, negotiation_settings=negotiation_settings)
+        state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings, budget_tiers=tiers, team_funds=initial_funds(tiers, contract_settings), contract_settings=contract_settings, negotiation_settings=negotiation_settings)
         state.contract_rates["1"] = float(contract_info.get("rate", 0.0))  # 新規開始時の単価(初期選手の契約の算定で求めた値)
         return cls(state, dirty=True)
 
@@ -167,8 +163,6 @@ class ProgressMixin:
             "seasons": self.season_choices(),
             "offseason": None if self.state.procedure is None else {"active": True, "phase": self.state.procedure.phase, "phase_label": STAGE_LABELS[stage_of(self.state.procedure.phase)], "year": self.state.procedure.year},
             "scout_level": self.state.scout_level,
-            "money_rule": self.state.money_rule,
-            "money_rule_label": RULE_LABELS[self.state.money_rule],
         }
 
     def season_choices(self) -> list[dict]:
@@ -263,9 +257,7 @@ class ProgressMixin:
         state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records)
         state.procedure.ranks = {s.team_id: int(s.rank) for s in archive.standings}  # 勝利軸は公式の順位(D-250)
         ctx = self._contract_ctx()
-        draftmod.apply_contracts_start(state.league, state.procedure, ctx, state.my_team_id, *self._mins())  # 更改の交渉(AI 球団は最後まで)と AI の超過の解消(D-235、D-244)
-        if state.my_team_id is not None and not draftmod.open_entries(state.procedure, state.my_team_id):
-            draftmod.next_phase(state.procedure)  # 自球団に満了者がいなければ、契約更改の段階は飛ばす
+        draftmod.apply_contracts_start(state.league, state.procedure, ctx, state.my_team_id, *self._mins())  # 資金の増減と、全球団の査定の更改・FA 宣言(D-354、D-358、D-359)
         state.contract_rates[str(state.year + 1)] = state.procedure.rate
         self.dirty = True
         if state.my_team_id is None:  # 観戦のみ:手続きはすべて自動(D-198)

@@ -3,7 +3,7 @@
 - 市場に並ぶのは、手放された選手・FA で決まらなかった選手・ドラフトで指名されなかった候補(D-204。並ぶ選手は変えない)。
 - 各球団(あなたと AI)が年数と年俸を提示する。選手は、受けた提示の中から志望の満足度(negotiation.judge。出場機会と勝利は提示した球団での見込み)
   が最も高いものを選び、しきい値以上なら成立する。判定の乱数は derive_seed(手続きのシード, "market:<選手>:<球団>")。
-- 算定年俸と見込みの WAR は、提示する球団の評価で求める(ContractContext.salary。履歴のある選手は球団によらない)。
+- 算定年俸と見込みの WAR は、成績と見せる能力から求める(ContractContext.salary。球団によらない。D-356)。
 - AI の提示の方針は FA と同じ(fa.choose_offers。D-261)。倍率は 1 ラウンド目の値。
 - 決まらなかった選手は、そのオフの終わりにリーグを去る(draft.finalize)。
 - 志望の判定の設定がない手続き(事前運転。D-254)では使わない。今までの順番の方式のまま(D-301。draft.run_ai_turns)。
@@ -16,7 +16,7 @@ import random
 from .contracts import set_contract, team_salary
 from .fa import MAX_ROSTER, _context, choose_offers, fa_settings, round_multiplier
 from .models import League, Player, Team
-from .negotiation import ai_years, ensure_preferences, judge
+from .negotiation import ensure_preferences, judge
 from .procedure import OffseasonProcedure, entry_summary, join
 from .season import derive_seed
 
@@ -34,9 +34,8 @@ def league_sizes(league: League) -> dict[int, int]:
 
 
 def offer_terms(player: Player, team_id: str, ctx) -> tuple[int, int, float]:
-    """その球団から見た (算定年俸, AI の提示の年数, 見込みの WAR)。"""
-    salary, _, exp = ctx.salary(player, team_id)
-    years = ai_years(player.age, exp, ctx.negotiation, ctx.settings.default_years) if ctx.negotiation is not None else ctx.settings.default_years
+    """(算定年俸, AI の提示の年数, 見込みの WAR)。市場の契約は 1 年(D-360)。"""
+    salary, years, exp = ctx.salary(player, team_id)
     return int(salary), int(years), float(exp)
 
 
@@ -93,7 +92,7 @@ def close_market(league: League, proc: OffseasonProcedure, ctx, my_team_id: str 
                 continue
             calc = offer_terms(p, tid, ctx)[0]
             noise = random.Random(derive_seed(proc.seed, f"market:{pid}:{tid}")).gauss(0.0, float(fa["noise_sd"]))
-            r = judge(neg, p.preference or {}, years, salary, calc, p.age, _context(p, team, proc, ctx, sizes), ctx.rule, noise)
+            r = judge(neg, p.preference or {}, years, salary, calc, p.age, _context(p, team, proc, ctx, sizes), noise)
             if best is None or r["score"] > best[0]:
                 best = (r["score"], tid, years, salary)
         if best is None or best[0] < 0.0:

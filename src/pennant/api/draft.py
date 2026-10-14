@@ -19,15 +19,12 @@ class DraftMixin:
         team = self._my_team()
         mins, min_batters = self._mins()
         ids = [str(x) for x in player_ids]
-        pending = [pid for pid in ids if pid in proc.negotiations and proc.negotiations[pid]["team_id"] == team.id and proc.negotiations[pid]["status"] == "pending"]
-        if pending:
-            raise ValueError("更改の交渉中の選手は、提示のパネルの「自由契約にする」で手放してください")
         chosen = [p for p in team.players if p.id in ids]
         if len(chosen) != len(set(ids)):
             raise ValueError("自分の球団にいない選手が含まれています")
         rest = [p for p in team.players if p.id not in ids]
         worse = draftmod.new_shortages(team.players, rest, mins, min_batters)
-        if worse and not self._over_hard_cap(team):  # 予算の上限を超えている間は、最低人数を割っても外せる(不足は完了のときに最低年俸で自動補充。F3-2b)
+        if worse and not self._over_hard_cap(team):  # 資金を超えている間は、最低人数を割っても外せる(不足は完了のときに最低年俸で自動補充。F3-2b)
             raise ValueError("最低人数を割ってしまいます:" + "、".join(f"{'野手' if pos == 'batter' else POSITION_LABELS[pos]} があと {n} 人足りなくなります" for pos, n in worse.items()))
         draftmod.release_players(team, chosen, proc)
         proc.my_release_done = True
@@ -62,7 +59,7 @@ class DraftMixin:
         ctx = self._contract_ctx()
         offer = draftmod.offer_for(team, player, proc, ctx)
         if offer is not None and not draftmod.can_afford(team, offer[0], ctx):
-            raise ValueError(f"この契約(年俸 {offer[0]:,} 万円)を結ぶと、予算の上限を超えます")
+            raise ValueError(f"この契約(年俸 {offer[0]:,} 万円)を結ぶと、資金(年俸の合計の上限)を超えます")
         draftmod.take(proc, team, player, sd, state.draft_settings, ctx)
         draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, team.id, mins, min_batters, ctx=ctx)
         self.dirty = True

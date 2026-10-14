@@ -27,10 +27,10 @@ execFileSync("python3", ["-c", `
 import sys
 from pennant import api
 from pennant.savegame import save_game
-g = api.Game.new(1, [None] * 12, 0, season_seed=1, baselines="default", money_rule="standard")
+g = api.Game.new(1, [None] * 12, 0, season_seed=1, baselines="default")
 g.advance(g.state.season.total_days); g.year_end(); g.offseason_auto(); g.advance(40)
 open(sys.argv[1], "wb").write(save_game(g.state))
-g = api.Game.new(2, [None] * 12, 0, season_seed=2, baselines="default", money_rule="standard")
+g = api.Game.new(2, [None] * 12, 0, season_seed=2, baselines="default")
 g.advance(g.state.season.total_days); g.year_end()
 open(sys.argv[2], "wb").write(save_game(g.state))
 `, saves.season, saves.offseason], { cwd: ROOT, env: { ...process.env, PYTHONPATH: join(ROOT, "src") } });
@@ -236,9 +236,10 @@ for (const width of WIDTHS) {
   if (await page.isHidden("#screen-procedure")) await page.click("#open-offseason");
   await page.waitForSelector("#proc-body tbody tr", { timeout: 60000 });
   await measure(page, "契約(全員)");
-  await page.click("#renew-auto");
-  await page.waitForFunction(() => !document.querySelector("#proc-info").textContent.includes("未提示"), null, { timeout: 60000 });
-  await measure(page, "契約(提示の後)");
+  await page.selectOption("#contract-status", "accepted");
+  await page.waitForFunction(() => document.querySelector("#contract-status").value === "accepted" && document.querySelector("#proc-body tbody tr"));
+  await measure(page, "契約(更改済)");
+  await page.selectOption("#contract-status", "all");
   await page.selectOption("#contract-group", "pitcher");
   await page.waitForSelector("#contract-kind");
   await page.selectOption("#contract-kind", "saber");
