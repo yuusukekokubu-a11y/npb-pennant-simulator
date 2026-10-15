@@ -95,6 +95,7 @@ def update_funds(league: League, proc: OffseasonProcedure, ctx: ContractContext)
 def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: ContractContext, my_team_id: str | None, mins, min_batters) -> None:
     """手続きの最初の契約の処理(作り直し②。D-354〜D-360):資金の増減 → 単価を求め直す → 契約が満了した全員を査定で更改する(全球団。選手は受ける)。
     FA 権保持者は確率で宣言し、宣言しなければ更改する(D-359、D-366。FA の設定がない事前運転では宣言しない)。
+    自動 FA では、FA 権を取った選手は契約が残っていても必ず FA になり、その後は満了のたびに FA(D-390)。
     資金の超過の解消と自由契約は、契約の段階の終わり(finish_contract_stage)に行う(あなたの球団は契約の段階で手動)。"""
     if proc.contracts_done:
         return
@@ -113,9 +114,12 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
     ctx.rate = round(rate_for(list(expected.values()), total_funds, len(expected), ctx.settings), 4)
     proc.rate = ctx.rate
     neg = ctx.negotiation
-    auto_fa = neg is not None and proc.game_rules().auto_fa  # 自動 FA(D-381):満了した全員が FA。事前運転(FA の設定なし)は今までどおり更改
+    auto_fa = neg is not None and proc.game_rules().auto_fa  # 自動 FA(D-390):FA 権を取ったら FA。事前運転(FA の設定なし)は今までどおり更改
     for team in league.teams:
         expiring = [p for p in team.players if p.contract is None or int(p.contract["until"]) <= proc.year]
+        if auto_fa:  # FA 権を取ったオフは、契約が残っていても FA(契約は終わる。D-390)
+            ids = {p.id for p in expiring}
+            expiring += [p for p in team.players if p.id not in ids and not p.fa_free and is_holder(p, neg)]
         for p in expiring:
             exp = expected[p.id]
             old = int(p.contract["salary"]) if p.contract else None
@@ -125,7 +129,8 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
                 "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age,
                 "old_salary": old, "auto_salary": salary, "ai_years": years, "expected": round(exp, 2), "context": {}, "status": "pending", "offers": [],
             }
-            if auto_fa:
+            if auto_fa and (p.fa_free or is_holder(p, neg)):  # 自動 FA:FA 権を取った選手は必ず FA。その後は満了のたびに FA(D-390)
+                p.fa_free = True
                 e["context"]["auto_fa"] = True
                 declare(team, p, e, proc, ctx)
                 proc.fa_info[p.id]["auto"] = True
@@ -134,7 +139,7 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
 
                     proc.fa_offers[p.id] = {"years": int(years), "salary": retain_salary(proc.fa_info[p.id], 1, ctx)}
                 continue
-            if neg is not None and is_holder(p, neg):
+            if neg is not None and not auto_fa and is_holder(p, neg):
                 e["context"]["fa_holder"] = True
                 if random.Random(derive_seed(proc.seed, f"declare:{p.id}")).random() < declare_probability(neg, exp):
                     declare(team, p, e, proc, ctx)
@@ -246,7 +251,7 @@ def over_cap(team: Team, ctx: ContractContext) -> int:
 def resolve_overrun(team: Team, proc: OffseasonProcedure, ctx: ContractContext, mins, min_batters) -> list[Player]:
     """資金の超過の解消(AI と同じ方針。D-255、D-361):見込みの WAR あたりの年俸(最低年俸を超える分)が高い選手から、超過が解消するまで自由契約。
     最低人数は守るが、守ったままでは解消できないときは最低人数を割っても外す(1 年契約で年俸が毎年算定し直されるため、予算の小さい強い球団で起こる。
-    不足は完了のときに最低年俸で自動補充される。F3-2b)。"""
+    不足は完了のときに市場の売れ残りから最低年俸で取る。F3-2b、D-391)。"""
     out: list[Player] = []
     if not ctx.hard():
         return out

@@ -35,6 +35,13 @@ DEFAULT_FA = {
     "init": {"start_age": 21, "p_active": 0.7, "p_other": 0.25},
     "compensation": None,
     "star": None,  # 主力級の期待(D-322)。設定にない旧版のセーブデータは期待なし
+    # 自由契約市場の AI(D-386、D-389、D-391)。FA の設定がない事前運転でも、市場は同じ方針で取る(自動補充がないので人数を保つ)
+    "market_min_expected": -0.5,
+    "market_depth_extra": 10,
+    "market_max_wishes": 10,
+    "market_salary_rate": 0.3,
+    "market_bargain": True,
+    "market_roster_target": 65,
 }
 
 
@@ -71,7 +78,7 @@ def validate_fa(c, root: dict) -> None:
         c.add("fa.round_multipliers", f"ラウンド数({rounds})以上の長さにしてください")
     c.integer(fa.get("ai_max_offers"), "fa.ai_max_offers", 0, 30)
     c.number(fa.get("ai_min_expected"), "fa.ai_min_expected", -10, 20)
-    for key, lo, hi in (("market_min_expected", -10, 20), ("market_depth_extra", 0, 70), ("market_max_wishes", 0, 70), ("market_salary_rate", 0.05, 2.0), ("auto_retain_min_expected", -10, 20), ("auto_max_offers", 0, 70)):  # 自由契約市場の AI(D-384)。ない設定は FA と同じ
+    for key, lo, hi in (("market_min_expected", -10, 20), ("market_depth_extra", 0, 70), ("market_max_wishes", 0, 70), ("market_salary_rate", 0.05, 2.0), ("auto_retain_min_expected", -10, 20), ("auto_max_offers", 0, 70), ("market_roster_target", 0, 70)):  # 自由契約市場の AI(D-384)。ない設定は FA と同じ
         if key in fa:
             c.number(fa[key], f"fa.{key}", lo, hi)
     if "market_bargain" in fa and not isinstance(fa["market_bargain"], bool):
@@ -200,7 +207,7 @@ def round_multiplier(neg: NegotiationSettings | None, rnd: int) -> float:
     return float(fa["round_multipliers"][min(int(rnd), len(fa["round_multipliers"])) - 1])
 
 
-def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float, expect=None, market: bool = False, max_offers: int | None = None) -> dict[str, tuple[int, int]]:
+def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float, expect=None, market: bool = False, max_offers: int | None = None, strict: bool = False) -> dict[str, tuple[int, int]]:
     """AI の方針で提示する選手を選ぶ(FA と市場で共通。D-261、D-300)。items は (選手, 見込みの WAR, 算定年俸, 年数) の並び。
     自球団の評価で一軍に入る見込みがあり、見込みの WAR が設定値以上の選手を、見込みの高い順に設定値まで、空き枠と資金の範囲で。
     expect(選手 ID → 期待の倍率)を渡すと(FA 市場)、主力級には期待の倍率を考えた年俸で提示する(D-325)。"""
@@ -208,7 +215,7 @@ def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mu
     space = MAX_ROSTER - len(team.players)
     limit = min(int(fa["ai_max_offers"] if max_offers is None else max_offers), max(0, space))
     min_exp, extra = float(fa["ai_min_expected"]), 0.0
-    if market:  # 自由契約市場:空き枠の分まで、控えに入る見込みの選手も取る(自動補充より市場の選手を先に。D-384)
+    if market and not strict:  # 自由契約市場:空き枠の分まで、控えに入る見込みの選手も取る(D-386)。strict は人数の目安を超える分(FA と同じ基準。D-391)
         limit = max(limit, min(int(fa.get("market_max_wishes", limit)), max(0, space)))
         min_exp = float(fa.get("market_min_expected", min_exp))
         extra = float(fa.get("market_depth_extra", 0))
@@ -256,7 +263,7 @@ def retain_salary(info: dict, rnd: int, ctx) -> int:
 def retain_offers(team: Team, proc, ctx) -> dict[str, tuple[int, int]]:
     """自動 FA の元の球団の残留の提示(1 ラウンド目だけ。D-381):元の選手全員に、空き枠と資金の範囲で。
     資金に収まらなければ、資金の超過の解消と同じ順((年俸 − 最低年俸)÷ 見込みの WAR の大きい選手から)で外す。
-    最低年俸の選手は、自動補充と同じく資金に関わらず残せる(retain_exempt)。"""
+    最低年俸の選手は資金に関わらず残せる(retain_exempt)。"""
     if int(proc.fa_round) != 1:
         return {}
     own = sorted((p for p in proc.fa_pool if proc.fa_info[p.id].get("auto") and proc.fa_info[p.id]["former_team"] == team.id and proc.fa_info[p.id]["status"] == "open"),

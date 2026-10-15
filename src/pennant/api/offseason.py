@@ -28,7 +28,7 @@ class OffseasonMixin:
         for x in proc.picks:
             state.transactions.append({"year": proc.year, **x})
         for x in proc.filled:
-            state.transactions.append({"year": proc.year, **x})  # 自動補充も履歴に残す(振り返りのため。D-216)
+            state.transactions.append({"year": proc.year, **x})  # 安全策で作った選手も履歴に残す(振り返りのため。D-216、D-391)
         for pid, x in proc.fa_info.items():
             state.transactions.append({"year": proc.year, "phase": "fa_declare", "round": 0, "team_id": x["former_team"], "player_id": pid, "name": x["name"], "role": x["role"], "position": x["position"], "age": x["age"], "salary": x.get("old_salary")})
         for x in proc.fa_results:
@@ -100,7 +100,7 @@ class OffseasonMixin:
             "released": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.released],
             "counts": {"candidates": len(proc.candidates), "market": len(proc.market), "released": len(proc.released), "picked": sum(1 for x in proc.picks if x["player_id"])},
             "rosters": [{"team_id": t.id, "team_name": t.name, "players": len(t.players), "is_mine": t.id == my} for t in state.league.teams],
-            "note": "手続きは 契約 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → トレード → 現役ドラフト → 完了(自動補充)の順です(新規開始の設定で、ない段階は飛ばします)。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
+            "note": "手続きは 契約 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → トレード → 現役ドラフト → 完了(最低人数の補充)の順です(新規開始の設定で、ない段階は飛ばします)。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
         }
         if my is not None and stage_of(proc.phase) == "contract":
             view["renewal"] = self._renewal_info(proc)
@@ -134,7 +134,7 @@ class OffseasonMixin:
         契約:資金を超えていなければ、AI 球団の資金の超過の解消と自由契約を行って FA へ(更改は段階の始めに自動で済んでいる。D-358)。
         FA:自球団は追加の提示をせず(今のラウンドの提示は有効)、残りのラウンドを締める。ドラフト:自球団の残りの番はパス。
         市場:まだ締めていなければ、今の希望で締める(AI の代行はしない。D-370)。
-        市場の次は完了(自動補充 → 次のシーズン)。"""
+        市場の次は完了(最低人数の補充 → 次のシーズン)。"""
         state = self.state
         proc = self._proc()
         mins, min_batters = self._mins()
@@ -303,5 +303,5 @@ class OffseasonMixin:
             "retired": retired,
             "rookies": rookies,
             "counts": {"retired": len(r.retired), "rookies": len(r.rookies), "players": len(self.state.league.all_players())},
-            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は下の表)。新人は、ドラフト・自由契約市場・自動補充で入った選手です。",
+            "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は下の表)。新人は、ドラフト・自由契約市場などで入った選手です。",
         }

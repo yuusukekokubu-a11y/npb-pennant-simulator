@@ -34,6 +34,7 @@
     "market_salary_rate": 0.3,
     "auto_max_offers": 8,
     "market_bargain": true,
+    "market_roster_target": 65,
     "init": {
       "start_age": 21,
       "p_active": 0.7,

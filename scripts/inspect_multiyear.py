@@ -163,10 +163,17 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
             row["foreign_min"] = min(foreign)
             row["foreign_low_teams"] = sum(1 for n in foreign if n <= 2)
             now = {t.id: len(t.players) for t in g.state.league.teams}
-            assert now == sizes, f"選手の数が変わった(リーグ {seed}、{year} 年目の確定の後:{ {k: v for k, v in now.items() if v != sizes[k]} })"
+            assert max(now.values()) <= 70, f"70 人を超えた(リーグ {seed}、{year} 年目)"  # 70 人は上限だけ(自動補充なし。D-391)
+            row["roster_min"] = min(now.values())
+            row["roster_mean"] = statistics.fmean(now.values())
+            row["minimum_taken"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "minimum")
             from pennant.draft import minimum_batters, minimum_positions, shortages
 
-            assert all(not shortages(t.players, minimum_positions(), minimum_batters()) for t in g.state.league.teams), "最低人数を割った"  # F3-1:ポジションの構成は最低人数だけ守る(D-203)
+            mins = minimum_positions()
+            short = [shortages(t.players, mins, minimum_batters()) for t in g.state.league.teams]
+            row["substituted"] = sum(sum(v for k, v in x.items() if k != "batter") for x in short)  # 同じポジションがいなくて代用した人数(D-391)
+            pitchers_ok = all(sum(1 for p in t.players if p.role == "pitcher") >= mins["SP"] + mins["RP"] for t in g.state.league.teams)
+            assert pitchers_ok and all("batter" not in x for x in short), "投手・野手の人数が一軍を組めない"  # 投手・野手の合計は守る
         else:
             row["year_end_seconds"] = 0.0
             row["retired"] = 0
@@ -247,6 +254,9 @@ def main(argv=None):
         if rows_:
             print("\n## 契約の段階(自球団あり。年平均)\n")
             keys_ = [("renewed", "更改"), ("declared_at_renewal", "FA 宣言"), ("multi_year", "複数年"), ("floored", "減額の下限"), ("over_teams", "資金を超えた球団"), ("budget_releases", "資金の超過の自由契約"), ("fa_moved", "FA 移籍"), ("market_signed", "市場の獲得"), ("foreign_low_teams", "外国人 2 人以下の球団"), ("foreign_min", "外国人の最少")]
+            print(_table([x[1] for x in keys_], [[f"{statistics.fmean(r.get(k, 0) for r in rows_):.1f}" for k, _ in keys_]]))
+            keys_ = [("roster_mean", "支配下の平均"), ("roster_min", "支配下の最少"), ("minimum_taken", "最低人数の補充"), ("substituted", "代用のポジション"), ("filled", "安全策で作った選手")]
+            print("\n## 支配下の人数(自動補充なし。D-391。年平均)\n")
             print(_table([x[1] for x in keys_], [[f"{statistics.fmean(r.get(k, 0) for r in rows_):.1f}" for k, _ in keys_]]))
             funds = [v for r in rows_ for v in r.get("funds", {}).values()]
             if funds:

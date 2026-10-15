@@ -67,6 +67,7 @@ class Player:
     pitches: list[dict] | None = None  # 投手の球種 [{type, weight}](D-351)。打者は None
     skills: list[str] = field(default_factory=list)  # 特殊能力のキー(data/skills.json。D-374)
     fa_seasons: int | None = 0  # 一軍に登録されたシーズンの通算(FA 権の年数。宣言したら 0。F3-2c。D-258)。None は旧版で、読み込みのときに補う
+    fa_free: bool = False  # FA 権を取ったことがある(自動 FA で、以後は契約が満了するたびに FA。D-390)
     foreign: bool = False  # 外国人選手(D-376)。一軍に登録できる人数に上限がある
     dev_seasons: int | None = None  # 育成選手なら育成で過ごしたシーズン数(0 から)。支配下なら None(D-375)
 
