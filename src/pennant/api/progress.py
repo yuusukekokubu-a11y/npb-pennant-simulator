@@ -162,6 +162,7 @@ class ProgressMixin:
                 "ties": row.ties,
                 "pct": _pct_text(row.pct, row.wins + row.losses),
                 "games_behind": _gb_text(row.games_behind, row.rank == 1),
+                **self._my_form(team.id),
             }
         return {
             "day": season.day,
@@ -179,6 +180,48 @@ class ProgressMixin:
             "scout_level": self.state.scout_level,
             "trade": self._trade_status(),
         }
+
+    def _my_form(self, team_id: str) -> dict:
+        """進行の画面の得点板と調子(作り直し④。D-400):次の相手(シーズンが終わったら最後の相手)・連勝連敗・直近 10 試合。
+        試合の結果と日程から作る公開の情報で、試合の計算には使わない。"""
+        season = self.state.season
+        names = self._team_names()
+
+        def record(tid: str) -> dict:
+            idx = self._team(tid).league_index
+            r = next(x for x in season.standings(idx) if x.team_id == tid)
+            return {"wins": r.wins, "losses": r.losses, "ties": r.ties}
+
+        nxt = None
+        for d in range(season.day, season.total_days):
+            g = next((g for g in season.schedule.days[d] if team_id in (g.home_id, g.away_id)), None)
+            if g:
+                nxt = (g.day + 1, g.home_id, g.away_id, False)
+                break
+        if nxt is None:
+            last = next((p for p in reversed(season.played) if team_id in (p.scheduled.home_id, p.scheduled.away_id)), None)
+            if last:
+                nxt = (last.scheduled.day + 1, last.scheduled.home_id, last.scheduled.away_id, True)
+        next_game = None
+        if nxt:
+            day, home_id, away_id, done = nxt
+            opp = away_id if home_id == team_id else home_id
+            next_game = {"day": day, "home": home_id == team_id, "opponent_id": opp, "opponent_name": names[opp], "opponent_record": record(opp), "finished": done}
+        outcomes = []
+        for p in reversed(season.played):
+            r = p.result
+            if team_id not in (r.home_team_id, r.away_team_id):
+                continue
+            mine, theirs = (r.home_runs, r.away_runs) if r.home_team_id == team_id else (r.away_runs, r.home_runs)
+            outcomes.append("分" if r.tie else ("勝" if mine > theirs else "負"))
+            if len(outcomes) >= 10 and outcomes[-1] != outcomes[0]:
+                break
+        streak = None
+        if outcomes and outcomes[0] != "分":
+            n = next((i for i, o in enumerate(outcomes) if o != outcomes[0]), len(outcomes))
+            streak = {"outcome": outcomes[0], "count": n}
+        ten = outcomes[:10]
+        return {"next_game": next_game, "streak": streak, "last10": {"wins": ten.count("勝"), "losses": ten.count("負"), "ties": ten.count("分"), "games": len(ten)}}
 
     def season_choices(self) -> list[dict]:
         """成績のページで選べるシーズン(今シーズン・過去の各シーズン・通算。D-182)。"""

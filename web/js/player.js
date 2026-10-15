@@ -3,7 +3,7 @@
 import { $, GAMES_PAGE, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { el, kvTable, link, setPressed, skillBadge, table, teamLink } from "./parts.js";
+import { el, emblem, kvTable, link, setPressed, skillBadge, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 export async function renderPlayer(args, token) {
@@ -11,6 +11,9 @@ export async function renderPlayer(args, token) {
   if (token !== state.token) return;
   const p = data.player;
   $("player-name").textContent = p.name;
+  // 選手のカード(D-400):マーク・背景にポジションの 1 文字
+  $("player-emblem").replaceWith(Object.assign(emblem(p.team_id, p.team_name || "?", "large"), { id: "player-emblem" }));
+  $("player-card").dataset.pos = String(p.position_label || "").slice(0, 1);
   $("player-info").replaceChildren(
     teamLink(p.team_name, p.team_id),
     p.is_mine ? " ★" : "",
@@ -72,10 +75,16 @@ function renderPlayerAbilities(data) {
     return;
   }
   const skills = data.player.skills || [];
+  // ランクのある能力は、色つきの札と数字(ゲージは付けない。D-400)。札と数字を合わせた文字は計算本体の text と同じ
+  const value = (a) => {
+    if (a.rank && a.text.startsWith(a.rank)) return el("strong", { className: "ability-value" }, el("span", { className: `rank-badge rank-${a.rank}` }, a.rank), el("span", { className: "ability-num" }, a.text.slice(a.rank.length)));
+    return el("strong", { className: "ability-value" }, el("span", { className: "ability-num" }, a.text));
+  };
   $("player-abilities").replaceChildren(
-    el("div", { className: "ability-grid" }, ...items.map((a) => el("div", { className: `ability rank-${a.rank || "none"}`, "data-key": a.key }, el("span", { className: "ability-label" }, a.label), el("strong", { className: "ability-value" }, a.text)))),
-    // 特殊能力(D-374)
-    el("div", { className: "skills", id: "player-skills" }, el("span", { className: "ability-label" }, "特殊能力"), ...(skills.length ? skills.map(skillBadge) : [el("span", { className: "muted small" }, "なし")])),
+    el("div", { className: "ability-panel" },
+      el("div", { className: "ability-grid" }, ...items.map((a) => el("div", { className: `ability rank-${a.rank || "none"}`, "data-key": a.key }, el("span", { className: "ability-label" }, a.label), value(a)))),
+      // 特殊能力(D-374)は右側にまとめる(D-400)
+      el("div", { className: "skills", id: "player-skills" }, el("span", { className: "ability-label" }, "特殊能力"), ...(skills.length ? skills.map(skillBadge) : [el("span", { className: "muted small" }, "なし")]))),
   );
 }
 

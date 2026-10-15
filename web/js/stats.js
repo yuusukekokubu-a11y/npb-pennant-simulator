@@ -3,7 +3,7 @@
 import { $, STATS_PAGE, state } from "./core.js";
 import { query, withLoading } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, setPressed, sortToggle, table } from "./parts.js";
+import { el, emblem, playerLink, rankBadge, setPressed, sortToggle, table } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 // ---- 成績(個人成績。D-114〜D-116) ----
@@ -22,6 +22,30 @@ export function buildStatsFilters() {
   if (!teams.some((r) => r.team_id === state.stats.team)) state.stats.team = "";
   $("stats-team").value = state.stats.team;
   $("stats-qualified").checked = state.stats.qualified;
+  filterText();
+}
+
+// 絞り込みを閉じているときに出す、今の絞り込みの 1 行(D-401)
+function filterText() {
+  const pick = (id) => { const s = $(id); return s.selectedOptions[0] ? s.selectedOptions[0].textContent : ""; };
+  const parts = [$("stats-season").hidden ? "" : pick("stats-season"), pick("stats-league"), pick("stats-team"), state.stats.qualified ? "規定到達者だけ" : "全員"];
+  $("stats-filter-text").textContent = parts.filter(Boolean).join("・");
+}
+
+// 並べている指標の 1 位の選手のカード(D-400)
+function renderLeader(data) {
+  const r = data.rows[0];
+  const col = [...data.columns, data.extra_column].find((c) => c && c.key === data.sort.key);
+  if (!r || !col || r.values[data.sort.key] === undefined || r.values[data.sort.key] === "") {
+    $("stats-leader").replaceChildren();
+    return;
+  }
+  $("stats-leader").replaceChildren(
+    el("div", { className: "leader" },
+      emblem(r.team_id, r.team_name),
+      el("div", { className: "leader-body" }, el("span", { className: "leader-title" }, `👑 ${col.label} 1位`), el("div", { className: "leader-name" }, playerLink(r.name, r.player_id), el("span", { className: "leader-team" }, r.team_name))),
+      el("div", { className: "leader-value" }, String(r.values[data.sort.key]))),
+  );
 }
 
 function statsArgs() {
@@ -90,6 +114,7 @@ export async function renderStats(token) {
   const s = state.stats;
   setPressed("stats-role", s.role);
   setPressed("stats-kind", s.kind);
+  filterText();
   $("stats-info").replaceChildren();
   if (s.kind === "ability") {
     $("stats-baseline").hidden = true;
@@ -106,7 +131,8 @@ export async function renderStats(token) {
   await buildSortSelect(data.sort.key, s.kind === "war" ? data.columns : null);
   if (token !== state.token) return;
   showSortState(data.sort, data.order);
-  const first = (r) => [el("span", { className: "rank" }, String(r.rank)), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)];
+  const first = (r) => [rankBadge(r.rank), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)];
+  renderLeader(data);
   $("stats-table").replaceChildren(
     data.rows.length
       ? table({
@@ -144,12 +170,13 @@ async function renderAbilityTable(token) {
   await buildSortSelect(data.sort.key);
   if (token !== state.token) return;
   showSortState(data.sort, data.order);
+  renderLeader(data);
   $("stats-table").replaceChildren(
     table({
       firstLabel: "順位・選手",
       columns: data.columns,
       rows: data.rows,
-      first: (r) => [el("span", { className: "rank" }, String(r.rank)), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+      first: (r) => [rankBadge(r.rank), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
       sort: data.sort.key,
       order: data.order,
       onSort: (key) => sortStats(key),

@@ -10,111 +10,168 @@
 <link rel="icon" href="data:,">
 <title>ペナントレース シミュレーター</title>
 <style>
+  /* 画面の色は「ナイター」の 1 つ(作り直し④。D-399):夜の球場のような濃い紺に、金色(強調・自球団)と水色(選んでいるもの・リンク)。
+     色・文字の大きさ・余白・角丸はここの変数で決める(D-239)。端末の明るい/暗いの設定には従わない */
   :root {
-    --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --accent: #0969da; --accent-fg: #ffffff;
-    --ok: #1a7f37; --ng: #cf222e; --box: #f6f8fa; --mine: #fff8c5; --mine-line: #d4a72c; --warn-bg: #fff1e5; --warn-line: #e16f24;
-    /* 余白・文字の大きさ・角丸(F3-2a から新しく作る部分で使う。既存の画面はデザインの見直しで置き換える。D-239) */
-    --space-1: 4px; --space-2: 8px; --space-3: 12px; --font-small: 0.9rem; --font-tiny: 0.8rem; --radius: 10px;
+    color-scheme: dark;
+    --bg: #0e1630; --bg-deep: #0a1126; --box: #18244a; --box2: #213160; --fg: #eef2ff; --muted: #9aa6c8; --line: #2c3d72;
+    --accent: #3fc3ff; --accent-fg: #04202e; --gold: #f7c948; --gold-fg: #1b1600; --gold-edge: #b88a12; --edge: #121b3d;
+    --ok: #4ade80; --ng: #ff6b6b; --mine: #3a3b47; --mine-line: #f7c948; --warn-bg: #3a2614; --warn-line: #ff9f43;
+    --board: linear-gradient(135deg, #1f3a8a, #0f1d48); --shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    /* 余白・文字の大きさ・角丸 */
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --font-small: 0.9rem; --font-tiny: 0.8rem; --radius: 14px; --radius-s: 10px;
     /* 表の固定列の幅と、列の余白(D-267・D-268)。見出し(文字 0.8rem)と本体(0.92rem)で同じ値になるよう、em ではなく rem と px で決める */
     --table-name-w: calc(8.28rem + 13px); /* 名前の列(並べ替えた指標を隣に固定するとき)。中身 8.28rem + 左右の余白 8px・5px */
-    --table-sort-mark-w: 1rem; /* 並べ替えた列の右の余白(▲▼ を置く場所)。見出しと本体で同じにして、文字と数値の右端をそろえる */
     --table-first-scroll-gap: var(--space-3); /* 固定列のすぐ右の列の左の余白 */
-    /* 能力のランクの色(作り直し①。D-347)。S・A は暖色、B・C は緑寄り、D 以下は落ち着いた色 */
-    --rank-s: #d1242f; --rank-a: #e16f24; --rank-b: #bf8700; --rank-c: #1a7f37; --rank-d: #0969da; --rank-e: #57606a; --rank-f: #8c959f; --rank-g: #8c959f;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --accent: #4493f8; --accent-fg: #0d1117;
-      --ok: #3fb950; --ng: #ff7b72; --box: #161b22; --mine: #3b2e00; --mine-line: #bb8009; --warn-bg: #2d1a0a; --warn-line: #db6d28;
-      --rank-s: #ff7b72; --rank-a: #ffa657; --rank-b: #e3b341; --rank-c: #3fb950; --rank-d: #4493f8; --rank-e: #9198a1; --rank-f: #6e7681; --rank-g: #6e7681;
-    }
+    /* 能力のランクの色(作り直し①。D-347)。札の背景に使い、文字は白 */
+    --rank-s: #ef4444; --rank-a: #f97316; --rank-b: #eab308; --rank-c: #22c55e; --rank-d: #3b82f6; --rank-e: #8b95a7; --rank-f: #6b7488; --rank-g: #555e72;
+    /* 順位のメダル(D-400) */
+    --medal-1: radial-gradient(circle at 35% 30%, #fff3b0, #f2b705); --medal-2: radial-gradient(circle at 35% 30%, #ffffff, #b8c1cc); --medal-3: radial-gradient(circle at 35% 30%, #ffd9b3, #c97a3a);
+    --nav-w: 88px; /* 広い画面の左のタブの幅(D-402) */
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; background: var(--bg); }
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 16px; line-height: 1.6; }
   [hidden] { display: none !important; }
-  .screen { max-width: 640px; margin: 0 auto; padding: 12px 16px 96px; }
-  h1 { font-size: 1.35rem; margin: 8px 0; }
-  h2 { font-size: 1.1rem; margin: 20px 0 8px; }
+  .screen { max-width: 640px; margin: 0 auto; padding: 12px 16px 104px; }
+  h1 { font-size: 1.35rem; margin: 8px 0; font-weight: 800; }
+  h2 { font-size: 1.05rem; margin: 20px 0 8px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  h2::before { content: ""; flex: none; width: 5px; height: 1.05em; border-radius: 3px; background: var(--accent); }
   p { margin: 8px 0; }
+  a { color: var(--accent); }
   .muted { color: var(--muted); font-size: 0.9rem; }
   .small { font-size: 0.85rem; }
-  button, .button { font: inherit; font-size: 1rem; min-height: 44px; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-  button.secondary, .button.secondary { background: transparent; color: var(--accent); }
-  button.danger { background: var(--ng); border-color: var(--ng); color: #fff; }
+  /* ボタン:押せることが分かる立体の形。ふつうは金色、secondary は紺(D-400) */
+  button, .button { font: inherit; font-size: 1rem; font-weight: 700; min-height: 44px; padding: 8px 16px; border-radius: var(--radius-s); border: none; background: var(--gold); color: var(--gold-fg); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 0 var(--gold-edge); margin-bottom: 4px; }
+  button:active:not(:disabled), .button:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--gold-edge); }
+  button.secondary, .button.secondary { background: var(--box2); color: var(--fg); box-shadow: 0 4px 0 var(--edge); }
+  button.secondary:active:not(:disabled), .button.secondary:active { box-shadow: 0 2px 0 var(--edge); }
+  button.danger { background: var(--ng); color: #fff; box-shadow: 0 4px 0 #a33a3a; }
   button:disabled, label[aria-disabled=true] { opacity: 0.45; cursor: default; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
   .row > * { flex: 1 1 auto; }
-  .stack > * { display: flex; width: 100%; margin: 8px 0; }
-  input[type=text], input[type=number] { font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; background: var(--bg); color: var(--fg); }
+  .stack > * { display: flex; width: 100%; margin: 10px 0; }
+  input[type=text], input[type=number], input[type=search] { font: inherit; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); width: 100%; background: var(--bg-deep); color: var(--fg); }
   input[aria-invalid=true] { border-color: var(--ng); }
   input[type=file] { position: absolute; left: -9999px; width: 1px; height: 1px; }
-  progress { width: 100%; height: 12px; }
-  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 12px 0; background: var(--box); }
-  .notice { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 12px; padding: 10px 12px; margin: 12px 0; font-size: 0.92rem; }
+  input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
+  progress { width: 100%; height: 12px; accent-color: var(--gold); }
+  .card { border-radius: var(--radius); padding: 14px; margin: 12px 0; background: var(--box); box-shadow: var(--shadow); }
+  .notice { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0; font-size: 0.92rem; }
   .error { color: var(--ng); font-size: 0.9rem; margin: 4px 0 0; white-space: pre-wrap; }
   .message { margin: 8px 0; white-space: pre-wrap; }
   .message.ng { color: var(--ng); }
   .message.ok { color: var(--ok); }
 
-  /* 上の帯:保存・読み込みと、未保存の印 */
-  .topbar { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
-  .topbar-inner { max-width: 640px; margin: 0 auto; padding: 8px 12px; display: flex; align-items: center; gap: 6px; }
-  .topbar-title { flex: 1 1 auto; min-width: 0; font-weight: bold; font-size: 0.9rem; line-height: 1.3; }
-  .topbar button, .topbar .button { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 10px; font-size: 0.9rem; }
-  .dirty { color: var(--warn-line); font-size: 0.75rem; font-weight: bold; display: block; }
+  /* 上の帯:題と、保存・メニューの 2 つのアイコン。未保存は保存のアイコンに点(D-401) */
+  .topbar { position: sticky; top: 0; z-index: 6; background: linear-gradient(180deg, #16224a, var(--bg)); border-bottom: 1px solid var(--line); }
+  .topbar-inner { max-width: 640px; margin: 0 auto; padding: 8px 14px; display: flex; align-items: center; gap: 8px; min-height: 56px; }
+  .topbar-title { flex: 1 1 auto; min-width: 0; font-weight: 800; font-size: 0.95rem; line-height: 1.3; }
+  .icon-btn { flex: none; position: relative; width: 42px; min-height: 42px; height: 42px; padding: 0; border-radius: 12px; background: var(--box2); color: var(--fg); box-shadow: 0 3px 0 var(--edge); margin: 0; }
+  .icon-btn svg { width: 22px; height: 22px; }
+  .icon-btn.unsaved::after { content: ""; position: absolute; right: -4px; top: -4px; width: 12px; height: 12px; border-radius: 50%; background: var(--warn-line); border: 2px solid var(--bg); }
+  .dirty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } /* 読み上げ用(見た目はアイコンの点) */
 
-  /* 下のタブ */
-  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--bg); border-top: 1px solid var(--line); display: flex; padding-bottom: env(safe-area-inset-bottom); }
-  .tabs button { flex: 1 1 0; border: none; border-radius: 0; background: transparent; color: var(--muted); min-height: 56px; font-size: 1rem; }
-  .tabs button[aria-selected=true] { color: var(--accent); font-weight: bold; box-shadow: inset 0 3px 0 var(--accent); }
+  /* 下のタブ(小さな絵つき。広い画面では左の縦の列。D-401、D-402) */
+  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: #121c3c; display: flex; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3); }
+  .tabs button { flex: 1 1 0; flex-direction: column; gap: 2px; border-radius: 0; background: transparent; color: var(--muted); min-height: 52px; padding: 2px 0; font-size: 0.7rem; font-weight: 700; box-shadow: none; margin: 0; }
+  .tabs button:active:not(:disabled) { transform: none; box-shadow: none; }
+  .tabs .tab-icon { display: grid; place-items: center; width: 44px; height: 30px; border-radius: 10px; }
+  .tabs .tab-icon svg { width: 20px; height: 20px; }
+  .tabs button[aria-selected=true] { color: var(--accent); }
+  .tabs button[aria-selected=true] .tab-icon { background: var(--accent); color: var(--accent-fg); }
 
-  /* 進行 */
-  .day { font-size: 1.6rem; font-weight: bold; margin: 4px 0; }
-  .advance { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+  /* 球団のマーク(D-400):丸の中に頭文字。文字は CSS で出す(表の文字としては数えない) */
+  .emblem { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--team, #666); color: #fff; font-weight: 900; font-size: 11px; line-height: 1; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); vertical-align: middle; }
+  .emblem::before { content: attr(data-initial); }
+  .emblem.large { width: 56px; height: 56px; font-size: 24px; border: 3px solid rgba(255, 255, 255, 0.85); }
+  .emblem.small { width: 20px; height: 20px; font-size: 10px; }
+
+  /* 進行(D-400):得点板・進めるボタン・自球団の数字 */
+  .board { background: var(--board); border-radius: var(--radius); padding: 14px; margin: 4px 0 14px; box-shadow: var(--shadow); color: #fff; }
+  .board-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.75rem; color: #c9d4f5; }
+  .board-head #board-note { white-space: nowrap; }
+  .day { font-size: 0.8rem; font-weight: 700; margin: 0; min-width: 0; }
+  .vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; text-align: center; margin: 10px 0; }
+  .vs-team { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+  .vs-name { font-weight: 800; font-size: 0.85rem; line-height: 1.25; }
+  .vs-rec { font-size: 0.72rem; color: #c9d4f5; }
+  .vs-x { font-weight: 900; font-size: 1.4rem; padding: 0 6px; color: var(--gold); }
+  .season-bar { height: 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.18); overflow: hidden; }
+  .season-bar span { display: block; height: 100%; background: var(--gold); }
+  .board .games-count { margin: 6px 0 0; font-size: 0.75rem; color: #c9d4f5; }
+  .advance { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 14px; }
+  .advance .adv[data-days='1'] { grid-column: 1 / -1; min-height: 56px; font-size: 1.15rem; font-weight: 900; letter-spacing: 0.05em; border-radius: var(--radius); box-shadow: 0 5px 0 var(--gold-edge); }
   .stop { width: 100%; margin: 4px 0 8px; }
-  .mine-line { font-size: 1.05rem; }
-  ul.games { list-style: none; padding: 0; margin: 0; }
-  ul.games li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; }
+  .form { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; gap: 6px; }
+  .form-item span { display: block; font-size: 0.72rem; color: var(--muted); }
+  .form-item b { display: block; font-size: 1.6rem; font-weight: 900; line-height: 1.25; font-variant-numeric: tabular-nums; min-height: 2.1rem; }
+  .form-item .rank { font-size: 1.6rem; color: var(--fg); font-weight: 900; }
+  .form-item .rank.medal { width: 38px; height: 38px; font-size: 1.15rem; margin: 2px auto 0; color: #3a2a00; }
+  .form-note { text-align: center; margin: 8px 0 0; font-size: 0.8rem; color: var(--muted); display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .streak { display: inline-block; font-weight: 800; font-size: 0.75rem; padding: 1px 10px; border-radius: 999px; color: #fff; background: var(--ng); }
+  .streak.lose { background: #4b5b8f; }
+  .mine-line { font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
+  .quick { display: flex; gap: 8px; margin: 0 0 4px; }
+  .quick > * { flex: 1 1 0; min-width: 0; padding: 8px 6px; font-size: 0.9rem; }
+  ul.games { list-style: none; padding: 0; margin: 0; background: var(--box); border-radius: var(--radius); }
+  ul.games li { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; font-size: 0.92rem; }
   ul.games li:last-child { border-bottom: none; }
   .mark { font-weight: bold; min-width: 1.5em; }
   .mark.win { color: var(--ok); } .mark.loss { color: var(--ng); }
+  #last-day { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-  /* 順位表 */
-  .seg { display: flex; border: 1px solid var(--accent); border-radius: 10px; overflow: hidden; margin: 8px 0; }
-  .seg button { flex: 1 1 0; border: none; border-radius: 0; background: transparent; color: var(--accent); padding-left: var(--space-1); padding-right: var(--space-1); white-space: nowrap; }
+  /* 切り替え(リーグ・打者/投手など) */
+  .seg { display: flex; gap: 6px; margin: 6px 0; }
+  .seg button { flex: 1 1 0; border-radius: var(--radius-s); background: var(--box); color: var(--muted); padding: 4px var(--space-1); white-space: nowrap; box-shadow: 0 3px 0 var(--edge); min-height: 36px; font-size: 0.9rem; margin-bottom: 3px; }
   .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-fg); }
-  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
-  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.92rem; }
-  th, td { padding: 8px 5px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); background: var(--bg); }
-  th:last-child, td:last-child { padding-right: 8px; }
-  th { font-size: 0.8rem; color: var(--muted); font-weight: normal; line-height: 1.2; }
-  tr:last-child td { border-bottom: none; }
+
+  /* 表(D-403):数字は等幅で右にそろえる。縦線なし、行は薄い横線 */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); background: var(--box); box-shadow: var(--shadow); }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+  th, td { padding: 8px 5px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); background: var(--box); }
+  th:last-child, td:last-child { padding-right: 10px; }
+  th { font-size: 0.8rem; color: var(--muted); font-weight: 700; line-height: 1.2; background: var(--box2); }
+  tr:last-child td, tr:last-child th[scope=row] { border-bottom: none; }
   /* 左端(順位とチーム名)は、横に動かしても見えたままにする */
-  th.sticky, td.sticky { position: sticky; left: 0; z-index: 1; text-align: left; padding-left: 8px; }
+  th.sticky, td.sticky { position: sticky; left: 0; z-index: 1; text-align: left; padding-left: 10px; }
   td.sticky { font-weight: bold; }
-  .rank { display: inline-block; min-width: 1.6em; color: var(--muted); font-weight: normal; }
+  .rank { display: inline-grid; place-items: center; min-width: 1.6em; color: var(--muted); font-weight: normal; vertical-align: middle; }
+  /* 1〜3 位はメダル(D-400) */
+  .rank.medal { line-height: 1; width: 24px; height: 24px; min-width: 0; border-radius: 50%; font-weight: 900; font-size: 0.75rem; color: #3a2a00; margin-right: 4px; }
+  .rank.medal-1 { background: var(--medal-1); } .rank.medal-2 { background: var(--medal-2); } .rank.medal-3 { background: var(--medal-3); }
   tr.mine td { background: var(--mine); }
   tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
   .you { color: var(--mine-line); margin-left: 2px; }
+  .team-cell { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+  #screen-standings .you { display: none; } /* 自球団の行は金色の帯で示す(幅を空けるため★は出さない) */
+  /* 順位表は幅 360 でも全列が入るように詰める */
+  #screen-standings th, #screen-standings td { padding-left: 3px; padding-right: 3px; font-size: 0.82rem; }
+  #screen-standings th.sticky, #screen-standings td.sticky { padding-left: 8px; }
+  #screen-standings th:last-child, #screen-standings td:last-child { padding-right: 8px; }
+  #screen-standings .rank.medal { width: 22px; height: 22px; margin-right: 0; }
+  #screen-standings .rank { min-width: 22px; }
+  #screen-standings .emblem { width: 20px; height: 20px; font-size: 10px; }
 
   /* 新規開始 */
-  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 12px; margin: 12px 0; }
-  legend { font-weight: bold; padding: 0 4px; }
-  .team { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  fieldset { border: none; background: var(--box); border-radius: var(--radius); padding: 4px 14px 12px; margin: 12px 0; box-shadow: var(--shadow); }
+  legend { font-weight: 800; padding: 6px 0 0; float: left; width: 100%; }
+  .team { padding: 10px 0; border-bottom: 1px solid var(--line); clear: both; }
   .team:last-child { border-bottom: none; }
   .team label.name-label { display: block; font-size: 0.9rem; color: var(--muted); }
   .team .pick { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.95rem; }
   .team .pick input { width: 20px; height: 20px; }
   details { margin: 12px 0; }
-  summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
+  summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; font-weight: 700; }
   .boot { margin: 16px 0; }
 
   /* 成績の画面(②) */
-  .link { font: inherit; background: none; border: none; color: var(--accent); padding: 0; min-height: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 3px; display: inline; }
+  .link { font: inherit; font-weight: inherit; background: none; border: none; color: var(--accent); padding: 0; min-height: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: rgba(63, 195, 255, 0.4); text-underline-offset: 3px; display: inline; box-shadow: none; margin: 0; border-radius: 0; }
+  .link:active:not(:disabled) { transform: none; box-shadow: none; }
   td.sticky .link { font-weight: bold; }
   .sub { display: block; font-size: 0.75rem; color: var(--muted); font-weight: normal; max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
   td.name-cell { min-width: 7.5em; max-width: 10em; white-space: normal; line-height: 1.3; }
+  td.name-cell .rank + .link, td.name-cell .rank + .sub { margin-left: 0; }
   /* 並び順の指標が表にないとき、名前の隣に固定の列を出す(D-131)。名前の列の幅を決めて、その右に固定する */
   /* 幅と位置は見出しと本体で同じ値(変数)を使う。em は文字の大きさで変わり、見出しと本体でずれるため使わない(D-267) */
   th.name-fixed, td.name-fixed { box-sizing: border-box; width: var(--table-name-w); min-width: var(--table-name-w); max-width: var(--table-name-w); }
@@ -122,56 +179,70 @@
   /* 固定列のすぐ右の列(横にずらす側の最初の列)は、固定列の線から少し離す(D-268) */
   th.sticky + th:not(.sticky2), td.sticky + td:not(.sticky2), th.sticky2 + th, td.sticky2 + td { padding-left: var(--table-first-scroll-gap); }
   .seg.small-seg { flex: 0 0 auto; margin: 0; }
-  .seg.small-seg button { padding: 6px 10px; min-height: 40px; font-size: 0.9rem; }
+  .seg.small-seg button { padding: 6px 10px; min-height: 36px; font-size: 0.85rem; }
   #stats-sort { flex: 1 1 8em; }
   td.name-cell .link { white-space: nowrap; }
-  th button.sort { font: inherit; background: none; border: none; color: inherit; padding: 4px 0; min-height: 32px; cursor: pointer; }
-  th.sorted { color: var(--accent); font-weight: bold; }
-  /* 並べ替えた列:▲▼ は右の余白に置き、文字の右端を数値の右端にそろえる(本体の列も同じ余白。D-267) */
-  th.sorted, td.sorted { padding-right: var(--table-sort-mark-w); }
-  th.sorted:not(.sticky):not(.sticky2) { position: relative; }
-  th.sorted .arrow { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; }
+  th button.sort { font: inherit; font-weight: inherit; background: none; border: none; color: inherit; padding: 4px 0; min-height: 32px; cursor: pointer; box-shadow: none; margin: 0; border-radius: 0; }
+  th button.sort:active:not(:disabled) { transform: none; box-shadow: none; }
+  /* 並べ替えた列(D-403):見出しを水色にし、▲▼ は見出しの文字の左に置く。右の余白はほかの列と同じ(数値が左に寄らない) */
+  th.sorted { color: var(--accent); }
+  td.sorted { font-weight: 800; }
+  th.sorted .arrow { font-size: 0.65rem; margin-right: 1px; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
-  /* 広い画面(幅が js/core.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223)。既存の表は変えない */
-  .wide #screen-procedure, .wide #screen-review { max-width: 1180px; } /* fluid の表がある画面だけ、広い画面では列の幅を広げる(他の画面は第 2 段階で) */
+  /* 広い画面(幅が js/core.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223) */
+  .wide #screen-procedure, .wide #screen-review { max-width: 1180px; }
   .wide .table-wrap.fluid { overflow-x: visible; }
   .wide .table-wrap.fluid table { table-layout: auto; }
   .wide .table-wrap.fluid th { white-space: normal; }
   .wide .table-wrap.fluid th.sticky, .wide .table-wrap.fluid td.sticky, .wide .table-wrap.fluid th.sticky2, .wide .table-wrap.fluid td.sticky2 { position: static; box-shadow: none; }
-  .wide .table-wrap.fluid th.sorted { position: relative; left: auto; } /* 固定をやめた列でも、▲▼ を見出しの中に置く */
   .wide .table-wrap.fluid th.name-fixed, .wide .table-wrap.fluid td.name-fixed { width: auto; min-width: 9em; max-width: none; }
   .wide .table-wrap.fluid td.name-cell { max-width: none; }
   .wide .table-wrap.fluid tr.mine td.sticky { box-shadow: inset 4px 0 0 var(--mine-line); }
   .wide .table-wrap.fluid th.sticky + th, .wide .table-wrap.fluid td.sticky + td, .wide .table-wrap.fluid th.sticky2 + th, .wide .table-wrap.fluid td.sticky2 + td { padding-left: 5px; } /* 固定しないときは、ほかの列と同じ */
   .warn { color: var(--warn-line); font-weight: bold; }
-  /* 契約・資金(F3-2a。色・余白・文字は変数で指定。D-239) */
-  .ability-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--space-1) var(--space-2); background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); }
-  .ability { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+
+  /* 選手のカードと能力(D-400):能力はランクの札と数字、右側に特殊能力 */
+  .player-card { position: relative; overflow: hidden; background: var(--board); color: #fff; border-radius: 18px; padding: 16px; margin: 4px 0 12px; box-shadow: var(--shadow); display: flex; gap: 14px; align-items: center; }
+  .player-card::after { content: attr(data-pos); position: absolute; right: -4px; bottom: -36px; font-size: 120px; font-weight: 900; line-height: 1; opacity: 0.12; pointer-events: none; }
+  .player-card h1 { font-size: 1.5rem; font-weight: 900; margin: 0; line-height: 1.25; }
+  .player-card #player-info { margin: 4px 0 0; font-size: 0.82rem; color: #d6defa; }
+  .player-card #player-info .link { color: #fff; }
+  .player-card .back { position: absolute; right: 10px; top: 10px; z-index: 1; min-height: 34px; padding: 2px 10px; font-size: 0.8rem; }
+  .player-card-body { min-width: 0; padding-right: 56px; }
+  .ability-panel { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--space-3); background: var(--box); border-radius: var(--radius); padding: var(--space-3); box-shadow: var(--shadow); }
+  .ability-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .ability { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); min-height: 30px; }
   .ability-label { color: var(--muted); font-size: var(--font-small); }
-  .ability[data-key=breaking] { grid-column: 1 / -1; }
-  .ability.rank-S .ability-value { color: var(--rank-s); } .ability.rank-A .ability-value { color: var(--rank-a); } .ability.rank-B .ability-value { color: var(--rank-b); }
-  .ability.rank-C .ability-value { color: var(--rank-c); } .ability.rank-D .ability-value { color: var(--rank-d); } .ability.rank-E .ability-value { color: var(--rank-e); }
-  .ability.rank-F .ability-value, .ability.rank-G .ability-value { color: var(--rank-f); }
-  .skills { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-2); }
-  .skill { border: 1px solid; border-radius: var(--radius); padding: 0 var(--space-1); font-size: var(--font-small); white-space: nowrap; }
-  .badge-foreign { font-size: var(--font-small); border: 1px solid var(--muted); border-radius: var(--radius); padding: 0 3px; margin-left: 4px; color: var(--muted); }
+  .ability-value { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .rank-badge { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: #fff; font-weight: 900; font-size: 1rem; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2); }
+  .rank-badge.rank-S { background: var(--rank-s); } .rank-badge.rank-A { background: var(--rank-a); } .rank-badge.rank-B { background: var(--rank-b); }
+  .rank-badge.rank-C { background: var(--rank-c); } .rank-badge.rank-D { background: var(--rank-d); } .rank-badge.rank-E { background: var(--rank-e); }
+  .rank-badge.rank-F { background: var(--rank-f); } .rank-badge.rank-G { background: var(--rank-g); }
+  .ability-num { min-width: 2.2em; text-align: right; }
+  .ability[data-key=breaking] { flex-wrap: wrap; }
+  .ability[data-key=breaking] .ability-value { font-size: 0.85rem; white-space: normal; }
+  .skills { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 6px; }
+  .skills > .ability-label { width: 100%; }
+  .skill { border-radius: 8px; padding: 2px 10px; font-size: var(--font-tiny); font-weight: 800; white-space: nowrap; color: #fff; }
+  .badge-foreign { font-size: var(--font-tiny); border: 1px solid var(--muted); border-radius: 6px; padding: 0 3px; margin-left: 4px; color: var(--muted); }
   .skills-inline { display: inline-flex; gap: var(--space-1); }
-  .skill.good { color: var(--ok); } .skill.bad { color: var(--ng); }
-  .contract-box { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); }
+  .skill.good { background: #16a34a; } .skill.bad { background: #5b6788; }
+  .skills-inline .skill { padding: 0 6px; }
+  .contract-box { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); box-shadow: var(--shadow); }
   .contract-box .big { font-size: 1.05rem; font-weight: bold; }
+  .contract-box .table-wrap { box-shadow: none; }
   .budget-bar { height: var(--space-2); background: var(--line); border-radius: var(--radius); overflow: hidden; margin: var(--space-1) 0; }
   .budget-bar span { display: block; height: 100%; background: var(--accent); }
   .budget-bar.over span { background: var(--warn-line); }
   .contract-box.over { background: var(--warn-bg); border-left: 4px solid var(--warn-line); }
   .contract-box dl { margin: var(--space-1) 0 0; font-size: var(--font-tiny); color: var(--muted); }
-  /* 契約更改(F3-2b):提示のパネル。色・文字・余白は変数で指定(D-239) */
-  /* オフの手続きの状態バー(D-271)。色・余白・文字は変数(D-239) */
-  .status-bar { background: var(--box); border-radius: var(--radius); padding: var(--space-2); margin: var(--space-1) 0; }
+  /* オフの手続きの状態バー(D-271) */
+  .status-bar { background: var(--box); border-radius: var(--radius); padding: var(--space-2); margin: var(--space-1) 0; box-shadow: var(--shadow); }
   .status-bar .bar-text { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); font-size: var(--font-tiny); }
   .status-bar .bar-actions { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
   .status-bar .bar-actions button { flex: 1 1 auto; min-width: 0; padding: var(--space-2) var(--space-1); font-size: var(--font-tiny); min-height: 40px; white-space: nowrap; }
   #proc-message:empty, #proc-autolog:empty, #proc-outlook:empty { display: none; }
-  /* 判断の画面(①b。D-296〜D-298):状態バーの要約は押すと自球団の状況のパネルを開く。手薄なポジション(◆)と一軍の枠の目安に入る序列(●)の印 */
+  /* 判断の画面(①b。D-296〜D-298) */
   .status-bar .bar-text.clickable { cursor: pointer; }
   .status-bar .bar-text.clickable #proc-info { color: var(--accent); }
   .outlook-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2); margin: var(--space-1) 0; font-size: var(--font-small); }
@@ -186,12 +257,12 @@
   #proc-message { margin: var(--space-1) 0; font-size: var(--font-small); }
   #screen-procedure .page-head .back { min-height: 40px; padding: var(--space-1) var(--space-3); }
   #screen-procedure .steps { gap: 2px; }
-  #screen-procedure .steps li { flex: 1 1 auto; padding: var(--space-1) 1px; font-size: 0.7rem; } /* 段階のタブは 8 つ(D-376、D-378、D-380)。幅は名前の長さに合わせて分ける(幅 360 でも省略されない) */
+  #screen-procedure .steps li { flex: 1 1 auto; padding: var(--space-1) 1px; font-size: 0.7rem; } /* 段階のタブは 8 つ(D-376、D-378、D-380)。幅は名前の長さに合わせて分ける */
   #screen-procedure .status-bar .bar-actions button { min-height: 36px; }
   #screen-procedure .page-head h1 { font-size: 1.4rem; }
   .compact-filters { display: flex; gap: var(--space-1); margin: var(--space-1) 0; }
   .compact-filters select { flex: 1 1 0; min-width: 0; font-size: var(--font-small); padding: var(--space-1); min-height: 36px; }
-  .offer-panel { background: var(--box); border-radius: var(--radius); padding: var(--space-2) var(--space-3); font-size: var(--font-small); white-space: normal; text-align: left; position: sticky; left: 0; max-width: min(36em, calc(100vw - 4 * var(--space-3))); box-sizing: border-box; }
+  .offer-panel { background: var(--box2); border-radius: var(--radius-s); padding: var(--space-2) var(--space-3); font-size: var(--font-small); white-space: normal; text-align: left; position: sticky; left: 0; max-width: min(36em, calc(100vw - 4 * var(--space-3))); box-sizing: border-box; }
   .offer-panel p { margin: var(--space-1) 0; }
   .offer-fields { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: var(--space-1) 0; }
   .offer-fields input[type=number] { width: 8em; }
@@ -199,20 +270,32 @@
   tr.refused td { background: var(--warn-bg); }
   .salary-input { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
   .salary-input button.pct { padding: var(--space-1) var(--space-2); font-size: var(--font-tiny); min-width: 3.5em; }
-  select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-height: 40px; max-width: 100%; }
+  select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--bg-deep); color: var(--fg); min-height: 40px; max-width: 100%; }
   .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
   .check input { width: 20px; height: 20px; }
   .info { border-left: 4px solid var(--accent); background: var(--box); border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 0.9rem; }
   .info strong { display: block; }
   .info:empty { display: none; }
-  /* 個人成績の絞り込みと並び順の行(UI の整理②):判断の画面の絞り込み(compact-filters)と同じ高さに詰めて、表を上げる(D-310) */
+  /* 個人成績:絞り込みは 1 つにまとめて、押すと開く(D-401)。並び順の行は出しておく */
   #screen-stats .filters { gap: var(--space-1); margin: var(--space-1) 0; flex-wrap: wrap; }
   #screen-stats .filters select { flex: 1 1 0; min-width: 5.5em; min-height: 36px; padding: var(--space-1); font-size: var(--font-small); }
   #screen-stats .filters .check { min-height: 36px; font-size: var(--font-small); flex: 0 0 auto; }
   #screen-stats .seg.small-seg button { min-height: 36px; }
-  .more { width: 100%; margin: 8px 0; }
+  .filter-box { margin: var(--space-1) 0; background: var(--box); border-radius: var(--radius-s); padding: 0 var(--space-2); }
+  .filter-box summary { min-height: 38px; font-size: var(--font-small); gap: 6px; }
+  .filter-box summary .filter-text { color: var(--muted); font-weight: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filter-box[open] { padding-bottom: var(--space-2); }
+  /* 1 位の選手のカード(D-400) */
+  .leader { display: flex; align-items: center; gap: 10px; background: var(--box); border-radius: var(--radius-s); padding: 6px 12px; margin: var(--space-2) 0; box-shadow: var(--shadow); }
+  .leader .emblem { width: 34px; height: 34px; font-size: 15px; }
+  .leader-body { flex: 1 1 auto; min-width: 0; }
+  .leader-title { display: inline-block; font-size: 0.72rem; font-weight: 800; background: var(--gold); color: var(--gold-fg); padding: 0 8px; border-radius: 999px; }
+  .leader-name { font-weight: 900; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+  .leader-name .leader-team { color: var(--muted); font-size: 0.75rem; font-weight: 500; margin-left: 6px; }
+  .leader-value { font-size: 1.6rem; font-weight: 900; color: var(--gold); line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .more { width: 100%; margin: 10px 0; }
   .page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
-  .page-head h1 { flex: 1 1 auto; margin: 0; font-size: 1.2rem; }
+  .page-head h1 { flex: 1 1 auto; margin: 0; font-size: 1.25rem; }
   .guide-item { border-bottom: 1px solid var(--line); padding: 10px 0; }
   .guide-item h3 { font-size: 1.05rem; margin: 0 0 4px; }
   .guide-item .formula { font-size: 0.88rem; background: var(--box); border-radius: 6px; padding: 6px 8px; margin: 4px 0; }
@@ -220,23 +303,27 @@
   .guide-item .description { margin: var(--space-1) 0; }
   .guide-item .better { font-size: var(--font-small); color: var(--muted); margin: var(--space-1) 0; }
   .compact-filters input[type=search] { flex: 1 1 0; min-width: 0; font-size: var(--font-small); padding: var(--space-1); min-height: 36px; }
-  /* 新規開始の説明バー(D-313):選んでいる設定の説明。画面の下に貼り付く(ボタンの行より前に置くので「始める」は隠さない) */
-  .help-bar { position: sticky; bottom: 0; z-index: 5; background: var(--box); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.12); min-height: calc(3em + 2 * var(--space-2)); line-height: 1.5; }
+  /* 新規開始の説明バー(D-313) */
+  .help-bar { position: sticky; bottom: 0; z-index: 5; background: var(--box2); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; font-size: var(--font-small); box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3); min-height: calc(3em + 2 * var(--space-2)); line-height: 1.5; }
   .help-bar strong { margin-right: var(--space-1); }
-  html:has(#new-help:not([hidden])) { scroll-padding-bottom: 8rem; } /* バーを出している間は、選んだ項目がバーの下に隠れない位置までずらす */
+  html:has(#new-help:not([hidden])) { scroll-padding-bottom: 8rem; }
   .back { flex: none; white-space: nowrap; min-height: 40px; padding: 6px 12px; }
-  .game-card { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; background: var(--box); color: var(--fg); border: 1px solid var(--line); margin: 6px 0; padding: 10px 12px; }
-  .game-card.mine { border-color: var(--mine-line); background: var(--mine); }
+  /* 試合のカード(小さな得点板。D-400) */
+  .game-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 6px; row-gap: 2px; width: 100%; text-align: left; background: var(--box); color: var(--fg); margin: 0; padding: 8px 10px; font-size: 0.85rem; font-weight: 500; border-radius: var(--radius-s); box-shadow: var(--shadow); min-height: 0; }
+  .game-card .gc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game-card .lose { opacity: 0.55; }
+  .game-card.mine { background: var(--mine); outline: 2px solid var(--mine-line); outline-offset: -2px; }
+  #games-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   tr.career td, tr.career th { font-weight: bold; border-top: 2px solid var(--line); }
   .steps { display: flex; gap: 4px; padding: 0; margin: 8px 0; list-style: none; flex-wrap: nowrap; } /* 段階のタブは折り返さない(D-271) */
-  .steps li { flex: 1 1 0; min-width: 0; text-align: center; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .steps li.current { border-color: var(--accent); color: var(--accent); font-weight: bold; }
-  .steps li.done { background: var(--box); }
-  tr.detail td { background: var(--box); font-size: 0.85rem; white-space: normal; }
+  .steps li { flex: 1 1 0; min-width: 0; text-align: center; padding: 6px 2px; border-radius: 8px; font-size: 0.85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--box); }
+  .steps li.current { background: var(--accent); color: var(--accent-fg); font-weight: bold; }
+  .steps li.done { background: var(--box2); }
+  tr.detail td { background: var(--box2); font-size: 0.85rem; white-space: normal; }
   tr.selected td { background: var(--mine); }
-  .pick-btn { min-height: 32px; padding: 2px 10px; font-size: 0.85rem; }
-  .game-card .score { font-weight: bold; font-size: 1.05rem; white-space: nowrap; }
-  .game-card .tags { grid-column: 1 / 3; font-size: 0.8rem; color: var(--muted); }
+  .pick-btn { min-height: 32px; padding: 2px 10px; font-size: 0.85rem; box-shadow: 0 2px 0 var(--gold-edge); margin: 0; }
+  .game-card .score { font-weight: 900; font-size: 1.05rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .game-card .tags { grid-column: 1 / -1; font-size: 0.72rem; color: var(--muted); }
   .daynav { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin: 8px 0; }
   .log h3 { font-size: 1rem; margin: 16px 0 4px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
   .log ul { list-style: none; margin: 0; padding: 0; }
@@ -244,13 +331,28 @@
   .log li.change { color: var(--muted); font-size: 0.88rem; }
   .log .runs { color: var(--ng); font-weight: bold; }
   .kv { width: 100%; }
-  .kv th { text-align: left; color: var(--fg); font-size: 0.95rem; }
+  .kv th { text-align: left; color: var(--fg); font-size: 0.95rem; background: var(--box); font-weight: 500; }
   .kv td { text-align: right; }
   .desc { display: block; font-size: 0.8rem; color: var(--muted); white-space: normal; font-weight: normal; }
   .run-box { margin: 4px 0 8px; }
   .loading { color: var(--muted); font-size: 0.9rem; }
   label.radio { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 0.95rem; }
   label.radio input { width: 20px; height: 20px; margin-top: 3px; flex: none; }
+  .side-hint { display: none; }
+
+  /* 広い画面(D-402):タブを左の縦の列にし、選手・チーム・試合・球場のページを元の画面の右に並べる */
+  .wide .tabs { top: 57px; bottom: 0; right: auto; width: var(--nav-w); flex-direction: column; justify-content: flex-start; padding: 12px 4px; box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3); }
+  .wide .tabs button { flex: none; min-height: 64px; }
+  .wide body.in-game { padding-left: var(--nav-w); }
+  .wide .topbar { margin-left: calc(-1 * var(--nav-w)); }
+  .wide .topbar-inner { max-width: none; padding-left: 20px; }
+  .wide .screen { padding-bottom: 32px; }
+  .wide body.dual { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+  .wide body.dual > .topbar { grid-column: 1 / -1; }
+  .wide body.dual > main.screen { max-width: 860px; width: 100%; }
+  .wide body.dual > main.screen.left-pane { justify-self: end; }
+  .wide body.dual > main.screen.right-pane { justify-self: start; position: sticky; top: 57px; max-height: calc(100vh - 57px); overflow-y: auto; }
+  .wide body.dual .side-hint:not([hidden]) { display: block; align-self: start; justify-self: start; margin: 72px 16px; padding: 24px; border: 2px dashed var(--line); border-radius: var(--radius); color: var(--muted); max-width: 480px; }
 </style>
 </head>
 <body>
@@ -260,11 +362,10 @@
   <div class="topbar-inner">
     <div class="topbar-title">
       <span id="topbar-day"></span>
-      <span class="dirty" id="dirty" hidden>● 未保存の変更があります</span>
+      <span class="dirty" id="dirty" hidden>未保存の変更があります</span>
     </div>
-    <button id="save">保存</button>
-    <label class="button secondary" for="open-file-top">開く</label>
-    <button id="menu" class="secondary" aria-label="メニュー(設定)">メニュー</button>
+    <button id="save" class="icon-btn" aria-label="保存" title="保存"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3"/><rect x="7" y="13" width="10" height="6" rx="1"/></svg></button>
+    <button id="menu" class="icon-btn" aria-label="メニュー(設定・開く)" title="メニュー"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   </div>
 </header>
 
@@ -337,13 +438,18 @@
 
 <!-- 進行 -->
 <main class="screen" id="screen-progress" hidden>
-  <p class="day" id="day-text"></p>
-  <p class="muted small" id="games-text"></p>
+  <!-- 得点板(D-400):自球団 VS 次の相手と、シーズンの進み具合 -->
+  <div class="board" id="board">
+    <div class="board-head"><p class="day" id="day-text"></p><span id="board-note"></span></div>
+    <div class="vs" id="vs" hidden></div>
+    <div class="season-bar"><span id="season-bar"></span></div>
+    <p class="games-count" id="games-text"></p>
+  </div>
 
   <div class="advance">
-    <button class="adv" data-days="1">1日</button>
-    <button class="adv" data-days="7">1週間</button>
-    <button class="adv" data-days="0">最後まで</button>
+    <button class="adv" data-days="1">▶ 1日すすめる</button>
+    <button class="adv secondary" data-days="7">1週間</button>
+    <button class="adv secondary" data-days="0">最後まで</button>
   </div>
   <!-- 「止める」と進み具合のバーは、処理が 0.6 秒を超えたときだけ出す(D-118) -->
   <div class="run-box" id="run-box" hidden>
@@ -361,12 +467,12 @@
     <button id="open-offseason">オフの手続きへ</button>
   </div>
 
+  <!-- 自球団の順位・勝率・ゲーム差と調子(D-400) -->
   <div class="card" id="mine-card">
-    <div class="muted small">自球団</div>
-    <div class="mine-line"><strong id="mine-name"></strong></div>
-    <div id="mine-record"></div>
+    <div class="form" id="mine-form"></div>
+    <div class="form-note" id="mine-note"></div>
   </div>
-  <p class="row"><button id="open-lineup" class="secondary" type="button" hidden>スタメンと打順</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">ドラフトの振り返り</button></p>
+  <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">ドラフト</button></div>
 
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
@@ -379,20 +485,19 @@
 
 <!-- 順位表 -->
 <main class="screen" id="screen-standings" hidden>
-  <h1>順位表</h1>
   <div class="seg" id="league-switch" role="group" aria-label="リーグの切り替え"></div>
   <p class="muted small" id="standings-day"></p>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th class="sticky" scope="col">順位・チーム</th>
+          <th class="sticky" scope="col">チーム</th>
           <th scope="col">試合</th>
           <th scope="col">勝</th>
           <th scope="col">敗</th>
           <th scope="col">分</th>
           <th scope="col">勝率</th>
-          <th scope="col">ゲーム<br>差</th>
+          <th scope="col">差</th>
         </tr>
       </thead>
       <tbody id="standings-body"></tbody>
@@ -402,19 +507,22 @@
 
 <!-- 成績 -->
 <main class="screen" id="screen-stats" hidden>
-  <h1>個人成績</h1>
   <div class="seg" id="stats-role" role="group" aria-label="打者・投手の切り替え">
     <button data-value="batter">打者</button><button data-value="pitcher">投手</button>
   </div>
   <div class="seg" id="stats-kind" role="group" aria-label="成績の種類の切り替え">
     <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button><button data-value="ability">能力</button>
   </div>
-  <div class="filters">
-    <select id="stats-season" aria-label="シーズンの選択"></select>
-    <select id="stats-league" aria-label="リーグの絞り込み"></select>
-    <select id="stats-team" aria-label="チームの絞り込み"></select>
-    <label class="check"><input type="checkbox" id="stats-qualified" checked>規定到達者だけ</label>
-  </div>
+  <!-- 絞り込みは 1 つにまとめて、押すと開く(D-401) -->
+  <details class="filter-box" id="stats-filter-box">
+    <summary>⚙ 絞り込み <span class="filter-text" id="stats-filter-text"></span></summary>
+    <div class="filters">
+      <select id="stats-season" aria-label="シーズンの選択"></select>
+      <select id="stats-league" aria-label="リーグの絞り込み"></select>
+      <select id="stats-team" aria-label="チームの絞り込み"></select>
+      <label class="check"><input type="checkbox" id="stats-qualified" checked>規定到達者だけ</label>
+    </div>
+  </details>
   <div class="filters">
     <label class="small" for="stats-sort">並び順</label>
     <select id="stats-sort" aria-label="並び順に使う指標"></select>
@@ -423,12 +531,12 @@
   <p class="muted small" id="stats-baseline" hidden></p>
   <div class="info" id="stats-info" role="status" aria-live="polite"></div>
   <p class="loading" id="stats-loading" hidden>集計しています…</p>
+  <div id="stats-leader"></div>
   <div id="stats-table"></div>
 </main>
 
 <!-- 試合 -->
 <main class="screen" id="screen-games" hidden>
-  <h1>試合</h1>
   <div class="daynav">
     <button class="secondary" id="games-prev" aria-label="前の日">◀ 前の日</button>
     <select id="games-day" aria-label="日付を選ぶ"></select>
@@ -440,8 +548,8 @@
 
 <!-- 選手のページ -->
 <main class="screen" id="screen-player" hidden>
-  <div class="page-head"><button class="secondary back">戻る</button><h1 id="player-name"></h1></div>
-  <p id="player-info"></p>
+  <!-- 選手のカード(D-400) -->
+  <div class="player-card" id="player-card"><span class="emblem large" id="player-emblem"></span><div class="player-card-body"><h1 id="player-name"></h1><p id="player-info"></p></div><button class="secondary back">戻る</button></div>
   <div id="player-abilities-box" hidden>
     <h2>能力</h2>
     <div id="player-abilities"></div>
@@ -555,7 +663,7 @@
 
 <!-- チームのページ -->
 <main class="screen" id="screen-team" hidden>
-  <div class="page-head"><button class="secondary back">戻る</button><h1 id="team-name"></h1></div>
+  <div class="page-head"><button class="secondary back">戻る</button><span class="emblem" id="team-emblem"></span><h1 id="team-name"></h1></div>
   <p id="team-info"></p>
   <div id="team-record"></div>
   <h2>チームの WAR(ここまで)</h2>
@@ -609,6 +717,8 @@
     <h2>オフの手続き</h2>
     <button class="danger" id="proc-auto">全部おまかせ</button>
   </div>
+  <h2>セーブデータ</h2>
+  <label class="button secondary" for="open-file-top" id="open-top-label" style="width:100%">セーブデータを開く</label>
   <h2>用語集</h2>
   <button class="secondary" id="open-guide" style="width:100%">用語集を見る</button>
 </main>
@@ -623,6 +733,9 @@
   <p class="muted small" id="guide-count" role="status" aria-live="polite"></p>
   <div id="guide-body"></div>
 </main>
+
+<!-- 広い画面の右側の案内(何も開いていないとき。D-402) -->
+<aside class="side-hint" id="side-hint" hidden>左の表で選手・チーム・試合を選ぶと、ここにくわしく出ます。</aside>
 
 <!-- 下のタブ(ゲーム中だけ表示。タブは js/core.js の TABS で増やせる) -->
 <nav class="tabs" id="tabs" role="tablist" hidden></nav>

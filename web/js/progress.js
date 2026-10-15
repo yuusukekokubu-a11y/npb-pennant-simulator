@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { call, delayedShow, ready } from "./backend.js";
 import { current, renderCurrent, showScreen } from "./screens.js";
-import { el, gameCard, teamLink } from "./parts.js";
+import { el, emblem, gameCard, rankBadge, teamLink } from "./parts.js";
 import { buildStatsFilters } from "./stats.js";
 
 // ---- 進行・順位表 ----
@@ -11,11 +11,41 @@ import { buildStatsFilters } from "./stats.js";
 export function setDirty(value) {
   state.dirty = value;
   $("dirty").hidden = !value;
+  $("save").classList.toggle("unsaved", value); // 未保存は保存のアイコンに点(D-401)
 }
 
-function recordText(m) {
-  const gb = m.games_behind === "-" ? (m.rank === 1 ? "首位" : "首位と同率") : `首位と ${m.games_behind} ゲーム差`;
-  return `${m.league_name} ${m.rank}位 / ${m.wins}勝 ${m.losses}敗 ${m.ties}分 / 勝率 ${m.pct} / ${gb}`;
+const recText = (r) => `${r.wins}勝${r.losses}敗${r.ties}分`;
+
+// 得点板(D-400):自球団 VS 次の相手(シーズンが終わったら最後の相手)
+function renderBoard(s) {
+  const m = s.my_team;
+  const n = m && m.next_game;
+  $("vs").hidden = !n;
+  $("board-note").textContent = n ? `${n.finished ? "最後の試合" : `次 ${n.day}日目`}・${n.home ? "ホーム" : "ビジター"}` : "";
+  if (n) {
+    const side = (id, name, rec) => el("div", { className: "vs-team" }, emblem(id, name, "large"), el("span", { className: "vs-name" }, name), el("span", { className: "vs-rec" }, recText(rec)));
+    $("vs").replaceChildren(side(m.id, m.name, m), el("span", { className: "vs-x" }, "VS"), side(n.opponent_id, n.opponent_name, n.opponent_record));
+  }
+  const done = s.is_over ? 1 : s.day / s.total_days;
+  $("season-bar").style.width = `${Math.round(done * 1000) / 10}%`;
+}
+
+// 自球団の順位・勝率・ゲーム差と調子(D-400)。首位のときは 2 位との差
+function renderForm(m) {
+  const rows = (state.view.standings.leagues.find((lg) => lg.rows.some((r) => r.is_mine)) || { rows: [] }).rows;
+  const second = rows.find((r) => r.rank === 2);
+  const lead = m.rank === 1 && second && second.games_behind !== "-" ? second.games_behind : null;
+  const item = (label, value) => el("div", { className: "form-item" }, el("span", {}, label), el("b", {}, value));
+  $("mine-form").replaceChildren(
+    item(`${m.league_name}`, rankBadge(m.rank)),
+    item("勝率", m.pct),
+    m.rank === 1 ? item("2位との差", lead || "-") : item("首位との差", m.games_behind),
+  );
+  const note = [];
+  if (m.streak && m.streak.count >= 2) note.push(el("span", { className: "streak" + (m.streak.outcome === "負" ? " lose" : "") }, `${m.streak.count}連${m.streak.outcome === "勝" ? "勝" : "敗"}中`));
+  note.push(el("span", {}, `${m.wins}勝 ${m.losses}敗 ${m.ties}分`));
+  if (m.last10 && m.last10.games) note.push(el("span", {}, `直近${m.last10.games}試合 ${m.last10.wins}勝${m.last10.losses}敗${m.last10.ties ? `${m.last10.ties}分` : ""}`));
+  $("mine-note").replaceChildren(...note);
 }
 
 function seasonWord(s) {
@@ -37,11 +67,9 @@ export function renderProgress() {
   $("open-lineup").hidden = !m || s.is_over || Boolean(off);
   const tr = s.trade;  // トレード(D-378):シーズン中の期限まで。提案があれば件数を出す
   $("open-trade").hidden = !m || !tr || !tr.open;
-  if (tr) $("open-trade").textContent = tr.offers ? `トレード(提案 ${tr.offers} 件)` : "トレード";
-  if (m) {
-    $("mine-name").textContent = m.name;
-    $("mine-record").textContent = recordText(m);
-  }
+  if (tr) $("open-trade").textContent = tr.offers ? `トレード ${tr.offers}` : "トレード";
+  renderBoard(s);
+  if (m) renderForm(m);
   const last = state.view.last_day;
   $("last-day-title").textContent = last.games.length ? `直近の日の試合(${last.day}日目)` : "直近の日の試合";
   $("last-day").replaceChildren(...last.games.map(gameCard));
@@ -58,6 +86,7 @@ export function renderProgress() {
   for (const b of document.querySelectorAll(".adv")) b.disabled = state.running || s.is_over;
   $("save").disabled = state.running;
   $("open-file-top").disabled = state.running || !ready;
+  $("open-top-label").setAttribute("aria-disabled", String(state.running || !ready));
 }
 
 export function renderStandings() {
@@ -76,12 +105,13 @@ export function renderStandings() {
     b.setAttribute("aria-pressed", String(i === state.league));
   });
   const lg = table.leagues[state.league];
-  $("standings-day").textContent = `${table.day}日目まで(全${state.view.status.total_days}日)`;
+  $("standings-day").textContent = `${table.day}日目まで(全${state.view.status.total_days}日)・差はゲーム差`;
   const body = $("standings-body");
   body.replaceChildren();
   for (const r of lg.rows) {
-    const name = el("td", { className: "sticky" }, el("span", { className: "rank" }, String(r.rank)), teamLink(r.name, r.team_id));
-    if (r.is_mine) name.append(el("span", { className: "you", "aria-label": "自球団" }, "★"));
+    const cell = el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.name), teamLink(r.name, r.team_id));
+    if (r.is_mine) cell.append(el("span", { className: "you", "aria-label": "自球団" }, "★"));
+    const name = el("td", { className: "sticky" }, cell);
     const tr = el("tr", { className: r.is_mine ? "mine" : "" }, name);
     for (const v of [r.games, r.wins, r.losses, r.ties, r.pct, r.games_behind]) tr.append(el("td", {}, String(v)));
     body.appendChild(tr);
@@ -92,6 +122,7 @@ export function enterGame(view, dirty) {
   state.view = view;
   state.cache.clear();
   state.pages = [];
+  state.tab = "progress";
   state.gamesDay = null;
   state.stats.league = "";
   state.stats.team = "";
