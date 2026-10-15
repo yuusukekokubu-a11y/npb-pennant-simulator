@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+from pennant.facilities import team_upkeep
+
 from pennant import api
 from pennant.contracts import base_funds, changed_funds, contract_years, remaining_years, team_salary
 from pennant.savegame import load_game, save_game
@@ -70,7 +72,7 @@ def test_stages_and_contract_table(contract_game):
     v = g.offseason_view()
     assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "外国人", "ドラフト", "市場", "トレード", "現役ドラフト", "完了"]
     rn = v["renewal"]
-    assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"]
+    assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"] - team_upkeep(g._team("T01"))  # 年俸に使える額 = 資金 − 設備の維持費(D-383)
     for gone in ("none_max_ratio", "max_offers", "unoffered", "axes", "projected_total"):
         assert gone not in rn
     t = g.contract_table()
@@ -110,7 +112,7 @@ def test_overrun_gate_release_and_ai_at_the_end(contract_game):
     proc = g.state.procedure
     team = g._team("T01")
     # 資金を超えるようにして、関所を確かめる(D-361)
-    g.state.team_funds["T01"] = team_salary(team) - 1000
+    g.state.team_funds["T01"] = team_salary(team) + team_upkeep(team) - 1000  # 維持費を引いた額を 1,000 万円超える(D-383)
     assert g.offseason_view()["renewal"]["over"] == 1000 and not g.offseason_view()["renewal"]["can_next"]
     with pytest.raises(ValueError, match="資金"):
         g.offseason_next()

@@ -513,7 +513,7 @@ d = g.team(a["id"])
 print(json.dumps([b["total_text"], b["cap_text"], b["tier_label"], [r["salary_text"] for r in d["salaries"][:3]], b["usage"]], ensure_ascii=False))`, JSON.stringify({ id: warTid }));
 const budgetText = await page.textContent("#team-budget");
 const salaryCells = await page.$$eval("#team-salaries tbody tr", (trs) => trs.slice(0, 3).map((tr) => tr.children[3].textContent));
-check(budgetText.includes(`総年俸 ${pyBudget[0]}`) && budgetText.includes(`資金 ${pyBudget[1]}(使用率 ${pyBudget[4]}%)`) && budgetText.includes(`球団の規模:${pyBudget[2]}`) && !budgetText.includes("お金のルール") && !budgetText.includes("null"), `チームのページに総年俸・資金・使用率・球団の規模が出て、計算本体と同じ(「${budgetText.slice(0, 50)}…」。D-353)`);
+check(budgetText.includes(`総年俸 ${pyBudget[0]}`) && budgetText.includes(`年俸に使える額 ${pyBudget[1]}(使用率 ${pyBudget[4]}%)`) && budgetText.includes("設備の維持費") && budgetText.includes("設備:練習設備") && budgetText.includes(`球団の規模:${pyBudget[2]}`) && !budgetText.includes("お金のルール") && !budgetText.includes("null"), `チームのページに総年俸・資金・使用率・球団の規模が出て、計算本体と同じ(「${budgetText.slice(0, 50)}…」。D-353)`);
 check(JSON.stringify(salaryCells) === JSON.stringify(pyBudget[3]) && (await page.$$eval("#team-salaries thead th", (ths) => ths.map((t) => t.textContent))).join("|").includes("年俸(万円)|残り"), `チームのページの年俸の表(高い順。年俸・残りの列)が、計算本体と同じ(上位 ${salaryCells.join("・")})`);
 await findBlocks();
 await page.click("#screen-team .back");
@@ -755,6 +755,22 @@ const tabBoxes = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => { con
 const overAtStart = pyAfter(`print(json.dumps(g.offseason_view()["renewal"]["over"]))`);
 check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・トレード・現役・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 8 つ(外国人・トレード・現役ドラフトを含む。D-376、D-378、D-380)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
+// 設備(D-383):契約の段階の「設備」の欄で段階を変えると、年俸に使える額が変わる(Python と同じ)。元に戻す
+await page.waitForSelector("#facility-box");
+const facBefore = await page.textContent("#facility-box summary");
+const facPy0 = pyAfter(`print(json.dumps([g.facilities_view()["mine"]["levels"]["practice"], g.budget_info(g.state.my_team_id)["cap_text"]], ensure_ascii=False))`);
+check(facBefore.includes(facPy0[1]), `設備の欄:「${facBefore}」(練習設備 段階 ${facPy0[0]})`);
+await page.click("#facility-box summary");
+const facNew = facPy0[0] === 5 ? 4 : facPy0[0] + 1;
+await page.selectOption("#facility-practice", String(facNew));
+await page.waitForFunction((t) => document.querySelector("#facility-box summary") && document.querySelector("#facility-box summary").textContent !== t, facBefore, { timeout: 30000 });
+procOps.push(["set_facility", ["practice", facNew]]);
+const facPy1 = pyAfter(`print(json.dumps([g.budget_info(g.state.my_team_id)["cap_text"], g.budget_info(g.state.my_team_id)["upkeep_text"]], ensure_ascii=False))`);
+check((await page.textContent("#facility-box summary")).includes(facPy1[0]) && (await page.textContent("#facility-box summary")).includes(facPy1[1]), `練習設備を段階 ${facNew} にすると、維持費 ${facPy1[1]}・年俸に使える額 ${facPy1[0]} になる`);
+await page.selectOption("#facility-practice", String(facPy0[0]));
+await page.waitForFunction((t) => document.querySelector("#facility-box summary").textContent.includes(t), facPy0[1], { timeout: 30000 });
+procOps.push(["set_facility", ["practice", facPy0[0]]]);
+await page.click("#facility-box summary"); // 閉じておく
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
   await findBlocks();

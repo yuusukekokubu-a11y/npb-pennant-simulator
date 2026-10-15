@@ -106,6 +106,9 @@ def new_league(
         from .contracts import assign_tiers, load_contract_settings
 
         tiers = assign_tiers([t.id for t in league.teams], seed, contract_settings or load_contract_settings())
+    from .facilities import league_upkeep, set_initial
+
+    set_initial(league, tiers)  # 設備は規模に応じた段階から(D-383)
     if prerun:
         from .draft import load_draft_settings
 
@@ -123,7 +126,7 @@ def new_league(
         neg = negotiation_settings or load_negotiation_settings()
         cs = contract_settings or load_contract_settings()
         t = dict(tiers) if tiers else {team.id: "medium" for team in league.teams}
-        rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config)), settings.prerun_years)
+        rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config), upkeep=league_upkeep(league)), settings.prerun_years)
         if contract_info is not None:
             contract_info["rate"] = rate
     if team_names is not None:

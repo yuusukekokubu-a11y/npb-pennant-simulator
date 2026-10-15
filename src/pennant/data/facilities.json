@@ -1,0 +1,11 @@
+{
+  "format_version": 1,
+  "kinds": ["practice", "medical", "development"],
+  "labels": {"practice": "練習設備", "medical": "トレーナー・医療", "development": "育成施設"},
+  "levels": 5,
+  "standard": 3,
+  "upkeep": [0, 5000, 15000, 35000, 70000],
+  "effect_per_level": {"practice": 0.15, "medical": 0.15, "development": 0.25},
+  "initial": {"large": 3, "medium": 2, "small": 2},
+  "ai_funds_for_level": [0, 280000, 440000, 520000, 600000]
+}

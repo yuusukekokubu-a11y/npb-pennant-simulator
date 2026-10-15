@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+from .. import facilities as facmod
 from .. import draft as draftmod, fa as famod
 from ..abilities import POSITION_LABELS
 from ..contracts import TIER_LABELS, base_funds, remaining_years, team_salary
@@ -46,10 +47,12 @@ class ContractMixin:
         team = self._team(team_id)
         total = team_salary(team)
         tier = state.budget_tiers.get(team_id)
-        cap = state.team_funds.get(team_id)
-        cap = None if cap is None else int(cap)
+        funds = state.team_funds.get(team_id)
+        upkeep = facmod.team_upkeep(team, state.facility_settings)
+        cap = None if funds is None else int(funds) - upkeep  # 年俸に使える額 = 資金 − 設備の維持費(D-383)
         return {
             "team_id": team_id, "total": total, "total_text": f"{total:,} 万円",
+            "funds": None if funds is None else int(funds), "funds_text": None if funds is None else f"{int(funds):,} 万円", "upkeep": upkeep, "upkeep_text": f"{upkeep:,} 万円",
             "budget": base_funds(tier, state.contract_settings) if tier else None, "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "tier": tier, "tier_label": TIER_LABELS.get(tier) if tier else None,
             "usage": None if not cap else round(100.0 * total / cap, 1), "over": None if cap is None else max(0, total - cap), "hard": cap is not None,
             "rate": state.contract_rates.get(str(state.year)) or (max(state.contract_rates.values()) if state.contract_rates else None),

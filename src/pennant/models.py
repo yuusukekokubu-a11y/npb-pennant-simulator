@@ -95,6 +95,7 @@ class Team:
     display_name: str | None = None  # 利用者が入力した球団名(セーブデータにだけ入る。D-104)。なければ架空の初期名
     park: ParkFactors = field(default_factory=ParkFactors)  # 本拠地の球場の真の倍率(隠し情報。D-138)
     development: list[Player] = field(default_factory=list)  # 育成選手(支配下 70 人とは別の枠。試合に出ない。D-375)
+    facilities: dict = field(default_factory=dict)  # 設備の段階(practice / medical / development → 1〜5。D-383)。ない設備は標準
 
     @property
     def name(self) -> str:

@@ -163,4 +163,11 @@ class TeamsMixin:
             "development": development,  # 育成選手(D-375)
             "foreign_count": sum(1 for p in team.players if p.foreign),
             "foreign_max": self.state.season.game_config["active_roster"].get("foreign_max"),
+            "facilities": self._facilities_public(team),  # 設備の段階(D-383)
         }
+
+    def _facilities_public(self, team) -> list[dict]:
+        from .. import facilities as facmod
+
+        s = self.state.facility_settings
+        return [{"kind": k, "label": s.label(k), "level": v} for k, v in facmod.levels_of(team, s).items()]
