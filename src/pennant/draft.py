@@ -67,6 +67,7 @@ from .procedure import (  # noqa: F401
     pass_turn,
     advance_turn,
     phase_finished,
+    draft_ended,
     next_phase,
     joined_players,
 )
@@ -120,13 +121,11 @@ def _bid_pass(proc: OffseasonProcedure, team_id: str, reason: str) -> None:
 
 
 def bid_blocked(team: Team, proc: OffseasonProcedure, ctx: ContractContext | None) -> str | None:
-    """入札できない理由(空き枠なし full・資金不足 budget・候補なし skip)。入札できるなら None。"""
+    """入札できない理由(空き枠なし full・候補なし skip)。入札できるなら None。ドラフトは資金に関わらず指名できる(D-396)。"""
     if len(team.players) >= MAX_ROSTER:
         return "full"
     if not proc.candidates:
         return "skip"
-    if ctx is not None and ctx.hard() and not can_afford(team, ctx.settings.rookie_salary(1), ctx):
-        return "budget"
     return None
 
 
@@ -181,13 +180,11 @@ def run_bidding(league: League, proc: OffseasonProcedure, scout_sd: dict[str, di
 
 
 def affordable_pool(team: Team, proc: OffseasonProcedure, ctx: ContractContext | None) -> list[Player]:
-    """標準以上で、上限の中で結べる選手だけ(ドラフトは巡ごとの年俸、市場は算定)。なし・ゆるいは全員。"""
+    """上限の中で結べる選手だけ(市場は算定)。ドラフトは資金に関わらず全員(D-396)。"""
     pool = pool_of(proc)
-    if ctx is None or not ctx.hard():
+    if ctx is None or not ctx.hard() or proc.phase in ("draft", "dev_draft"):
         return pool
     total = team_salary(team)
-    if proc.phase == "draft":
-        return pool if can_afford(team, ctx.settings.rookie_salary(proc.round), ctx, total) else []
     return [p for p in pool if can_afford(team, ctx.salary(p, team.id)[0], ctx, total)]
 
 
@@ -196,9 +193,7 @@ def _choose_within_budget(team: Team, proc: OffseasonProcedure, sd: dict, settin
     戻り値は (選んだ選手, 選ばなかったときの理由 budget / skip)。"""
     pool = pool_of(proc)
     total = team_salary(team)
-    if proc.phase == "draft":
-        if not can_afford(team, ctx.settings.rookie_salary(proc.round), ctx, total):
-            return None, "budget"
+    if proc.phase == "draft":  # ドラフトは資金に関わらず指名できる(D-396)
         choice = ai_choose(team, pool, proc, sd, settings, mins, min_batters, proc.phase)
         return choice, "skip"
     need = shortages(team.players, mins, min_batters)
@@ -214,9 +209,16 @@ def _choose_within_budget(team: Team, proc: OffseasonProcedure, sd: dict, settin
     return best, "skip"
 
 
+def wants_more(team: Team, proc: OffseasonProcedure, settings: DraftSettings) -> bool:
+    """AI がドラフトで指名を続けるか(D-397):支配下が目安に届くまで。届いていても、その年に最低の人数を指名するまで。"""
+    picked = sum(1 for x in proc.picks if x["phase"] == "draft" and x["team_id"] == team.id and x["player_id"])
+    return len(team.players) < settings.ai_draft_target or picked < settings.ai_draft_min_picks
+
+
 def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, dict], settings: DraftSettings, my_team_id: str | None, mins, min_batters, policy=ai_choose, ctx: ContractContext | None = None) -> bool:
-    """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ)なら False。
-    資金が足りない球団はパスする(note="budget")。ドラフトの 1 巡目は入札(run_bidding)で、あなたの入札が要るときも True で止まる。"""
+    """AI の番を進める。自分の番が来たら True で止まる。段階の終わり(全巡終了か候補切れ、ドラフトは全球団の指名の終わり)なら False。
+    ドラフトは一度パスした球団の番を飛ばす(選択終了。D-397)。AI は支配下が目安に届き、最低の人数を指名したら終える。
+    ドラフトの 1 巡目は入札(run_bidding)で、あなたの入札が要るときも True で止まる。"""
     teams = {t.id: t for t in league.teams}
     if proc.bidding() and run_bidding(league, proc, scout_sd, settings, my_team_id, mins, min_batters, policy, ctx):
         return True
@@ -225,17 +227,20 @@ def run_ai_turns(league: League, proc: OffseasonProcedure, scout_sd: dict[str, d
         if tid is None:
             advance_turn(proc)
             continue
+        if proc.phase == "draft" and tid in draft_ended(proc):
+            advance_turn(proc)  # 指名を終えた球団は飛ばす
+            continue
         if tid == my_team_id:
             if len(teams[tid].players) >= MAX_ROSTER:
                 pass_turn(proc, tid, "full")  # 空き枠がなければ自動でパス(D-203)
-                continue
-            if proc.phase == "draft" and not affordable_pool(teams[tid], proc, ctx):
-                pass_turn(proc, tid, "budget")  # 資金が足りなければ自動でパス(D-235)
                 continue
             return True
         team = teams[tid]
         if len(team.players) >= MAX_ROSTER:
             pass_turn(proc, tid, "full")
+            continue
+        if proc.phase == "draft" and not wants_more(team, proc, settings):
+            pass_turn(proc, tid, "end")  # 目安に届き、最低の人数を指名したので終える(D-397)
             continue
         if policy is ai_choose and ctx is not None and ctx.hard() and pool_of(proc):
             choice, why = _choose_within_budget(team, proc, scout_sd[tid], settings, mins, min_batters, ctx)

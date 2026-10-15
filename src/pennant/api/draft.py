@@ -66,7 +66,7 @@ class DraftMixin:
             raise ValueError("空き枠がありません(70 人)")
         ctx = self._contract_ctx()
         offer = draftmod.offer_for(team, player, proc, ctx)
-        if offer is not None and not draftmod.can_afford(team, offer[0], ctx):
+        if offer is not None and proc.phase != "draft" and not draftmod.can_afford(team, offer[0], ctx):  # ドラフトは資金に関わらず(D-396)
             raise ValueError(f"この契約(年俸 {offer[0]:,} 万円)を結ぶと、資金(年俸の合計の上限)を超えます")
         draftmod.take(proc, team, player, sd, state.draft_settings, ctx)
         draftmod.run_ai_turns(state.league, proc, sd, state.draft_settings, team.id, mins, min_batters, ctx=ctx)
@@ -106,8 +106,6 @@ class DraftMixin:
         why = draftmod.bid_blocked(team, proc, self._contract_ctx())
         if why == "full":
             raise ValueError("空き枠がありません(70 人)")
-        if why == "budget":
-            raise ValueError(f"1 巡目の年俸({state.contract_settings.rookie_salary(1):,} 万円)を結ぶと、資金(年俸の合計の上限)を超えます")
         step = proc.bid_step
         draftmod.run_bidding(state.league, proc, state.scout_sd_map(), state.draft_settings, team.id, mins, min_batters, ctx=self._contract_ctx(), my_bid=player)
         if not proc.bidding():
@@ -174,7 +172,7 @@ class DraftMixin:
                 r["former_team"] = former.get(r["player_id"], "")
                 if team is not None:  # 自球団が獲得したときの契約(ドラフトは巡ごとの表、市場は算定。指名されなかった候補は最低年俸)
                     offer = marketmod.market_terms(proc, pool[r["player_id"]], team.id, ctx) if phase == "market" else draftmod.offer_for(team, pool[r["player_id"]], proc, ctx)
-                    r["offer"] = None if offer is None else {"salary": offer[0], "years": offer[1], "affordable": draftmod.can_afford(team, offer[0], ctx)}
+                    r["offer"] = None if offer is None else {"salary": offer[0], "years": offer[1], "affordable": phase == "draft" or draftmod.can_afford(team, offer[0], ctx)}
                     r["values"]["salary"] = f"{offer[0]:,}" if offer else "—"
                     r["values"]["years"] = str(offer[1]) if offer else "—"
         else:

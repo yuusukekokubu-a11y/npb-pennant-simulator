@@ -1,8 +1,10 @@
 {
   "format_version": 1,
   "draft": {
-    "rounds": 6,
-    "candidate_factor": 1.5
+    "rounds": 10,
+    "candidate_factor": 1.0,
+    "ai_target": 65,
+    "ai_min_picks": 4
   },
   "market": {
     "rounds": 3

@@ -83,7 +83,7 @@ class OffseasonMixin:
             "round": proc.round,
             "total_rounds": proc.total_rounds() if proc.phase in ("draft", "dev_draft") else 0,
             "current_team": proc.current_team() if proc.phase in ("draft", "dev_draft") else None,
-            "is_my_turn": proc.phase in ("draft", "dev_draft") and (my in draftmod.bid_pending(proc) if proc.bidding() else proc.current_team() == my and not draftmod.phase_finished(proc)),
+            "is_my_turn": proc.phase in ("draft", "dev_draft") and (my in draftmod.bid_pending(proc) if proc.bidding() else proc.current_team() == my and not draftmod.phase_finished(proc) and my not in draftmod.draft_ended(proc)),
             "development_draft": proc.phase == "dev_draft",
             "bidding": proc.bidding(),
             "bid_step": proc.bid_step,

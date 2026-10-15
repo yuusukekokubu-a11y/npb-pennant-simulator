@@ -68,7 +68,8 @@ def skip_fa(g):
 
 
 def test_settings_and_validation():
-    assert DS.rounds == 6 and DS.market_rounds == 3 and DS.default_level == "medium"
+    assert DS.rounds == 10 and DS.candidate_factor == 1.0 and DS.ai_draft_target == 65 and DS.ai_draft_min_picks == 4  # D-397
+    assert DS.market_rounds == 3 and DS.default_level == "medium"
     assert item_sd(DS.level_sd("small")) < item_sd(DS.level_sd("medium")) < item_sd(DS.level_sd("large"))
     assert [round(item_sd(DS.level_sd(lv)), 1) for lv in DS.levels] == [3.0, 5.0, 8.0]  # 項目の誤差の合計は F3-1 と同じ(D-212)
     assert DS.level_sd("medium") == {"common": 4.0, "item": 3.0}
@@ -293,7 +294,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     assert v["my_release_done"] and v["counts"]["released"] == before + 2
     g.offseason_next()
     v = skip_fa(g)
-    assert v["phase"] == "draft" and v["counts"]["released"] >= before + 2 and v["counts"]["candidates"] == 108
+    assert v["phase"] == "draft" and v["counts"]["released"] >= before + 2 and v["counts"]["candidates"] == 120
     v = g.offseason_advance()
     assert v["is_my_turn"] and v["round"] == 1 and v["bidding"] and v["current_team"] is None  # 1 巡目は入札(D-369)
     table = g.decision_table("draft")

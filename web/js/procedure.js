@@ -146,7 +146,8 @@ function renderProcedureBar(v) {
   } else if (v.stage === "foreign" && v.foreign && mine && !v.foreign.done) {
     acts.prepend(btn("foreign-close", "外国人市場を締める", "AI 球団の希望と合わせて、前年の順位が低い球団から 1 人ずつ獲得します(結果が出ます)", () => foreignClose()));
   } else if (v.stage === "draft" && mine && !v.phase_finished) {
-    if (v.is_my_turn) acts.prepend(btn("draft-pass", "パス", v.bidding ? "1 巡目は入札しない" : "今の巡は指名しない", () => runProc("pass")));
+    const dev = v.phase === "dev_draft";  // ドラフトは一度パスしたらその年の指名は終わり(選択終了。D-397)。育成ドラフトは巡ごとのパス
+    if (v.is_my_turn) acts.prepend(btn("draft-pass", dev ? "パス" : "指名を終える", dev ? "今の巡は指名しない" : "今年の指名を終えます(選択終了。このあと指名の番は来ません)", () => runProc("pass")));
     else acts.prepend(btn("draft-advance", "自分の番まで", "次の自分の番まで、AI 球団の指名を進めます", () => runProc("advance")));
   } else if (v.stage === "market" && v.market && mine && !v.market.done) {
     acts.prepend(btn("market-close", "市場を締める", "AI 球団の希望と合わせて、前年の順位が低い球団から 1 人ずつ獲得します(結果が出ます)", () => marketClose()));
@@ -250,7 +251,7 @@ function historyTable(picks, released) {
   const rows = [];
   for (const x of released) rows.push({ k: "自由契約", team: x.team_name, name: x.name, pos: x.position_label, age: x.age, mine: x.is_mine });
   const kind = (x) => (x.phase === "draft" ? `ドラフト ${x.round} 巡${x.lottery ? "(抽選)" : ""}` : x.phase === "dev_draft" ? `育成ドラフト ${x.round} 巡` : x.phase === "foreign" ? "外国人市場" : "市場");
-  for (const x of picks) rows.push({ k: kind(x), team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : x.note === "budget" ? "資金不足" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
+  for (const x of picks) rows.push({ k: kind(x), team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : x.note === "budget" ? "資金不足" : x.phase === "draft" ? "指名を終える" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
   if (!rows.length) return el("p", { className: "muted small" }, "まだありません。");
   const body = el("tbody", {}, ...rows.map((r) => el("tr", { className: r.mine ? "mine" : "" }, el("td", {}, r.k), el("td", {}, r.team), el("td", {}, r.name), el("td", {}, r.pos || ""), el("td", {}, r.age ? `${r.age}歳` : ""))));
   return el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "手続き"), el("th", {}, "球団"), el("th", {}, "選手"), el("th", {}, "ポジション"), el("th", {}, "年齢"))), body));
