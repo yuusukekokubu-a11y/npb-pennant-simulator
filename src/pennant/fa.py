@@ -78,7 +78,7 @@ def validate_fa(c, root: dict) -> None:
         c.add("fa.round_multipliers", f"ラウンド数({rounds})以上の長さにしてください")
     c.integer(fa.get("ai_max_offers"), "fa.ai_max_offers", 0, 30)
     c.number(fa.get("ai_min_expected"), "fa.ai_min_expected", -10, 20)
-    for key, lo, hi in (("market_min_expected", -10, 20), ("market_depth_extra", 0, 70), ("market_max_wishes", 0, 70), ("market_salary_rate", 0.05, 2.0), ("auto_retain_min_expected", -10, 20), ("auto_max_offers", 0, 70), ("market_roster_target", 0, 70)):  # 自由契約市場の AI(D-384)。ない設定は FA と同じ
+    for key, lo, hi in (("market_min_expected", -10, 20), ("market_depth_extra", 0, 70), ("market_max_wishes", 0, 70), ("market_salary_rate", 0.05, 2.0), ("auto_retain_min_expected", -10, 20), ("auto_max_offers", 0, 70), ("market_roster_target", 0, 70), ("auto_retain_reserve", 0, 1_000_000)):  # 自由契約市場の AI(D-384)。ない設定は FA と同じ
         if key in fa:
             c.number(fa[key], f"fa.{key}", lo, hi)
     if "market_bargain" in fa and not isinstance(fa["market_bargain"], bool):
@@ -263,7 +263,7 @@ def retain_salary(info: dict, rnd: int, ctx) -> int:
 def retain_offers(team: Team, proc, ctx) -> dict[str, tuple[int, int]]:
     """自動 FA の元の球団の残留の提示(1 ラウンド目だけ。D-381):元の選手全員に、空き枠と資金の範囲で。
     資金に収まらなければ、資金の超過の解消と同じ順((年俸 − 最低年俸)÷ 見込みの WAR の大きい選手から)で外す。
-    最低年俸の選手は資金に関わらず残せる(retain_exempt)。"""
+    最低年俸の選手は資金に関わらず残せる(retain_exempt)。ドラフトの上位の巡の分(auto_retain_reserve)は資金に残しておく(D-392)。"""
     if int(proc.fa_round) != 1:
         return {}
     own = sorted((p for p in proc.fa_pool if proc.fa_info[p.id].get("auto") and proc.fa_info[p.id]["former_team"] == team.id and proc.fa_info[p.id]["status"] == "open"),
@@ -275,6 +275,7 @@ def retain_offers(team: Team, proc, ctx) -> dict[str, tuple[int, int]]:
         own = [p for p in own if float(proc.fa_info[p.id]["expected"]) >= float(keep) or salary[p.id] <= int(ctx.settings.minimum)]
     cap = ctx.cap(team.id)
     if ctx.hard() and cap is not None:
+        cap -= int(fa_settings(ctx.negotiation).get("auto_retain_reserve", 0))  # 残留で資金を使い切ると、ドラフトの上位の巡をパスしてしまう
         minimum = int(ctx.settings.minimum)
         total = team_salary(team) + sum(v for v in salary.values() if v > minimum)
         while total > cap and any(salary[p.id] > minimum for p in own):

@@ -33,6 +33,7 @@
     "market_max_wishes": 10,
     "market_salary_rate": 0.3,
     "auto_max_offers": 8,
+    "auto_retain_reserve": 30000,
     "market_bargain": true,
     "market_roster_target": 65,
     "init": {

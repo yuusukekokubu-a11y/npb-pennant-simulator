@@ -166,8 +166,8 @@ def test_year_end_advances_year_and_runs_offseason(two_seasons):
     assert [c["key"] for c in s["seasons"]] == ["current", "1", "career"]
     assert summary["available"] and summary["year"] == 1 and summary["next_year"] == 2
     assert summary["counts"]["retired"] == len(summary["retired"]) > 0 and summary["counts"]["rookies"] >= summary["counts"]["retired"]  # F3-1:入団 = 引退 + 自由契約で去った人数
-    assert summary["counts"]["players"] == len(g.state.league.all_players()) == 840
-    assert all(len(t.players) == 70 for t in g.state.league.teams)
+    assert summary["counts"]["players"] == len(g.state.league.all_players()) <= 840
+    assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
     # 残った選手は年齢が +1
     for p in g.state.league.all_players():
         if p.id in before["players"]:
@@ -293,7 +293,9 @@ def test_prerun_is_reproducible_and_keeps_roster_shape():
     assert [dict(p.ratings) for p in a.all_players()] == [dict(p.ratings) for p in b.all_players()]
     from pennant.draft import minimum_batters, minimum_positions, shortages
 
-    assert all(len(t.players) == 70 for t in a.teams) and all(not shortages(t.players, minimum_positions(), minimum_batters()) for t in a.teams)  # F3-1:最低人数だけ守る(D-203)
+    mins = minimum_positions()
+    assert all(60 <= len(t.players) <= 70 for t in a.teams)  # 70 人は上限だけ(D-391)
+    assert all("batter" not in shortages(t.players, mins, minimum_batters()) and sum(p.role == "pitcher" for p in t.players) >= mins["SP"] + mins["RP"] for t in a.teams)  # 一軍は組める(D-203)
     ids = [p.id for p in a.all_players()]
     assert len(set(ids)) == len(ids) and all(i.startswith("B") for i in ids)  # 30 年回すと、初期選手(P…)は全員引退している(41 歳で必ず引退)
     assert len({(p.family_name, p.given_name) for p in a.all_players()}) == len(ids)

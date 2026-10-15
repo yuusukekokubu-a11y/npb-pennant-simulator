@@ -66,7 +66,7 @@ def former_teams(proc: OffseasonProcedure) -> dict[str, str]:
     return out
 
 
-def ai_wishes(team: Team, proc: OffseasonProcedure, ctx, sizes: dict[int, int], bargain: bool = False) -> list[str]:
+def ai_wishes(team: Team, proc: OffseasonProcedure, ctx, sizes: dict[int, int], bargain: bool = False, sd: dict | None = None, settings=None) -> list[str]:
     """AI の獲得の希望(選手 ID の並び。前ほど優先)。FA と同じ方針(D-261、D-370)。bargain は売れ残りの 2 周目(D-389)。
     人数の目安(65 人くらい。D-391)までは控えより下の見込みの選手も取り(2 周目は見込みの WAR の高い順に目安まで)、
     目安を超える分は FA と同じ基準(一軍に入る見込みがあり、見込みの WAR が設定値以上)の選手だけ。"""
@@ -83,9 +83,20 @@ def ai_wishes(team: Team, proc: OffseasonProcedure, ctx, sizes: dict[int, int], 
     deep = list(choose_offers(team, items, proc, ctx, sizes, 1.0, market=True))[:need]
     wishes = deep + [pid for pid in strict if pid not in deep]
     short = need - len(deep)
-    if bargain and short > 0:  # 2 周目:目安に届くまでは、見込みの WAR の高い選手から取る(自動補充の代わり。D-391)
+    if bargain and short > 0:  # 2 周目:目安に届くまでは、指名されなかった候補(若手)をドラフトと同じ点数で先に、次に見込みの WAR の高い選手(自動補充の代わり。D-391)
         chosen = set(wishes)
-        rest = sorted((x for x in items if x[0].id not in chosen), key=lambda x: (-float(x[1]), x[0].id))
+        rest = [x for x in items if x[0].id not in chosen]
+        pros = sorted((x for x in rest if x[0].id in former), key=lambda x: (-float(x[1]), x[0].id))
+        amateurs = [x for x in rest if x[0].id not in former]
+        if sd is not None:  # 評価(A〜E。ピークの見込み)の高い順、同じ評価なら推定値の高い順(自動補充で入っていた若手の代わり)
+            def key(x):
+                est, grade = cached_value(proc, x[0], team.id, sd)
+                return (grade, -est, x[0].id)
+
+            amateurs.sort(key=key)
+        else:
+            amateurs.sort(key=lambda x: (-float(x[1]), x[0].id))
+        rest = amateurs + pros
         wishes = deep + [x[0].id for x in rest[:short]] + [pid for pid in strict if pid not in deep]
     return wishes
 
@@ -131,10 +142,10 @@ def close_market(league: League, proc: OffseasonProcedure, ctx, my_team_id: str 
         wishes = {}
         for team in league.teams:
             if (team.id != my_team_id or my_ai) and len(team.players) < MAX_ROSTER:
-                wishes[team.id] = ai_wishes(team, proc, ctx, sizes, bargain=True)
+                wishes[team.id] = ai_wishes(team, proc, ctx, sizes, bargain=True, sd=scout_sd[team.id], settings=settings)
                 for rank, pid in enumerate(wishes[team.id], start=1):
                     proc.market_log.append({"player_id": pid, "team_id": team.id, "rank": rank, "bargain": True})
-        refill = lambda team: ai_wishes(team, proc, ctx, sizes, bargain=True)  # 希望をほかの球団に取られて尽きたら、残りから選び直す(目安の人数まで。D-391)
+        refill = lambda team: ai_wishes(team, proc, ctx, sizes, bargain=True, sd=scout_sd[team.id], settings=settings)  # 希望をほかの球団に取られて尽きたら、残りから選び直す(目安の人数まで。D-391)
         signed += _sign(league, proc, ctx, scout_sd, settings, wishes, (max((x["round"] for x in signed), default=0) + 1), True, refill)
     proc.market_offers = {}
     proc.market_done = True

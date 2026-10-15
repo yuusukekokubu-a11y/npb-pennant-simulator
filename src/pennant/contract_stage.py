@@ -273,8 +273,9 @@ def resolve_overrun(team: Team, proc: OffseasonProcedure, ctx: ContractContext, 
 
 
 def can_afford(team: Team, salary: int, ctx: ContractContext | None, total: int | None = None) -> bool:
-    """この年俸の契約を結んでも資金を超えないか(資金がなければ常に可)。total は今の総年俸(省略時は数える)。"""
-    if ctx is None or not ctx.hard():
+    """この年俸の契約を結んでも資金を超えないか(資金がなければ常に可)。total は今の総年俸(省略時は数える)。
+    最低年俸の契約(ドラフトの下位の巡・市場の最低年俸の選手)は資金に関わらず結べる(D-386、D-394)。"""
+    if ctx is None or not ctx.hard() or int(salary) <= int(ctx.settings.minimum):
         return True
     cap = ctx.cap(team.id)
     if cap is None:

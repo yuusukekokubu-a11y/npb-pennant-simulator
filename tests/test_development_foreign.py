@@ -56,7 +56,7 @@ def test_foreign_names_and_initial_counts(base):
     counts = [sum(p.foreign for p in t.players) for t in base.state.league.teams]
     # トレード(D-378)で外国人が偏り、0 人の球団が出ることもある(バランス調整で見る。D-364)
     assert sum(c >= 2 for c in counts) >= len(counts) - 2 and 4 <= sum(counts) / len(counts) <= 7
-    assert all(len(t.players) == 70 for t in base.state.league.teams)
+    assert all(60 <= len(t.players) <= 70 for t in base.state.league.teams)  # 70 人は上限だけ(D-391)
     assert any(t.development for t in base.state.league.teams)
 
 
@@ -133,7 +133,7 @@ def test_development_draft_promotion_and_auto(at_offseason):
     with pytest.raises(ValueError, match="育成選手ではありません"):
         g.offseason_promote("nobody")
     g.offseason_auto()
-    assert g.state.year == 2 and all(len(t.players) == 70 for t in g.state.league.teams)
+    assert g.state.year == 2 and all(60 <= len(t.players) <= 70 for t in g.state.league.teams)
     tv = g.team("T01")
     assert "development" in tv and tv["foreign_count"] == sum(p.foreign for p in g._team("T01").players)
     if g._team("T01").development:
