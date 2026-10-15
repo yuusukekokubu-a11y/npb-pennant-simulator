@@ -267,7 +267,7 @@ class ProgressMixin:
         final, _ = self.baselines()
         state.baselines = Baselines(dict(final.values), list(final.re24), dict(final.linear_weights), final.plate_appearances, "season")  # 次の出発点(D-121)
         off_seed = derive_seed(season.seed, "offseason")
-        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons)
+        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons, state.facility_settings)
         state.offseasons.append(result)
         state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records, rules=state.rules)
         state.procedure.ranks = {s.team_id: int(s.rank) for s in archive.standings}  # 勝利軸は公式の順位(D-250)

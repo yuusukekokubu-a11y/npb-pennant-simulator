@@ -5,6 +5,7 @@ import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { el, link, sortToggle, table } from "./parts.js";
 import { runProc } from "./procedure.js";
+import { facilitiesBox } from "./facilities.js";
 
 // ---- 契約更改の結果(作り直し②。D-358):更改は段階の始めに査定で済んでいる。選手を押すと結果のパネル(自由契約にできる) ----
 
@@ -28,7 +29,10 @@ export async function contractSection(v, token) {
   const detail = (p) => (ps.renewalOpen === p.player_id ? contractPanel(p, rn) : null);
   const onSort = (key) => { sortToggle(cs.sortBy, cs.shown, key); renderCurrent(); };
   const rowClass = (p) => (p.status === "released" || p.status === "declared" ? "muted" : "");
+  const facilities = await facilitiesBox(token); // 設備(D-383)
+  if (token !== state.token) return null;
   return [
+    ...(facilities ? [facilities] : []),
     filters,
     data.rows.length
       ? table({ firstLabel: "選手", columns: data.columns, rows: data.rows, first, sort: data.sort.key, order: data.order, onSort, rowClass, fluid: true, detail })

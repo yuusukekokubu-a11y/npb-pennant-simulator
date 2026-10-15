@@ -35,6 +35,7 @@ class ContractContext:
     negotiation: NegotiationSettings | None = None  # FA の設定(宣言の確率・選手が選ぶ点数。D-365。None なら宣言も FA もしない:事前運転)
     league_seed: int = 0  # リーグのシード
     slots: dict | None = None  # ポジション → 一軍の枠の目安(出場機会軸)
+    upkeep: dict = field(default_factory=dict)  # 球団 → 設備の維持費(万円。D-383)。資金の上限から引く
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # 選手 → 見込み(手続きの間は年齢も能力も変わらないので使い回す)
 
     def bind(self, proc: "OffseasonProcedure") -> "ContractContext":
@@ -43,8 +44,13 @@ class ContractContext:
         return self
 
     def cap(self, team_id: str) -> int | None:
+        """年俸に使える額 = 資金 − 設備の維持費(D-383)。"""
         v = self.funds.get(team_id)
-        return None if v is None else int(v)
+        return None if v is None else int(v) - int(self.upkeep.get(team_id, 0))
+
+    def total_cap(self) -> int:
+        """全球団の年俸に使える額の合計(単価を求めるため)。"""
+        return sum(int(v) - int(self.upkeep.get(t, 0)) for t, v in self.funds.items())
 
     def hard(self) -> bool:
         return bool(self.funds)
@@ -94,11 +100,16 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
         return
     ctx.bind(proc)
     update_funds(league, proc, ctx)
+    if ctx.funds:  # AI 球団の設備の段階を資金に応じて決め、維持費を資金の上限から引く(D-383)
+        from .facilities import ai_decide, league_upkeep
+
+        ai_decide(league, ctx.funds, my_team_id)
+        ctx.upkeep = league_upkeep(league)
     expected = {}
     for team in league.teams:
         for p in team.players:
             expected[p.id] = ctx.expected(p)[0]
-    total_funds = sum(ctx.funds.values()) if ctx.funds else ctx.settings.base_budget * len(league.teams)
+    total_funds = ctx.total_cap() if ctx.funds else ctx.settings.base_budget * len(league.teams)
     ctx.rate = round(rate_for(list(expected.values()), total_funds, len(expected), ctx.settings), 4)
     proc.rate = ctx.rate
     neg = ctx.negotiation
@@ -168,7 +179,7 @@ def initialize_contracts(league: League, seed: int, ctx: ContractContext, prerun
     for team in league.teams:
         for p in team.players:
             expected[p.id] = ctx.expected(p)[0]
-    total_funds = sum(ctx.funds.values()) if ctx.funds else ctx.settings.base_budget * len(league.teams)
+    total_funds = ctx.total_cap() if ctx.funds else ctx.settings.base_budget * len(league.teams)
     ctx.rate = round(rate_for(list(expected.values()), total_funds, len(expected), ctx.settings), 4)
     for team in league.teams:
         salaries = {p.id: salary_for(expected[p.id], ctx.rate, ctx.settings) for p in team.players}
@@ -215,7 +226,9 @@ def state_context(state, proc: "OffseasonProcedure | None" = None) -> ContractCo
     """セーブデータの状態から契約の文脈を作る(手続きがあればそのシードと区切りで評価を引く)。資金は状態の値を直接使う(増減は状態に残る)。"""
     from .negotiation import depth_slots
 
-    ctx = ContractContext(state.contract_settings, state.team_funds, dict(state.budget_tiers), state_war_history(state), state.scout_sd_of, negotiation=state.negotiation_settings, league_seed=state.league.seed, slots=depth_slots(state.gen_config))
+    from .facilities import league_upkeep
+
+    ctx = ContractContext(state.contract_settings, state.team_funds, dict(state.budget_tiers), state_war_history(state), state.scout_sd_of, negotiation=state.negotiation_settings, league_seed=state.league.seed, slots=depth_slots(state.gen_config), upkeep=league_upkeep(state.league, state.facility_settings) if state.team_funds else {})
     if proc is not None:
         ctx.bind(proc)
         ctx.rate = float(proc.rate)

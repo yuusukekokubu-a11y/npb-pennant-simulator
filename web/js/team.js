@@ -34,7 +34,7 @@ export async function renderTeam(args, token) {
     ]),
   );
   $("team-war-note").textContent = seasonCaution("current");
-  $("team-budget").replaceChildren(...budgetLines(d.budget));
+  $("team-budget").replaceChildren(...budgetLines(d.budget, d.facilities));
   $("team-salaries").replaceChildren(
     d.salaries.length
       ? table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸(万円)" }, { key: "remaining", label: "残り" }], rows: d.salaries.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, salary: r.salary_text, remaining: `${r.remaining} 年` } })), first: (r) => [playerLink(r.name, r.player_id)], fluid: true, limit: d.salariesShown || 20, more: () => { d.salariesShown = (d.salariesShown || 20) + 50; renderCurrent(); } })
@@ -60,16 +60,17 @@ export async function renderTeam(args, token) {
 }
 
 // 総年俸と資金の表示(作り直し②。D-353):資金は年俸の合計の上限。球団の規模(大・中・小)と使用率
-function budgetLines(b) {
+function budgetLines(b, facilities = []) {
   const lines = [el("div", {}, el("span", { className: "big" }, `総年俸 ${b.total_text}`), b.tier_label ? el("span", { className: "sub" }, `球団の規模:${b.tier_label}`) : null)];
   if (b.cap) {
     const over = b.over > 0;
     lines.push(
-      el("div", {}, `資金 ${b.cap_text}(使用率 ${b.usage}%)`),
+      el("div", {}, b.upkeep ? `資金 ${b.funds_text} − 設備の維持費 ${b.upkeep_text} = 年俸に使える額 ${b.cap_text}(使用率 ${b.usage}%)` : `資金 ${b.cap_text}(使用率 ${b.usage}%)`),
       el("div", { className: over ? "budget-bar over" : "budget-bar" }, el("span", { style: `width: ${Math.min(100, b.usage)}%` })),
       over ? el("div", { className: "warn" }, `資金を ${b.over.toLocaleString()} 万円超えています`) : null,
     );
   }
+  if (facilities.length) lines.push(el("div", { id: "team-facilities", className: "small" }, `設備:${facilities.map((x) => `${x.label} ${x.level}`).join("・")}`)); // D-383
   lines.push(el("dl", {}, el("dt", {}, "年俸の単価"), el("dd", {}, b.rate ? `1 WAR あたり約 ${(b.rate / 10000).toFixed(2)} 億円` : "-")));
   return lines.filter((x) => x !== null);
 }
