@@ -58,7 +58,7 @@ class MarketMixin:
         ctx = self._contract_ctx()
         salary, years, _ = marketmod.market_terms(proc, player, team.id, ctx)
         cap = ctx.cap(team.id)
-        if ctx.hard() and cap is not None and team_salary(team) + salary > cap:
+        if marketmod.over_cap(team, salary, 0, ctx):  # 最低年俸の選手は資金に関わらず(D-386)
             raise ValueError(f"この選手の年俸({salary:,} 万円)を足すと、資金(年俸の合計の上限)を超えます(あと {max(0, cap - team_salary(team)):,} 万円まで)")
         proc.market_offers[player.id] = {"years": int(years), "salary": int(salary)}
         self.dirty = True

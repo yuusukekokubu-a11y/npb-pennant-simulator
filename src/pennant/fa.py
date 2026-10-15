@@ -74,6 +74,8 @@ def validate_fa(c, root: dict) -> None:
     for key, lo, hi in (("market_min_expected", -10, 20), ("market_depth_extra", 0, 70), ("market_max_wishes", 0, 70), ("market_salary_rate", 0.05, 2.0), ("auto_retain_min_expected", -10, 20), ("auto_max_offers", 0, 70)):  # 自由契約市場の AI(D-384)。ない設定は FA と同じ
         if key in fa:
             c.number(fa[key], f"fa.{key}", lo, hi)
+    if "market_bargain" in fa and not isinstance(fa["market_bargain"], bool):
+        c.add("fa.market_bargain", "true か false にしてください")
     star = fa.get("star")
     if star is not None:
         if not isinstance(star, dict):

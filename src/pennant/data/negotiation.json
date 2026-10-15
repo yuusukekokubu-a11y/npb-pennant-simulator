@@ -32,8 +32,8 @@
     "market_depth_extra": 10,
     "market_max_wishes": 10,
     "market_salary_rate": 0.3,
-    "auto_retain_min_expected": 0.0,
     "auto_max_offers": 8,
+    "market_bargain": true,
     "init": {
       "start_age": 21,
       "p_active": 0.7,

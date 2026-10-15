@@ -99,7 +99,7 @@ def test_market_wishes_and_order(season_end):
 
 @pytest.mark.slow
 def test_market_ai_uses_the_fa_policy(season_end):
-    """AI の市場の希望は FA と同じ方針(fa.choose_offers。一軍に入る見込みと見込みの WAR・空き枠・資金)。同じ操作なら同じ結果。"""
+    """AI の市場の希望は FA と同じ方針(fa.choose_offers。一軍か控えに入る見込みと見込みの WAR・空き枠・資金。D-386)。同じ操作なら同じ結果。"""
     g = _to_stage(_fresh(season_end), "market")
     proc = g.state.procedure
     ctx = g._contract_ctx()
@@ -107,12 +107,12 @@ def test_market_ai_uses_the_fa_policy(season_end):
     fa = famod.fa_settings(ctx.negotiation)
     for team in g.state.league.teams[1:4]:
         wishes = marketmod.ai_wishes(team, proc, ctx, sizes)
-        assert len(wishes) <= int(fa["ai_max_offers"])
+        assert len(wishes) <= max(int(fa["ai_max_offers"]), int(fa["market_max_wishes"]))  # 市場は空き枠の分まで多めに(D-386)
         exps = []
         for pid in wishes:
             p = next(p for p in proc.market if p.id == pid)
             _, _, exp = marketmod.offer_terms(p, team.id, ctx)
-            assert exp >= float(fa["ai_min_expected"])
+            assert exp >= float(fa["market_min_expected"])
             exps.append(exp)
         assert exps == sorted(exps, reverse=True)  # 見込みの高い順
     g2 = _to_stage(_fresh(season_end), "market")

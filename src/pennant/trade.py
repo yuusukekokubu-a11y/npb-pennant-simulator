@@ -189,7 +189,7 @@ def ai_answer(team: Team, gives: list[Player], gets: list[Player], ctx, rate: fl
     s = settings or default_settings()
     out_f, in_f = sum(1 for p in gives if p.foreign), sum(1 for p in gets if p.foreign)
     keep = int(s.ai("min_foreign")) if "min_foreign" in s.data["ai"] else 0
-    if out_f > in_f and sum(1 for p in team.players if p.foreign) - out_f + in_f < keep:  # 外国人を目安より減らさない(偏りを防ぐ。D-384)
+    if out_f > in_f and sum(1 for p in team.players if p.foreign) - out_f + in_f < keep:  # 外国人を最低の人数より減らさない(偏りを防ぐ。D-387)
         return False, f"外国人が {keep} 人より少なくなるので出せません"
     out_v = sum(player_value(p, ctx, rate, s) for p in gives)
     in_v = sum(player_value(p, ctx, rate, s) for p in gets)
