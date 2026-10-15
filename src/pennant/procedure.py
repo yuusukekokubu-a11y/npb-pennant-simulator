@@ -92,7 +92,7 @@ class DraftSettings:
 
     @property
     def foreign(self) -> dict:
-        """外国人選手の設定(candidates・age_min・age_max・boost・spread_sd・salary・ai_target・ai_wishes・initial_min・initial_max。D-376)。"""
+        """外国人選手の設定(candidates・age_min・age_max・boost・spread_sd・salary・ai_target・ai_wishes・ai_min・exempt_salary・initial_min・initial_max。D-376、D-387)。"""
         return self.data["foreign"]
 
     @property
@@ -178,6 +178,9 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
         c.integer(c.get(fs, g, "foreign.salary"), f"foreign.salary.{g}", 0, 10_000_000)
     c.integer(c.get(f, "ai_target", "foreign"), "foreign.ai_target", 0, 70)
     c.integer(c.get(f, "ai_wishes", "foreign"), "foreign.ai_wishes", 0, 20)
+    if "ai_min" in f or "exempt_salary" in f:  # 外国人が少ない球団の、資金に関わらない獲得(D-387)
+        c.integer(c.get(f, "ai_min", "foreign"), "foreign.ai_min", 0, 70)
+        c.integer(c.get(f, "exempt_salary", "foreign"), "foreign.exempt_salary", 0, 10_000_000)
     a1 = c.integer(c.get(f, "initial_min", "foreign"), "foreign.initial_min", 0, 70)
     a2 = c.integer(c.get(f, "initial_max", "foreign"), "foreign.initial_max", 0, 70)
     if a1 is not None and a2 is not None and a1 > a2:

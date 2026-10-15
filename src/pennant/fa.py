@@ -71,6 +71,9 @@ def validate_fa(c, root: dict) -> None:
         c.add("fa.round_multipliers", f"ラウンド数({rounds})以上の長さにしてください")
     c.integer(fa.get("ai_max_offers"), "fa.ai_max_offers", 0, 30)
     c.number(fa.get("ai_min_expected"), "fa.ai_min_expected", -10, 20)
+    for key, lo, hi in (("market_min_expected", -10, 20), ("market_depth_extra", 0, 70), ("market_max_wishes", 0, 70), ("market_salary_rate", 0.05, 2.0), ("auto_retain_min_expected", -10, 20), ("auto_max_offers", 0, 70)):  # 自由契約市場の AI(D-384)。ない設定は FA と同じ
+        if key in fa:
+            c.number(fa[key], f"fa.{key}", lo, hi)
     star = fa.get("star")
     if star is not None:
         if not isinstance(star, dict):
@@ -195,22 +198,27 @@ def round_multiplier(neg: NegotiationSettings | None, rnd: int) -> float:
     return float(fa["round_multipliers"][min(int(rnd), len(fa["round_multipliers"])) - 1])
 
 
-def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float, expect=None) -> dict[str, tuple[int, int]]:
+def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mult: float, expect=None, market: bool = False, max_offers: int | None = None) -> dict[str, tuple[int, int]]:
     """AI の方針で提示する選手を選ぶ(FA と市場で共通。D-261、D-300)。items は (選手, 見込みの WAR, 算定年俸, 年数) の並び。
     自球団の評価で一軍に入る見込みがあり、見込みの WAR が設定値以上の選手を、見込みの高い順に設定値まで、空き枠と資金の範囲で。
     expect(選手 ID → 期待の倍率)を渡すと(FA 市場)、主力級には期待の倍率を考えた年俸で提示する(D-325)。"""
     fa = fa_settings(ctx.negotiation)
     space = MAX_ROSTER - len(team.players)
-    limit = min(int(fa["ai_max_offers"]), max(0, space))
+    limit = min(int(fa["ai_max_offers"] if max_offers is None else max_offers), max(0, space))
+    min_exp, extra = float(fa["ai_min_expected"]), 0.0
+    if market:  # 自由契約市場:空き枠の分まで、控えに入る見込みの選手も取る(自動補充より市場の選手を先に。D-384)
+        limit = max(limit, min(int(fa.get("market_max_wishes", limit)), max(0, space)))
+        min_exp = float(fa.get("market_min_expected", min_exp))
+        extra = float(fa.get("market_depth_extra", 0))
     if limit <= 0:
         return {}
     cands = []
     for p, expected, calc, years in items:
-        if float(expected) < float(fa["ai_min_expected"]):
+        if float(expected) < min_exp:
             continue
         c = _context(p, team, proc, ctx, league_sizes)
-        if c["rank"] >= c["slots"]:
-            continue  # 自球団の評価で一軍に入る見込みがない
+        if c["rank"] >= c["slots"] + extra:
+            continue  # 自球団の評価で一軍(市場は控えまで)に入る見込みがない
         cands.append((-float(expected), p.id, int(calc), int(years)))
     cands.sort()
     out: dict[str, tuple[int, int]] = {}
@@ -221,7 +229,8 @@ def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mu
             break
         e = expect(pid) if expect is not None else 1.0
         salary = round_salary_star(calc, mult, e, ctx) if e > 1.0 else round_salary(calc, mult, ctx.settings.rounding)
-        if ctx.hard() and cap is not None and total + sum(s for _, s in out.values()) + salary > cap:
+        exempt = market and salary <= int(ctx.settings.minimum)  # 市場の最低年俸の選手は資金に関わらず(D-386)
+        if ctx.hard() and cap is not None and not exempt and total + sum(s for _, s in out.values()) + salary > cap:
             continue
         out[pid] = (years, salary)
     return out
@@ -230,7 +239,10 @@ def choose_offers(team: Team, items, proc, ctx, league_sizes: dict[int, int], mu
 def ai_offers(team: Team, proc, ctx, league_sizes: dict[int, int]) -> dict[str, tuple[int, int]]:
     """AI の 1 ラウンドの提示(選手 ID → (年数, 年俸))。D-261。"""
     items = [(p, proc.fa_info[p.id]["expected"], proc.fa_info[p.id]["calc_salary"], proc.fa_info[p.id]["ai_years"]) for p in proc.fa_pool if proc.fa_info[p.id]["status"] == "open"]
-    return choose_offers(team, items, proc, ctx, league_sizes, round_multiplier(ctx.negotiation, proc.fa_round), lambda pid: star_multiplier(ctx.negotiation, proc.fa_info[pid]["expected"]))
+    fa = fa_settings(ctx.negotiation)
+    auto = "auto_max_offers" in fa and any(x.get("auto") for x in proc.fa_info.values())  # 自動 FA は候補が多いので、提示の数を増やす(D-388)
+    return choose_offers(team, items, proc, ctx, league_sizes, round_multiplier(ctx.negotiation, proc.fa_round), lambda pid: star_multiplier(ctx.negotiation, proc.fa_info[pid]["expected"]),
+                         max_offers=int(fa["auto_max_offers"]) if auto else None)
 
 
 def retain_salary(info: dict, rnd: int, ctx) -> int:
@@ -249,6 +261,9 @@ def retain_offers(team: Team, proc, ctx) -> dict[str, tuple[int, int]]:
                  key=lambda p: (-float(proc.fa_info[p.id]["expected"]), p.id))
     own = own[: max(0, MAX_ROSTER - len(team.players))]
     salary = {p.id: retain_salary(proc.fa_info[p.id], 1, ctx) for p in own}
+    keep = fa_settings(ctx.negotiation).get("auto_retain_min_expected")
+    if keep is not None:  # 見込みの WAR が低い選手は残留の提示をしない(最低年俸の選手は残す。選手の動きを増やす。D-388)
+        own = [p for p in own if float(proc.fa_info[p.id]["expected"]) >= float(keep) or salary[p.id] <= int(ctx.settings.minimum)]
     cap = ctx.cap(team.id)
     if ctx.hard() and cap is not None:
         minimum = int(ctx.settings.minimum)

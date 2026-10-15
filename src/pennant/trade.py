@@ -76,6 +76,8 @@ def validate_trade_settings(data, source: str = "(辞書)") -> TradeSettings:
     c.integer(c.get(a, "offseason_proposals", "ai"), "ai.offseason_proposals", 0, 10)
     c.number(c.get(a, "offseason_proposal_probability", "ai"), "ai.offseason_proposal_probability", 0, 1)
     c.integer(c.get(a, "attempts", "ai"), "ai.attempts", 1, 1000)
+    if a is not None and "min_foreign" in a:
+        c.integer(a["min_foreign"], "ai.min_foreign", 0, 20)
     ad = root.get("active_draft")  # 現役ドラフト(D-380)。ない設定(版 20 以前の保存)は既定
     if ad is not None:
         ad = c.section(ad, "active_draft")
@@ -185,6 +187,10 @@ def check(team_a: Team, team_b: Team, gives: list[str], gets: list[str], ctx, lo
 def ai_answer(team: Team, gives: list[Player], gets: list[Player], ctx, rate: float, config, settings: TradeSettings | None = None) -> tuple[bool, str]:
     """AI 球団 team が gives を出して gets を受け取るかどうかと、理由の一言。"""
     s = settings or default_settings()
+    out_f, in_f = sum(1 for p in gives if p.foreign), sum(1 for p in gets if p.foreign)
+    keep = int(s.ai("min_foreign")) if "min_foreign" in s.data["ai"] else 0
+    if out_f > in_f and sum(1 for p in team.players if p.foreign) - out_f + in_f < keep:  # 外国人を目安より減らさない(偏りを防ぐ。D-384)
+        return False, f"外国人が {keep} 人より少なくなるので出せません"
     out_v = sum(player_value(p, ctx, rate, s) for p in gives)
     in_v = sum(player_value(p, ctx, rate, s) for p in gets)
     bonus = need_bonus(team, gives, gets, config, s)

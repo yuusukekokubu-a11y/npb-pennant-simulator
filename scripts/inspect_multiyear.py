@@ -98,10 +98,10 @@ def renewal_stats(g: api.Game) -> dict:
             "over_teams": sum(1 for v in over.values() if v > 0), "over_total": sum(over.values())}
 
 
-def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium", my_team: bool = False) -> list[dict]:
+def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout_level: str = "medium", my_team: bool = False, rules: dict | None = None) -> list[dict]:
     from pennant.contracts import team_salary
 
-    g = api.Game.new(seed, [None] * 12, 0 if my_team else None, season_seed=seed, baselines="default", scout_level=scout_level)  # 観戦のみ(全球団 AI)。my_team なら T01 を「おまかせ」で進める(更改は査定の自動。作り直し②)
+    g = api.Game.new(seed, [None] * 12, 0 if my_team else None, season_seed=seed, baselines="default", scout_level=scout_level, rules=rules)  # 観戦のみ(全球団 AI)。my_team なら T01 を「おまかせ」で進める(更改は査定の自動。作り直し②)
     sizes = {t.id: len(t.players) for t in g.state.league.teams}
     positions = {t.id: sorted(p.position for p in t.players) for t in g.state.league.teams}
     rows = []
@@ -159,6 +159,9 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
             row["market_signed"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "market" and x.get("player_id"))
             row["draft_picked"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "draft" and x.get("player_id"))
             row["filled"] = sum(1 for x in g.state.transactions if x["year"] == year and x["phase"] == "fill")
+            foreign = [sum(1 for p in t.players if p.foreign) for t in g.state.league.teams]  # 外国人の偏り(バランス調整。D-384)
+            row["foreign_min"] = min(foreign)
+            row["foreign_low_teams"] = sum(1 for n in foreign if n <= 2)
             now = {t.id: len(t.players) for t in g.state.league.teams}
             assert now == sizes, f"選手の数が変わった(リーグ {seed}、{year} 年目の確定の後:{ {k: v for k, v in now.items() if v != sizes[k]} })"
             from pennant.draft import minimum_batters, minimum_positions, shortages
@@ -180,6 +183,7 @@ def main(argv=None):
     parser.add_argument("--json", help="年ごとの数を書き出す JSON ファイル")
     parser.add_argument("--scout-level", choices=("small", "medium", "large"), default="medium", help="スカウト評価のずれの段階(F3-1)")
     parser.add_argument("--my-team", action="store_true", help="球団 T01 を操作する球団にし、毎年 おまかせ で進める(契約の段階の集計を JSON に残す)")
+    parser.add_argument("--auto-fa", action="store_true", help="仕組みの選択肢の自動 FA をありにする(D-381)")
     parser.add_argument("--load", nargs="*", help="回す代わりに、--json で書き出したファイルを読んで表を出す(別々に回した世界をまとめる)")
     args = parser.parse_args(argv)
     config = load_generation_config()
@@ -194,7 +198,7 @@ def main(argv=None):
         args.years = min(len(v) for v in worlds.values())
     else:
         for seed in range(args.seed_start, args.seed_start + args.worlds):
-            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level, my_team=args.my_team)
+            worlds[seed] = run_world(seed, args.years, config, war_settings, scout_level=args.scout_level, my_team=args.my_team, rules={"auto_fa": True} if args.auto_fa else None)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(worlds, f, ensure_ascii=False, indent=1)
@@ -242,7 +246,7 @@ def main(argv=None):
         rows_ = [r for w in worlds.values() for r in w if "renewed" in r]
         if rows_:
             print("\n## 契約の段階(自球団あり。年平均)\n")
-            keys_ = [("renewed", "更改"), ("declared_at_renewal", "FA 宣言"), ("multi_year", "複数年"), ("floored", "減額の下限"), ("over_teams", "資金を超えた球団"), ("budget_releases", "資金の超過の自由契約"), ("fa_moved", "FA 移籍")]
+            keys_ = [("renewed", "更改"), ("declared_at_renewal", "FA 宣言"), ("multi_year", "複数年"), ("floored", "減額の下限"), ("over_teams", "資金を超えた球団"), ("budget_releases", "資金の超過の自由契約"), ("fa_moved", "FA 移籍"), ("market_signed", "市場の獲得"), ("foreign_low_teams", "外国人 2 人以下の球団"), ("foreign_min", "外国人の最少")]
             print(_table([x[1] for x in keys_], [[f"{statistics.fmean(r.get(k, 0) for r in rows_):.1f}" for k, _ in keys_]]))
             funds = [v for r in rows_ for v in r.get("funds", {}).values()]
             if funds:

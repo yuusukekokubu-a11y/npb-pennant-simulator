@@ -60,7 +60,7 @@ class ForeignMixin:
         ctx = self._contract_ctx()
         salary = int(proc.foreign_salary.get(player.id, 0))
         cap = ctx.cap(team.id)
-        if ctx.hard() and cap is not None and team_salary(team) + salary > cap:
+        if ctx.hard() and cap is not None and team_salary(team) + salary > cap and not foreignmod.min_exempt(team, proc, player.id, self.state.draft_settings):
             raise ValueError(f"この選手の年俸({salary:,} 万円)を足すと、資金(年俸の合計の上限)を超えます(あと {max(0, cap - team_salary(team)):,} 万円まで)")
         proc.foreign_offers[player.id] = {}
         self.dirty = True

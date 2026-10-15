@@ -78,6 +78,8 @@
     },
     "ai_target": 7,
     "ai_wishes": 3,
+    "ai_min": 3,
+    "exempt_salary": 4000,
     "initial_min": 5,
     "initial_max": 6
   },
