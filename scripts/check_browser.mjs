@@ -255,6 +255,7 @@ const giveRow = (await tradeRows("#trade-mine")).filter((r) => !r.locked).sort((
 const getRow = (await tradeRows("#trade-theirs")).filter((r) => !r.locked).sort((a, b) => b.v - a.v)[0];
 await page.locator("#trade-mine tbody tr").nth(giveRow.i).locator("input").check();
 await page.locator("#trade-theirs tbody tr").nth(getRow.i).locator("input").check();
+await page.waitForFunction(() => !document.querySelector("#trade-propose").disabled, null, { timeout: 10000 }).catch(() => {});
 check(!(await page.isDisabled("#trade-propose")), `出す選手(${giveRow.name})と欲しい選手(${getRow.name})を選ぶと、持ちかけられる`);
 await page.click("#trade-propose");
 await page.waitForFunction(() => document.querySelector("#trade-message").className.includes("ng"));
@@ -660,7 +661,16 @@ g = api.Game.load(open(sys.argv[1], "rb").read())
 print(g.state.season.day, g.state.my_team_id, _digest(season_record(g.state.season.result())))
 `, last.path).trim().split(" ");
 check(digest[0] === "125", "保存したファイルは125日目(最後)");
-check(digest[2] === expected.season, `最後の結果が、指紋 (d) と同じ(${digest[2].slice(0, 16)}…)`);
+// シーズン中の AI どうしのトレード(D-378)があるので、指紋 (d)(シーズンだけ)ではなく、同じ新規開始を Python で最後まで進めた結果と比べる
+const [pyDigest] = python(`
+import sys
+from pennant import api
+from pennant.fingerprint import _digest, season_record
+g = api.Game.new(1, [None] * 12, int(sys.argv[1][1:]) - 1, season_seed=13, baselines="default")
+g.advance(125)
+print(_digest(season_record(g.state.season.result())))
+`, digest[1]).trim().split(" ");
+check(digest[2] === pyDigest, `最後の結果が、同じ新規開始を Python で進めた結果と同じ(${digest[2].slice(0, 16)}…。トレード ${digest[2] === expected.season ? "なし" : "あり"})`);
 results.push(`  自球団(セーブデータの中): ${digest[1]}。指紋には入らない`);
 await standingsOnScreen(0);
 // シーズンの最後で、成績の画面を開く時間(集計は進めた日の分だけ足してあるので、すぐ開く)

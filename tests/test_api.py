@@ -116,13 +116,14 @@ def test_broken_save_gives_japanese_error():
 
 @pytest.mark.slow
 def test_advance_stops_at_end_and_matches_fingerprint_d():
-    """画面と同じ流れ(新規開始 → 進める → 保存 → 読み込み → 最後まで)で、指紋 (d) と同じ結果になる。
-    自球団は指紋の元に入らない。"""
-    expected = json.loads((__import__("pathlib").Path(__file__).parent / "data" / "fingerprints.json").read_text(encoding="utf-8"))
+    """画面と同じ流れ(新規開始 → 進める → 保存 → 読み込み → 最後まで)で、保存せずに最後まで進めたのと同じ結果になる。
+    シーズン中の AI どうしのトレード(D-378)があるので、指紋 (d)(シーズンだけ)ではなく同じ新規開始と比べる。"""
+    straight = api.Game.new(LEAGUE_SEED, [None] * 12, 7, season_seed=SEASON_SEED, baselines="default")
+    straight.advance(1000)
     g = api.Game.new(LEAGUE_SEED, [None] * 12, 7, season_seed=SEASON_SEED, baselines="default")
     g.advance(30)
     g = api.Game.load(g.save(today="2026-10-02")["data"])
     st = g.advance(1000)
     assert st["is_over"] and st["day"] == 125 and st["games_played"] == 750
     assert g.advance(1)["day"] == 125
-    assert _digest(season_record(g.state.season.result())) == expected["season"]
+    assert _digest(season_record(g.state.season.result())) == _digest(season_record(straight.state.season.result()))

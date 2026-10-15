@@ -173,6 +173,8 @@ def initialize_contracts(league: League, seed: int, ctx: ContractContext, prerun
     for team in league.teams:
         salaries = {p.id: salary_for(expected[p.id], ctx.rate, ctx.settings) for p in team.players}
         cap = ctx.cap(team.id)
+        if cap is not None:  # 育成選手の年俸も総年俸に入るので、その分を除いた資金に収める(D-375)
+            cap -= sum(int(p.contract["salary"]) for p in team.development if p.contract)
         if cap is not None and sum(salaries.values()) > cap:
             mn = ctx.settings.minimum
             excess = sum(v - mn for v in salaries.values())

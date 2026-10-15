@@ -186,7 +186,7 @@
   #proc-message { margin: var(--space-1) 0; font-size: var(--font-small); }
   #screen-procedure .page-head .back { min-height: 40px; padding: var(--space-1) var(--space-3); }
   #screen-procedure .steps { gap: 2px; }
-  #screen-procedure .steps li { padding: var(--space-1) 1px; font-size: 0.7rem; } /* 段階のタブは 8 つ(D-376、D-378、D-380)。幅 390 でも省略されない大きさ */
+  #screen-procedure .steps li { flex: 1 1 auto; padding: var(--space-1) 1px; font-size: 0.7rem; } /* 段階のタブは 8 つ(D-376、D-378、D-380)。幅は名前の長さに合わせて分ける(幅 360 でも省略されない) */
   #screen-procedure .status-bar .bar-actions button { min-height: 36px; }
   #screen-procedure .page-head h1 { font-size: 1.4rem; }
   .compact-filters { display: flex; gap: var(--space-1); margin: var(--space-1) 0; }
