@@ -1,4 +1,4 @@
-"""オフの手続き(F3-1。D-201〜D-207):契約(更改と自由契約)→ FA → ドラフト → 自由契約市場 → 自動補充。
+"""オフの手続き(F3-1。D-201〜D-207):契約(更改と自由契約)→ FA → ドラフト → 自由契約市場 → 最低人数の補充。
 
 年度の確定(加齢・能力の更新・引退)の後に、OffseasonProcedure を作って段階ごとに進める。
   - 契約(renewal / release):満了した選手は査定の年俸で自動で更改し、FA 権保持者は確率で宣言する。球団は選手を手放せる
@@ -8,7 +8,7 @@
     空き枠・資金がない球団はパス。AI は ai_choose
   - 市場(market):手放された選手 + FA で決まらなかった選手 + 指名されなかった候補。年俸は自動で、各球団の獲得の希望を
     前年の順位が低い球団から 1 人ずつ(market.py。D-370)。残った選手はリーグを去る
-  - 完了(done):70 人に満たない球団を自動補充(offseason.replenish。F2 の穴埋め)
+  - 完了(done):最低人数を割る球団は市場の売れ残りから取る(自動補充はしない。D-391)
 AI の判断は、真の能力ではなく、球団ごとのスカウト評価(scouting.quick_value)を使う(D-205)。判断の関数は差し替え可能。
 評価のずれ(sd)は {"common", "item"} の 2 層(D-212)。
 操作する球団がないとき(観戦のみ)は、run_ai_offseason で一気に進める。事前運転も同じ関数を使う(D-210)。
@@ -271,16 +271,23 @@ def make_room(team: Team, count: int, proc: OffseasonProcedure, sd: dict, mins: 
 
 
 def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration: dict[str, float] | None, mins, min_batters, id_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
-    """完了:70 人に満たない球団を自動補充(最低人数を満たすポジションから、次に人数の目安との差が大きいポジション)。市場の残りはリーグを去る。"""
+    """完了(D-391):70 人は上限だけで、自動補充(新しく作った選手で 70 人まで埋める)はしない。
+    一軍に必要な最低人数を割る球団は(前年の順位が低い球団から)、育成選手を先に上げ、足りなければ市場の売れ残りから最低年俸で取る
+    (同じポジションがいなければ、同じ投手・野手のほかのポジションで代用)。市場にその投手・野手が 1 人もいないときだけ、
+    試合が組めなくなるのを防ぐために新人を作る(起きない想定の安全策)。市場の残りはリーグを去る。戻り値は新しく作った選手。"""
     from .development import take_for_slot
+    from .market import take_minimum
 
     rng = random.Random(derive_seed(proc.seed, "fill"))
-    names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players() + league.development_players()})
+    names = None
     counter = [0]
     target = {pos: int(n) for pos, n in config["roster"]["pitchers"].items()}
     target.update({pos: int(n) for pos, n in config["roster"]["fielders"].items()})
     added: list[PlayerNote] = []
-    for team in league.teams:
+    teams = {t.id: t for t in league.teams}
+    order = [tid for tid in proc.order if tid in teams] + [t.id for t in league.teams if t.id not in proc.order]
+    for tid in order:
+        team = teams[tid]
         slots: list[tuple[str, str]] = []
         current = position_counts(team.players)
         for pos, n in shortages(team.players, mins, min_batters).items():
@@ -292,24 +299,23 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
                 continue
             slots += [(PITCHER if pos in PITCHER_POSITIONS else BATTER, pos)] * n
             current[pos] += n
+        if not slots:
+            continue
         excess = len(team.players) + len(slots) - MAX_ROSTER
         if excess > 0:  # 70 人のまま最低人数が足りない球団は、評価の低い選手を外して枠を空ける(上限 70 人と最低人数の両方を守る。D-203)
             make_room(team, excess, proc, scout_sd[team.id], mins, min_batters)
-            current = position_counts(team.players)
-            for _, pos in slots:
-                current[pos] = current.get(pos, 0) + 1
-        while len(team.players) + len(slots) < MAX_ROSTER:
-            pos = max(target, key=lambda k: (target[k] - current.get(k, 0), -list(target).index(k)))
-            slots.append((PITCHER if pos in PITCHER_POSITIONS else BATTER, pos))
-            current[pos] = current.get(pos, 0) + 1
         rest = []
-        for role, pos in slots:  # 育成選手のうち、同じポジションで推定値の高い選手を先に支配下に上げる(D-375)
-            if take_for_slot(team, role, pos, proc, scout_sd[team.id], ctx) is None:
+        for role, pos in slots:  # 育成選手のうち、同じポジションで推定値の高い選手を先に支配下に上げ、次に市場の売れ残りから(D-375、D-391)
+            if take_for_slot(team, role, pos, proc, scout_sd[team.id], ctx) is None and take_minimum(team, role, pos, proc, ctx, scout_sd[team.id], settings) is None:
                 rest.append((role, pos))
-        for p in replenish(team, rest, config, names, rng, proc.year, counter, calibration, id_prefix):
+        if not rest:
+            continue
+        if names is None:
+            names = NameGenerator(parts, rng, {(p.family_name, p.given_name) for p in league.all_players() + league.development_players()})
+        for p in replenish(team, rest, config, names, rng, proc.year, counter, calibration, id_prefix):  # 安全策(市場に投手・野手がいないとき)
             p.scouting = _entry_report(proc, p, team.id, scout_sd[team.id], settings)
             salary = None
-            if ctx is not None:  # 自動補充は最低年俸(資金に関わらず結べる。D-235)
+            if ctx is not None:
                 salary = ctx.settings.minimum
                 set_contract(p, salary, ctx.settings.default_years, proc.year + 1, "fill")
             added.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
@@ -345,7 +351,7 @@ def finish_fa_market(proc: OffseasonProcedure) -> None:
 
 
 def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
-    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。資金の超過の解消も AI と同じ)。戻り値は自動補充で入った選手。"""
+    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。資金の超過の解消も AI と同じ)。戻り値は安全策で作って入れた選手。"""
     while proc.phase != "done":
         if proc.phase in CONTRACT_PHASES:  # 「おまかせ」:残りの交渉・超過の解消・自由契約を AI と同じ方針で(D-251、D-272)
             finish_contract_stage(league, proc, ctx, scout_sd, settings, my_team_id, mins, min_batters, my_ai=True)

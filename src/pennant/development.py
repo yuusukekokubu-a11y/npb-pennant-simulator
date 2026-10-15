@@ -5,7 +5,7 @@
   年俸は育成の年俸(固定)、契約は育成の上限のシーズン数(更改しない)。空き(上限)がない・資金が足りない球団は飛ばす。
   AI は育成が目安(ai_target)より少なければ、ai_max_age 歳以下の候補から点数の高い候補を指名する。
 - 支配下に上げる(promote):70 人に空きがあれば、育成選手を支配下に移す(年俸は最低年俸、契約 1 年)。
-  あなたは市場の段階で選ぶ。AI は市場を締めるときに ai_promote、オフの終わりの自動補充(draft.finalize)は take_for_slot で先に上げる。
+  あなたは市場の段階で選ぶ。AI は市場を締めるときに ai_promote、オフの終わりの最低人数の補充(draft.finalize)は take_for_slot で先に上げる。
 - 育成で上限のシーズン数を過ごした選手は、年度の確定で自由契約(offseason.age_update_retire)。
 """
 
@@ -32,7 +32,7 @@ def dev_room(team: Team, settings: DraftSettings) -> int:
 
 def dev_blocked(team: Team, settings: DraftSettings, ctx) -> str | None:
     """育成ドラフトで指名できない理由(full:育成の上限)。指名できれば None。
-    育成の年俸は低い固定の額なので、自動補充と同じく資金を超えていても結べる(D-235、D-375)。"""
+    育成の年俸は低い固定の額なので、資金を超えていても結べる(D-235、D-375)。"""
     if dev_room(team, settings) <= 0:
         return "full"
     return None
@@ -105,7 +105,7 @@ def promote(team: Team, player: Player, proc: OffseasonProcedure, ctx, by: str) 
 
 
 def promote_fits(team: Team, player: Player, ctx) -> bool:
-    """支配下に上げても資金の中か(育成の年俸が最低年俸に変わる差だけ増える)。自動補充で上げるときは見ない(D-235)。"""
+    """支配下に上げても資金の中か(育成の年俸が最低年俸に変わる差だけ増える)。最低人数の補充で上げるときは見ない(D-235、D-391)。"""
     cap = ctx.cap(team.id) if ctx is not None else None
     if ctx is None or not ctx.hard() or cap is None:
         return True
@@ -130,7 +130,7 @@ def ai_promote(team: Team, proc: OffseasonProcedure, sd: dict, ctx) -> list[Play
 
 
 def take_for_slot(team: Team, role: str, position: str, proc: OffseasonProcedure, sd: dict, ctx) -> Player | None:
-    """自動補充の 1 枠を、同じポジションの育成選手(推定値の高い順)で埋める。いなければ None。"""
+    """最低人数の補充の 1 枠を、同じポジションの育成選手(推定値の高い順)で埋める。いなければ None。"""
     pool = [p for p in team.development if p.role == role and p.position == position]
     if not pool:
         return None

@@ -114,7 +114,7 @@ def test_season_trades_replay_save_and_deadline(base):
         assert (again.home_runs, again.away_runs, len(again.log)) == (pg.result.home_runs, pg.result.away_runs, len(pg.result.log))
     # 保存と読み込み(版 20)
     loaded = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 22
+    assert SAVE_FORMAT_VERSION == 23
     assert loaded.state.season.trades == season.trades and loaded.state.season.active_history == season.active_history
     for pg in loaded.state.season.played[::11]:
         again = loaded.state.season.replay_game(pg.scheduled.number)
@@ -145,7 +145,7 @@ def test_offseason_trade_stage(base):
     assert r["finished"] and g.state.year == 2
     for rec in trades:
         assert sum(1 for x in g.state.transactions if x["phase"] == "trade" and x["player_id"] in rec["gives"] + rec["gets"]) >= len(rec["gives"] + rec["gets"])
-    assert all(len(t.players) == 70 for t in g.state.league.teams)
+    assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
 
 
 def test_bridge_has_trade_operations():

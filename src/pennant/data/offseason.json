@@ -13,16 +13,16 @@
   "prerun_years": 25,
   "calibration": {
     "small": {
-      "batter": 1.06,
-      "pitcher": 0.56
+      "batter": 1.26,
+      "pitcher": 0.77
     },
     "medium": {
-      "batter": 0.93,
-      "pitcher": 0.42
+      "batter": 1.1,
+      "pitcher": 0.57
     },
     "large": {
-      "batter": 1.12,
-      "pitcher": 0.54
+      "batter": 1.26,
+      "pitcher": 0.46
     }
   }
 }

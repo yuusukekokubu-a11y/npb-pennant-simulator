@@ -87,7 +87,7 @@ def test_stage_auto_and_save(season_end):
     g = fresh(season_end)
     to_active(g)
     again = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 22 and again.state.rules == g.state.rules
+    assert SAVE_FORMAT_VERSION == 23 and again.state.rules == g.state.rules
     r = g.offseason_stage_auto()
     assert r["finished"]
     log = r["auto_log"]["items"]
@@ -107,7 +107,11 @@ def test_auto_fa_and_skipped_stages():
     assert not g.state.season.trades
     g.year_end()
     proc = g.state.procedure
-    assert proc.game_rules().auto_fa and not proc.negotiations or all(e["status"] == "declared" for e in proc.negotiations.values())
+    assert proc.game_rules().auto_fa
+    declared = [e for e in proc.negotiations.values() if e["status"] == "declared"]
+    assert declared and all(e["context"].get("auto_fa") for e in declared)  # FA 権を取った選手は必ず FA(D-390)
+    assert all(e["status"] == "accepted" for e in proc.negotiations.values() if not e["context"].get("auto_fa"))  # 権利のない選手は更改
+    assert all(p.fa_free for p in proc.fa_pool if proc.fa_info[p.id].get("auto"))
     mine = [p.id for p in proc.fa_pool if proc.fa_info[p.id]["former_team"] == "T01"]
     assert mine and set(proc.fa_offers) == set(mine)  # あなたの残留の提示は最初から入っている
     stages = []
@@ -119,8 +123,8 @@ def test_auto_fa_and_skipped_stages():
             break
     assert "trade" not in stages and "active_draft" not in stages
     stay = sum(1 for x in g.last_fa["results"] if x["team_id"] == x["former_team"])
-    assert stay > len(g.last_fa["info"]) * 0.7  # 多くは元の球団に残る
-    assert all(len(t.players) == 70 for t in g.state.league.teams)
+    assert stay > len(g.last_fa["info"]) * 0.5  # 半分以上は元の球団に残る
+    assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)
 
 
 def test_no_foreign_and_development():

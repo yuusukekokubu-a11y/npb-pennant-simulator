@@ -122,7 +122,7 @@ CONTRACT_COLUMNS = [  # 「状態」と更改の結果を指標のすぐ右に(D
 ]
 
 
-CONTRACT_REASONS = {"initial": "開始時", "renew": "更改", "draft": "ドラフト", "market": "市場", "fill": "自動補充", "migrate": "旧版から", "fa": "FA", "foreign": "外国人市場", "development": "育成ドラフト", "promote": "支配下登録"}
+CONTRACT_REASONS = {"initial": "開始時", "renew": "更改", "draft": "ドラフト", "market": "市場", "fill": "自動補充", "minimum": "最低人数の補充", "migrate": "旧版から", "fa": "FA", "foreign": "外国人市場", "development": "育成ドラフト", "promote": "支配下登録"}
 
 
 # 選手の一覧の表(自由契約・市場。D-222)の基本の列

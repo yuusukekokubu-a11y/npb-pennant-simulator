@@ -260,9 +260,9 @@ def test_spectator_year_end_completes_automatically():
     g.advance(125)
     s = g.year_end()
     assert g.status()["year"] == 2 and g.state.procedure is None and g.status()["offseason"] is None
-    assert s["counts"]["players"] == 840 and all(len(t.players) == 70 for t in g.state.league.teams)
+    assert s["counts"]["players"] == sum(len(t.players) for t in g.state.league.teams) and all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
     assert any(x["phase"] == "draft" for x in g.state.transactions) and g.transactions(1)["rows"]
-    assert all("grade" in x and "comment" in x for x in g.state.transactions if x["player_id"] and x["phase"] in ("draft", "market", "fill"))
+    assert all("grade" in x and "comment" in x for x in g.state.transactions if x["player_id"] and x["phase"] in ("draft", "market", "minimum", "fill"))
 
 
 @pytest.fixture(scope="module")
@@ -302,7 +302,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     # 保存して読み込むと、途中から再開できる
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 22
+    assert SAVE_FORMAT_VERSION == 23
     v2 = again.offseason_view()
     t2 = again.decision_table("draft")
     assert v2["phase"] == "draft" and v2["bidding"] and v2["is_my_turn"] and [r["player_id"] for r in t2["rows"]] == [r["player_id"] for r in table["rows"]]
@@ -323,7 +323,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     v2 = again.offseason_pass()
     r = again.offseason_auto()
     assert r["finished"] and again.status()["year"] == 2 and again.state.procedure is None
-    assert all(len(t.players) == 70 for t in again.state.league.teams)
+    assert all(60 <= len(t.players) <= 70 for t in again.state.league.teams)  # 70 人は上限だけ(D-391)
     page = again.player(pick)
     assert page["player"]["abilities"] and '"ratings"' not in json.dumps(page) and "scouting" not in page["player"]  # プロになったら能力を見せ、スカウト評価は見せない(D-352)
     # 元のゲーム側は「おまかせ」で全部進めても同じ年に進む
@@ -372,7 +372,8 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
 
 
 def test_finalize_makes_room_when_full_team_lacks_minimum():
-    """70 人のまま最低人数が足りない球団は、評価の低い選手を外して補充し、70 人と最低人数の両方を守る(D-203)。"""
+    """70 人のまま最低人数が足りない球団は、評価の低い選手を外して、市場の売れ残りから最低年俸で取る(D-203、D-391)。
+    同じポジションがいなければ、同じ投手・野手のほかのポジションで代用する。新しく作る選手(自動補充)はない。"""
     from pennant.draft import finalize, start_procedure
 
     league = generate_league(6, CONFIG, PARTS)
@@ -383,11 +384,16 @@ def test_finalize_makes_room_when_full_team_lacks_minimum():
     assert len(team.players) == MAX_ROSTER and shortages(team.players, MINS, MIN_BATTERS) == {"C": 2}
     proc = start_procedure(league, 31, CONFIG, PARTS, DS, 1, None, None)
     proc.phase = "market"
+    proc.market = list(proc.candidates)  # 指名されなかった候補が市場に残っている状態
     sd = {t.id: SD5 for t in league.teams}
+    market_c = sum(1 for p in proc.market if p.position == "C")
+    assert proc.market
     filled = finalize(league, proc, CONFIG, PARTS, DS, sd, None, MINS, MIN_BATTERS)
-    assert len(team.players) == MAX_ROSTER and not shortages(team.players, MINS, MIN_BATTERS)
+    assert len(team.players) == MAX_ROSTER and "batter" not in shortages(team.players, MINS, MIN_BATTERS) and filled == []
     room = [x for x in proc.released if x.get("note") == "room"]
-    assert len(room) == 2 and all(x["team_id"] == team.id for x in room) and sum(1 for n in filled if n.team_id == team.id and n.position == "C") == 2
+    taken = [x for x in proc.picks if x["phase"] == "minimum" and x["team_id"] == team.id]
+    assert len(room) == 2 and all(x["team_id"] == team.id for x in room) and len(taken) == 2 and all(x["slot"] == "C" and x["role"] == "batter" for x in taken)
+    assert sum(1 for x in taken if x["position"] == "C") == min(2, market_c)  # 市場の捕手から先に、いなければほかの野手で代用
     assert all(len(t.players) == MAX_ROSTER for t in league.teams)
 
 

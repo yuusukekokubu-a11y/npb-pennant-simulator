@@ -24,7 +24,7 @@ class DraftMixin:
             raise ValueError("自分の球団にいない選手が含まれています")
         rest = [p for p in team.players if p.id not in ids]
         worse = draftmod.new_shortages(team.players, rest, mins, min_batters)
-        if worse and not self._over_hard_cap(team):  # 資金を超えている間は、最低人数を割っても外せる(不足は完了のときに最低年俸で自動補充。F3-2b)
+        if worse and not self._over_hard_cap(team):  # 資金を超えている間は、最低人数を割っても外せる(不足は完了のときに市場の売れ残りから最低年俸で取る。F3-2b、D-391)
             raise ValueError("最低人数を割ってしまいます:" + "、".join(f"{'野手' if pos == 'batter' else POSITION_LABELS[pos]} があと {n} 人足りなくなります" for pos, n in worse.items()))
         draftmod.release_players(team, chosen, proc)
         proc.my_release_done = True
@@ -189,7 +189,7 @@ class DraftMixin:
 
     def review_years(self) -> list[int]:
         """振り返りで選べる入団の年度(入団したシーズンの番号。履歴から。事前運転の入団は含まない)。"""
-        return sorted({int(x["year"]) + 1 for x in self.state.transactions if x.get("player_id") and x["phase"] in ("foreign", "draft", "dev_draft", "market", "fill")})
+        return sorted({int(x["year"]) + 1 for x in self.state.transactions if x.get("player_id") and x["phase"] in ("foreign", "draft", "dev_draft", "market", "minimum", "fill")})
 
     def _career_totals(self) -> tuple[dict[str, int], dict[str, float]]:
         """選手 ID → 出場(G)の累計、WAR の累計(野手は WAR、投手は失点版)。履歴と今シーズンの合計。"""
@@ -210,7 +210,7 @@ class DraftMixin:
 
     def review_entries(self, team_id: str, year: int) -> list[dict]:
         """振り返りの元になる履歴の行(その年度にその球団に入った選手。経路つき)。"""
-        order = {"foreign": 0, "draft": 1, "dev_draft": 2, "market": 3, "fill": 4}  # 外国人市場・育成ドラフトも入団の経路(D-375、D-376)
+        order = {"foreign": 0, "draft": 1, "dev_draft": 2, "market": 3, "minimum": 4, "fill": 5}  # 外国人市場・育成ドラフトも入団の経路(D-375、D-376)。最低人数の補充(D-391)
         rows = [x for x in self.state.transactions if x.get("player_id") and x["phase"] in order and int(x["year"]) + 1 == int(year) and x["team_id"] == team_id]
         return sorted(rows, key=lambda x: (order[x["phase"]], int(x.get("round") or 0), x["player_id"]))
 
@@ -257,7 +257,7 @@ class DraftMixin:
                     "position": x["position"],
                     "position_label": POSITION_LABELS.get(x["position"], ""),
                     "route": x["phase"],
-                    "route_label": {"draft": f"ドラフト {x['round']} 巡" + ("(抽選)" if x.get("lottery") else ""), "dev_draft": f"育成ドラフト {x['round']} 巡", "foreign": "外国人市場", "market": "市場"}.get(x["phase"], "自動補充"),
+                    "route_label": {"draft": f"ドラフト {x['round']} 巡" + ("(抽選)" if x.get("lottery") else ""), "dev_draft": f"育成ドラフト {x['round']} 巡", "foreign": "外国人市場", "market": "市場", "minimum": "市場(最低人数)"}.get(x["phase"], "自動補充"),
                     "entry_age": x.get("age"),
                     "age": None if p is None else p.age,
                     "entry_grade": summary.get("grade", "-"),

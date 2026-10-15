@@ -266,7 +266,7 @@ class OffseasonProcedure:
     market: list[Player] = field(default_factory=list)  # 自由契約市場
     picks: list[dict] = field(default_factory=list)  # 指名・獲得の履歴({phase, round, team_id, player_id, name, position, age})
     released: list[dict] = field(default_factory=list)  # 手放した選手({team_id, player_id, name, position, age})
-    filled: list[dict] = field(default_factory=list)  # 自動補充で入った選手(履歴に残すため。D-216。保存しない:完了と同時に履歴へ移る)
+    filled: list[dict] = field(default_factory=list)  # 安全策で作って入れた選手(D-391。履歴に残すため。D-216。保存しない:完了と同時に履歴へ移る)
     my_release_done: bool = False
     ai_release_done: bool = False
     prerun: bool = False  # 事前運転の手続き(入団時の評価に年を持たせない。保存しない)

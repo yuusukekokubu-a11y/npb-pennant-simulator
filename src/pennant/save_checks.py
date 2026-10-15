@@ -85,6 +85,8 @@ def _check_player(pd: Any, where: str, team_id: str, p: _Problems) -> None:
     fs = pd.get("fa_seasons")
     if fs is not None and not (isinstance(fs, int) and not isinstance(fs, bool) and 0 <= fs <= 60):
         p.add(f"{where}.fa_seasons", "FA 権の年数は 0〜60 の整数にしてください")
+    if not isinstance(pd.get("fa_free", False), bool):
+        p.add(f"{where}.fa_free", "FA 権を取ったことがあるかは true か false にしてください")
     if not isinstance(pd.get("foreign", False), bool):
         p.add(f"{where}.foreign", "外国人かどうかは true か false にしてください")
     ds = pd.get("dev_seasons")
@@ -167,6 +169,7 @@ def _player_from(pd: dict) -> Player:
         scouting=copy.deepcopy(pd.get("scouting")),
         contract=copy.deepcopy(pd.get("contract")),
         fa_seasons=pd.get("fa_seasons", 0),
+        fa_free=bool(pd.get("fa_free", False)),
         skills=list(pd.get("skills", [])),
         foreign=bool(pd.get("foreign", False)),
         dev_seasons=pd.get("dev_seasons"),

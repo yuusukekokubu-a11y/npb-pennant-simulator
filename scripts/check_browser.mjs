@@ -1120,7 +1120,7 @@ let reviewOnScreen = await reviewRows();
 const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の評価・今の所属・WAR 累計)`);
 check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-note")), "振り返りに真の総合・差・実際の天井の列は出ない(答え合わせモードはなくした)");
-check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^育成ドラフト \d 巡$|^外国人市場$|^市場$|^自動補充$/.test(r[1]) && /^[A-E]$/.test(r[2])), "経路は「ドラフト n 巡」「育成ドラフト n 巡」「外国人市場」「市場」「自動補充」、入団時の評価は A〜E");
+check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^育成ドラフト \d 巡$|^外国人市場$|^市場$|^市場\(最低人数\)$|^自動補充$/.test(r[1]) && /^[A-E]$/.test(r[2])), "経路は「ドラフト n 巡」「育成ドラフト n 巡」「外国人市場」「市場」「自動補充」、入団時の評価は A〜E");
 await grab();
 // 別の球団を選ぶと、その球団の入団者になる
 await page.selectOption("#review-team", "T05");

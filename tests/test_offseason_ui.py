@@ -168,7 +168,7 @@ def test_stage_auto_and_next_semantics(contract_game):
     assert v["auto_log"]["stage"] == "trade" and v["stage"] == "active_draft"
     r = g.offseason_stage_auto()  # 現役ドラフト:候補と指名を AI の方針で、完了まで
     assert r["finished"] and r["auto_log"]["stage"] == "active_draft" and g.status()["year"] == 2
-    assert all(len(t.players) == 70 for t in g.state.league.teams)
+    assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
     # 同じ操作なら同じ結果
     g2 = _fresh(contract_game)
     g2.offseason_stage_auto()

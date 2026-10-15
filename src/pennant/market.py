@@ -15,7 +15,7 @@ from __future__ import annotations
 from .contracts import set_contract, team_salary
 from .fa import MAX_ROSTER, choose_offers, fa_settings
 from .models import League, Player, Team
-from .procedure import OffseasonProcedure, entry_summary, join
+from .procedure import OffseasonProcedure, cached_value, entry_summary, join
 
 
 def uses_offers(ctx) -> bool:
@@ -51,7 +51,7 @@ def market_terms(proc: OffseasonProcedure, player: Player, team_id: str, ctx, fo
 
 
 def over_cap(team: Team, salary: int, extra: int, ctx) -> bool:
-    """市場の獲得が資金を超えるか。最低年俸の選手は、自動補充と同じく資金に関わらず獲得できる(D-235、D-386)。"""
+    """市場の獲得が資金を超えるか。最低年俸の選手は資金に関わらず獲得できる(D-235、D-386)。"""
     cap = ctx.cap(team.id)
     if not ctx.hard() or cap is None or int(salary) <= int(ctx.settings.minimum):
         return False
@@ -66,14 +66,57 @@ def former_teams(proc: OffseasonProcedure) -> dict[str, str]:
     return out
 
 
-def ai_wishes(team: Team, proc: OffseasonProcedure, ctx, sizes: dict[int, int], bargain: bool = False) -> list[str]:
-    """AI の獲得の希望(選手 ID の並び。前ほど優先)。FA と同じ方針(D-261、D-370)。bargain は売れ残りの 2 周目(D-389)。"""
+def ai_wishes(team: Team, proc: OffseasonProcedure, ctx, sizes: dict[int, int], bargain: bool = False, sd: dict | None = None, settings=None) -> list[str]:
+    """AI の獲得の希望(選手 ID の並び。前ほど優先)。FA と同じ方針(D-261、D-370)。bargain は売れ残りの 2 周目(D-389)。
+    人数の目安(65 人くらい。D-391)までは控えより下の見込みの選手も取り(2 周目は見込みの WAR の高い順に目安まで)、
+    目安を超える分は FA と同じ基準(一軍に入る見込みがあり、見込みの WAR が設定値以上)の選手だけ。"""
     items = []
     former = former_teams(proc)
     for p in proc.market:
         salary, years, exp = market_terms(proc, p, team.id, ctx, former, bargain)
         items.append((p, exp, salary, years))
-    return list(choose_offers(team, items, proc, ctx, sizes, 1.0, market=True))
+    target = min(int(fa_settings(ctx.negotiation).get("market_roster_target", MAX_ROSTER)), MAX_ROSTER)
+    need = target - len(team.players)
+    strict = list(choose_offers(team, items, proc, ctx, sizes, 1.0, market=True, strict=True))
+    if need <= 0:
+        return strict
+    deep = list(choose_offers(team, items, proc, ctx, sizes, 1.0, market=True))[:need]
+    wishes = deep + [pid for pid in strict if pid not in deep]
+    short = need - len(deep)
+    if bargain and short > 0:  # 2 周目:目安に届くまでは、指名されなかった候補(若手)をドラフトと同じ点数で先に、次に見込みの WAR の高い選手(自動補充の代わり。D-391)
+        chosen = set(wishes)
+        rest = [x for x in items if x[0].id not in chosen]
+        pros = sorted((x for x in rest if x[0].id in former), key=lambda x: (-float(x[1]), x[0].id))
+        amateurs = [x for x in rest if x[0].id not in former]
+        if sd is not None:  # 評価(A〜E。ピークの見込み)の高い順、同じ評価なら推定値の高い順(自動補充で入っていた若手の代わり)
+            def key(x):
+                est, grade = cached_value(proc, x[0], team.id, sd)
+                return (grade, -est, x[0].id)
+
+            amateurs.sort(key=key)
+        else:
+            amateurs.sort(key=lambda x: (-float(x[1]), x[0].id))
+        rest = amateurs + pros
+        wishes = deep + [x[0].id for x in rest[:short]] + [pid for pid in strict if pid not in deep]
+    return wishes
+
+
+def take_minimum(team: Team, role: str, position: str, proc: OffseasonProcedure, ctx, sd: dict, settings) -> Player | None:
+    """最低人数の補充(D-391):市場の売れ残りから、同じポジション(いなければ同じ投手・野手のほかのポジション)で自球団の評価が最も高い選手を、
+    最低年俸・1 年で取る(資金に関わらず)。取れなければ None。"""
+    pool = [p for p in proc.market if p.role == role]
+    cands = [p for p in pool if p.position == position] or pool
+    if not cands:
+        return None
+    p = max(cands, key=lambda x: (cached_value(proc, x, team.id, sd)[0], x.id))
+    proc.market.remove(p)
+    join(team, p, proc, sd, settings)
+    salary = None
+    if ctx is not None:
+        salary = int(ctx.settings.minimum)
+        set_contract(p, salary, 1, proc.year + 1, "minimum")
+    proc.picks.append({"phase": "minimum", "round": 0, "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age, "salary": salary, "years": 1, "slot": position, **entry_summary(p.scouting)})
+    return p
 
 
 def close_market(league: League, proc: OffseasonProcedure, ctx, my_team_id: str | None, scout_sd: dict[str, dict], settings, my_ai: bool = False) -> list[dict]:
@@ -94,22 +137,23 @@ def close_market(league: League, proc: OffseasonProcedure, ctx, my_team_id: str 
         for rank, pid in enumerate(wishes[team.id], start=1):
             proc.market_log.append({"player_id": pid, "team_id": team.id, "rank": rank})
     signed = _sign(league, proc, ctx, scout_sd, settings, wishes, 1, False)
-    if fa_settings(ctx.negotiation).get("market_bargain") and proc.market:  # 売れ残りの 2 周目:AI 球団が最低年俸で(自動補充より先に。D-389)
+    if fa_settings(ctx.negotiation).get("market_bargain") and proc.market:  # 売れ残りの 2 周目:AI 球団が最低年俸で(D-389)
         sizes = league_sizes(league)
         wishes = {}
         for team in league.teams:
             if (team.id != my_team_id or my_ai) and len(team.players) < MAX_ROSTER:
-                wishes[team.id] = ai_wishes(team, proc, ctx, sizes, bargain=True)
+                wishes[team.id] = ai_wishes(team, proc, ctx, sizes, bargain=True, sd=scout_sd[team.id], settings=settings)
                 for rank, pid in enumerate(wishes[team.id], start=1):
                     proc.market_log.append({"player_id": pid, "team_id": team.id, "rank": rank, "bargain": True})
-        signed += _sign(league, proc, ctx, scout_sd, settings, wishes, (max((x["round"] for x in signed), default=0) + 1), True)
+        refill = lambda team: ai_wishes(team, proc, ctx, sizes, bargain=True, sd=scout_sd[team.id], settings=settings)  # 希望をほかの球団に取られて尽きたら、残りから選び直す(目安の人数まで。D-391)
+        signed += _sign(league, proc, ctx, scout_sd, settings, wishes, (max((x["round"] for x in signed), default=0) + 1), True, refill)
     proc.market_offers = {}
     proc.market_done = True
     return signed
 
 
-def _sign(league: League, proc: OffseasonProcedure, ctx, scout_sd: dict[str, dict], settings, wishes: dict[str, list[str]], first_round: int, bargain: bool) -> list[dict]:
-    """希望に沿って、順番に 1 人ずつ獲得する(誰も獲得しなくなるまで)。戻り値は成立した契約。"""
+def _sign(league: League, proc: OffseasonProcedure, ctx, scout_sd: dict[str, dict], settings, wishes: dict[str, list[str]], first_round: int, bargain: bool, refill=None) -> list[dict]:
+    """希望に沿って、順番に 1 人ずつ獲得する(誰も獲得しなくなるまで)。refill があれば、希望の尽きた球団は選び直す(2 周目)。戻り値は成立した契約。"""
     teams = {t.id: t for t in league.teams}
     wanted: dict[str, int] = {}
     for lst in wishes.values():
@@ -128,6 +172,8 @@ def _sign(league: League, proc: OffseasonProcedure, ctx, scout_sd: dict[str, dic
             if len(team.players) >= MAX_ROSTER:
                 lst.clear()
                 continue
+            if not lst and refill is not None and tid in wishes:
+                lst = wishes[tid] = [pid for pid in refill(team) if pid in by_id and by_id[pid] in proc.market]
             while lst:
                 pid = lst.pop(0)
                 p = by_id.get(pid)
