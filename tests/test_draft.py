@@ -323,7 +323,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     v2 = again.offseason_pass()
     r = again.offseason_auto()
     assert r["finished"] and again.status()["year"] == 2 and again.state.procedure is None
-    assert all(len(t.players) == 70 for t in again.state.league.teams)
+    assert all(60 <= len(t.players) <= 70 for t in again.state.league.teams)  # 70 人は上限だけ(D-391)
     page = again.player(pick)
     assert page["player"]["abilities"] and '"ratings"' not in json.dumps(page) and "scouting" not in page["player"]  # プロになったら能力を見せ、スカウト評価は見せない(D-352)
     # 元のゲーム側は「おまかせ」で全部進めても同じ年に進む

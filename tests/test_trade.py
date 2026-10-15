@@ -145,7 +145,7 @@ def test_offseason_trade_stage(base):
     assert r["finished"] and g.state.year == 2
     for rec in trades:
         assert sum(1 for x in g.state.transactions if x["phase"] == "trade" and x["player_id"] in rec["gives"] + rec["gets"]) >= len(rec["gives"] + rec["gets"])
-    assert all(len(t.players) == 70 for t in g.state.league.teams)
+    assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
 
 
 def test_bridge_has_trade_operations():
