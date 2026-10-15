@@ -12,11 +12,11 @@
   "park_estimates": "c8df9f7e8626a77bf7dfb579c1acc6163c2f4ccc905b9f48643a19f5c64941ec",
   "run_values": "5e7513c766fcb166f175dd9141787d895653d56761c2fe82ce66d2864b61b154",
   "war": "6cadd44f07b8014efc9a2fd8d13ba0eab38016edc681d83310c59de3af2bc7e3",
-  "multiyear": "ce6ce87979d3da4888d9dbba33d55e2e54f6d709ab3c1a3b99f0d6a7caa30aca",
-  "procedure": "3111a4d6be9dcadf314d03ca20da309705118c75892c89c1db018abe2ce0dd4a",
-  "contracts": "25bc0c4d22a1748b1dc07b224b9819bb42b363f1c3ae4488e50ccecc5f917376",
-  "negotiation": "5ad8b36aa7eec942215d583e8de0b5ea41ae4eff76b46eab706b7d23ff1ae03b",
-  "fa": "55dd6d818164347a4c7ad63f5349a392bae85188f4890fe8663b13e24a50300f",
+  "multiyear": "32a1239645b347e2864ff61330985b71bd0f9ac7520da40874d24a7d3fd200e0",
+  "procedure": "af0c0ee3c677d359c7384adc7659b50d7d3b59936f967d782b6e0ba1511c012b",
+  "contracts": "9d1ba227d285bffc5c120401e15c2f0e52ac93baa0935739866ae513bfb2a130",
+  "negotiation": "d6bf98f7190969e11c23bb81c93571f2d3478396d87129cff3a6e0bd21f95042",
+  "fa": "789d738e0ab454fffcf807b2874af3cedd6de146dad44a9fa1393c777b261f3a",
   "counts": {
     "players": 840,
     "game_plate_appearances": 74,
@@ -88,11 +88,11 @@
       "year_ends": 2,
       "retired": [
         58,
-        62
+        58
       ],
       "rookies": [
-        103,
-        133
+        104,
+        117
       ],
       "players": 840,
       "seasons": 3,
@@ -101,12 +101,12 @@
     "procedure": {
       "year_ends": 2,
       "picked": [
-        13,
-        32
+        14,
+        38
       ],
       "released": [
         62,
-        63
+        56
       ],
       "market": [
         0,
@@ -119,16 +119,16 @@
       "year_ends": 2,
       "budget_releases": [
         27,
-        32
+        23
       ],
       "rates": [
         13697,
         11314,
-        11293
+        11410
       ],
       "totals": [
-        393233,
-        401492
+        393217,
+        394400
       ],
       "players": 840
     },
@@ -136,19 +136,19 @@
       "year_ends": 2,
       "renewed": [
         794,
-        758
+        761
       ],
       "declared": [
         18,
-        19
+        20
       ],
       "multi_year": [
         27,
-        15
+        12
       ],
       "floored": [
-        255,
-        215
+        254,
+        212
       ],
       "players": 840
     },
@@ -156,19 +156,19 @@
       "year_ends": 2,
       "declared": [
         18,
-        19
+        20
       ],
       "signed": [
         12,
-        9
+        11
       ],
       "moved": [
         11,
-        8
+        10
       ],
       "offers": [
-        17,
-        18
+        18,
+        28
       ],
       "players": 840
     }
