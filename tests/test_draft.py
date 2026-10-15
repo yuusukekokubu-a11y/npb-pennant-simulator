@@ -440,7 +440,7 @@ def test_roster_table_columns_sort_and_missing_stats(release_game):
 
 
 @pytest.mark.slow
-def test_market_table_marks_candidates_without_stats(release_game):
+def test_market_table_puts_players_without_stats_last(release_game):
     g = api.Game(copy.deepcopy(release_game.state), dirty=False)
     v = g.offseason_view()
     assert v["minimums"]["positions"]["C"] == 2 and v["minimums"]["batters"] == 15 and v["minimums"]["labels"]["SP"] == "先発"
@@ -454,10 +454,11 @@ def test_market_table_marks_candidates_without_stats(release_game):
     assert m["phase"] == "market" and len(m["rows"]) == sum(1 for p in g.state.procedure.market if p.role == "batter")
     with_stats = [r for r in m["rows"] if r["has_stats"]]
     without = [r for r in m["rows"] if not r["has_stats"]]
-    candidates = [r for r in without if r["player_id"].startswith("D")]  # 指名されなかった候補(成績なし)
-    assert with_stats and candidates and all(r["former_team"] for r in with_stats) and all(r["values"]["avg"] == "—" and r["former_team"] == "" for r in candidates)
+    assert with_stats and all(r["former_team"] for r in m["rows"])  # 指名されなかった候補は市場に出さない(D-398)。全員に前の所属がある
+    assert not any(r["player_id"] in {p.id for p in g.state.procedure.candidates} for r in m["rows"])
     assert all(r["values"]["avg"] == "—" for r in without)
-    assert m["rows"].index(without[0]) > m["rows"].index(with_stats[-1])  # 成績のない選手は最後
+    if without:
+        assert m["rows"].index(without[0]) > m["rows"].index(with_stats[-1])  # 成績のない選手は最後
     g.offseason_auto()
     assert g.status()["year"] == 2
     g.advance(3)
