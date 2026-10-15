@@ -32,11 +32,11 @@ export async function contractSection(v, token) {
   const facilities = await facilitiesBox(token); // 設備(D-383)
   if (token !== state.token) return null;
   return [
-    ...(facilities ? [facilities] : []),
     filters,
     data.rows.length
       ? table({ firstLabel: "選手", columns: data.columns, rows: data.rows, first, sort: data.sort.key, order: data.order, onSort, rowClass, fluid: true, detail })
       : el("p", { className: "muted", id: "contract-empty" }, "この絞り込みに合う選手はいません。"),
+    ...(facilities ? [facilities] : []), // 表の下に置く(表の上の操作は 2 行まで。D-270)
   ];
 }
 

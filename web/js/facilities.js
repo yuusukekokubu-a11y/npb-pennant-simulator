@@ -11,7 +11,7 @@ export async function facilitiesBox(token) {
   const b = f.mine.budget;
   const rows = f.kinds.map((k) => el("div", { className: "row facility-row" },
     el("label", {}, `${k.label} `, el("select", { id: `facility-${k.kind}`, "aria-label": k.label, disabled: state.running || !f.editable, onchange: (e) => runProc("facility_set", { kind: k.kind, level: Number(e.target.value) }) },
-      ...k.options.map((o) => el("option", { value: String(o.level), selected: o.level === f.mine.levels[k.kind] }, `段階 ${o.level}(${o.upkeep_text}・${o.effect})`)))));
+      ...k.options.map((o) => el("option", { value: String(o.level), selected: o.level === f.mine.levels[k.kind] }, `段階 ${o.level}(${o.upkeep_text}・${o.effect})`))))));
   const others = el("details", { id: "facility-teams" }, el("summary", {}, "全球団の設備"),
     el("ul", { className: "offer-history" }, ...f.teams.map((t) => el("li", { className: t.is_mine ? "mine" : "" }, `${t.team_name}:${f.kinds.map((k) => `${k.label} ${t.levels[k.kind]}`).join("・")}(維持費 ${t.upkeep_text})`))));
   return el("details", { id: "facility-box", open: state.proc.facilityOpen || false, ontoggle: (e) => { state.proc.facilityOpen = e.target.open; } },

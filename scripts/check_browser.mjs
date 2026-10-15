@@ -513,7 +513,7 @@ d = g.team(a["id"])
 print(json.dumps([b["total_text"], b["cap_text"], b["tier_label"], [r["salary_text"] for r in d["salaries"][:3]], b["usage"]], ensure_ascii=False))`, JSON.stringify({ id: warTid }));
 const budgetText = await page.textContent("#team-budget");
 const salaryCells = await page.$$eval("#team-salaries tbody tr", (trs) => trs.slice(0, 3).map((tr) => tr.children[3].textContent));
-check(budgetText.includes(`総年俸 ${pyBudget[0]}`) && budgetText.includes(`資金 ${pyBudget[1]}(使用率 ${pyBudget[4]}%)`) && budgetText.includes(`球団の規模:${pyBudget[2]}`) && !budgetText.includes("お金のルール") && !budgetText.includes("null"), `チームのページに総年俸・資金・使用率・球団の規模が出て、計算本体と同じ(「${budgetText.slice(0, 50)}…」。D-353)`);
+check(budgetText.includes(`総年俸 ${pyBudget[0]}`) && budgetText.includes(`年俸に使える額 ${pyBudget[1]}(使用率 ${pyBudget[4]}%)`) && budgetText.includes("設備の維持費") && budgetText.includes("設備:練習設備") && budgetText.includes(`球団の規模:${pyBudget[2]}`) && !budgetText.includes("お金のルール") && !budgetText.includes("null"), `チームのページに総年俸・資金・使用率・球団の規模が出て、計算本体と同じ(「${budgetText.slice(0, 50)}…」。D-353)`);
 check(JSON.stringify(salaryCells) === JSON.stringify(pyBudget[3]) && (await page.$$eval("#team-salaries thead th", (ths) => ths.map((t) => t.textContent))).join("|").includes("年俸(万円)|残り"), `チームのページの年俸の表(高い順。年俸・残りの列)が、計算本体と同じ(上位 ${salaryCells.join("・")})`);
 await findBlocks();
 await page.click("#screen-team .back");
@@ -770,6 +770,7 @@ check((await page.textContent("#facility-box summary")).includes(facPy1[0]) && (
 await page.selectOption("#facility-practice", String(facPy0[0]));
 await page.waitForFunction((t) => document.querySelector("#facility-box summary").textContent.includes(t), facPy0[1], { timeout: 30000 });
 procOps.push(["set_facility", ["practice", facPy0[0]]]);
+await page.click("#facility-box summary"); // 閉じておく
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
   await findBlocks();
