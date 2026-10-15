@@ -67,6 +67,16 @@ class DraftSettings:
         return float(self.data["draft"]["candidate_factor"])
 
     @property
+    def ai_draft_target(self) -> int:
+        """AI がドラフトで指名を続ける支配下の人数の目安(D-397)。設定がなければ上限まで。"""
+        return int(self.data["draft"].get("ai_target", 70))
+
+    @property
+    def ai_draft_min_picks(self) -> int:
+        """AI がドラフトで最低限指名する人数(D-397)。"""
+        return int(self.data["draft"].get("ai_min_picks", 0))
+
+    @property
     def market_rounds(self) -> int:
         return int(self.data["market"]["rounds"])
 
@@ -126,6 +136,9 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
     d = c.section(c.get(root, "draft", ""), "draft")
     c.integer(c.get(d, "rounds", "draft"), "draft.rounds", 1, 30)
     c.number(c.get(d, "candidate_factor", "draft"), "draft.candidate_factor", 1, 5)
+    if "ai_target" in d or "ai_min_picks" in d:  # AI が何人指名するか(D-397)
+        c.integer(c.get(d, "ai_target", "draft"), "draft.ai_target", 0, 70)
+        c.integer(c.get(d, "ai_min_picks", "draft"), "draft.ai_min_picks", 0, 30)
     m = c.section(c.get(root, "market", ""), "market")
     c.integer(c.get(m, "rounds", "market"), "market.rounds", 0, 30)
     a = c.section(c.get(root, "ai", ""), "ai")
@@ -647,7 +660,16 @@ def advance_turn(proc: OffseasonProcedure) -> None:
         proc.round += 1
 
 
+def draft_ended(proc: OffseasonProcedure) -> set[str]:
+    """その年のドラフトの指名を終えた球団(一度パスした球団。選択終了。1 巡目の入札をしなかった球団も。D-397)。"""
+    if proc.phase != "draft":
+        return set()
+    return {x["team_id"] for x in proc.picks if x["phase"] == "draft" and not x["player_id"]}
+
+
 def phase_finished(proc: OffseasonProcedure) -> bool:
+    if proc.phase == "draft" and proc.bid_done and set(proc.order) <= draft_ended(proc):
+        return True  # 全球団が指名を終えた
     return proc.round > proc.total_rounds() or not pool_of(proc)
 
 
@@ -669,8 +691,7 @@ def next_phase(proc: OffseasonProcedure) -> None:
     proc.round = 1
     proc.index = 0
     if proc.phase == "market":
-        proc.market.extend(proc.candidates)  # 指名されなかった候補は市場へ(D-204)
-        proc.candidates = []
+        proc.candidates = []  # 指名されなかった候補は市場に出さず、リーグを去る(D-398)
 
 
 def joined_players(proc: OffseasonProcedure) -> list[PlayerNote]:

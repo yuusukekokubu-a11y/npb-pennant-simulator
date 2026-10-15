@@ -49,13 +49,9 @@ def test_market_wishes_and_order(season_end):
     assert not v["is_my_turn"] and v["total_rounds"] == 0
     t = g.decision_table("market")
     assert [c["label"] for c in t["columns"]] == ["WAR", "総合", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"]
-    cands = [r for r in t["rows"] if r["values"]["former"] == "候補"]
-    pros = [r for r in t["rows"] if r["values"]["former"] != "候補"]
-    assert cands and pros
-    # 指名されなかった候補は評価と一言だけ、年俸は最低年俸(能力から決まる算定を見せない)。プロは能力が見える
-    minimum = g.state.contract_settings.minimum
-    assert all(r["amateur"] and r["values"]["ability"].startswith("評価 ") and r["deal"]["calc_salary"] == minimum and r["deal"]["expected"] is None for r in cands)
-    assert all(not r["amateur"] and r["scouting"] is None and r["values"]["ability"][0] in "SABCDEFG" for r in pros)
+    pros = t["rows"]
+    assert pros and not any(r["values"]["former"] == "候補" for r in pros)  # 指名されなかった候補は市場に出さない(D-398)
+    assert all(not r["amateur"] and r["scouting"] is None and r["values"]["ability"][0] in "SABCDEFG" for r in pros)  # 市場の選手は能力が見える
     for tid in g.state.team_funds:  # 資金を超えていると希望を入れられないので、全球団に残りを作る(資金をほぼ使い切る球団が多い)
         g.state.team_funds[tid] += 100000
     room = g.budget_info("T01")["cap"] - g.budget_info("T01")["total"]

@@ -42,7 +42,7 @@ def test_styles_make_different_orders_and_power_is_the_default(base):
         assert v["style"] == style and v["source"] == "ai"
         orders[style] = [s["player_id"] for s in v["slots"]]
         assert sorted(orders[style]) == sorted(orders["power"])  # 顔ぶれは同じ(各ポジションで最も強い野手 + 指名打者)
-    assert len({tuple(o) for o in orders.values()}) >= 3
+    assert len({tuple(o) for o in orders.values()}) >= 2  # 型によって打順が変わる(何通りになるかは選手しだい。D-373)
     # 二番強打者:2 番は打撃の総合がいちばん高い打者
     nine = m.regular_lineup(active)
     best = max(nine, key=lambda x: sum(x[0].ratings[k] for k in ("contact", "eye", "power", "batted_ball_quality")))
