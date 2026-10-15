@@ -9,6 +9,8 @@ import zipfile
 
 import pytest
 
+from pennant.facilities import team_upkeep
+
 from pennant import api
 from pennant.config import ConfigError
 from pennant.contracts import (
@@ -129,9 +131,9 @@ def test_new_game_has_contracts_within_funds(game):
     assert state.contract_rates["1"] > 0
     totals = [team_salary(t) for t in state.league.teams]
     assert abs(statistics.fmean(totals) - 400000 / 1.1) / 400000 < 0.1  # 全球団の平均は資金の平均の約 9 割
-    assert all(team_salary(t) <= state.team_funds[t.id] for t in state.league.teams)  # 開始時は資金の中
+    assert all(team_salary(t) + team_upkeep(t) <= state.team_funds[t.id] for t in state.league.teams)  # 開始時は資金(設備の維持費を引いた額)の中
     info = game.budget_info("T01")
-    assert info["cap"] == state.team_funds["T01"] and info["tier_label"] in ("大", "中", "小") and info["hard"] and "rule" not in info
+    assert info["cap"] == state.team_funds["T01"] - info["upkeep"] and info["funds"] == state.team_funds["T01"] and info["tier_label"] in ("大", "中", "小") and info["hard"] and "rule" not in info
 
 
 def test_salary_ignores_hidden_info(game):
