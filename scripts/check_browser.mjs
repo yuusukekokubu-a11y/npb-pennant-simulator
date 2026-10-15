@@ -968,7 +968,7 @@ await page.click("#proc-next");
 await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "ドラフト", null, { timeout: 60000 });
 procOps.push(["offseason_next", []]);
 // ドラフト(D-299、D-368、D-369):1 巡目は入札(状態バーに「入札・あなたの番」)。表(並べ替えは見出し・絞り込み 1 本)→ 名前を押して入札 → 抽選の結果 →「この段階をおまかせ」(確認つき)
-check((await page.textContent("#proc-title")) === "ドラフト" && (await page.textContent("#proc-info")).startsWith("1/6 巡・入札・あなたの番"), `ドラフトの段階:状態バーに「1/6 巡・入札・あなたの番」(「${await page.textContent("#proc-info")}」)`);
+check((await page.textContent("#proc-title")) === "ドラフト" && (await page.textContent("#proc-info")).startsWith("1/10 巡・入札・あなたの番"), `ドラフトの段階:状態バーに「1/10 巡・入札・あなたの番」(「${await page.textContent("#proc-info")}」)`);
 await page.waitForSelector("#proc-body tbody tr");
 await measureDecision("ドラフト");
 check(Boolean(await page.$("#draft-pass")) && !(await page.$("#draft-advance")), "1 巡目の入札の間は、状態バーに「パス」(「自分の番まで」はない)");
@@ -999,7 +999,7 @@ for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位�
   await page.waitForFunction(() => document.querySelector("#proc-message").textContent.startsWith("1 巡目の入札の結果") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
   procOps.push(["offseason_pick", [pickId]]);
   bids += 1;
-  if ((await page.textContent("#proc-info")).startsWith("2/6 巡") || bids > 12) break;
+  if ((await page.textContent("#proc-info")).startsWith("2/10 巡") || bids > 12) break;
   check((await page.textContent("#proc-message")).includes("外れたので"), `抽選に外れたら、もう一度入札する(${await page.textContent("#proc-message")})`);
   await page.click("#proc-body .name-cell .link >> nth=0");
   await page.waitForSelector("#draft-panel");
@@ -1007,7 +1007,7 @@ for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位�
 const lotPy = pyAfter(`print(json.dumps([[x["name"], x["winner_name"], len(x["teams"])] for x in g.offseason_view()["lottery"]], ensure_ascii=False))`);
 await page.click("#draft-lottery summary");
 const lotUi = await page.$$eval("#draft-lottery tbody tr", (trs) => trs.map((tr) => tr.querySelector("td").textContent));
-check((await page.textContent("#proc-info")).startsWith("2/6 巡") && (await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `入札(${bids} 回)と抽選で 1 巡目が決まり、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
+check((await page.textContent("#proc-info")).startsWith("2/10 巡") && (await page.textContent("#proc-history")).includes("ドラフト 1 巡"), `入札(${bids} 回)と抽選で 1 巡目が決まり、次の自分の番(2 巡目)まで AI が進む(${((Date.now() - pk0) / 1000).toFixed(1)} 秒)。履歴に 1 巡目の指名が出る`);
 const lotBids = lotPy.reduce((s, x) => s + x[2], 0);
 check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotBids >= 1, `1 巡目の入札の結果(${lotPy.length} 人・入札 ${lotBids} 件・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ${JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) ? "" : `(画面 ${lotUi.length} 行)`}`);
 await page.click("#draft-lottery summary");
@@ -1027,7 +1027,7 @@ await page.click("#auto-log summary");
 // 市場(D-370):年俸は自動。獲得の希望を入れ、締めると前年の順位が低い球団から 1 人ずつ。表は 名前・WAR・総合・年齢・ポジション・加入後の序列・算定年俸・出場・前の所属・状態
 await measureDecision("市場");
 const mk0 = await sameAsPy({ stage: "market" }, "市場");
-check(["WAR", "総合", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => mk0.heads[i + 1] === h), `市場の列(プロの能力の総合と、候補の評価が見られる。列:${mk0.heads.join("・")})`);
+check(["WAR", "総合", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => mk0.heads[i + 1] === h), `市場の列(能力の総合が見られる。列:${mk0.heads.join("・")})`);
 await page.selectOption("#market-group", "pitcher");
 await page.waitForFunction(() => document.querySelector("#market-kind") && document.querySelector("#proc-body thead").textContent.includes("WAR(失点版)"));
 const mkP = await sameAsPy({ stage: "market", group: "pitcher", kind: "war" }, "市場の投手(成績の種類の初期値は WAR。D-240)");
@@ -1036,7 +1036,7 @@ await page.waitForFunction(() => !document.querySelector("#market-kind"));
 await page.click("#proc-body thead th button:has-text('前の所属')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.startsWith("前の所属"));
 const mkF = await decisionUi(400);
-check(mkF.some((r) => r["前の所属"] === "候補" && r["WAR"] === "—" && /^評価 [A-E]$/.test(r["総合"])) && mkF.some((r) => r["前の所属"] !== "候補" && r["WAR"] !== "—" && /^[SABCDEFG] \d+$/.test(r["総合"])), "指名されなかった候補(前の所属「候補」)は評価だけ、手放された選手は能力の総合と成績が見られる");
+check(mkF.length > 0 && !mkF.some((r) => r["前の所属"] === "候補") && mkF.some((r) => r["WAR"] !== "—" && /^[SABCDEFG] \d+$/.test(r["総合"])), "指名されなかった候補は市場にいない(D-398)。手放された選手は能力の総合と成績が見られる");
 const [mkName] = pyAfter(`t = g.decision_table("market")
 print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、算定年俸の最も安い選手
 await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${mkName}")`);
