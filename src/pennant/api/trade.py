@@ -23,6 +23,8 @@ class TradeMixin:
         """今トレードできるか:("season" / "offseason", "") か (None, できない理由)。"""
         state = self.state
         proc = state.procedure
+        if not state.rules.trade:
+            return None, "この新規開始の設定では、トレードはありません"
         if proc is not None:
             if proc.phase == "trade":
                 return "offseason", ""
@@ -186,6 +188,8 @@ class TradeMixin:
         state = self.state
         season = state.season
         s = state.trade_settings
+        if not state.rules.trade:  # 新規開始の設定でトレードなし(D-381)
+            return
         if season.day >= trademod.deadline_day(season.total_days, s):
             season.trade_offers = []
             return
@@ -208,7 +212,7 @@ class TradeMixin:
 
     def _trade_status(self) -> dict | None:
         """進行の画面に出すトレードの状態(自球団があるときだけ):できるか・提案の件数。"""
-        if self.state.my_team_id is None:
+        if self.state.my_team_id is None or not self.state.rules.trade:
             return None
         window, _ = self._trade_window()
         return {"open": window is not None, "offers": len(self._trade_offers()) if window else 0}

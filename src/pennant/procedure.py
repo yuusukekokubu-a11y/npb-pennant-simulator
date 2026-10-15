@@ -28,17 +28,17 @@ from .season import derive_seed
 SUPPORTED_FORMAT_VERSION = 1
 
 
-PHASES = ("renewal", "release", "fa", "foreign", "draft", "dev_draft", "market", "trade", "done")
+PHASES = ("renewal", "release", "fa", "foreign", "draft", "dev_draft", "market", "trade", "active_draft", "done")
 
 
-PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "trade": "トレード", "done": "完了", "promote": "支配下登録"}
+PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "trade": "トレード", "active_draft": "現役ドラフト", "done": "完了", "promote": "支配下登録"}
 
 
 # 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ。育成ドラフトはドラフトの段階の中(D-375)
-STAGES = ("contract", "fa", "foreign", "draft", "market", "trade", "done")
+STAGES = ("contract", "fa", "foreign", "draft", "market", "trade", "active_draft", "done")
 
 
-STAGE_LABELS = {"contract": "契約", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "trade": "トレード", "done": "完了"}
+STAGE_LABELS = {"contract": "契約", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "trade": "トレード", "active_draft": "現役ドラフト", "done": "完了"}
 
 
 def stage_of(phase: str) -> str:
@@ -299,6 +299,11 @@ class OffseasonProcedure:
     trades: list[dict] = field(default_factory=list)  # このオフのトレード(trade.execute の記録。D-378)
     trade_offers: list[dict] = field(default_factory=list)  # AI からあなたへのトレードの提案(まだ答えていないもの)
     trade_started: bool = False  # トレードの段階の AI どうしのトレードと提案を済ませたか
+    rules: dict = field(default_factory=dict)  # 仕組みの選択肢(rules.GameRules の辞書。D-381)。空なら既定
+    season_actives: list[str] = field(default_factory=list)  # 終わったシーズンの最後の一軍の選手(現役ドラフトで出せない。D-380)
+    active_offers: dict = field(default_factory=dict)  # 現役ドラフトの候補(球団 → 選手 ID 2 人。D-380)
+    active_offers_done: bool = False  # 候補を決め終えたか(あなたの候補もこの時に決まる)
+    active_picks: list[dict] = field(default_factory=list)  # 現役ドラフトの指名({team_id, from_team, player_id, name, ...})
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 評価)。保存しない
 
     def bidding(self) -> bool:
@@ -347,6 +352,8 @@ class OffseasonProcedure:
             "foreign_stats": copy.deepcopy(self.foreign_stats), "foreign_salary": dict(self.foreign_salary), "foreign_offers": copy.deepcopy(self.foreign_offers),
             "foreign_results": [dict(x) for x in self.foreign_results], "foreign_done": self.foreign_done, "promotions": [dict(x) for x in self.promotions],
             "trades": copy.deepcopy(self.trades), "trade_offers": copy.deepcopy(self.trade_offers), "trade_started": self.trade_started,
+            "rules": dict(self.rules), "season_actives": list(self.season_actives), "active_offers": copy.deepcopy(self.active_offers),
+            "active_offers_done": self.active_offers_done, "active_picks": copy.deepcopy(self.active_picks),
         }
 
     @classmethod
@@ -397,7 +404,17 @@ class OffseasonProcedure:
         proc.trades = copy.deepcopy(d.get("trades", []))  # 版 19 以前の手続き:トレードはない(D-379)
         proc.trade_offers = copy.deepcopy(d.get("trade_offers", []))
         proc.trade_started = bool(d.get("trade_started", False))
+        proc.rules = dict(d.get("rules", {}))  # 版 20 以前の手続き:既定の選択肢(D-382)
+        proc.season_actives = [str(x) for x in d.get("season_actives", [])]
+        proc.active_offers = {str(k): [str(x) for x in v] for k, v in d.get("active_offers", {}).items()}
+        proc.active_offers_done = bool(d.get("active_offers_done", False))
+        proc.active_picks = copy.deepcopy(d.get("active_picks", []))
         return proc
+
+    def game_rules(self):
+        from .rules import rules_from
+
+        return rules_from(self.rules or None)
 
 
 # ---- 候補の生成と順番 ----
@@ -467,14 +484,19 @@ def foreign_terms(proc: OffseasonProcedure, settings: DraftSettings, sd: dict) -
     return {p.id: int(table[quick_value(p, "market", proc.seed, sd, proc.foreign_cuts)[1]]) for p in proc.foreign_pool}
 
 
-def start_procedure(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: DraftSettings, year: int, calibration: dict[str, float] | None, records: dict[str, tuple[int, int]] | None, id_prefix: str = "D") -> OffseasonProcedure:
+def start_procedure(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: DraftSettings, year: int, calibration: dict[str, float] | None, records: dict[str, tuple[int, int]] | None, id_prefix: str = "D", rules=None) -> OffseasonProcedure:
+    """手続きを作る。rules は仕組みの選択肢(rules.GameRules。None なら既定。D-381):外国人・育成がなしなら、外国人市場の候補と育成ドラフトを作らない。"""
+    from .rules import rules_from
+
+    rules = rules_from(rules)
     if settings.gen_config is None:
         object.__setattr__(settings, "gen_config", config)
     candidates = make_candidates(league, seed, config, parts, settings, year, calibration, id_prefix)
     cuts = grade_cuts(candidates, settings.grade_shares)
     proc = OffseasonProcedure(year, seed, draft_order(league, records), settings.rounds, settings.market_rounds, cuts, candidates=candidates, ranks=standing_ranks(league.teams, records), item_stats=item_stats(candidates))
-    proc.dev_rounds = int(settings.development["rounds"])
-    proc.foreign_pool = make_foreign_candidates(league, seed, config, parts, settings, year, calibration, id_prefix)
+    proc.rules = rules.to_dict()
+    proc.dev_rounds = int(settings.development["rounds"]) if rules.foreign_development else 0
+    proc.foreign_pool = make_foreign_candidates(league, seed, config, parts, settings, year, calibration, id_prefix) if rules.foreign_development else []
     proc.foreign_done = not proc.foreign_pool
     if proc.foreign_pool:
         proc.foreign_cuts = grade_cuts(proc.foreign_pool, settings.grade_shares)
@@ -638,6 +660,9 @@ def next_phase(proc: OffseasonProcedure) -> None:
         proc.phase = "draft"
     if proc.phase == "dev_draft" and (proc.dev_rounds <= 0 or not proc.candidates):  # 育成ドラフト(D-375)
         proc.phase = "market"
+    skipped = proc.game_rules().skipped_phases()  # 仕組みの選択肢で「なし」にした段階(トレード・現役ドラフト。D-381)
+    while proc.phase in ("trade", "active_draft") and proc.phase in skipped:
+        proc.phase = PHASES[PHASES.index(proc.phase) + 1]
     proc.round = 1
     proc.index = 0
     if proc.phase == "market":

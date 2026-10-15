@@ -153,6 +153,13 @@ await page.fill("#team-2", "");
 await grab();
 // 指紋 (d) と同じシード(リーグ 1・シーズン 13)にする
 await page.click("details summary");
+// 仕組みの選択肢(D-381):自動 FA はなし、ほかはありが最初から選ばれている。選ぶと説明バーに出る
+const rulesUi = await page.$$eval("input[name=rules]", (xs) => xs.map((x) => [x.value, x.checked]));
+check(JSON.stringify(rulesUi) === JSON.stringify([["auto_fa", false], ["active_draft", true], ["trade", true], ["foreign_development", true]]), `新規開始の「仕組みの選択肢」4 つ(自動 FA はなし、ほかはあり)`);
+await page.check("#rule-auto_fa");
+await page.waitForFunction(() => !document.querySelector("#new-help").hidden && document.querySelector("#new-help-name").textContent.includes("自動 FA"));
+check(true, `選択肢を選ぶと説明バーに出る(「${await page.textContent("#new-help-text")}」)`);
+await page.uncheck("#rule-auto_fa");
 await page.fill("#league-seed", "1");
 await page.dispatchEvent("#league-seed", "change");
 await page.waitForFunction(() => document.querySelector("#league-fields").dataset.seed === "1");
@@ -248,6 +255,7 @@ const giveRow = (await tradeRows("#trade-mine")).filter((r) => !r.locked).sort((
 const getRow = (await tradeRows("#trade-theirs")).filter((r) => !r.locked).sort((a, b) => b.v - a.v)[0];
 await page.locator("#trade-mine tbody tr").nth(giveRow.i).locator("input").check();
 await page.locator("#trade-theirs tbody tr").nth(getRow.i).locator("input").check();
+await page.waitForFunction(() => !document.querySelector("#trade-propose").disabled, null, { timeout: 10000 }).catch(() => {});
 check(!(await page.isDisabled("#trade-propose")), `出す選手(${giveRow.name})と欲しい選手(${getRow.name})を選ぶと、持ちかけられる`);
 await page.click("#trade-propose");
 await page.waitForFunction(() => document.querySelector("#trade-message").className.includes("ng"));
@@ -653,7 +661,16 @@ g = api.Game.load(open(sys.argv[1], "rb").read())
 print(g.state.season.day, g.state.my_team_id, _digest(season_record(g.state.season.result())))
 `, last.path).trim().split(" ");
 check(digest[0] === "125", "保存したファイルは125日目(最後)");
-check(digest[2] === expected.season, `最後の結果が、指紋 (d) と同じ(${digest[2].slice(0, 16)}…)`);
+// シーズン中の AI どうしのトレード(D-378)があるので、指紋 (d)(シーズンだけ)ではなく、同じ新規開始を Python で最後まで進めた結果と比べる
+const [pyDigest] = python(`
+import sys
+from pennant import api
+from pennant.fingerprint import _digest, season_record
+g = api.Game.new(1, [None] * 12, int(sys.argv[1][1:]) - 1, season_seed=13, baselines="default")
+g.advance(125)
+print(_digest(season_record(g.state.season.result())))
+`, digest[1]).trim().split(" ");
+check(digest[2] === pyDigest, `最後の結果が、同じ新規開始を Python で進めた結果と同じ(${digest[2].slice(0, 16)}…。トレード ${digest[2] === expected.season ? "なし" : "あり"})`);
 results.push(`  自球団(セーブデータの中): ${digest[1]}。指紋には入らない`);
 await standingsOnScreen(0);
 // シーズンの最後で、成績の画面を開く時間(集計は進めた日の分だけ足してあるので、すぐ開く)
@@ -736,7 +753,7 @@ const yeSeconds = (Date.now() - ye0) / 1000;
 const tabTexts = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent));
 const tabBoxes = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => { const r = l.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height), l.scrollWidth <= l.clientWidth + 1]; }));
 const overAtStart = pyAfter(`print(json.dumps(g.offseason_view()["renewal"]["over"]))`);
-check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・トレード・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 7 つ(外国人・トレードを含む。D-376、D-378)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
+check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・トレード・現役・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 8 つ(外国人・トレード・現役ドラフトを含む。D-376、D-378、D-380)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
 // 画面の測定(幅 390。D-270):表の上端が画面の上から 40% 以内、操作の行は最大 2 行、説明ブロックがない。契約・FA・ドラフト・市場で測る(①b)
 async function measureDecision(label) {
@@ -1024,6 +1041,30 @@ check(mkMsg.startsWith(`市場の結果:契約 ${mkPy.length - 1} 人`) && (awai
 const devPy = pyAfter(`d = g.offseason_view()["development"]
 print(json.dumps([d["count"], d["max"], [p["name"] for p in d["players"]]], ensure_ascii=False))`);
 check((await page.textContent("#development-box summary")).startsWith(`育成選手(${devPy[0]}/${devPy[1]} 人`) && (await page.locator("#development-box button:has-text(\"支配下に上げる\")").count()) === 0, `市場の段階に自球団の育成選手(${devPy[0]} 人)が出る。市場を締めたあとは「支配下に上げる」はない(「${await page.textContent("#development-box summary").catch(() => "なし")}」)`);
+// 現役ドラフト(D-380):市場 → トレード → 現役ドラフト。出す候補は AI のおすすめが入っていて、出すと指名が進む
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "トレード", null, { timeout: 60000 });
+procOps.push(["offseason_next", []]);
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "現役ドラフト" && document.querySelector("#active-offer"), null, { timeout: 60000 });
+procOps.push(["offseason_next", []]);
+const adPy = pyAfter(`a = g.offseason_view()["active_draft"]
+print(json.dumps([[p["name"] for p in a["eligible"]], a["recommended"], [p["name"] for p in a["eligible"] if p["player_id"] in a["recommended"]]], ensure_ascii=False))`);
+const adUi = await page.$$eval("#active-eligible tbody tr", (trs) => trs.map((tr) => [tr.querySelector("button.link").textContent, tr.querySelector("input").checked]));
+check(adPy[1].length === 2 && JSON.stringify(adUi.map((x) => x[0])) === JSON.stringify(adPy[0]) && JSON.stringify(adUi.filter((x) => x[1]).map((x) => x[0])) === JSON.stringify(adPy[2]), `現役ドラフト:出せる選手 ${adPy[0].length} 人の表と、AI のおすすめ 2 人(${adPy[2].join("・")})に最初から印`);
+await page.click("#active-offer");
+await page.waitForFunction(() => document.querySelector("#active-picks") || document.querySelector("#active-choices") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
+procOps.push(["active_draft_offer", [adPy[1]]]);
+if (await page.$("#active-choices")) {
+  const [adPick] = pyAfter(`print(json.dumps([g.offseason_view()["active_draft"]["recommended_pick"]]))`);
+  await page.click("#active-choices tr.selected .active-pick");
+  await page.waitForFunction(() => !document.querySelector("#active-choices") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
+  procOps.push(["active_draft_pick", [adPick]]);
+}
+const adDone = pyAfter(`a = g.offseason_view()["active_draft"]
+print(json.dumps([[x["name"] for x in a["picks"]], a["finished"], sum(1 for x in a["picks"] if x["team_id"] == g.state.my_team_id), sum(1 for x in a["picks"] if x["from_team"] == g.state.my_team_id)], ensure_ascii=False))`);
+const adPicksUi = await page.$$eval("#active-picks li", (ls) => ls.length);
+check(adDone[1] && adPicksUi === adDone[0].length && adDone[0].length >= 10 && adDone[2] === 1 && adDone[3] === 1 && (await page.textContent("#proc-info")).includes("終了"), `現役ドラフトの指名が最後まで進み、自球団は 1 人出て 1 人入る(指名 ${adDone[0].length} 人)`);
 // 「全部おまかせ」はメニューの中(確認つき。D-271)
 check(await page.isHidden("#proc-auto"), "手続きの画面には「全部おまかせ」はない(メニューの中)");
 await page.click("#menu");

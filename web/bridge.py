@@ -35,14 +35,15 @@ def check(seed: int, names_json: str) -> str:
     return _ok(api.check_team_names(int(seed), json.loads(names_json)))
 
 
-def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baselines: str = "trial", progress=None, prerun_progress=None, scout_level: str = "medium") -> str:
+def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baselines: str = "trial", progress=None, prerun_progress=None, scout_level: str = "medium", rules_json: str = "{}") -> str:
     """新規開始。baselines は基準値の求め方(trial:試運転で求める / default:既定値)。
-    progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。prerun_progress は事前運転の (終わった年数, 全年数)。"""
+    progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。prerun_progress は事前運転の (終わった年数, 全年数)。
+    rules_json は仕組みの選択肢({auto_fa, active_draft, trade, foreign_development}。D-381)。"""
     global _game
     try:
         mine = None if my_team_index is None or int(my_team_index) < 0 else int(my_team_index)
         game = api.Game.new(
-            int(seed), json.loads(names_json), mine, season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress, scout_level=str(scout_level)
+            int(seed), json.loads(names_json), mine, season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress, scout_level=str(scout_level), rules=json.loads(rules_json or "{}")
         )
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)
@@ -110,6 +111,8 @@ _OFFSEASON = {
     "foreign_cancel": lambda a: _game.offseason_foreign_cancel(str(a["player_id"])),
     "foreign_close": lambda a: _game.offseason_foreign_close(),
     "promote": lambda a: _game.offseason_promote(str(a["player_id"])),
+    "active_offer": lambda a: _game.active_draft_offer([str(x) for x in a.get("player_ids", [])]),
+    "active_pick": lambda a: _game.active_draft_pick(str(a["player_id"])),
     "next": lambda a: _game.offseason_next(),
     "advance": lambda a: _game.offseason_advance(),
     "pick": lambda a: _game.offseason_pick(str(a["player_id"])),

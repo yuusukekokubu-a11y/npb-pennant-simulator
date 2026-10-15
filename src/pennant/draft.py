@@ -320,16 +320,16 @@ def finalize(league: League, proc: OffseasonProcedure, config: GenerationConfig,
     return added
 
 
-def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, offseason_settings: OffseasonSettings, settings: DraftSettings, year: int, calibration: dict[str, float] | None, scout_sd: dict[str, dict], records_or_order, id_prefix: str = "D", game_config=None, ctx: ContractContext | None = None) -> tuple[OffseasonProcedure, list[PlayerNote]]:
+def run_ai_offseason(league: League, seed: int, config: GenerationConfig, parts: NameParts, offseason_settings: OffseasonSettings, settings: DraftSettings, year: int, calibration: dict[str, float] | None, scout_sd: dict[str, dict], records_or_order, id_prefix: str = "D", game_config=None, ctx: ContractContext | None = None, rules=None) -> tuple[OffseasonProcedure, list[PlayerNote]]:
     """観戦のみ(全球団 AI)の手続きを一気に進める(事前運転・指紋 (n)・観戦のみの年度の確定で使う)。
-    records_or_order は 球団 → (勝, 敗) か、1 巡目の順番の一覧。戻り値は手続きと、入団した全選手。"""
+    records_or_order は 球団 → (勝, 敗) か、1 巡目の順番の一覧。rules は仕組みの選択肢(D-381)。戻り値は手続きと、入団した全選手。"""
     mins = minimum_positions(game_config)
     min_batters = minimum_batters(game_config)
     if isinstance(records_or_order, list):
-        proc = start_procedure(league, seed, config, parts, settings, year, calibration, None, id_prefix)
+        proc = start_procedure(league, seed, config, parts, settings, year, calibration, None, id_prefix, rules)
         proc.order = list(records_or_order)
     else:
-        proc = start_procedure(league, seed, config, parts, settings, year, calibration, records_or_order, id_prefix)
+        proc = start_procedure(league, seed, config, parts, settings, year, calibration, records_or_order, id_prefix, rules)
     proc.prerun = id_prefix == "B"
     if ctx is not None:
         apply_contracts_start(league, proc, ctx, None, mins, min_batters)
@@ -373,6 +373,11 @@ def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig,
 
             start_offseason_trades(league, proc, ctx, config, my_team_id, mins, min_batters, proposals=False)
             proc.trade_offers = []
+            next_phase(proc)
+        elif proc.phase == "active_draft":  # 現役ドラフト(D-380):残りの候補と指名を AI の方針で
+            from .active_draft import run_all
+
+            run_all(league, proc, ctx, config, mins, min_batters, None)
             next_phase(proc)
         elif proc.phase == "market" and uses_offers(ctx):  # 市場は年俸が自動で、前年の順位が低い球団から 1 人ずつ(D-370)
             if not proc.market_done:

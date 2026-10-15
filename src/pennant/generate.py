@@ -144,8 +144,10 @@ def generate_league(
     config: GenerationConfig | None = None,
     names: NameParts | None = None,
     foreign: dict | None = None,
+    with_foreign: bool = True,
 ) -> League:
-    """ゲーム開始時のリーグ(全球団・全選手)を作る。foreign は外国人選手の設定(draft.json の foreign。省略すると既定。D-376)。"""
+    """ゲーム開始時のリーグ(全球団・全選手)を作る。foreign は外国人選手の設定(draft.json の foreign。省略すると既定。D-376)。
+    with_foreign=False(仕組みの選択肢で外国人・育成がなし。D-381)なら外国人選手を入れない。"""
     config = config or load_generation_config()
     names = names or load_name_parts()
     rng = random.Random(seed)
@@ -170,7 +172,7 @@ def generate_league(
             team.players.append(player)
         teams.append(team)
     league = League(seed=seed, league_names=list(names.league_names[:n_leagues]), teams=teams)
-    if names.foreign_surnames:
+    if names.foreign_surnames and with_foreign:
         add_initial_foreign(league, seed, config, names, foreign)
     assign_parks(league, config)  # 球場の倍率(別の乱数。既存の生成の乱数は変えない。D-137)
     return league

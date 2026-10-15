@@ -12,6 +12,7 @@ import { draftSection } from "./draft.js";
 import { developmentBox, marketClose, marketSection } from "./market.js";
 import { foreignClose, foreignSection } from "./foreign.js";
 import { outlookPanel } from "./decision.js";
+import { activeDraftSection } from "./active_draft.js";
 
 // ---- オフの手続き(F3-1。D-201〜D-207) ----
 
@@ -31,10 +32,10 @@ export async function renderProcedure(token) {
   const ps = state.proc;
   ps.phase = v.phase;
   ps.stage = v.stage;
-  // 段階のタブは 6 つ(契約・FA・外国人・ドラフト・市場・完了。D-376)。今の段階の名前を大きく出す(D-271)
+  // 段階のタブは 8 つ(契約・FA・外国人・ドラフト・市場・トレード・現役ドラフト・完了。D-376、D-378、D-380)。今の段階の名前を大きく出す(D-271)
   $("proc-title").textContent = v.phase_label;
   const at = v.phases.findIndex((x) => x.key === v.stage);
-  $("proc-steps").replaceChildren(...v.phases.map((p, i) => el("li", { className: i === at ? "current" : i < at ? "done" : "" }, p.label)));
+  $("proc-steps").replaceChildren(...v.phases.map((p, i) => el("li", { className: i === at ? "current" : i < at ? "done" : "", title: p.label }, p.short || p.label)));
   renderProcedureBar(v);
   renderAutoLog();
   if (ps.lastRound && v.stage === "fa") {
@@ -70,6 +71,7 @@ export async function renderProcedure(token) {
   else if (v.phase === "draft" || v.phase === "dev_draft") parts = await draftSection(v, token);
   else if (v.phase === "market") parts = await marketSection(v, token);
   else if (v.phase === "trade") parts = tradeStageSection(v);
+  else if (v.phase === "active_draft") parts = activeDraftSection(v);
   if (parts === null || token !== state.token) return;
   body.replaceChildren(...parts);
   $("proc-development").replaceChildren(v.stage === "market" && v.development ? developmentBox(v.development) : ""); // 育成選手を支配下に上げる(D-375)
@@ -105,6 +107,9 @@ function renderProcedureBar(v) {
     info = f.done ? `外国人市場 終了:契約 ${f.counts.signed} 人(自球団 ${f.counts.mine})` : `外国人市場 ${f.counts.pool} 人・希望 ${f.counts.offers}・空き枠 ${f.space ?? "-"}${mine ? `・外国人 ${mine.foreign} 人(一軍 ${f.active_max ?? "-"} まで)` : ""}`;
   } else if (v.stage === "trade" && v.trade) {
     info = `トレード:提案 ${v.trade.offers} 件・成立 ${v.trade.trades.length} 件`;
+  } else if (v.stage === "active_draft" && v.active_draft) {
+    const a = v.active_draft;
+    info = !a.offers_done ? "現役ドラフト:出す候補を選ぶ" : a.finished ? `現役ドラフト 終了:指名 ${a.picks.length} 人` : a.is_my_turn ? "現役ドラフト:あなたの番" : `現役ドラフト:${a.current_team_name} の番`;
   } else if (v.stage === "market" && v.market) {
     const m = v.market;
     info = m.done ? `市場 終了:契約 ${m.counts.signed} 人(自球団 ${m.counts.mine})` : `市場 ${m.counts.pool} 人・希望 ${m.counts.offers}・空き枠 ${m.space ?? "-"}`;
@@ -230,7 +235,7 @@ export async function procStageAuto() {
 // 「次の手続きへ」(D-271):自分の操作を終えて進む(AI の代行はしない)
 export async function procNext() {
   const stage = state.proc.stage;
-  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: state.proc.phase === "dev_draft" ? "育成ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?" : "ドラフトの自球団の残りの番(1 巡目の入札を含む)は、すべてパスして、育成ドラフトへ進みます。よろしいですか?", foreign: "外国人市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、ドラフトへ進みます。よろしいですか?", market: "市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、トレードの段階へ進みます。よろしいですか?", trade: "答えていないトレードの提案は断ったことにして、手続きを完了します。よろしいですか?" }[stage];
+  const ask = { fa: "FA の残りのラウンドでは、自球団は追加の提示をしません(今のラウンドの提示は有効)。次へ進みますか?", draft: state.proc.phase === "dev_draft" ? "育成ドラフトの自球団の残りの番は、すべてパスします。次へ進みますか?" : "ドラフトの自球団の残りの番(1 巡目の入札を含む)は、すべてパスして、育成ドラフトへ進みます。よろしいですか?", foreign: "外国人市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、ドラフトへ進みます。よろしいですか?", market: "市場を今の希望で締めて(希望していなければ、自球団は獲得なし)、次の段階へ進みます。よろしいですか?", trade: "答えていないトレードの提案は断ったことにして、次の段階へ進みます。よろしいですか?", active_draft: "現役ドラフトの残り(まだ決めていない候補・指名)は AI の方針で決めて、手続きを完了します。よろしいですか?" }[stage];
   if (ask && !confirm(ask)) return;
   state.proc.lastRound = null;
   state.proc.lastMarket = null;

@@ -60,11 +60,13 @@ def test_trial_does_not_touch_league_and_is_reproducible(trial):
 
 
 def test_trial_does_not_change_the_season(game):
-    """試運転があってもなくても、実際のシーズンの結果は同じ(指紋 (d))。"""
+    """試運転があってもなくても、実際のシーズンの結果は同じ。シーズン中の AI どうしのトレード(D-378)があるので、
+    指紋 (d)(シーズンだけ)ではなく、既定値で始めた同じリーグ・シーズンと比べる。"""
     from pennant.fingerprint import _digest, season_record
 
-    expected = json.loads(open("tests/data/fingerprints.json", encoding="utf-8").read())
-    assert _digest(season_record(game.state.season.result())) == expected["season"]
+    other = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
+    other.advance(125)
+    assert _digest(season_record(game.state.season.result())) == _digest(season_record(other.state.season.result()))
 
 
 # ---- 受け入れ条件2・3:基準値の性質 ----
