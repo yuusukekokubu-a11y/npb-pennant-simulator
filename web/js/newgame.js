@@ -154,7 +154,8 @@ export async function startNewGame() {
     $("trial-text").textContent = "リーグの歴史を作っています(数十年分の選手の入れ替わり)…";
     const t0 = performance.now();
     const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel }).finally(() => ($("trial-box").hidden = true));
+    const rules = Object.fromEntries([...document.querySelectorAll("input[name=rules]")].map((x) => [x.value, x.checked]));  // 仕組みの選択肢(D-381)
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, rules }).finally(() => ($("trial-box").hidden = true));
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");
@@ -193,6 +194,7 @@ export function helpIdFor(target) {
   if (target.id === "season-seed") return "setting.season_seed";
   const groups = { "baseline-mode": "setting.baseline", "scout-level": "setting.scout" };
   if (groups[target.name]) return `${groups[target.name]}.${target.value}`;
+  if (target.name === "rules") return `setting.rules.${target.value}`;
   return null;
 }
 
@@ -206,5 +208,5 @@ function showHelp(event) {
 
 // 入力欄は選んだとき(focusin)、選択肢は選び終わったとき(change)に出す。押している途中にバーの中身が変わって
 // 画面がずれ、押した場所がずれないように(選択肢の focusin では変えない)
-$("screen-new").addEventListener("focusin", (e) => { if (e.target.type !== "radio") showHelp(e); });
+$("screen-new").addEventListener("focusin", (e) => { if (e.target.type !== "radio" && e.target.type !== "checkbox") showHelp(e); });
 $("screen-new").addEventListener("change", showHelp);

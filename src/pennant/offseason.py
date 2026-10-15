@@ -242,7 +242,7 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
 
 # ---- 事前運転と校正(D-034 の完成形。D-190、D-197) ----
 
-def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None, tiers: dict | None = None, contract_settings=None) -> int:
+def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None, tiers: dict | None = None, contract_settings=None, rules=None) -> int:
     """新規開始のとき、試合をせずに年度の確定の処理だけを years 回回す(事前運転)。履歴は作らない。
     F3-1 からは、オフの手続き(自由契約・ドラフト・市場・自動補充。全球団 AI)を使う(D-210)。
     契約は資金つきで扱う(査定の更改・資金の超過の解消。成績がないので見込みは見せる能力から。順位がないので資金は増減しない)。
@@ -265,7 +265,7 @@ def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts
         year_seed = derive_seed(seed, f"prerun:{k}")
         age_update_retire(league, year_seed, config, settings, k, None, draft_settings.dev_seasons)
         ctx = ContractContext(contract_settings, funds, tiers, lambda pid, role: [], sd_map.__getitem__, negotiation=None, league_seed=league.seed, slots=depth_slots(config))
-        run_ai_offseason(league, year_seed, config, parts, settings, draft_settings, k, None, sd_map, order, id_prefix="B", ctx=ctx)
+        run_ai_offseason(league, year_seed, config, parts, settings, draft_settings, k, None, sd_map, order, id_prefix="B", ctx=ctx, rules=rules)
         if progress is not None:
             progress(k, n)
     return n

@@ -66,7 +66,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 20  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)
+SAVE_FORMAT_VERSION = 21  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -115,6 +115,7 @@ class GameState:
     contract_settings: object | None = None  # 契約の設定(None は設定ファイル)
     negotiation_settings: object | None = None  # FA で選手が選ぶ点数と FA の設定(None は設定ファイル。D-365)
     trade_settings: object | None = None  # トレードの設定(None は設定ファイル。D-378)
+    rules: object | None = None  # 仕組みの選択肢(rules.GameRules。None は既定。新規開始のときだけ決める。D-381)
 
     def __post_init__(self) -> None:
         from .draft import load_draft_settings
@@ -131,6 +132,10 @@ class GameState:
             self.negotiation_settings = load_negotiation_settings()
         if self.trade_settings is None:
             self.trade_settings = load_trade_settings()
+        if self.rules is None:
+            from .rules import DEFAULT_RULES
+
+            self.rules = DEFAULT_RULES
         if self.baseline_settings is None:
             self.baseline_settings = load_baseline_settings()
         if self.baselines is None:
@@ -214,6 +219,7 @@ def build_state(state: GameState) -> dict:
             "teams": [_plain(t) for t in s.league.teams],
         },
         "user": {"my_team_id": state.my_team_id},
+        "rules": state.rules.to_dict(),  # 仕組みの選択肢(D-381。版 21)
         "baselines": state.baselines.to_dict(),
         "park_history": history_to_dict(state.park_history),
         "year": state.year,
@@ -678,10 +684,17 @@ def load_game(data: bytes) -> GameState:
         for tid in team_ids:
             if tid not in funds_d or tid not in tiers_d:
                 p.add(f"state.json.team_funds.{tid}", "球団ごとの規模(budget_tiers)と資金(team_funds)が必要です")
+    from .rules import rules_from
+
+    rules = None
+    try:
+        rules = rules_from(state.get("rules"))  # 版 20 以前は既定(D-382)
+    except ValueError as exc:
+        p.add("state.json.rules", str(exc))
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"], trade_settings=cfg["trade"])
+    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"], trade_settings=cfg["trade"], rules=rules)
     if any(p_.fa_seasons is None for p_ in out.league.all_players()):
         from .fa import initialize_seasons
 

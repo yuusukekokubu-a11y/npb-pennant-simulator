@@ -76,6 +76,12 @@ def validate_trade_settings(data, source: str = "(辞書)") -> TradeSettings:
     c.integer(c.get(a, "offseason_proposals", "ai"), "ai.offseason_proposals", 0, 10)
     c.number(c.get(a, "offseason_proposal_probability", "ai"), "ai.offseason_proposal_probability", 0, 1)
     c.integer(c.get(a, "attempts", "ai"), "ai.attempts", 1, 1000)
+    ad = root.get("active_draft")  # 現役ドラフト(D-380)。ない設定(版 20 以前の保存)は既定
+    if ad is not None:
+        ad = c.section(ad, "active_draft")
+        c.integer(c.get(ad, "offers", "active_draft"), "active_draft.offers", 1, 5)
+        c.number(c.get(ad, "max_salary_ratio", "active_draft"), "active_draft.max_salary_ratio", 1, 100)
+        c.integer(c.get(ad, "active_size", "active_draft"), "active_draft.active_size", 1, 70)
     if c.problems:
         raise ConfigError(source, c.problems)
     return TradeSettings(copy.deepcopy(root), source)
@@ -129,7 +135,7 @@ def locked_ids(proc=None, season_trades=()) -> set[str]:
         out.update(x["gets"])
     if proc is not None:
         out.update(x["player_id"] for x in proc.picks if x.get("player_id"))
-        out.update(x["player_id"] for x in proc.fa_results)
+        out.update(x["player_id"] for x in proc.fa_results if x["team_id"] != x.get("former_team"))  # 元の球団に残った(自動 FA の残留。D-381)のは入ったことにしない
         out.update(x["player_id"] for x in proc.foreign_results)
         out.update(x["player_id"] for x in proc.market_results)
         out.update(x["player_id"] for x in proc.promotions)

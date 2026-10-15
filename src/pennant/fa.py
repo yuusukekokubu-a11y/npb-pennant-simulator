@@ -233,6 +233,38 @@ def ai_offers(team: Team, proc, ctx, league_sizes: dict[int, int]) -> dict[str, 
     return choose_offers(team, items, proc, ctx, league_sizes, round_multiplier(ctx.negotiation, proc.fa_round), lambda pid: star_multiplier(ctx.negotiation, proc.fa_info[pid]["expected"]))
 
 
+def retain_salary(info: dict, rnd: int, ctx) -> int:
+    """自動 FA の元の球団の残留の提示の年俸:算定(査定の年俸)× ラウンドの倍率。主力級の期待の倍率は掛けない(期待に届かない主力級は、
+    2 ラウンド目からほかの球団と競う。D-381)。"""
+    return round_salary(int(info["calc_salary"]), round_multiplier(ctx.negotiation, rnd), ctx.settings.rounding)
+
+
+def retain_offers(team: Team, proc, ctx) -> dict[str, tuple[int, int]]:
+    """自動 FA の元の球団の残留の提示(1 ラウンド目だけ。D-381):元の選手全員に、空き枠と資金の範囲で。
+    資金に収まらなければ、資金の超過の解消と同じ順((年俸 − 最低年俸)÷ 見込みの WAR の大きい選手から)で外す。
+    最低年俸の選手は、自動補充と同じく資金に関わらず残せる(retain_exempt)。"""
+    if int(proc.fa_round) != 1:
+        return {}
+    own = sorted((p for p in proc.fa_pool if proc.fa_info[p.id].get("auto") and proc.fa_info[p.id]["former_team"] == team.id and proc.fa_info[p.id]["status"] == "open"),
+                 key=lambda p: (-float(proc.fa_info[p.id]["expected"]), p.id))
+    own = own[: max(0, MAX_ROSTER - len(team.players))]
+    salary = {p.id: retain_salary(proc.fa_info[p.id], 1, ctx) for p in own}
+    cap = ctx.cap(team.id)
+    if ctx.hard() and cap is not None:
+        minimum = int(ctx.settings.minimum)
+        total = team_salary(team) + sum(v for v in salary.values() if v > minimum)
+        while total > cap and any(salary[p.id] > minimum for p in own):
+            worst = max((p for p in own if salary[p.id] > minimum), key=lambda p: ((salary[p.id] - minimum) / max(0.05, float(proc.fa_info[p.id]["expected"])), p.id))
+            own.remove(worst)
+            total -= salary[worst.id]
+    return {p.id: (int(proc.fa_info[p.id]["ai_years"]), salary[p.id]) for p in own}
+
+
+def retain_exempt(info: dict, team_id: str, salary: int, ctx) -> bool:
+    """資金に関わらず結べる提示:自動 FA の元の球団の、最低年俸での残留(D-381)。"""
+    return bool(info.get("auto")) and team_id == info["former_team"] and int(salary) <= int(ctx.settings.minimum)
+
+
 def compensation(proc, info: dict, team_id: str) -> None:
     """補償(人的・金銭)の差し替え口。補償はなし(D-260、D-367)。"""
     return None
@@ -252,7 +284,8 @@ def close_round(league: League, proc, ctx, my_team_id: str | None, my_ai: bool =
         if team.id == my_team_id and not my_ai:
             mine = {pid: (int(o["years"]), int(o["salary"])) for pid, o in proc.fa_offers.items()}
         else:
-            mine = ai_offers(team, proc, ctx, sizes)
+            retain = retain_offers(team, proc, ctx)  # 自動 FA の残留の提示(D-381)
+            mine = {**{k: v for k, v in ai_offers(team, proc, ctx, sizes).items() if k not in retain}, **retain}
         for pid, (years, salary) in mine.items():
             offers.setdefault(pid, {})[team.id] = (years, salary)
             proc.fa_log.append({"round": proc.fa_round, "player_id": pid, "team_id": team.id, "years": years, "salary": salary})
@@ -268,7 +301,7 @@ def close_round(league: League, proc, ctx, my_team_id: str | None, my_ai: bool =
             if len(team.players) >= MAX_ROSTER:
                 continue
             cap = ctx.cap(tid)
-            if ctx.hard() and cap is not None and team_salary(team) + salary > cap:
+            if ctx.hard() and cap is not None and team_salary(team) + salary > cap and not retain_exempt(info, tid, salary, ctx):
                 continue
             if neg is None:  # 点数の設定がない(試験用):金額だけで選ぶ
                 score = float(salary) / max(1.0, float(info["calc_salary"])) - 1.0

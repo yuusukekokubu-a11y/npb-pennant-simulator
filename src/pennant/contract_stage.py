@@ -102,6 +102,7 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
     ctx.rate = round(rate_for(list(expected.values()), total_funds, len(expected), ctx.settings), 4)
     proc.rate = ctx.rate
     neg = ctx.negotiation
+    auto_fa = neg is not None and proc.game_rules().auto_fa  # 自動 FA(D-381):満了した全員が FA。事前運転(FA の設定なし)は今までどおり更改
     for team in league.teams:
         expiring = [p for p in team.players if p.contract is None or int(p.contract["until"]) <= proc.year]
         for p in expiring:
@@ -113,6 +114,15 @@ def apply_contracts_start(league: League, proc: OffseasonProcedure, ctx: Contrac
                 "team_id": team.id, "player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "age": p.age,
                 "old_salary": old, "auto_salary": salary, "ai_years": years, "expected": round(exp, 2), "context": {}, "status": "pending", "offers": [],
             }
+            if auto_fa:
+                e["context"]["auto_fa"] = True
+                declare(team, p, e, proc, ctx)
+                proc.fa_info[p.id]["auto"] = True
+                if team.id == my_team_id:  # あなたの球団の残留の提示は、最初から入れておく(取り消せる)
+                    from .fa import retain_salary
+
+                    proc.fa_offers[p.id] = {"years": int(years), "salary": retain_salary(proc.fa_info[p.id], 1, ctx)}
+                continue
             if neg is not None and is_holder(p, neg):
                 e["context"]["fa_holder"] = True
                 if random.Random(derive_seed(proc.seed, f"declare:{p.id}")).random() < declare_probability(neg, exp):

@@ -89,6 +89,8 @@ def test_market_wishes_and_order(season_end):
         g.offseason_market_offer(cheap[0]["player_id"])  # 締めた後は希望できない
     v = g.offseason_next()  # トレードの段階(D-378)
     assert v["stage"] == "trade"
+    v = g.offseason_next()  # 現役ドラフトの段階(D-380)
+    assert v["stage"] == "active_draft"
     r = g.offseason_next()  # 完了:残った選手はリーグを去り、70 人まで自動補充
     assert r["finished"] and all(len(t2.players) == 70 for t2 in g.state.league.teams)
     rows = [x for x in g.state.transactions if x["phase"] == "market"]

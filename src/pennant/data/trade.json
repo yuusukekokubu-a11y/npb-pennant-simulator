@@ -17,5 +17,10 @@
     "offseason_proposals": 2,
     "offseason_proposal_probability": 0.7,
     "attempts": 40
+  },
+  "active_draft": {
+    "offers": 2,
+    "max_salary_ratio": 3.0,
+    "active_size": 29
   }
 }

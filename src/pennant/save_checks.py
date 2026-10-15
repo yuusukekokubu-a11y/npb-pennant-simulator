@@ -239,6 +239,19 @@ def _check_procedure(d, team_ids: set, league_ids: set, p: _Problems):
         stats = d.get("item_stats", {})
         if not isinstance(stats, dict) or not all(isinstance(v, dict) and all(isinstance(x, list) and len(x) == 2 and all(isinstance(y, (int, float)) and not isinstance(y, bool) for y in x) for x in v.values()) for v in stats.values()):
             p.add(f"{where}.item_stats", "スカウトの一言の物差しの形が違います(役割 → 項目 → [平均, 標準偏差])")
+        if "rules" in d:  # 仕組みの選択肢(D-381。版 21)
+            from .rules import rules_from
+
+            try:
+                rules_from(d["rules"] or None)
+            except ValueError as exc:
+                p.add(f"{where}.rules", str(exc))
+        offers = d.get("active_offers", {})
+        if not isinstance(offers, dict) or not all(k in team_ids and isinstance(v, list) and all(isinstance(x, str) for x in v) for k, v in offers.items()):
+            p.add(f"{where}.active_offers", "現役ドラフトの候補の形が違います(球団 → 選手 ID の一覧)")
+        picks = d.get("active_picks", [])
+        if not isinstance(picks, list) or not all(isinstance(x, dict) and x.get("team_id") in team_ids for x in picks):
+            p.add(f"{where}.active_picks", "現役ドラフトの指名の形が違います(指名した球団の記録の一覧)")
         if p.items:
             return None
         return OffseasonProcedure.from_dict(d, _player_from)
