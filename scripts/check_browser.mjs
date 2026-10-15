@@ -1136,6 +1136,7 @@ await page.click("#screen-review .back");
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 || document.querySelector("#stats-table").textContent.includes("条件に合う選手"));
+await page.$eval("#stats-filter-box", (d) => (d.open = true)); // 絞り込みを開く(D-401)
 const seasonOptions = await page.$$eval("#stats-season option", (os) => os.map((o) => o.textContent));
 check(seasonOptions.length === 3 && seasonOptions[1] === "1シーズン目" && seasonOptions[2] === "通算" && (await page.isVisible("#stats-season")), `成績の画面に、シーズンの選択(${seasonOptions.join("・")})が出る`);
 const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
