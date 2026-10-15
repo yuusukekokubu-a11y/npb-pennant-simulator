@@ -19,12 +19,22 @@ def foreign_count(team: Team) -> int:
     return sum(1 for p in team.players if p.foreign)
 
 
-def can_take(team: Team, proc: OffseasonProcedure, player_id: str, ctx) -> bool:
-    """空き枠があり、資金の中で結べるか。"""
+def min_exempt(team: Team, proc: OffseasonProcedure, player_id: str, settings: DraftSettings | None) -> bool:
+    """外国人が最低の人数(ai_min)より少ない球団は、安い候補(年俸が exempt_salary 以下)なら資金を超えても結べる(偏りを防ぐ。D-387)。"""
+    if settings is None or "ai_min" not in settings.foreign:
+        return False
+    s = settings.foreign
+    return foreign_count(team) < int(s["ai_min"]) and int(proc.foreign_salary.get(player_id, 0)) <= int(s["exempt_salary"])
+
+
+def can_take(team: Team, proc: OffseasonProcedure, player_id: str, ctx, settings: DraftSettings | None = None) -> bool:
+    """空き枠があり、資金の中で結べるか(外国人が少ない球団の安い候補は資金に関わらず。D-387)。"""
     if len(team.players) >= MAX_ROSTER:
         return False
     cap = ctx.cap(team.id) if ctx is not None else None
-    return not (ctx is not None and ctx.hard() and cap is not None and team_salary(team) + int(proc.foreign_salary.get(player_id, 0)) > cap)
+    if ctx is not None and ctx.hard() and cap is not None and team_salary(team) + int(proc.foreign_salary.get(player_id, 0)) > cap:
+        return min_exempt(team, proc, player_id, settings)
+    return True
 
 
 def ai_foreign_wishes(team: Team, proc: OffseasonProcedure, sd: dict, settings: DraftSettings, ctx, mins, min_batters) -> list[str]:
@@ -34,7 +44,7 @@ def ai_foreign_wishes(team: Team, proc: OffseasonProcedure, sd: dict, settings: 
     if want <= 0:
         return []
     need = shortages(team.players, mins, min_batters)
-    pool = [p for p in proc.foreign_pool if can_take(team, proc, p.id, ctx)]
+    pool = [p for p in proc.foreign_pool if can_take(team, proc, p.id, ctx, settings)]
     ranked = sorted(pool, key=lambda p: (-ai_value(p, team, proc, sd, settings, need), p.id))
     return [p.id for p in ranked[:want]]
 
@@ -67,13 +77,15 @@ def close_foreign(league: League, proc: OffseasonProcedure, ctx, my_team_id: str
     while True:
         took = False
         order = proc.order if rnd % 2 == 1 else list(reversed(proc.order))
+        target = int(settings.foreign["ai_target"])
+        order = sorted(order, key=lambda tid: min(foreign_count(teams[tid]), target))  # 外国人が少ない球団から(目安以上は同じ扱い。偏りを防ぐ。D-384)
         for tid in order:
             team = teams[tid]
             lst = wishes.get(tid, [])
             while lst:
                 pid = lst.pop(0)
                 p = by_id.get(pid)
-                if p is None or p not in proc.foreign_pool or not can_take(team, proc, pid, ctx):
+                if p is None or p not in proc.foreign_pool or not can_take(team, proc, pid, ctx, settings):
                     continue
                 salary = int(proc.foreign_salary.get(pid, 0))
                 proc.foreign_pool.remove(p)

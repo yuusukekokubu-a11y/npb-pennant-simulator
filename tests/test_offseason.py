@@ -313,7 +313,7 @@ def test_calibration_shifts_strength_items_only_and_hits_50():
         for item, v in before[p.id].items():
             assert p.abilities[item] == pytest.approx(v + cal[p.role])  # 見せる能力をそのまま動かす(潜在能力はない。D-350)
     means = _first_team_means(league)
-    assert abs(means[BATTER] - 50) < 2.0 and abs(means[PITCHER] - 50) < 2.0  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60。トレード(D-378)の後は 51.21。設備(D-383)の後は 48.49。校正の定数はバランス調整で取り直す(D-384)。全体の平均は 30 年の安定で見る)
+    assert abs(means[BATTER] - 50) < 1.5 and abs(means[PITCHER] - 50) < 1.5  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60。トレード(D-378)の後は 51.21。設備(D-383)の後は 48.49、バランス調整で校正を取り直した(D-389))
 
 
 def test_new_league_with_prerun_matches_manual_steps_and_rookies_are_calibrated():
@@ -348,7 +348,7 @@ def test_game_new_uses_prerun_and_saves_calibration():
     g = api.Game.new(4, [None] * 12, 0, season_seed=4, baselines="default")
     assert g.state.calibration == SETTINGS.calibration("medium")
     means = _first_team_means(g.state.league)
-    assert abs(means[BATTER] - 50) < 2.0 and abs(means[PITCHER] - 50) < 2.0  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60。トレード(D-378)の後は 51.21。設備(D-383)の後は 48.49。校正の定数はバランス調整で取り直す(D-384)。全体の平均は 30 年の安定で見る)
+    assert abs(means[BATTER] - 50) < 1.5 and abs(means[PITCHER] - 50) < 1.5  # 10 シードの平均は 50.00。1 シードは ±0.5 を少し超えることがある(D-219。2 層化の後、このシードの投手は 50.60。トレード(D-378)の後は 51.21。設備(D-383)の後は 48.49、バランス調整で校正を取り直した(D-389))
     g.advance(1)
     again = load_game(save_game(g.state))
     assert again.calibration == SETTINGS.calibration("medium")

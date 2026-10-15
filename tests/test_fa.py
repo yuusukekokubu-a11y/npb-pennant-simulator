@@ -38,7 +38,7 @@ def to_fa(g):
 # ---- 設定・年数 ----
 
 def test_settings_and_validation():
-    assert FA["declare"] == {"base": 0.12, "per_war": 0.05, "min": 0.03, "max": 0.45} and "threshold_add" not in FA
+    assert FA["declare"] == {"base": 0.18, "per_war": 0.07, "min": 0.03, "max": 0.45} and "threshold_add" not in FA
     assert FA["seasons_required"] == 7 and FA["rounds"] == 3 and FA["round_multipliers"] == [1.0, 1.1, 1.2] and FA["ai_max_offers"] == 3 and FA["compensation"] is None
     data = copy.deepcopy(NEG.data)
     data["fa"]["round_multipliers"] = [1.0]
@@ -74,7 +74,7 @@ def test_declare_probability():
     """宣言の確率は見込みの WAR が高いほど上がり、下限〜上限に収まる(D-359)。"""
     p = [famod.declare_probability(NEG, x) for x in (-3.0, 0.0, 1.0, 3.0, 20.0)]
     assert p == sorted(p) and p[0] == FA["declare"]["min"] and p[-1] == FA["declare"]["max"]
-    assert famod.declare_probability(NEG, 1.0) == pytest.approx(0.12 + 0.05)
+    assert famod.declare_probability(NEG, 1.0) == pytest.approx(0.18 + 0.07)  # D-388
 
 
 # ---- 宣言と FA 市場 ----

@@ -16,7 +16,8 @@
     "offseason_ai_trades": 2,
     "offseason_proposals": 2,
     "offseason_proposal_probability": 0.7,
-    "attempts": 40
+    "attempts": 40,
+    "min_foreign": 3
   },
   "active_draft": {
     "offers": 2,
