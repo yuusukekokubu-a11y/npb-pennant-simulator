@@ -12,7 +12,7 @@ import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
 import { yearEnd } from "./js/yearend.js";
 import { leagueSeedChanged, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
 import { openFile, save } from "./js/files.js";
-import { setLoadingStyle } from "./js/loading.js";
+import { busyButton, setLoadingStyle } from "./js/loading.js";
 
 // ---- 閉じる前の警告(未保存の変更があるときだけ) ----
 
@@ -25,7 +25,7 @@ window.addEventListener("beforeunload", (event) => {
 // ---- ボタン ----
 
 buildTabs();
-$("go-new").addEventListener("click", () => showNewGame().catch((err) => ($("start-message").textContent = err.message)));
+$("go-new").addEventListener("click", () => busyButton($("go-new"), showNewGame()).catch((err) => ($("start-message").textContent = err.message))); // 押した瞬間に「準備中」(D-411)
 $("new-back").addEventListener("click", () => {
   for (const input of teamInputs()) input.value = "";
   state.newGame = null;

@@ -1060,6 +1060,24 @@
       "meaning": "12 球団の名前。空欄なら薄く出ている架空の名前になる。24 文字まで、同じ名前は使えない。"
     },
     {
+      "name": "リーグ名",
+      "id": "setting.league_name",
+      "category": "screen",
+      "meaning": "2 つのリーグの名前。空欄なら薄く出ている架空の名前になる。24 文字まで、同じ名前は使えない。"
+    },
+    {
+      "name": "球場名",
+      "id": "setting.stadium_name",
+      "category": "screen",
+      "meaning": "各球団の本拠地の球場の名前。空欄なら薄く出ている架空の名前になる。24 文字まで。名前を変えても球場の性質は変わらない。"
+    },
+    {
+      "name": "自球団の資金力",
+      "id": "setting.my_tier",
+      "category": "screen",
+      "meaning": "自球団の規模(資金の大きさ)。自動はシードで決まる。超大量は使い切れないほどの資金。選ぶと、ほかの球団で大・中・小の数を合わせる。"
+    },
+    {
       "name": "自球団",
       "id": "setting.my_team",
       "category": "screen",

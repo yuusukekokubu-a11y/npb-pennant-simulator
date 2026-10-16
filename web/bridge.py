@@ -35,17 +35,25 @@ def check(seed: int, names_json: str) -> str:
     return _ok(api.check_team_names(int(seed), json.loads(names_json)))
 
 
-def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baselines: str = "trial", progress=None, prerun_progress=None, scout_level: str = "medium", rules_json: str = "{}", chronicle=None) -> str:
+def check_places(seed: int, leagues_json: str, stadiums_json: str) -> str:
+    """リーグ名・球場名の欄ごとの問題(D-409)。"""
+    return _ok(api.check_place_names(int(seed), json.loads(leagues_json), json.loads(stadiums_json)))
+
+
+def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baselines: str = "trial", progress=None, prerun_progress=None, scout_level: str = "medium", rules_json: str = "{}", chronicle=None, places_json: str = "{}") -> str:
     """新規開始。baselines は基準値の求め方(trial:試運転で求める / default:既定値)。
     progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。prerun_progress は事前運転の (終わった年数, 全年数)。
     rules_json は仕組みの選択肢({auto_fa, active_draft, trade, foreign_development}。D-381)。
-    chronicle は事前運転の 1 年ごとの出来事を JSON の文字で受け取る関数(ロード画面の「歴史」。D-406)。"""
+    chronicle は事前運転の 1 年ごとの出来事を JSON の文字で受け取る関数(ロード画面の「歴史」。D-406)。
+    places_json は {leagues, stadiums, my_tier}(リーグ名・球場名と自球団の資金力。D-409、D-410)。"""
     global _game
     try:
         mine = None if my_team_index is None or int(my_team_index) < 0 else int(my_team_index)
+        places = json.loads(places_json or "{}")
         game = api.Game.new(
             int(seed), json.loads(names_json), mine, season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress, scout_level=str(scout_level), rules=json.loads(rules_json or "{}"),
             prerun_chronicle=None if chronicle is None else (lambda e: chronicle(json.dumps(e, ensure_ascii=False))),
+            league_names=places.get("leagues"), stadium_names=places.get("stadiums"), my_tier=places.get("my_tier"),
         )
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)

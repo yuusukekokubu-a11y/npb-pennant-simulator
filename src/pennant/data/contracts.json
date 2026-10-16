@@ -6,7 +6,8 @@
     "tiers": {
       "large": 1.2,
       "medium": 1.0,
-      "small": 0.8
+      "small": 0.8,
+      "huge": 120
     },
     "tier_counts": {
       "large": 3,

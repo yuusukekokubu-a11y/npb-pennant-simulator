@@ -39,16 +39,20 @@ const handlers = {
     return parse(bridge.preview(seed));
   },
 
+  checkPlaces({ seed, leagues, stadiums }) {
+    return parse(bridge.check_places(seed, JSON.stringify(leagues), JSON.stringify(stadiums)));
+  },
+
   check({ seed, names }) {
     return parse(bridge.check(seed, JSON.stringify(names)));
   },
 
-  newGame({ seed, seasonSeed, names, myTeamIndex, baselines, scoutLevel, rules }) {
+  newGame({ seed, seasonSeed, names, myTeamIndex, baselines, scoutLevel, rules, places }) {
     // 試運転の進み具合は、計算の途中でも画面に知らせる(D-121)
     const progress = (day, total) => self.postMessage({ trial: { day, total } });
     const prerun = (year, total) => self.postMessage({ prerun: { year, total } });
     const chronicle = (text) => self.postMessage({ chronicle: JSON.parse(text) }); // ロード画面の「歴史」(D-406)
-    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress, prerun, scoutLevel || "medium", JSON.stringify(rules || {}), chronicle));
+    return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress, prerun, scoutLevel || "medium", JSON.stringify(rules || {}), chronicle, JSON.stringify(places || {})));
   },
 
   // オフの手続き(F3-1):自由契約・ドラフト・市場の操作
