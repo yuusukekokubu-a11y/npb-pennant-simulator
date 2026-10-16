@@ -17,7 +17,9 @@
       "SF": "犠牲フライ",
       "GDP": "併殺打",
       "RBI": "打点",
-      "R": "得点"
+      "R": "得点",
+      "SB": "盗塁",
+      "CS": "盗塁死"
     },
     "pitcher": {
       "G": "登板",
@@ -35,7 +37,8 @@
       "L": "敗戦",
       "SV": "セーブ",
       "HLD": "ホールド",
-      "CG": "完投"
+      "CG": "完投",
+      "WP": "暴投"
     }
   },
   "tables": {
@@ -49,6 +52,7 @@
           "HR",
           "RBI",
           "R",
+          "SB",
           "avg",
           "obp",
           "slg",
@@ -65,7 +69,8 @@
           "iso",
           "babip",
           "k_pct",
-          "bb_pct"
+          "bb_pct",
+          "sb_pct"
         ],
         "sort": "wrc_plus"
       },
@@ -78,7 +83,8 @@
           "RBI",
           "R",
           "BB",
-          "SO"
+          "SO",
+          "SB"
         ]
       }
     },
@@ -93,6 +99,7 @@
           "HLD",
           "OUTS",
           "SO",
+          "WP",
           "era"
         ],
         "sort": "era"
@@ -382,6 +389,22 @@
         "OUTS"
       ],
       "stage": 2,
+      "category": "saber"
+    },
+    "sb_pct": {
+      "name": "盗塁成功率",
+      "formulas": {
+        "batter": "SB / (SB + CS)"
+      },
+      "better": {
+        "batter": "high"
+      },
+      "format": "percent1",
+      "inputs": [
+        "SB",
+        "CS"
+      ],
+      "stage": 1,
       "category": "saber"
     }
   }

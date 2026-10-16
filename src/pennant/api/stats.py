@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from fractions import Fraction
 
-from ..abilities import POSITION_LABELS
+from ..abilities import FIELDER_POSITIONS, POSITION_LABELS
 from ..contracts import remaining_years
 from ..metrics import innings_text
 from ..records import qualified_batters, qualified_pitchers
@@ -26,6 +27,21 @@ from .common import (
     is_sortable,
     metrics_config,
     table_cols,
+)
+
+
+FIELDING_POSITIONS = tuple(p for p in FIELDER_POSITIONS if p != "DH")
+FIELDING_COLUMNS = (
+    {"key": "G", "label": "試合", "type": "count", "better": "high"},
+    {"key": "INN", "label": "守備イニング", "type": "count", "better": "high"},
+    {"key": "E", "label": "失策", "type": "count", "better": "low"},
+    {"key": "fielding", "label": "守備の得点", "type": "metric", "better": "high"},
+)
+CATCHER_COLUMNS = (
+    {"key": "SBA", "label": "盗塁企図", "type": "count", "better": "low"},
+    {"key": "CSC", "label": "盗塁阻止", "type": "count", "better": "high"},
+    {"key": "cs_pct", "label": "盗塁阻止率", "type": "metric", "better": "high"},
+    {"key": "PB", "label": "捕逸", "type": "count", "better": "low"},
 )
 
 
@@ -163,6 +179,99 @@ class StatsMixin:
             "extra_column": None,
             "qualified": qualified,
             "qualify_rule": QUALIFY_RULES[role],
+            "rows": rows,
+            "day": self.state.season.day if view.key == "current" else view.day,
+            "baseline_note": view.war_note,
+            "season": view.key,
+            "season_label": view.label,
+        }
+
+    def fielding_stats(
+        self,
+        position: str = "all",
+        sort: str | None = None,
+        order: str | None = None,
+        qualified: bool = True,
+        league: int | None = None,
+        team_id: str | None = None,
+        season: str | int | None = None,
+    ) -> dict:
+        """個人成績の守備の表(D-431)。position は "all"(全ポジションを合わせる)か守備位置。
+        規定はスタメンの試合がチームの試合数の半分以上。既定の並び順は守備の得点の高い順。"""
+        if position != "all" and position not in FIELDING_POSITIONS:
+            raise ValueError(f"ポジションが正しくありません(値: {position!r})")
+        view = self._season_view(season)
+        rec = view.records
+        columns = list(FIELDING_COLUMNS) + (list(CATCHER_COLUMNS) if position == "C" else [])
+        if position == "all":
+            columns.insert(0, {"key": "pos", "label": "主なポジション", "type": "count", "better": "high"})
+        info = next((c for c in columns if c["key"] == sort), None) or next(c for c in columns if c["key"] == "fielding")
+        sort = info["key"]
+        if order not in ("asc", "desc"):
+            order = "desc" if info["better"] == "high" else "asc"
+        positions = list(POSITION_LABELS)
+        rows = []
+        for pid, by_pos in rec.fielders.items():
+            team = rec.batter_team.get(pid)
+            if team is None:
+                continue
+            if position == "all":
+                c = Counter()
+                for x in by_pos.values():
+                    c.update(x)
+                main = max(by_pos, key=lambda k: (by_pos[k]["G"], -positions.index(k)))
+            elif position in by_pos:
+                c, main = by_pos[position], position
+            else:
+                continue
+            games = int(c["G"])
+            if not games:
+                continue
+            if qualified and games * 2 < int(rec.teams.get(team, {}).get("G", 0)):
+                continue
+            if league is not None and self._team(team).league_index != league:
+                continue
+            if team_id and team != team_id:
+                continue
+            line = view.war.get(pid)
+            runs = None if line is None else (line.fielding if position == "all" else line.fielding_by_position.get(position, Fraction(0)))
+            sba, csc = int(c["SBA"]), int(c["CSC"])
+            cell = {
+                "pos": (positions.index(main), POSITION_LABELS[main]),
+                "G": (games, str(games)),
+                "INN": (int(c["OUTS"]), innings_text(int(c["OUTS"]))),
+                "E": (int(c["E"]), str(int(c["E"]))),
+                "fielding": (runs, "—" if runs is None else f"{float(runs):+.1f}"),
+                "SBA": (sba, str(sba)),
+                "CSC": (csc, str(csc)),
+                "cs_pct": (Fraction(csc, sba) if sba else None, f"{100 * csc / sba:.1f}%" if sba else "—"),
+                "PB": (int(c["PB"]), str(int(c["PB"]))),
+            }
+            row = self._player_row(pid, team, view)
+            row["values"] = {k["key"]: cell[k["key"]][1] for k in columns}
+            row["_sort"] = cell[sort][0]
+            rows.append(row)
+        present = [r for r in rows if r["_sort"] is not None]
+        missing = [r for r in rows if r["_sort"] is None]
+        present.sort(key=lambda r: r["player_id"])
+        present.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+        missing.sort(key=lambda r: r["player_id"])
+        rows = present + missing
+        for i, r in enumerate(rows):
+            r.pop("_sort")
+            r["rank"] = i + 1
+        return {
+            "role": "fielder",
+            "role_label": "守備",
+            "kind": "fielding",
+            "position": position,
+            "positions": [{"key": "all", "label": "すべて"}] + [{"key": k, "label": POSITION_LABELS[k]} for k in FIELDING_POSITIONS],
+            "columns": columns,
+            "sort": info,
+            "order": order,
+            "extra_column": None,
+            "qualified": qualified,
+            "qualify_rule": "守備の規定:そのポジション(すべては全ポジションを合わせて)で、チームの試合数の半分以上にスタメンで出た野手",
             "rows": rows,
             "day": self.state.season.day if view.key == "current" else view.day,
             "baseline_note": view.war_note,

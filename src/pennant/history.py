@@ -109,6 +109,8 @@ def _war_to_dict(v: WarLine) -> dict:
     d = {"role": v.role, "team_id": v.team_id, "plate_appearances": v.plate_appearances, "outs": v.outs}
     for k in _WAR_FIELDS:
         d[k] = str(getattr(v, k))
+    if v.fielding_by_position:
+        d["fielding_by_position"] = {pos: str(x) for pos, x in sorted(v.fielding_by_position.items())}  # 版 26(D-431)
     return d
 
 
@@ -119,4 +121,5 @@ def _war_from_dict(pid: str, d: Mapping) -> WarLine:
     for k in _WAR_FIELDS:
         if k in d:
             setattr(v, k, Fraction(d[k]))
+    v.fielding_by_position = {str(pos): Fraction(x) for pos, x in (d.get("fielding_by_position") or {}).items()}
     return v

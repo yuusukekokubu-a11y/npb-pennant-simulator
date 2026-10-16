@@ -21,7 +21,7 @@ HITS = {"single": "B1", "double": "B2", "triple": "B3", "home_run": "HR"}
 BASES = {"single": 1, "double": 2, "triple": 3, "home_run": 4}
 BATTER_COUNTS = ("G", "PA", "AB", "H", "B1", "B2", "B3", "HR", "TB", "BB", "HBP", "SO", "SF", "GDP", "RBI", "R", "SB", "CS")
 PITCHER_COUNTS = ("G", "GS", "OUTS", "BF", "H", "HR", "BB", "HBP", "SO", "R", "ER", "W", "L", "SV", "HLD", "CG", "WP")
-FIELDER_COUNTS = ("G", "E", "SBA", "CSC", "PB")  # ポジションごと:スタメンの試合・失策・盗塁企図・盗塁阻止・捕逸(D-431)
+FIELDER_COUNTS = ("G", "OUTS", "E", "SBA", "CSC", "PB")  # ポジションごと:スタメンの試合・守備アウト・失策・盗塁企図・盗塁阻止・捕逸(D-431)
 DH = "DH"
 TEAM_COUNTS = ("G", "W", "L", "T", "R", "RA")
 
@@ -157,11 +157,16 @@ def game_records(result: GameResult, decisions: Decisions | None = None) -> Reco
     """1試合の元の数。"""
     rec = Records()
     home, away = result.home_team_id, result.away_team_id
+    outs_by_team = Counter()
+    for x in result.log:
+        outs_by_team[x.fielding_team_id] += x.all_outs
     for team_id, slots in result.lineups.items():
         for _, pid, pos, _ in slots:
             _batter(rec, pid, team_id)["G"] += 1
             if pos != DH:
-                _fielder(rec, pid, pos)["G"] += 1
+                f = _fielder(rec, pid, pos)
+                f["G"] += 1
+                f["OUTS"] += outs_by_team[team_id]  # スタメンの守備位置で、チームが守ったアウトの数(D-165 と同じ数え方)
     earned = iter(earned_flags(result))
     pitcher_team = {line.pitcher_id: line.team_id for line in result.pitchers}
     for x in result.log:

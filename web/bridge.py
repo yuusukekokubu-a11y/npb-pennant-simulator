@@ -209,6 +209,7 @@ def trade(name: str, args_json: str = "{}") -> str:
 # ---- 見る画面(公開用の関数だけ。D-114) ----
 _QUERIES = {
     "stats": lambda a: _game.stats(a.get("role", "batter"), a.get("kind", "basic"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id"), a.get("season")),
+    "fielding_stats": lambda a: _game.fielding_stats(a.get("position", "all"), a.get("sort"), a.get("order"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id"), a.get("season")),
     "year_end_preview": lambda a: _game.year_end_preview(),
     "offseason_summary": lambda a: _game.offseason_summary(a.get("year")),
     "offseason_view": lambda a: _game.offseason_view(),

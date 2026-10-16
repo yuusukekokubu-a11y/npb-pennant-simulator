@@ -547,11 +547,15 @@
 
 <!-- 成績 -->
 <main class="screen" id="screen-stats" hidden>
-  <div class="seg" id="stats-role" role="group" aria-label="打者・投手の切り替え">
-    <button data-value="batter">打者</button><button data-value="pitcher">投手</button>
+  <div class="seg" id="stats-role" role="group" aria-label="打撃・守備・投球の切り替え">
+    <button data-value="batter">打撃</button><button data-value="fielder">守備</button><button data-value="pitcher">投球</button>
   </div>
   <div class="seg" id="stats-kind" role="group" aria-label="成績の種類の切り替え">
     <button data-value="basic">基本</button><button data-value="saber">セイバー</button><button data-value="war">WAR</button><button data-value="ability">能力</button>
+  </div>
+  <div class="filters" id="stats-position-row" hidden>
+    <label class="small" for="stats-position">ポジション</label>
+    <select id="stats-position" aria-label="守備のポジションの選択"></select>
   </div>
   <!-- 絞り込みは 1 つにまとめて、押すと開く(D-401) -->
   <details class="filter-box" id="stats-filter-box">
@@ -690,6 +694,7 @@
   <div class="page-head"><button class="secondary back">戻る</button><h1>スタメンと打順</h1></div>
   <div class="row">
     <label>打順の型 <select id="lineup-style" aria-label="打順の型"></select></label>
+    <label>盗塁 <select id="lineup-steal" aria-label="盗塁の作戦"></select></label>
     <button id="lineup-auto" class="secondary" type="button">AI に組ませる</button>
   </div>
   <p class="small" id="lineup-source"></p>

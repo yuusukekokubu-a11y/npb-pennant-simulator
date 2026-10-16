@@ -15,6 +15,7 @@ TITLES = (
     ("HR", "本塁打王", "batter", False, False),
     ("RBI", "打点王", "batter", False, False),
     ("H", "最多安打", "batter", False, False),
+    ("SB", "盗塁王", "batter", False, False),  # D-432
     ("W", "最多勝", "pitcher", False, False),
     ("ERA", "最優秀防御率", "pitcher", True, True),
     ("SO", "最多奪三振", "pitcher", False, False),
@@ -24,7 +25,7 @@ TITLES = (
 
 # 通算記録(D-423):役割 → [(キー, 名前)]。war は WAR(投手は失点版)
 LEADER_KEYS = {
-    "batter": (("H", "安打"), ("HR", "本塁打"), ("RBI", "打点"), ("G", "試合"), ("war", "WAR")),
+    "batter": (("H", "安打"), ("HR", "本塁打"), ("RBI", "打点"), ("SB", "盗塁"), ("G", "試合"), ("war", "WAR")),
     "pitcher": (("W", "勝利"), ("SV", "セーブ"), ("SO", "奪三振"), ("HLD", "ホールド"), ("war", "WAR")),
 }
 LEADERS_TOP = 20
@@ -108,7 +109,7 @@ class ArchiveMixin:
         return out
 
     def record_titles(self, year: int | None = None) -> dict:
-        """年ごとのタイトル(公開用。D-423):リーグごとに打者 5 つ・投手 5 つ。率は規定に届いた選手だけ。同じ値は全員。"""
+        """年ごとのタイトル(公開用。D-423):リーグごとに打者 6 つ(盗塁王を含む。D-432)・投手 5 つ。率は規定に届いた選手だけ。同じ値は全員。"""
         state = self.state
         names = self._team_names()
         lnames = state.league.league_names
