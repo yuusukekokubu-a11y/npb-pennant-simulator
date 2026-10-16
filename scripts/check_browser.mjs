@@ -424,7 +424,7 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 21 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
+check(sortOptions.length === 20 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
@@ -606,9 +606,9 @@ await waitStats("FIP(低い順)");
 await page.click("#stats-kind button[data-value=ability]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("スタミナ")) && document.querySelectorAll("#stats-table tbody tr").length > 0);
 const pyAbility = pyGame(`
-t = g.ability_table("pitcher", sort="fip", order="asc")
+t = g.ability_table("pitcher", sort="fip", order="asc", league=a["lg"])
 keys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]
-print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`);
+print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ lg: statsLeague }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `「能力」の表が、並び順(FIP の低い順。固定列)を保ったまま出る(計算本体と同じ。${screenRows.length}人)`);
 check(screenRows.every((r) => /^\d{3}km\/h$/.test(r[2]) && /^[SABCDEFG] \d{1,3}$/.test(r[3]) && /^[SABCDEFG] \d{1,3}$/.test(r[4])), "能力は 球速 km/h・ランクと 1〜100 で表示(D-347)");
