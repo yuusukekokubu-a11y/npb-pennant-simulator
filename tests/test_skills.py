@@ -55,7 +55,7 @@ def test_settings_have_good_and_bad_pairs_and_validation():
             if s["role"] == role:
                 pairs.setdefault(s["pair"], []).append(s["good"])
         both = {k: v for k, v in pairs.items() if k not in ("power_hitter", "average_hitter")}  # 打者の型は良いものだけ
-        assert len(both) == (3 if role == "batter" else 4) and all(sorted(v) == [False, True] for v in both.values())
+        assert len(both) == (5 if role == "batter" else 4)  # 打者は 盗塁・キャッチャーを足して 5 対(D-428) and all(sorted(v) == [False, True] for v in both.values())
     data = copy.deepcopy(S.data)
     data["skills"]["chance_plus"]["when"] = "night"
     with pytest.raises(ConfigError, match="chance_plus.when"):

@@ -37,13 +37,13 @@ def game():
 def test_stats_default_tables(game):
     """表の既定(D-116):列と並び順。"""
     b = game.stats("batter", "basic")
-    assert [c["label"] for c in b["columns"]] == ["試合", "打席", "打数", "安打", "本塁打", "打点", "得点", "打率", "出塁率", "長打率", "OPS"]
+    assert [c["label"] for c in b["columns"]] == ["試合", "打席", "打数", "安打", "本塁打", "打点", "得点", "盗塁", "打率", "出塁率", "長打率", "OPS"]
     assert (b["sort"]["key"], b["order"], b["qualified"]) == ("avg", "desc", True)
     p = game.stats("pitcher", "basic")
-    assert [c["label"] for c in p["columns"]] == ["登板", "先発", "勝利", "敗戦", "セーブ", "ホールド", "投球回", "奪三振", "防御率"]
+    assert [c["label"] for c in p["columns"]] == ["登板", "先発", "勝利", "敗戦", "セーブ", "ホールド", "投球回", "奪三振", "暴投", "防御率"]
     assert (p["sort"]["key"], p["order"]) == ("era", "asc")
     bs = game.stats("batter", "saber")
-    assert [c["key"] for c in bs["columns"]] == ["PA", "woba", "wrc_plus", "ops_plus", "iso", "babip", "k_pct", "bb_pct"]  # OPS は基本へ(D-130)
+    assert [c["key"] for c in bs["columns"]] == ["PA", "woba", "wrc_plus", "ops_plus", "iso", "babip", "k_pct", "bb_pct", "sb_pct"]  # OPS は基本へ(D-130)。盗塁成功率(D-431)
     assert bs["sort"]["key"] == "wrc_plus" and bs["order"] == "desc"  # 第2弾①で wRC+ の高い順に変えた
     ps = game.stats("pitcher", "saber")
     assert [c["key"] for c in ps["columns"]] == ["OUTS", "fip", "k_pct", "bb_pct"] and ps["sort"]["key"] == "era" and ps["order"] == "asc"
@@ -72,9 +72,9 @@ def test_stats_sort_matches_records(game):
 def test_sort_by_any_metric_with_extra_column(game):
     """並び順には、基本・セイバーの全指標を使える。表にない指標なら extra_column(D-132)。"""
     keys = [c["key"] for c in api.sortable_keys("batter")]
-    assert keys[:11] == ["G", "PA", "AB", "H", "HR", "RBI", "R", "avg", "obp", "slg", "ops"] and "babip" in keys and "woba" in keys
+    assert keys[:12] == ["G", "PA", "AB", "H", "HR", "RBI", "R", "SB", "avg", "obp", "slg", "ops"] and "babip" in keys and "woba" in keys
     assert len(keys) == len(set(keys)) and all(api.is_sortable(api.metrics_config(), "batter", k) for k in keys)
-    assert [c["key"] for c in api.sortable_keys("pitcher")][:9] == ["G", "GS", "W", "L", "SV", "HLD", "OUTS", "SO", "era"]
+    assert [c["key"] for c in api.sortable_keys("pitcher")][:10] == ["G", "GS", "W", "L", "SV", "HLD", "OUTS", "SO", "WP", "era"]
     t = game.stats("batter", "saber", sort="avg")
     assert t["extra_column"]["key"] == "avg" and t["order"] == "desc"
     by_basic = game.stats("batter", "basic", sort="avg")
@@ -204,7 +204,7 @@ def test_game_page_matches_narrate(game):
 
 
 def test_narrate_text_is_unchanged():
-    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。作り直し①・特殊能力(D-374)・外国人選手(D-376)で選手が、調子(D-424)で試合が変わったので値を取り直した)。"""
+    """文章ログの文字は固定した値と同じ(構造のデータから作るように直しても、内容は変えない。作り直し①・特殊能力(D-374)・外国人選手(D-376)で選手が、調子(D-424)と盗塁など(D-427)で試合が変わったので値を取り直した)。"""
     from pennant.newgame import new_league
     from pennant.parks import neutralize_parks
     from pennant.season import Season
@@ -215,7 +215,7 @@ def test_narrate_text_is_unchanged():
     s.play_days(3)
     names = {t.id: t.name for t in s.league.teams}
     text = "".join(narrate(p.result, s.players, names) for p in s.played)
-    assert hashlib.sha256(text.encode()).hexdigest() == "83339c8d5b80391e6e6c391113f56b8a27468f5022d60adbac89b0ca43382266"
+    assert hashlib.sha256(text.encode()).hexdigest() == "ff48ff046a90564cb9f3c085707964730411efe39694331df020e664cd74aebd"
 
 
 def test_public_functions_have_no_hidden_info(game):

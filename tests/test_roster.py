@@ -92,7 +92,7 @@ def test_version_24_save_is_read_with_the_old_roster(mid):
     m = json.loads(files["manifest.json"])
     m["format_version"] = 24
     st = json.loads(files["state.json"])
-    for key in ("condition", "demoted", "roster_auto", "active_history"):
+    for key in ("condition", "demoted", "roster_auto", "active_history", "running_start"):
         st["season"].pop(key, None)
     files["manifest.json"] = json.dumps(m).encode()
     files["state.json"] = json.dumps(st, ensure_ascii=False).encode()

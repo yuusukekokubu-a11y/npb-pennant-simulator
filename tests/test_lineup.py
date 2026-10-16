@@ -158,7 +158,7 @@ def test_bridge_has_lineup_operations():
     spec = importlib.util.spec_from_file_location("bridge_for_lineup", Path(__file__).resolve().parents[1] / "web" / "bridge.py")
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
-    assert set(bridge._LINEUP) == {"view", "set", "style", "auto"}
+    assert set(bridge._LINEUP) == {"view", "set", "style", "auto", "steal"}  # 盗塁の作戦(D-429)
 
 
 @pytest.mark.slow

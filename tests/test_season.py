@@ -235,16 +235,17 @@ def test_home_advantage_in_odds_ratio():
     assert flat.probabilities(b, p, d, home=True) == flat.probabilities(b, p, d)
 
 
-def test_no_home_advantage_gives_about_half(league3, season_done):
+def test_no_home_advantage_gives_about_half(league3):
     flat = _model({"strikeout": 1.0, "walk": 1.0, "home_run": 1.0, "in_play_hit": 1.0})
-    result = Season(copy.deepcopy(league3), 21, model=flat).play_to_end()
+    results = [Season(copy.deepcopy(league3), seed, model=flat).play_to_end() for seed in (21, 22)]  # 1 シーズンでは標準偏差が約 0.02 あるので 2 シーズンの平均で見る
 
-    def home_rate(r):
-        decided = [p.result for p in r.games if not p.result.tie]
+    def home_rate(*rs):
+        decided = [p.result for r in rs for p in r.games if not p.result.tie]
         return sum(g.winner == g.home_team_id for g in decided) / len(decided)
 
-    assert 0.46 <= home_rate(result) <= 0.54
-    assert home_rate(season_done[1]) > home_rate(result)
+    assert 0.46 <= home_rate(*results) <= 0.54
+    # ホームの有利がある場合との比較は、数シーズンではぶれ(約 0.014)に埋もれるので、打席の確率の段階で確かめる
+    # (test_home_advantage_in_odds_ratio)。9 シーズンの平均では、有利あり 0.534・なし 0.514(D-427 の PR で測定)
 
 
 def test_home_advantage_config_is_checked():
