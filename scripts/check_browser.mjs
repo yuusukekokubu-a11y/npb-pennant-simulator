@@ -873,7 +873,7 @@ check(true, "見出しの「年齢」をタップすると、年齢の低い順�
 await page.click("#screen-procedure .back");
 await page.click("#open-offseason");
 await page.waitForFunction(() => !document.querySelector("#screen-procedure").hidden && document.querySelector("#contract-group") && document.querySelector("#contract-group").value === "pitcher");
-check((await page.inputValue("#contract-kind")) === "saber" && (await rosterHeads()).some((h) => h.startsWith("年齢")) && (await page.$eval("#proc-body thead th.sorted", (th) => th.textContent)).startsWith("年齢"), "進行の画面に戻って開き直しても、絞り込み・種類・並び順は保たれる");
+check((await page.inputValue("#contract-kind")) === "saber" && (await rosterHeads()).some((h) => h.startsWith("年齢")) && (await page.$eval("#proc-body thead th.sorted", (th) => th.textContent.replace(/^[▲▼]/, ""))).startsWith("年齢"), "進行の画面に戻って開き直しても、絞り込み・種類・並び順は保たれる");
 // 全員が決まると「次の手続きへ」が押せる。AI 球団の自由契約は、契約の段階の終わりに行われる(D-272)
 await page.waitForFunction(() => !document.querySelector("#proc-next").disabled);
 const aiBefore = pyAfter(`print(json.dumps([g.state.procedure.ai_release_done, len([x for x in g.state.procedure.released if x["team_id"] != g.state.my_team_id])]))`);
