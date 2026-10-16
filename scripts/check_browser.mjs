@@ -1250,7 +1250,7 @@ const stPy = pyYear2(`v = g.record_standings()\nprint(json.dumps([[r["team_name"
 const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map((t) => [...t.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td .link") ? tr.querySelector("td .link").textContent + (tr.children[1].textContent.endsWith("回") && tr.children[1].textContent !== "0 回" ? tr.children[1].textContent.replace(" 回", "") : "") : "")));
 check(JSON.stringify(stUi.slice(0, 2)) === JSON.stringify(stPy.slice(0, 2)) && JSON.stringify(stUi[2].filter((x) => /\d$/.test(x))) === JSON.stringify(stPy[2]), `歴代の順位と優勝:1シーズン目の順位表と、球団ごとの優勝回数が計算本体と同じ`);
 await page.click("#records-section button[data-value=titles]");
-await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 20);
+await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 22);
 const tiPy = pyYear2(`v = g.record_titles()\nprint(json.dumps([[t["label"], t["value_text"]] for lg in v["leagues"] for t in lg["titles"]], ensure_ascii=False))`);
 const tiUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[2].textContent]));
 check(JSON.stringify(tiUi) === JSON.stringify(tiPy), `年ごとのタイトル:2 リーグ × 11 のタイトル(盗塁王を含む)と記録が計算本体と同じ(${tiUi.slice(0, 2).map((x) => x.join(" ")).join("・")} …)`);
