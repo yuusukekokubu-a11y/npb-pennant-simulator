@@ -380,6 +380,15 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **個人成績**:絞り込みは `<details id="stats-filter-box">` にまとめ、閉じているときは `#stats-filter-text` に今の絞り込みを 1 行で出す。表の上の `#stats-leader` に、並べている指標の 1 位の選手のカード。
 - **選手のページ**:上の `#player-card`(マーク・名前・所属など。背景のポジションの 1 文字は `data-pos`)。能力は `.ability-panel` の左に能力(ランクの札 `.rank-badge` と数字。合わせた文字は計算本体の `text` と同じ)、右に特殊能力。
 
+### 5.1.2 ロード画面(D-405〜D-408)
+- **部品**:`web/js/loading.js`。長い待ちは `showLoading("boot" | "new")`・`hideLoading()`、進み具合の割合は `updatePercent(progress要素)`。全画面の `#loading-screen` の中に、起動の `#boot` と新規開始の `#trial-box`(どちらも前からある要素で、通し確認もそのまま使う)を置く。
+- **球場**:SVG のダイヤモンドの上を、走者の丸が `animateMotion` で 4 秒ごとに回る。最初の起動はいつも球場。
+- **歴史**:`offseason.prerun(chronicle=...)` が 1 年ごとに `prerun_events` の結果(目玉の新人・引退した名選手・戦力 1 位の球団)を知らせる。`new_league(chronicle)` → `Game.new(prerun_chronicle)` → `bridge.new_game(chronicle)`(JSON の文字)→ `worker.js`(`{chronicle}` を送る)→ `loading.addChronicle`。頼まれたときだけ集め、読むだけなので結果と指紋は変わらない(`tests/test_loading_history.py`)。球団名は事前運転の前に当てはめるようにした(計算には使っていない)。
+- **ヒント**:用語集(試合と球場・打撃・投球・WAR の分類で、意味が 80 文字以内)から 6 秒ごとに入れ替える。起動の間は用語集がまだないので、`BOOT_HINTS` の決まった文。
+- **選択の保存**:`localStorage` の `npb-pennant-loading-style` に `stadium` か `history` だけ。読めない・書けない端末は球場。保存領域を使うのはここだけ(`tests/test_web.py`)。
+- **短い待ち**:`screens.renderCurrent` が描き直しを `waitVeil` で包み、0.3 秒を超えたら `#wait-veil`(上の帯の下を暗くしてボール。押す操作は通す)を出す。
+- **スクロールの棒**:`html { scrollbar-gutter: stable; }` で、棒の場所を常に空ける。
+
 ### 5.2 ブラウザの中で完結する方式(段階③。D-081)
 - Python をブラウザ上で実行する仕組み(Pyodide)で、計算本体のコードをそのまま動かす。
 - 計算は Web Worker(画面とは別に裏で計算を進めるブラウザの仕組み)で行い、計算中も画面が固まらないようにする。
