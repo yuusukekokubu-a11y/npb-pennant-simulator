@@ -159,17 +159,17 @@ def test_decision_tables_columns_depth_and_thin(season_end):
         g.offseason_stage_auto()
     if g.offseason_view()["stage"] == "foreign":  # 外国人市場(D-376)
         f = g.decision_table("foreign")
-        assert [c["label"] for c in f["columns"]] == ["評価", "スカウトの一言", "年齢", "ポジション", "加入後の序列", "年俸", "状態"]
+        assert [c["label"] for c in f["columns"]] == ["見立て", "年齢", "ポジション", "加入後の序列", "年俸", "状態"]  # D-418
         g.offseason_next()
     d = g.decision_table("draft")
-    assert [c["label"] for c in d["columns"]] == ["評価", "スカウトの一言", "年齢", "出身", "ポジション", "加入後の序列"]
-    assert d["sort"]["key"] == "grade" and d["show"] == "open" and not d["kinds"] and not d["seasons"]
-    grades = [r["scouting"]["grade"] for r in d["rows"]]
-    assert grades == sorted(grades, key="ABCDE".index)  # A が先
+    assert [c["label"] for c in d["columns"]] == ["見立て", "年齢", "出身", "ポジション", "加入後の序列"]
+    assert d["sort"]["key"] == "ability" and d["show"] == "open" and not d["kinds"] and not d["seasons"]
+    shown = [r["scouting"]["overall"] for r in d["rows"]]
+    assert shown == sorted(shown, reverse=True)  # 見立ての総合が高い順
     ages = [r["age"] for r in g.decision_table("draft", sort="age", order="asc")["rows"]]
     assert ages == sorted(ages)
-    grades = [r["scouting"]["grade"] for r in g.decision_table("draft", sort="grade", order="asc")["rows"]]
-    assert grades == sorted(grades, key="EDCBA".index)  # 逆順は E が先
+    shown = [r["scouting"]["overall"] for r in g.decision_table("draft", sort="ability", order="asc")["rows"]]
+    assert shown == sorted(shown)  # 逆順は低い順
     catchers = g.decision_table("draft", "catcher")
     assert catchers["rows"] and all(r["position"] == "C" for r in catchers["rows"])
     for pos, info in d["thin"].items():  # 手薄の印(D-303):人数が目安より 2 人以上少ない、または一軍相当の見込みが下位 4 球団

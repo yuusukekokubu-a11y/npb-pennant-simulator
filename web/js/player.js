@@ -99,7 +99,7 @@ function renderEntryEstimate(data) {
   box.replaceChildren(
     el("details", { id: "player-entry" },
       el("summary", {}, `入団時の見立て(${e.year}シーズン目・${e.route_label}・総合 ${e.overall_text})`),
-      table({ firstLabel: "能力", columns: [{ key: "est", label: "見立て" }, { key: "now", label: "今" }, { key: "diff", label: "差" }], rows, first: (r) => [el("span", {}, r.label)], fluid: true })),
+      table({ firstLabel: "能力", columns: [{ key: "est", label: "見立て" }, { key: "now", label: "今の能力" }, { key: "diff", label: "差" }], rows, first: (r) => [el("span", {}, r.label)], fluid: true })),
   );
 }
 

@@ -1146,7 +1146,7 @@ if (draftRow >= 0) {
   const entryHead = await page.textContent("#player-entry summary");
   await page.click("#player-entry summary");
   const entryCols = await page.$$eval("#player-entry thead th", (ths) => ths.map((th) => th.textContent));
-  check(entryHead.startsWith("入団時の見立て") && entryHead.includes("ドラフト") && JSON.stringify(entryCols) === JSON.stringify(["能力", "見立て", "今", "差"]), `ドラフトで入った選手のページに「${entryHead}」(見立て・今・差の表)`);
+  check(entryHead.startsWith("入団時の見立て") && entryHead.includes("ドラフト") && JSON.stringify(entryCols) === JSON.stringify(["能力", "見立て", "今の能力", "差"]), `ドラフトで入った選手のページに「${entryHead}」(見立て・今・差の表)`);
   await page.click("#screen-player .back");
   await page.waitForFunction(() => !document.querySelector("#screen-review").hidden);
 } else check(false, "振り返りにドラフトで入った選手がいない");
