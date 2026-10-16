@@ -40,6 +40,11 @@
         "item": 5.29
       }
     },
+    "skills": {
+      "miss_per_sd": 0.05,
+      "false_per_sd": 0.04,
+      "max": 0.6
+    },
     "grade_shares": {
       "A": 0.1,
       "B": 0.2,

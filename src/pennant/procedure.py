@@ -119,6 +119,13 @@ class DraftSettings:
         """スカウトの一言の設定(min_z・second_gap・none・phrases。D-368)。"""
         return self.data["scouting"]["comment"]
 
+    @property
+    def skill_rates(self) -> dict:
+        """特殊能力の見立ての確率(項目の誤差 1 点あたり。D-419)。古い設定ファイルにはないので既定値。"""
+        from .scouting import DEFAULT_SKILL_RATES
+
+        return self.data["scouting"].get("skills") or DEFAULT_SKILL_RATES
+
 
 def load_draft_settings(path: str | Path | None = None) -> DraftSettings:
     data, source = _read_json(path, "draft.json")
@@ -167,6 +174,11 @@ def validate_draft_settings(data, source: str = "(辞書)") -> DraftSettings:
         total += v or 0
     if shares is not None and abs(total - 1) > 1e-6:
         c.add("scouting.grade_shares", f"合計が 1 になるようにしてください(値: {total:.3f})")
+    sk = s.get("skills") if isinstance(s, dict) else None
+    if sk is not None:  # 特殊能力の見立て(D-419。なくてもよい)
+        sk = c.section(sk, "scouting.skills")
+        for key in ("miss_per_sd", "false_per_sd", "max"):
+            c.number(c.get(sk, key, "scouting.skills"), f"scouting.skills.{key}", 0, 1)
     cm = c.section(c.get(s, "comment", "scouting"), "scouting.comment")
     c.number(c.get(cm, "min_z", "scouting.comment"), "scouting.comment.min_z", -5, 5)
     c.number(c.get(cm, "second_gap", "scouting.comment"), "scouting.comment.second_gap", 0, 5)
@@ -524,12 +536,12 @@ def start_procedure(league: League, seed: int, config: GenerationConfig, parts: 
 # ---- 評価 ----
 
 def scout_report(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> ScoutReport:
-    return report(player, team_id, proc.seed, sd, proc.cuts, proc.item_stats, settings.comment)
+    return report(player, team_id, proc.seed, sd, proc.cuts, proc.item_stats, settings.comment, settings.skill_rates)
 
 
 def scout_report_foreign(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict, settings: DraftSettings) -> ScoutReport:
     """外国人の候補の評価(評価の境目と一言の物差しは、外国人の候補の中で。D-376)。"""
-    return report(player, team_id, proc.seed, sd, proc.foreign_cuts, proc.foreign_stats, settings.comment)
+    return report(player, team_id, proc.seed, sd, proc.foreign_cuts, proc.foreign_stats, settings.comment, settings.skill_rates)
 
 
 def cached_value(proc: OffseasonProcedure, player: Player, team_id: str, sd: dict) -> tuple[float, str]:

@@ -5,7 +5,9 @@
   - 項目ごとの見誤り(項目ごとに独立):N(0, item)
   sd = {"common": …, "item": …}(球団ごとの値。既定は設定の小・中・大)。
   - 総合(項目の平均)の誤差 = √(common² + item²/n)
-画面に出すのは 2 つだけ(能力の数値・ふれ幅は出さない。D-368):
+画面に出すのは見立て(D-418):項目ごとの推定値を、見せる能力と同じ形(数字・ランク・弾道・球速・変化量)にしたものと、
+特殊能力の見立て(D-419。見落とし・ないものを「ある」と見る。別の乱数の系列)。ふれ幅は出さない。
+内部では次の 2 つも作る(画面には出さない。AI の判断と外国人の年俸の段階に使う):
   - 評価(A〜E):ピークまでの伸びを見込んだ総合値(stats.projected_overall)+ N(0, 総合の誤差の標準偏差)(別の乱数)を、
     候補全体の分位点(cuts)で A〜E に分ける。見誤りがあるので少し外れる。
   - スカウトの一言:項目ごとの推定値を、同じ役割の候補の平均と標準偏差(item_stats)で標準化し、目立つ項目を 1〜2 個、設定の言葉にする。
@@ -17,6 +19,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 import statistics
@@ -136,20 +139,21 @@ class ScoutReport:
     strengths: list[str] = field(default_factory=list)  # 一言にした項目
     comment: str = ""  # スカウトの一言
     method: int = SCOUT_METHOD
-
-    def to_public(self) -> dict:
-        """画面に出す形(評価と一言だけ。推定値・真の値・隠し情報は含めない)。"""
-        return {"team_id": self.team_id, "grade": self.grade, "comment": self.comment}
+    skills: list[str] | None = None  # 特殊能力の見立て(D-419)。D-419 より前に入団した選手の記録は None(記録なし)
 
     def to_dict(self) -> dict:
-        return {"team_id": self.team_id, "sd": {k: round(float(v), 3) for k, v in self.sd.items()}, "overall": round(self.overall, 3), "items": {k: round(v, 3) for k, v in self.items.items()}, "grade": self.grade, "strengths": list(self.strengths), "comment": self.comment, "method": self.method}
+        d = {"team_id": self.team_id, "sd": {k: round(float(v), 3) for k, v in self.sd.items()}, "overall": round(self.overall, 3), "items": {k: round(v, 3) for k, v in self.items.items()}, "grade": self.grade, "strengths": list(self.strengths), "comment": self.comment, "method": self.method}
+        if self.skills is not None:
+            d["skills"] = list(self.skills)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "ScoutReport":
-        return cls(str(d["team_id"]), {k: float(v) for k, v in d["sd"].items()}, float(d["overall"]), {k: float(v) for k, v in d["items"].items()}, str(d["grade"]), [str(x) for x in d.get("strengths", [])], str(d.get("comment", "")), int(d.get("method", SCOUT_METHOD)))
+        skills = d.get("skills")
+        return cls(str(d["team_id"]), {k: float(v) for k, v in d["sd"].items()}, float(d["overall"]), {k: float(v) for k, v in d["items"].items()}, str(d["grade"]), [str(x) for x in d.get("strengths", [])], str(d.get("comment", "")), int(d.get("method", SCOUT_METHOD)), None if skills is None else [str(x) for x in skills])
 
 
-def report(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float], stats: dict, comment: dict) -> ScoutReport:
+def report(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float], stats: dict, comment: dict, skill_rates: dict | None = None) -> ScoutReport:
     """1 人分の評価。quick_value と同じ乱数の並びなので、総合の推定値と評価は一致する。
     stats は item_stats の結果(役割 → 項目 → [平均, 標準偏差])、comment は設定(draft.json の scouting.comment)。"""
     items, rng, quick, grade_noise = _draws(player, team_id, seed, sd)
@@ -166,4 +170,59 @@ def report(player: Player, team_id: str, seed: int, sd: dict, cuts: list[float],
         grade=grade_of(projected_overall(player) + grade_noise, cuts),
         strengths=keys,
         comment=comment_text(keys, comment),
+        skills=estimate_skills(player, team_id, seed, sd, skill_rates),
     )
+
+
+# ---- 特殊能力の見立て(D-419) ----
+
+DEFAULT_SKILL_RATES = {"miss_per_sd": 0.05, "false_per_sd": 0.04, "max": 0.6}
+
+
+def estimate_skills(player: Player, team_id: str, seed: int, sd: dict, rates: dict | None = None, settings=None) -> list[str]:
+    """特殊能力の見立て:持っているものを確率で見落とし、持っていないもの(別の対)を確率で 1 つ「ある」と見る。
+    確率は項目の誤差(item_sd)に比例。乱数は評価とは別の系列なので、評価・AI の判断・指紋は変わらない。"""
+    from .skills import default_settings
+
+    settings = settings or default_settings()
+    rates = rates or DEFAULT_SKILL_RATES
+    size = item_sd(sd)
+    top = float(rates["max"])
+    p_miss = min(top, float(rates["miss_per_sd"]) * size)
+    p_false = min(top, float(rates["false_per_sd"]) * size)
+    rng = random.Random(derive_seed(seed, f"scoutskill:{team_id}:{player.id}"))
+    true = [k for k in (player.skills or []) if k in settings.skills]
+    seen = [k for k in true if rng.random() >= p_miss]
+    if rng.random() < p_false:
+        used = {settings.skills[k]["pair"] for k in true}
+        cands = [k for k, s in settings.skills.items() if s["role"] == player.role and s["pair"] not in used]
+        if cands:
+            seen.append(cands[int(rng.random() * len(cands))])
+    order = list(settings.skills)
+    return sorted(seen, key=order.index)
+
+
+# ---- 見立ての見せ方(D-418) ----
+
+def estimated_player(player: Player, rep: ScoutReport) -> Player:
+    """見立ての数字を持たせた写し(見せる能力と特殊能力だけを置き換える。元の選手は変えない)。"""
+    q = copy.copy(player)
+    q.abilities = {**player.abilities, **rep.items}
+    q.skills = list(rep.skills or [])
+    return q
+
+
+def public_estimate(config, player: Player, rep: ScoutReport) -> dict:
+    """画面に出す見立て(公開用):能力の並び(本当の能力と同じ形)、特殊能力(記録がなければ None)、総合(数字とランク)。"""
+    from .ability_model import display, public_abilities, rank
+    from .skills import public_skills
+
+    q = estimated_player(player, rep)
+    shown = display(config, rep.overall)
+    return {
+        "team_id": rep.team_id,
+        "abilities": public_abilities(config, q),
+        "skills": None if rep.skills is None else public_skills(q),
+        "overall": shown,
+        "overall_text": f"{rank(config, shown)} {shown}",
+    }

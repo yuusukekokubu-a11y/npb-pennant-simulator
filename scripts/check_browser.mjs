@@ -959,12 +959,12 @@ print(json.dumps(next(([r["name"]] for r in sorted(t["rows"], key=lambda r: r["d
   const faMine = pyAfter(`print(json.dumps([x for x in g.state.procedure.fa_log if x["team_id"] == g.state.my_team_id and x["round"] > 1]))`);
   check(faMine.length === 0, `FA の「次の手続きへ」では、自球団は 2 ラウンド目以降の提示をしない(AI の代行をしない。D-271)${faMine.length ? JSON.stringify(faMine.slice(0, 2)) : ""}`);
 }
-// 外国人市場(D-376):候補は評価と一言だけ。年俸は評価の段階の表。獲得の希望を入れて締めると、前年の順位が低い球団から 1 人ずつ
+// 外国人市場(D-376):候補の能力はスカウトの見立て(D-418)。年俸は内部の評価の段階の表。獲得の希望を入れて締めると、前年の順位が低い球団から 1 人ずつ
 check((await page.textContent("#proc-title")) === "外国人" && (await page.textContent("#proc-info")).startsWith("外国人市場 24 人"), `外国人の段階:状態バーに「${await page.textContent("#proc-info")}」`);
 await page.waitForSelector("#proc-body tbody tr");
 await measureDecision("外国人市場");
 const fo0 = await sameAsPy({ stage: "foreign" }, "外国人市場");
-check(["評価", "スカウトの一言", "年齢", "ポジション", "加入後の序列", "年俸", "状態"].every((h) => fo0.heads.includes(h)) && !fo0.heads.includes("総合") && (await page.textContent("#proc-info")).includes("一軍 4 まで"), `外国人市場の列は評価と一言(能力の数値はない。列:${fo0.heads.join("・")})。状態バーに一軍は 4 人まで`);
+check(["見立て", "年齢", "ポジション", "加入後の序列", "年俸", "状態"].every((h) => fo0.heads.includes(h)) && !fo0.heads.includes("評価") && !fo0.heads.includes("スカウトの一言") && (await page.textContent("#proc-info")).includes("一軍 4 まで"), `外国人市場の列は見立ての総合(評価と一言はない。D-418。列:${fo0.heads.join("・")})。状態バーに一軍は 4 人まで`);
 const [foName] = pyAfter(`t = g.decision_table("foreign")
 print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、年俸の最も安い候補
 await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${foName}")`);
@@ -988,7 +988,7 @@ await page.waitForSelector("#proc-body tbody tr");
 await measureDecision("ドラフト");
 check(Boolean(await page.$("#draft-pass")) && !(await page.$("#draft-advance")), "1 巡目の入札の間は、状態バーに「パス」(「自分の番まで」はない)");
 const dr0 = await sameAsPy({ stage: "draft" }, "ドラフト(1 巡目の入札)");
-check(JSON.stringify(dr0.heads) === JSON.stringify(["選手", "評価", "スカウトの一言", "年齢", "出身", "ポジション", "加入後の序列"]), `ドラフトの列は 名前・評価(A〜E)・スカウトの一言・年齢・出身・ポジション・加入後の序列(能力の数値は出さない。D-368)`);
+check(JSON.stringify(dr0.heads) === JSON.stringify(["選手", "見立て", "年齢", "出身", "ポジション", "加入後の序列"]), `ドラフトの列は 名前・見立て・年齢・出身・ポジション・加入後の序列(評価と一言はない。D-418。列:${dr0.heads.join("・")})`);
 check(!(await page.$("#proc-body select[aria-label='並び順']")) && (await page.inputValue("#draft-show")) === "open", "並べ替えのドロップダウンはなく、絞り込みの既定は「未指名だけ」");
 const thinPy = pyAfter(`t = g.decision_table("draft")\nprint(json.dumps(sorted(t["thin"])))`);
 const thinUi = await page.$$eval("#proc-body tbody .thin", (s) => s.length);
@@ -996,16 +996,17 @@ check(thinPy.length === 0 || thinUi > 0, `手薄なポジション(${thinPy.join
 await page.click("#proc-body thead th button:has-text('年齢')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2") && document.querySelector("#proc-body thead th.sticky2").textContent.replace(/^[▲▼]/, "").startsWith("年齢"));
 await sameAsPy({ stage: "draft", sort: "age", order: "asc" }, "ドラフトを年齢の見出しで並べ替え(年齢が名前の右に固定)");
-await page.click("#proc-body thead th button:has-text('評価')");
-await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.replace(/^[▲▼]/, "").startsWith("評価"));
+await page.click("#proc-body thead th button:has-text('見立て')");
+await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.replace(/^[▲▼]/, "").startsWith("見立て"));
 await page.selectOption("#draft-group", "catcher");
-await page.waitForFunction(() => [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("捕手")));
-check(true, "ポジションの絞り込み 1 本で捕手だけになる");
+await page.waitForFunction(() => [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("捕手")) && [...document.querySelectorAll("#proc-body thead th")].some((th) => th.textContent.includes("ミート")));
+const drC = await sameAsPy({ stage: "draft", group: "catcher", sort: "ability", order: "desc" }, "ドラフト(捕手。見立ての能力の各項目)");
+check(["見立て", "弾道", "ミート", "パワー", "走力", "肩力", "守備力", "捕球", "特殊能力"].every((h) => drC.heads.includes(h)), `ポジションの絞り込み 1 本で捕手だけになり、見立ての能力の各項目と特殊能力の列が出る(D-418。列:${drC.heads.join("・")})`);
 await page.selectOption("#draft-group", "all");
 await page.waitForFunction(() => document.querySelectorAll("#proc-body tbody tr:not(.detail)").length > 50);
 await page.click("#proc-body .name-cell .link >> nth=0");
 await page.waitForSelector("#draft-panel");
-check(!(await page.textContent("#draft-panel")).includes("±") && (await page.textContent("#draft-panel")).includes("スカウトの評価") && (await page.textContent("#draft-pick")) === "1 巡目に入札する", "名前を押すと、評価と一言(数値・ふれ幅はない)と「1 巡目に入札する」が出る");
+check(!(await page.textContent("#draft-panel")).includes("±") && (await page.textContent("#draft-panel")).includes("スカウトの見立て") && (await page.$$eval("#draft-panel .ability", (a) => a.length)) >= 4 && Boolean(await page.$("#draft-panel .skills")) && (await page.textContent("#draft-pick")) === "1 巡目に入札する", "名前を押すと、見立ての能力と特殊能力(ふれ幅はない)と「1 巡目に入札する」が出る");
 const pk0 = Date.now();
 let bids = 0;
 for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位。D-369)
@@ -1129,17 +1130,29 @@ check(true, "2シーズン目を1日進められる");
 // ドラフトの振り返り(D-216):進行の画面のボタンから開く。計算本体と同じ行。オフなら真の値は出ない
 await page.click("#open-review");
 await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-table tbody tr").length > 0);
-const reviewPy = pyYear2(`v = g.draft_review()\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_grade"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
+const reviewPy = pyYear2(`v = g.draft_review()\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
 const reviewRows = async () => page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent, tr.children[4].textContent, tr.children[6].textContent, tr.children[8].textContent]));
 let reviewOnScreen = await reviewRows();
 const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
-check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の評価・今の所属・WAR 累計)`);
+check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の見立て・今の所属・WAR 累計)`);
 check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-note")), "振り返りに真の総合・差・実際の天井の列は出ない(答え合わせモードはなくした)");
-check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^育成ドラフト \d 巡$|^外国人市場$|^市場$|^市場\(最低人数\)$|^自動補充$/.test(r[1]) && /^[A-E]$/.test(r[2])), "経路は「ドラフト n 巡」「育成ドラフト n 巡」「外国人市場」「市場」「自動補充」、入団時の評価は A〜E");
+check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^育成ドラフト \d 巡$|^外国人市場$|^市場$|^市場\(最低人数\)$|^自動補充$/.test(r[1]) && /^([SA-G] \d+|—)$/.test(r[2])), "経路は「ドラフト n 巡」「育成ドラフト n 巡」「外国人市場」「市場」「自動補充」、入団時の見立ては「ランク 数字」(D-420)");
 await grab();
+// 入団時の見立て(D-420):ドラフトで入った選手のページに、見立てと今の数字が並ぶ
+const draftRow = await page.$$eval("#review-table tbody tr", (trs) => trs.findIndex((tr) => tr.children[1].textContent.startsWith("ドラフト") && tr.querySelector("td .link")));
+if (draftRow >= 0) {
+  await page.click(`#review-table tbody tr >> nth=${draftRow} >> td .link`);
+  await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && !document.querySelector("#player-entry-box").hidden, null, { timeout: 30000 });
+  const entryHead = await page.textContent("#player-entry summary");
+  await page.click("#player-entry summary");
+  const entryCols = await page.$$eval("#player-entry thead th", (ths) => ths.map((th) => th.textContent));
+  check(entryHead.startsWith("入団時の見立て") && entryHead.includes("ドラフト") && JSON.stringify(entryCols) === JSON.stringify(["能力", "見立て", "今", "差"]), `ドラフトで入った選手のページに「${entryHead}」(見立て・今・差の表)`);
+  await page.click("#screen-player .back");
+  await page.waitForFunction(() => !document.querySelector("#screen-review").hidden);
+} else check(false, "振り返りにドラフトで入った選手がいない");
 // 別の球団を選ぶと、その球団の入団者になる
 await page.selectOption("#review-team", "T05");
-const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_grade"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
+const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
 await page.waitForFunction(([n, top]) => document.querySelector("#review-loading").hidden && document.querySelectorAll("#review-table tbody tr").length === n && document.querySelector("#review-table tbody tr td").textContent === top, [reviewT05Py.length, reviewT05Py[0][0]], { timeout: 60000 });
 reviewOnScreen = await reviewRows();
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);

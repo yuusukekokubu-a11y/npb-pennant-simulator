@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..abilities import POSITION_LABELS
 from ..newgame import public_player
 from ..records import qualified_batters, qualified_pitchers
+from ..scouting import ScoutReport, public_estimate
 from ..skills import public_skills
 from .common import (
     BATS_LABELS,
@@ -20,6 +21,9 @@ from .common import (
 )
 
 
+ENTRY_ROUTES = {"draft": "ドラフト", "dev_draft": "育成ドラフト", "foreign": "外国人市場"}  # 見立てを持つ入団の経路(D-418、D-420)
+
+
 class PlayersMixin:
     """Game の一部:選手のページ(年度別の成績・所属のない選手の表示)。"""
 
@@ -29,6 +33,19 @@ class PlayersMixin:
         if proc is not None and player_id in proc.fa_info and proc.fa_info[player_id]["status"] == "open":
             return "FA 宣言中"
         return "自由契約"
+
+    def _entry_estimate(self, p) -> dict | None:
+        """入団時の見立て(公開用。D-420):ドラフト・育成ドラフト・外国人市場で入団した選手だけ。能力の並び・特殊能力(記録がなければ None)・総合。
+        事前運転の入団(年を持たない)は出さない。"""
+        sc = p.scouting
+        if not sc or sc.get("year") is None:
+            return None
+        route = next((x for x in reversed(self.state.transactions) if x.get("player_id") == p.id and x["phase"] in ENTRY_ROUTES), None)
+        if route is None:
+            return None
+        out = public_estimate(self.state.gen_config, p, ScoutReport.from_dict(sc))
+        out.update(year=int(sc["year"]), route=route["phase"], route_label=ENTRY_ROUTES[route["phase"]], team_name=self._team_names().get(sc["team_id"], ""))
+        return out
 
     def player(self, player_id: str) -> dict:
         """選手のページ:基本情報(公開用)、シーズン通算の成績(基本・セイバー)、試合ごとの成績(新しい順)。"""
@@ -51,6 +68,7 @@ class PlayersMixin:
                 foreign=p.foreign,  # 外国人(D-376)
                 development=None if p.dev_seasons is None else {"seasons": int(p.dev_seasons), "label": f"育成 {int(p.dev_seasons) + 1} 年目"},  # 育成選手(D-375)
                 contract=self._contract_public(p),
+                entry_estimate=self._entry_estimate(p),  # 入団時の見立て(D-420)
             )
             role = p.role
         else:  # 引退した選手(過去シーズンの写しから。F2)

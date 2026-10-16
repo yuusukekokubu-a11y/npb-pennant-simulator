@@ -114,3 +114,23 @@ export function kvTable(rows) {
 export function skillBadge(s) {
   return el("span", { className: `skill ${s.good ? "good" : "bad"}`, "data-key": s.key }, s.label);
 }
+
+// 能力の札(作り直し①。D-347、D-400):ランクのある能力は色つきの札と数字。札と数字を合わせた文字は計算本体の text と同じ
+function abilityValue(a) {
+  if (a.rank && a.text.startsWith(a.rank)) return el("strong", { className: "ability-value" }, el("span", { className: `rank-badge rank-${a.rank}` }, a.rank), el("span", { className: "ability-num" }, a.text.slice(a.rank.length)));
+  return el("strong", { className: "ability-value" }, el("span", { className: "ability-num" }, a.text));
+}
+
+// 候補の見立て(D-418):能力の一覧と特殊能力に、見立てであることの 1 行を添える
+export function estimateBlock(sc) {
+  if (!sc) return [];
+  return [el("p", { className: "small muted" }, `スカウトの見立て(総合 ${sc.overall_text})。入団すると本当の数字が分かります。`), abilityPanel(sc.abilities, sc.skills)];
+}
+
+// 能力の一覧と、右側にまとめた特殊能力(D-374、D-400)。選手のページと、候補の見立て(D-418)で使う。skills が null なら「記録なし」
+export function abilityPanel(items, skills, { skillsId = null } = {}) {
+  const skillList = skills === null ? [el("span", { className: "muted small" }, "記録なし")] : skills.length ? skills.map(skillBadge) : [el("span", { className: "muted small" }, "なし")];
+  return el("div", { className: "ability-panel" },
+    el("div", { className: "ability-grid" }, ...items.map((a) => el("div", { className: `ability rank-${a.rank || "none"}`, "data-key": a.key }, el("span", { className: "ability-label" }, a.label), abilityValue(a)))),
+    el("div", { className: "skills", ...(skillsId ? { id: skillsId } : {}) }, el("span", { className: "ability-label" }, "特殊能力"), ...skillList));
+}

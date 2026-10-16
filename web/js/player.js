@@ -3,7 +3,7 @@
 import { $, GAMES_PAGE, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { el, emblem, kvTable, link, setPressed, skillBadge, table, teamLink } from "./parts.js";
+import { abilityPanel, el, emblem, kvTable, link, setPressed, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 export async function renderPlayer(args, token) {
@@ -69,22 +69,37 @@ export async function renderPlayer(args, token) {
 function renderPlayerAbilities(data) {
   const items = data.player.abilities;
   const box = $("player-abilities-box");
+  renderEntryEstimate(data);
   box.hidden = !items;
   if (!items) {
     $("player-abilities").replaceChildren();
     return;
   }
-  const skills = data.player.skills || [];
-  // ランクのある能力は、色つきの札と数字(ゲージは付けない。D-400)。札と数字を合わせた文字は計算本体の text と同じ
-  const value = (a) => {
-    if (a.rank && a.text.startsWith(a.rank)) return el("strong", { className: "ability-value" }, el("span", { className: `rank-badge rank-${a.rank}` }, a.rank), el("span", { className: "ability-num" }, a.text.slice(a.rank.length)));
-    return el("strong", { className: "ability-value" }, el("span", { className: "ability-num" }, a.text));
-  };
-  $("player-abilities").replaceChildren(
-    el("div", { className: "ability-panel" },
-      el("div", { className: "ability-grid" }, ...items.map((a) => el("div", { className: `ability rank-${a.rank || "none"}`, "data-key": a.key }, el("span", { className: "ability-label" }, a.label), value(a)))),
-      // 特殊能力(D-374)は右側にまとめる(D-400)
-      el("div", { className: "skills", id: "player-skills" }, el("span", { className: "ability-label" }, "特殊能力"), ...(skills.length ? skills.map(skillBadge) : [el("span", { className: "muted small" }, "なし")]))),
+  $("player-abilities").replaceChildren(abilityPanel(items, data.player.skills || [], { skillsId: "player-skills" }));
+}
+
+// 入団時の見立て(D-420):ドラフト・育成ドラフト・外国人市場で入った選手だけ。見立てと今の数字を並べ、差を出す
+function renderEntryEstimate(data) {
+  const e = data.player.entry_estimate;
+  const box = $("player-entry-box");
+  box.hidden = !e;
+  if (!e) {
+    box.replaceChildren();
+    return;
+  }
+  const now = Object.fromEntries((data.player.abilities || []).map((a) => [a.key, a]));
+  const sign = (n) => (n > 0 ? `+${n}` : String(n));
+  const rows = e.abilities.map((a) => {
+    const b = now[a.key];
+    const diff = b ? b.value - a.value : null;
+    return { ...a, values: { est: a.text, now: b ? b.text : "—", diff: diff === null ? "—" : diff === 0 ? "±0" : sign(diff) } };
+  });
+  const names = (list) => (list === null ? "記録なし" : list.length ? list.map((x) => x.label).join("・") : "なし");
+  rows.push({ key: "skills", label: "特殊能力", values: { est: names(e.skills), now: names(data.player.skills || []), diff: "" } });
+  box.replaceChildren(
+    el("details", { id: "player-entry" },
+      el("summary", {}, `入団時の見立て(${e.year}シーズン目・${e.route_label}・総合 ${e.overall_text})`),
+      table({ firstLabel: "能力", columns: [{ key: "est", label: "見立て" }, { key: "now", label: "今" }, { key: "diff", label: "差" }], rows, first: (r) => [el("span", {}, r.label)], fluid: true })),
   );
 }
 
