@@ -23,6 +23,10 @@ export async function renderLineup(token) {
   $("lineup-style").replaceChildren(...v.styles.map((s) => el("option", { value: s.key, selected: s.key === v.style }, s.label)));
   $("lineup-style").disabled = state.running || !v.editable;
   $("lineup-style").onchange = (e) => run("style", { style: e.target.value }, `打順の型を「${e.target.selectedOptions[0].textContent}」にしました。AI が組み直しました。`);
+  // 盗塁の作戦(D-429):走るかを決める確率と、走る見込みの下限が変わる
+  $("lineup-steal").replaceChildren(...v.steals.map((s) => el("option", { value: s.key, selected: s.key === v.steal }, s.label)));
+  $("lineup-steal").disabled = state.running || !v.editable;
+  $("lineup-steal").onchange = (e) => run("steal", { steal: e.target.value }, `盗塁の作戦を「${e.target.selectedOptions[0].textContent}」にしました。`);
   $("lineup-auto").disabled = state.running || !v.editable;
   $("lineup-auto").onclick = () => run("auto", {}, "AI が今の型で組み直しました。");
   $("lineup-save").disabled = state.running || !v.editable;

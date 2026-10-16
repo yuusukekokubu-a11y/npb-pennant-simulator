@@ -17,7 +17,7 @@ from typing import Callable, Iterable, Mapping
 
 from .baselines import END, WOBA_EVENTS, Baselines, _WEIGHT_NAME, event_of, state_index
 from .baserunning import OUTFIELD
-from .game import GameResult
+from .game import CAUGHT, PASSED_BALL, STEAL, GameResult, event_after, state_after
 from .records import Records, season_records
 
 DH = "DH"
@@ -105,10 +105,31 @@ def _delta_re(re24, pas: list, k: int) -> Fraction | None:
     """打席 k の得点期待値の変化(後 − 前 + 得点)。期待値が分からない状況は None。"""
     x = pas[k]
     before = re24[state_index(x.base_out)]
-    after = Fraction(0) if k + 1 >= len(pas) else re24[state_index(pas[k + 1].base_out)]
+    nxt = state_after(pas, k)  # 打席の直後(盗塁などの前。D-430)
+    after = Fraction(0) if nxt is None else re24[state_index(nxt)]
     if before is None or after is None:
         return None
     return after - before + x.runs
+
+
+def _delta_event(re24, pas: list, k: int, j: int) -> Fraction | None:
+    """打席 k の後の j 番目の出来事(盗塁・暴投・捕逸)の得点期待値の変化(後 − 前 + 得点)。"""
+    e = pas[k].events[j]
+    before = re24[state_index(e.base_out)]
+    nxt = event_after(pas, k, j)
+    after = Fraction(0) if nxt is None or e.outs_made + e.base_out.outs >= 3 else re24[state_index(nxt)]
+    if before is None or after is None:
+        return None
+    return after - before + e.runs
+
+
+def _has_runners(bo) -> bool:
+    return bool(bo.first or bo.second or bo.third)
+
+
+def _catchers(result: GameResult) -> dict[str, str]:
+    """チーム ID → その試合の捕手(スタメン)。"""
+    return {team_id: pid for team_id, slots in result.lineups.items() for _, pid, pos, _ in slots if pos == "C"}
 
 
 # ---- 今シーズンの記録からの集計(状況の平均、アウト率、アウトの価値) ----
@@ -122,6 +143,16 @@ class SeasonContext:
     fielding_outs: Counter = field(default_factory=Counter)  # (ポジション, 打球の種類) → アウトにした数
     fielding_chances: Counter = field(default_factory=Counter)  # (ポジション, 打球の種類) → 担当した打球の数
     non_out_events: dict[str, Counter] = field(default_factory=lambda: {b: Counter() for b in BATTED_BALLS})  # 打球の種類 → アウトにならなかった結果 → 回数
+    steal_total: Fraction = Fraction(0)  # 盗塁・盗塁死の得点期待値の変化の合計(D-430)
+    steal_count: int = 0
+    passed_ball_total: Fraction = Fraction(0)  # 捕逸の得点期待値の変化の合計
+    passed_ball_chances: int = 0  # 走者がいて、次の打席の前に暴投・捕逸が起きうる回数
+
+    def steal_mean(self) -> Fraction:
+        return self.steal_total / self.steal_count if self.steal_count else Fraction(0)
+
+    def passed_ball_mean(self) -> Fraction:
+        return self.passed_ball_total / self.passed_ball_chances if self.passed_ball_chances else Fraction(0)
 
     def situation_mean(self, key: tuple) -> Fraction | None:
         n = self.situation_count.get(key, 0)
@@ -157,6 +188,21 @@ def season_context(results: Iterable[GameResult], baselines: Baselines) -> Seaso
                         key = situation_key(x)
                         ctx.situation_total[key] = ctx.situation_total.get(key, Fraction(0)) + d
                         ctx.situation_count[key] += 1
+            for k, x in enumerate(pas):  # 盗塁・暴投・捕逸(D-430)
+                nxt = state_after(pas, k)
+                if nxt is not None and _has_runners(nxt) and not x.ends_walkoff:
+                    ctx.passed_ball_chances += 1
+                for j, e in enumerate(x.events):
+                    if e.walkoff:
+                        continue
+                    d = _delta_event(re24, pas, k, j)
+                    if d is None:
+                        continue
+                    if e.kind in (STEAL, CAUGHT):
+                        ctx.steal_total += d
+                        ctx.steal_count += 1
+                    elif e.kind == PASSED_BALL:
+                        ctx.passed_ball_total += d
         for x in result.log:
             pa = x.pa
             if pa.fielder and not pa.unfieldable and x.fielder_id and pa.batted_ball:
@@ -234,6 +280,27 @@ def season_player_runs(
                 share = (d - mean) / len(runners)
                 for pid in runners:
                     of(pid).baserunning += share
+        # 盗塁・盗塁死(走者の走塁と、その逆を捕手の守備に)と捕逸(捕手の守備に)。D-430
+        catchers = _catchers(result)
+        steal_mean, pb_mean = ctx.steal_mean(), ctx.passed_ball_mean()
+        for pas in _half_innings(result):
+            for k, x in enumerate(pas):
+                nxt = state_after(pas, k)
+                if nxt is not None and _has_runners(nxt) and not x.ends_walkoff:
+                    c = catchers.get(x.fielding_team_id)
+                    if c is not None:
+                        _add_fielding(of(c), "C", pb_mean)
+                for j, e in enumerate(x.events):
+                    if e.walkoff:
+                        continue
+                    d = _delta_event(re24, pas, k, j)
+                    if d is None:
+                        continue
+                    if e.kind in (STEAL, CAUGHT):
+                        of(e.moves[0].player_id).baserunning += d - steal_mean
+                        _add_fielding(of(e.catcher_id), "C", -(d - steal_mean))
+                    elif e.kind == PASSED_BALL:
+                        _add_fielding(of(e.catcher_id), "C", -d)
         # 守備(担当した打球)
         for x in result.log:
             pa = x.pa
@@ -251,13 +318,18 @@ def season_player_runs(
         # 守備アウト数(打順表の守備位置 × 守備側として記録したアウト数。D-165)
         outs_by_team = Counter()
         for x in result.log:
-            outs_by_team[x.fielding_team_id] += x.outs_made
+            outs_by_team[x.fielding_team_id] += x.all_outs
         for team_id, slots in result.lineups.items():
             for _, pid, position, _ in slots:
                 if position != DH:
                     p = of(pid)
                     p.outs_by_position[position] = p.outs_by_position.get(position, 0) + outs_by_team[team_id]
     return out
+
+
+def _add_fielding(p: PlayerRuns, position: str, value: Fraction) -> None:
+    p.fielding += value
+    p.fielding_by_position[position] = p.fielding_by_position.get(position, Fraction(0)) + value
 
 
 def league_totals(runs: Mapping[str, PlayerRuns]) -> dict[str, Fraction]:

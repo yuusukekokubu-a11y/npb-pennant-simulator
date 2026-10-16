@@ -67,6 +67,7 @@ class SeasonArchive:
                 "teams": {tid: dict(c) for tid, c in self.records.teams.items()},
                 "batter_team": dict(self.records.batter_team),
                 "pitcher_team": dict(self.records.pitcher_team),
+                "fielders": {pid: {pos: dict(c) for pos, c in by_pos.items()} for pid, by_pos in self.records.fielders.items()},  # 守備の数(D-431。版 26)
             },
             "players": {pid: dict(info) for pid, info in self.players.items()},
             "park_factors": {pid: str(v) for pid, v in self.park_factors.items()},
@@ -84,6 +85,7 @@ class SeasonArchive:
         rec.teams = {tid: Counter({k: int(v) for k, v in c.items()}) for tid, c in r["teams"].items()}
         rec.batter_team = {k: str(v) for k, v in r["batter_team"].items()}
         rec.pitcher_team = {k: str(v) for k, v in r["pitcher_team"].items()}
+        rec.fielders = {pid: {pos: Counter({k: int(v) for k, v in c.items()}) for pos, c in by_pos.items()} for pid, by_pos in (r.get("fielders") or {}).items()}
         return cls(
             year=int(d["year"]),
             seed=int(d["seed"]),
@@ -107,6 +109,8 @@ def _war_to_dict(v: WarLine) -> dict:
     d = {"role": v.role, "team_id": v.team_id, "plate_appearances": v.plate_appearances, "outs": v.outs}
     for k in _WAR_FIELDS:
         d[k] = str(getattr(v, k))
+    if v.fielding_by_position:
+        d["fielding_by_position"] = {pos: str(x) for pos, x in sorted(v.fielding_by_position.items())}  # 版 26(D-431)
     return d
 
 
@@ -117,4 +121,5 @@ def _war_from_dict(pid: str, d: Mapping) -> WarLine:
     for k in _WAR_FIELDS:
         if k in d:
             setattr(v, k, Fraction(d[k]))
+    v.fielding_by_position = {str(pos): Fraction(x) for pos, x in (d.get("fielding_by_position") or {}).items()}
     return v

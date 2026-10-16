@@ -64,7 +64,7 @@ def game_counts(result: GameResult) -> Counter:
     for x in result.log:
         r = x.pa.result
         c["PA"] += 1
-        c["R"] += x.runs
+        c["R"] += x.all_runs
         if r == "home_run":
             c["HR"] += 1
         at_bat = r not in ("walk", "hit_by_pitch") and not x.sac_fly

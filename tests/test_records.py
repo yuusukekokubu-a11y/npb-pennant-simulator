@@ -318,14 +318,14 @@ def test_qualifying_outs():
 def test_metrics_config_is_valid_and_complete(mconfig):
     for mid, m in mconfig.metrics.items():
         assert m["name"].strip() and "description" not in m, mid  # 解説の文は用語集に(D-311)
-    assert set(mconfig.for_role("batter", stage=1)) == {"avg", "obp", "slg", "ops", "iso", "babip", "k_pct", "bb_pct"}
+    assert set(mconfig.for_role("batter", stage=1)) == {"avg", "obp", "slg", "ops", "iso", "babip", "k_pct", "bb_pct", "sb_pct"}
     assert set(mconfig.for_role("pitcher", stage=1)) == {"k_pct", "bb_pct", "era"}
 
 
 def test_metric_categories(mconfig):
     """区分(基本/セイバー。D-109):成績の画面の切り替えで使う。"""
     assert mconfig.in_category("basic") == ["avg", "obp", "slg", "ops", "era"]  # OPS は基本(D-130)
-    assert mconfig.in_category("saber") == ["iso", "babip", "k_pct", "bb_pct", "woba", "wrc_plus", "ops_plus", "fip"]
+    assert mconfig.in_category("saber") == ["iso", "babip", "k_pct", "bb_pct", "woba", "wrc_plus", "ops_plus", "fip", "sb_pct"]
 
 
 def test_spec_glossary_points_to_the_game_glossary(mconfig):

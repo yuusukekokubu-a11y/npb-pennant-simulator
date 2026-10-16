@@ -50,7 +50,7 @@ def test_titles_follow_the_archived_records(two_seasons):
     league_of = {x.id: x.league_index for x in g.state.league.teams}
     for lg in t["leagues"]:
         by = {x["key"]: x for x in lg["titles"]}
-        assert list(by) == ["AVG", "OBP", "HR", "RBI", "H", "W", "ERA", "SO", "SV", "HLD"]
+        assert list(by) == ["AVG", "OBP", "HR", "RBI", "H", "SB", "W", "ERA", "SO", "SV", "HLD"]  # 盗塁王(D-432)
         hr = max(c.get("HR", 0) for pid, c in a.records.batters.items() if league_of[a.records.batter_team[pid]] == lg["league_index"])
         assert by["HR"]["value_text"] == str(hr) and by["HR"]["players"]
         q = set(qualified_batters(a.records))

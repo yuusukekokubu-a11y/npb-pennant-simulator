@@ -276,5 +276,8 @@ def _add_war(total: WarLine | None, v: WarLine) -> WarLine:
     total.outs += v.outs
     for k in ("batting", "baserunning", "fielding", "position", "replacement", "war", "fip_runs", "ra_runs", "defense_adjustment", "war_fip", "war_ra"):
         setattr(total, k, getattr(total, k) + getattr(v, k))
+    total.fielding_by_position = dict(total.fielding_by_position)
+    for pos, x in v.fielding_by_position.items():
+        total.fielding_by_position[pos] = total.fielding_by_position.get(pos, 0) + x
     total.runs_per_win = v.runs_per_win
     return total

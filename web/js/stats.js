@@ -15,9 +15,14 @@ export function buildStatsFilters() {
   $("stats-season").value = state.stats.season;
   $("stats-season").hidden = seasons.length < 2; // 1シーズン目は選ぶものがないので出さない
   const leagues = state.view.standings.leagues;
-  $("stats-league").replaceChildren(el("option", { value: "" }, "両リーグ"), ...leagues.map((lg) => el("option", { value: String(lg.index) }, lg.name)));
+  // 両リーグをまとめた表はない。最初は自球団のリーグ(観戦のみなら 1 つ目。D-431)
+  if (!leagues.some((lg) => String(lg.index) === state.stats.league)) {
+    const mine = leagues.find((lg) => lg.rows.some((r) => r.is_mine)) || leagues[0];
+    state.stats.league = mine ? String(mine.index) : "";
+  }
+  $("stats-league").replaceChildren(...leagues.map((lg) => el("option", { value: String(lg.index) }, lg.name)));
   $("stats-league").value = state.stats.league;
-  const teams = leagues.filter((lg) => state.stats.league === "" || String(lg.index) === state.stats.league).flatMap((lg) => lg.rows);
+  const teams = leagues.filter((lg) => String(lg.index) === state.stats.league).flatMap((lg) => lg.rows);
   $("stats-team").replaceChildren(el("option", { value: "" }, "全チーム"), ...teams.map((r) => el("option", { value: r.team_id }, r.name)));
   if (!teams.some((r) => r.team_id === state.stats.team)) state.stats.team = "";
   $("stats-team").value = state.stats.team;
@@ -116,6 +121,10 @@ export async function renderStats(token) {
   setPressed("stats-kind", s.kind);
   filterText();
   $("stats-info").replaceChildren();
+  const fielding = s.role === "fielder";
+  $("stats-kind").hidden = fielding; // 守備は基本・セイバーなどの切り替えがなく、ポジションを選ぶ(D-431)
+  $("stats-position-row").hidden = !fielding;
+  if (fielding) return renderFielding(token);
   if (s.kind === "ability") {
     $("stats-baseline").hidden = true;
     return renderAbilityTable(token);
@@ -152,6 +161,40 @@ export async function renderStats(token) {
   );
   // 読み違いを防ぐ 1 行の注意書きだけを残す(D-310)。詳しい理由は用語集に
   const caution = data.baseline_note ? seasonCaution(data.season) : "";
+  $("stats-baseline").hidden = !caution;
+  $("stats-baseline").textContent = caution;
+}
+
+// 守備の表(D-431):ポジションを選んで、試合・守備イニング・失策・守備の得点(捕手は盗塁阻止なども)
+async function renderFielding(token) {
+  const s = state.stats;
+  const sort = currentSort();
+  const args = { ...statsArgs(), position: s.position, sort: sort.key, order: sort.order };
+  delete args.role;
+  const data = await withLoading("stats-loading", query("fielding_stats", args));
+  if (token !== state.token) return;
+  $("stats-position").replaceChildren(...data.positions.map((p) => el("option", { value: p.key }, p.label)));
+  $("stats-position").value = data.position;
+  $("stats-sort").replaceChildren(...data.columns.map((c) => el("option", { value: c.key }, c.label)));
+  showSortState(data.sort, data.order);
+  renderLeader(data);
+  $("stats-table").replaceChildren(
+    data.rows.length
+      ? table({
+          firstLabel: "順位・選手",
+          columns: data.columns,
+          rows: data.rows,
+          first: (r) => [rankBadge(r.rank), playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+          sort: data.sort.key,
+          order: data.order,
+          onSort: (key) => sortStats(key),
+          rowClass: (r) => (r.is_mine ? "mine" : ""),
+          limit: s.shown,
+          more: () => { s.shown += STATS_PAGE; renderCurrent(); },
+        })
+      : el("p", { className: "muted" }, s.qualified ? "条件に合う選手がいません(「規定到達者だけ」を外すと出ます)。" : "条件に合う選手がいません。"),
+  );
+  const caution = seasonCaution(data.season);
   $("stats-baseline").hidden = !caution;
   $("stats-baseline").textContent = caution;
 }

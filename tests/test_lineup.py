@@ -118,7 +118,7 @@ def test_review_resets_to_ai_and_replay_and_save(base):
         assert (again.home_runs, again.away_runs, len(again.log)) == (pg.result.home_runs, pg.result.away_runs, len(pg.result.log))
     # 保存と読み込み(版 17)で、計画と試合ごとの記録が残る
     loaded = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 25
+    assert SAVE_FORMAT_VERSION == 26
     assert loaded.state.season.lineup_plans["T01"]["slots"] == [[x["player_id"], x["position"]] for x in s] and loaded.state.season.lineup_plans["T01"]["style"] == "speed"
     assert [pg.context.lineups for pg in loaded.state.season.played] == [pg.context.lineups for pg in season.played]
     # 見直し(7 日ごと):8 日目の試合の前に、型で AI が組み直す
@@ -158,7 +158,7 @@ def test_bridge_has_lineup_operations():
     spec = importlib.util.spec_from_file_location("bridge_for_lineup", Path(__file__).resolve().parents[1] / "web" / "bridge.py")
     bridge = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bridge)
-    assert set(bridge._LINEUP) == {"view", "set", "style", "auto"}
+    assert set(bridge._LINEUP) == {"view", "set", "style", "auto", "steal"}  # 盗塁の作戦(D-429)
 
 
 @pytest.mark.slow

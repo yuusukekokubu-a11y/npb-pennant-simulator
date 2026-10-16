@@ -15,7 +15,7 @@ from pennant import generate_league
 from pennant.abilities import BATTER, PITCHER
 from pennant.baserunning import HOME, Baserunning, Runner
 from pennant.fatigue import advance_day, can_relieve, recovery_per_day
-from pennant.game import BOTTOM, TOP, simulate_game
+from pennant.game import BOTTOM, TOP, simulate_game, steps
 from pennant.game_config import default_game_data, load_game_config, validate_game_config
 from pennant.game_stats import GAME_TARGETS, play_games, summarize
 from pennant.manager import DH, SimpleManager
@@ -277,7 +277,12 @@ def test_invariants(many_games):
                 assert x.runs == sum(1 for m in x.moves if m.scored)
                 assert roles[x.batter_id] == BATTER and roles[x.pitcher_id] == PITCHER
                 score[x.batting_team_id] += x.runs
-            assert outs == 3 or pas[-1].walkoff
+                for e in x.events:  # 打席の後の盗塁・暴投・捕逸(D-427)
+                    assert e.base_out.outs == outs and e.runs == sum(1 for m in e.moves if m.scored)
+                    outs += e.outs_made
+                    assert outs <= 3
+                    score[e.batting_team_id] += e.runs
+            assert outs == 3 or pas[-1].ends_walkoff
         assert score[r.home_team_id] == r.home_runs and score[r.away_team_id] == r.away_runs
         assert sum(v for v in r.line[r.home_team_id] if v is not None) == r.home_runs
 
@@ -313,7 +318,7 @@ def test_runs_are_charged_to_the_pitcher_who_allowed_the_runner(many_games):
     results, _ = many_games
     for r in results:
         charged = {}
-        for x in r.log:
+        for x in steps(r):  # 暴投・捕逸の生還も、その走者を出した投手の失点(D-430)
             for m in x.moves:
                 if m.scored:
                     charged[m.responsible_pitcher_id] = charged.get(m.responsible_pitcher_id, 0) + 1

@@ -25,6 +25,24 @@
     "lock_days": 10,
     "keep_bonus": 4.0
   },
+  "steal": {
+    "attempt_2b": {"base": 0.145, "runner": {"speed": 1.6}, "catcher": {"arm": 0.85}, "pitcher": {"holding": 0.85}},
+    "attempt_3b": {"base": 0.024, "runner": {"speed": 1.6}, "catcher": {"arm": 0.85}, "pitcher": {"holding": 0.85}},
+    "success_2b": {"base": 0.61, "runner": {"speed": 1.5, "baserunning": 1.1}, "catcher": {"arm": 0.8}, "pitcher": {"holding": 0.85}},
+    "success_3b": {"base": 0.64, "runner": {"speed": 1.5, "baserunning": 1.1}, "catcher": {"arm": 0.8}, "pitcher": {"holding": 0.85}},
+    "min_success": 0.58,
+    "behind_limit": 4,
+    "ahead_limit": 5,
+    "strategies": {
+      "aggressive": {"attempt": 1.6, "min_success": 0.52},
+      "normal": {"attempt": 1.0, "min_success": 0.58},
+      "cautious": {"attempt": 0.45, "min_success": 0.68}
+    }
+  },
+  "battery": {
+    "wild_pitch": {"base": 0.0098, "pitcher": {"control": 0.8}},
+    "passed_ball": {"base": 0.0026, "catcher": {"fielding": 0.7}}
+  },
   "lineup": {
     "on_base": {"contact": 0.5, "eye": 0.5},
     "slugging": {"power": 0.7, "batted_ball_quality": 0.3},

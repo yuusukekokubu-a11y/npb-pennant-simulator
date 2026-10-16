@@ -5,6 +5,7 @@
   - 延長は上限まで。同点なら引き分け(設定で変更可)。
   - 走者の進塁は baserunning.py、打席の結果は plate_appearance.py、采配は manager.py。
   - 投手は打席に立たない(指名打者制。D-046)。
+  - 打席の前に、暴投・捕逸・盗塁が起きることがある(D-427)。打席の後の出来事として、その前の打席の記録(events)に残す。
 
 試合は入力の選手を書き換えない(疲労の加算は、試合後に fatigue.apply_game_fatigue で行う)。
 """
@@ -14,13 +15,37 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field, replace
 
-from .baserunning import HOME, Baserunning, RunnerMove
+from . import skills as skill_mod
+from .abilities import PITCHER_ITEMS
+from .baserunning import HOME, Baserunning, Runner, RunnerMove, adjust_probability
 from .game_config import GameConfig, load_game_config
 from .manager import Manager, PitchingSituation, SimpleManager, TeamSetup
 from .models import NEUTRAL_PARK, ParkFactors, Player
-from .plate_appearance import BaseOutState, PlateAppearance, PlateAppearanceModel, default_model
+from .plate_appearance import BaseOutState, PlateAppearance, PlateAppearanceModel, default_model, ratio_multiplier
 
 TOP, BOTTOM = "top", "bottom"
+STEAL, CAUGHT, WILD_PITCH, PASSED_BALL = "steal", "caught_stealing", "wild_pitch", "passed_ball"
+EVENT_KINDS = (STEAL, CAUGHT, WILD_PITCH, PASSED_BALL)
+LEAD_ITEMS = ("strikeout", "control", "stuff", "contact_suppression")  # 捕手のリードが効く投手の能力(D-428)
+
+
+@dataclass
+class RunEvent:
+    """打席と打席の間の出来事(盗塁・盗塁死・暴投・捕逸。D-427)。次の打者の打席の前に起きる。"""
+
+    kind: str
+    inning: int
+    half: str
+    batting_team_id: str
+    fielding_team_id: str
+    pitcher_id: str
+    catcher_id: str
+    score_diff: int  # 出来事の前の点差(攻撃側 − 守備側)
+    base_out: BaseOutState  # 出来事の前の走者・アウト状況
+    moves: list[RunnerMove]  # 走者の動き(盗塁は 1 人、暴投・捕逸は全員)
+    runs: int = 0
+    outs_made: int = 0
+    walkoff: bool = False
 
 
 @dataclass
@@ -45,6 +70,43 @@ class GamePlateAppearance:
     walkoff: bool = False
     walkoff_truncated: bool = False
     fielder_id: str | None = None  # 打球を担当した野手の選手 ID(投手が担当なら投手。第3弾の守備の計算用)  # サヨナラで、勝ち越しに必要な分を超えた得点を打ち切った打席(D-087。公式記録の数え直しは実装⑤)
+    events: list[RunEvent] = field(default_factory=list)  # この打席の後、次の打席の前に起きた盗塁・暴投・捕逸(D-427)
+
+    @property
+    def all_runs(self) -> int:
+        """この打席と、その後の盗塁・暴投・捕逸の得点の合計。"""
+        return self.runs + sum(e.runs for e in self.events)
+
+    @property
+    def all_outs(self) -> int:
+        return self.outs_made + sum(e.outs_made for e in self.events)
+
+    @property
+    def ends_walkoff(self) -> bool:
+        return self.walkoff or any(e.walkoff for e in self.events)
+
+
+def steps(result: "GameResult"):
+    """打席と、その後の盗塁・暴投・捕逸を、起きた順に並べる(どちらも pitcher_id・batting_team_id・runs・moves・base_out を持つ)。"""
+    for x in result.log:
+        yield x
+        yield from x.events
+
+
+def state_after(pas: list, k: int):
+    """半イニングの打席の並び pas で、打席 k の直後の状況(盗塁などの前)。イニングの終わりなら None。"""
+    x = pas[k]
+    if x.events:
+        return x.events[0].base_out
+    return pas[k + 1].base_out if k + 1 < len(pas) else None
+
+
+def event_after(pas: list, k: int, j: int):
+    """打席 k の後の j 番目の出来事の直後の状況。イニングの終わりなら None。"""
+    events = pas[k].events
+    if j + 1 < len(events):
+        return events[j + 1].base_out
+    return pas[k + 1].base_out if k + 1 < len(pas) else None
 
 
 @dataclass
@@ -107,8 +169,11 @@ class _Side:
 
 
 class _Game:
-    def __init__(self, home, away, rng, model, config, manager, baserunning, park=None):
+    def __init__(self, home, away, rng, model, config, manager, baserunning, park=None, running=True):
         self.park = park or NEUTRAL_PARK  # その試合の球場(ホームチームの本拠地)の倍率(D-136)
+        self.steal = config.get("steal") if running else None  # 盗塁(D-427)。設定がなければ起きない
+        self.battery = config.get("battery") if running else None  # 暴投・捕逸
+        self._lead_cache: dict[tuple[str, str], Player] = {}
         self.home = _Side(home)
         self.away = _Side(away)
         self.rng = rng
@@ -196,12 +261,17 @@ class _Game:
         defense = fielding.setup.lineup.defense()
         slots = batting.setup.lineup.slots
         while outs < 3:
+            if any(b is not None for b in bases) and (self.steal or self.battery):  # 打席の前の盗塁・暴投・捕逸(D-427)
+                outs, bases, extra = self._between(inning, half, batting, fielding, outs, bases, defense)
+                runs_this_inning += extra
+                if self.walkoff or outs >= 3:
+                    break  # 盗塁死で 3 アウトなら、この打者は次の回の先頭
             slot = slots[batting.order_index]
             batting.order_index = (batting.order_index + 1) % len(slots)
             batter, pitcher = slot.player, fielding.pitcher
             base_out = BaseOutState(outs, bases[0] is not None, bases[1] is not None, bases[2] is not None)
             diff_before = batting.runs - fielding.runs
-            pa = self.model.resolve(batter, pitcher, defense, base_out, self.rng, home=half == BOTTOM, park=self.park)
+            pa = self.model.resolve(batter, self._with_lead(pitcher, defense), defense, base_out, self.rng, home=half == BOTTOM, park=self.park)
             fielding_ratings = self.model.fielding(pa.fielder, pitcher, defense) if pa.fielder else None
             play = self.baserunning.advance(pa, batter, pitcher.id, bases, outs, fielding_ratings, self.rng)
 
@@ -265,6 +335,104 @@ class _Game:
             fielding.needs_new_pitcher = True
 
 
+    # ---- 盗塁・暴投・捕逸(D-427、D-428) ----
+
+    def _with_lead(self, pitcher: Player, defense) -> Player:
+        """捕手のリード(キャッチャー◯/×)を足した投手の写し。効きがなければそのまま。"""
+        catcher = defense.get("C") if hasattr(defense, "get") else None
+        if catcher is None or not catcher.skills:
+            return pitcher
+        key = (pitcher.id, catcher.id)
+        if key not in self._lead_cache:
+            lead = skill_mod.lead_bonus(catcher)
+            self._lead_cache[key] = skill_mod.shifted(pitcher, {i: lead for i in LEAD_ITEMS}) if lead else pitcher
+        return self._lead_cache[key]
+
+    def _prob(self, entry: dict, runner: Player | None = None, catcher: Player | None = None, pitcher: Player | None = None) -> float:
+        m = 1.0
+        if runner is not None:
+            extra = skill_mod.steal_effects(runner)
+            for item, ratio in entry.get("runner", {}).items():
+                m *= ratio_multiplier(self.model.rating(runner, item) + extra.get(item, 0.0), ratio)
+        if catcher is not None:
+            extra = skill_mod.catching_effects(catcher)
+            for item, ratio in entry.get("catcher", {}).items():
+                m *= ratio_multiplier(self.model.rating(catcher, item) + extra.get(item, 0.0), ratio)
+        if pitcher is not None:
+            for item, ratio in entry.get("pitcher", {}).items():
+                m *= ratio_multiplier(self.model.rating(pitcher, item), ratio)
+        return adjust_probability(float(entry["base"]), m)
+
+    def _between(self, inning: int, half: str, batting: _Side, fielding: _Side, outs: int, bases: tuple, defense):
+        """次の打者の打席の前:暴投・捕逸、次に盗塁。出来事は直前の打席の記録に足す。戻り値は(アウト数, 走者, 得点)。"""
+        rules = self.config["rules"]
+        catcher = defense["C"]
+        pitcher = fielding.pitcher
+        prev = self.log[-1]
+        total = 0
+
+        def record(kind: str, moves: list[RunnerMove], new_bases: tuple, outs_made: int) -> None:
+            nonlocal outs, bases, total
+            diff = batting.runs - fielding.runs
+            runs = sum(1 for m in moves if m.scored)
+            walkoff = half == BOTTOM and inning >= rules["innings"] and diff + runs > 0
+            before = BaseOutState(outs, bases[0] is not None, bases[1] is not None, bases[2] is not None)
+            prev.events.append(RunEvent(kind, inning, half, batting.setup.team_id, fielding.setup.team_id, pitcher.id, catcher.id, diff, before, moves, runs, outs_made, walkoff))
+            fielding.pitcher_line.outs += outs_made
+            for m in moves:
+                if m.scored:
+                    self.lines_by_pitcher[m.responsible_pitcher_id].runs += 1
+            batting.runs += runs
+            total += runs
+            outs += outs_made
+            bases = new_bases
+            if walkoff:
+                self.walkoff = True
+
+        def move(runner: Runner, start: int, end: int | None, on_error: bool = False) -> RunnerMove:
+            return RunnerMove(runner.player.id, start, end, runner.responsible_pitcher_id, runner.reached_on_error, on_error)
+
+        if self.battery:
+            p_wp = self._prob(self.battery["wild_pitch"], pitcher=pitcher)
+            p_pb = self._prob(self.battery["passed_ball"], catcher=catcher)
+            r = self.rng.random()
+            kind = WILD_PITCH if r < p_wp else PASSED_BALL if r < p_wp + p_pb else None
+            if kind is not None:
+                moves, after = [], [None, None, None]
+                for start in (3, 2, 1):
+                    runner = bases[start - 1]
+                    if runner is None:
+                        continue
+                    end = start + 1 if start < 3 else HOME
+                    moves.append(move(runner, start, end, on_error=kind == PASSED_BALL))
+                    if end != HOME:
+                        after[end - 1] = runner
+                record(kind, moves, tuple(after), 0)
+                if self.walkoff:
+                    return outs, bases, total
+
+        st = self.steal
+        if st and outs < 3:
+            start = 1 if bases[0] is not None and bases[1] is None else 2 if bases[1] is not None and bases[0] is None and bases[2] is None else 0
+            diff = batting.runs - fielding.runs
+            if start and -diff < int(st["behind_limit"]) and diff < int(st["ahead_limit"]):
+                runner = bases[start - 1]
+                strategy = st["strategies"].get(getattr(batting.setup, "steal", "normal"), st["strategies"]["normal"])
+                key = "2b" if start == 1 else "3b"
+                p_success = self._prob(st[f"success_{key}"], runner.player, catcher, pitcher)
+                if p_success >= float(strategy["min_success"]):
+                    p_attempt = min(0.95, self._prob(st[f"attempt_{key}"], runner.player, catcher, pitcher) * float(strategy["attempt"]))
+                    if self.rng.random() < p_attempt:
+                        after = list(bases)
+                        after[start - 1] = None
+                        if self.rng.random() < p_success:
+                            after[start] = runner
+                            record(STEAL, [move(runner, start, start + 1)], tuple(after), 0)
+                        else:
+                            record(CAUGHT, [move(runner, start, None)], tuple(after), 1)
+        return outs, bases, total
+
+
 def _truncate_walkoff(moves: list[RunnerMove], needed: int) -> list[RunnerMove]:
     """サヨナラで、勝ち越しに必要な分を超えた生還を取り消す(本塁打以外)。
 
@@ -299,11 +467,13 @@ def simulate_game(
     config: GameConfig | None = None,
     manager: Manager | None = None,
     park: ParkFactors | None = None,
+    running: bool = True,
 ) -> GameResult:
     """1試合を進める。rng は random.Random(シード)。同じシード・同じ入力なら同じ結果になる。
-    park はその試合の球場(ホームチームの本拠地)の倍率(省略時は 1.0。D-136)。"""
+    park はその試合の球場(ホームチームの本拠地)の倍率(省略時は 1.0。D-136)。
+    running が False なら、盗塁・暴投・捕逸を起こさない(それらを入れる前の試合の再現。D-433)。"""
     config = config or load_game_config()
     model = model or default_model()
     manager = manager or SimpleManager(config)
     baserunning = Baserunning(config, model.rating)
-    return _Game(home, away, rng, model, config, manager, baserunning, park).play()
+    return _Game(home, away, rng, model, config, manager, baserunning, park, running).play()

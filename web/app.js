@@ -107,6 +107,13 @@ $("stats-season").addEventListener("change", () => {
   state.stats.shown = STATS_PAGE;
   renderCurrent();
 });
+$("stats-position").addEventListener("change", () => {
+  state.stats.position = $("stats-position").value; // 守備のポジション(D-431)
+  state.sortBy.fielder = { key: null, order: null };
+  state.shownSort.fielder = null;
+  state.stats.shown = STATS_PAGE;
+  renderCurrent();
+});
 $("stats-league").addEventListener("change", () => {
   state.stats.league = $("stats-league").value;
   state.stats.shown = STATS_PAGE;

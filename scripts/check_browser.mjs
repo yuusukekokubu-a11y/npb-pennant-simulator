@@ -255,6 +255,13 @@ await page.selectOption("#lineup-style", "power");
 await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("長打重視"));
 const luAfter = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 check(JSON.stringify(luAfter) === JSON.stringify(luBefore) && (await page.textContent("#lineup-source")).includes("AI"), "長打重視に戻すと、最初の AI の打順に戻る");
+// 盗塁の作戦(D-429):選ぶと保存され、普通に戻す(この後の結果を Python で同じ新規開始を進めた結果と比べるため)
+await page.selectOption("#lineup-steal", "aggressive");
+await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("積極的"));
+const stealPy = ["積極的", "普通", "慎重"];
+check(JSON.stringify(await page.$$eval("#lineup-steal option", (os) => os.map((o) => o.textContent))) === JSON.stringify(stealPy), `スタメンの画面に盗塁の作戦(${stealPy.join("・")})があり、選ぶと知らせが出る(「${await page.textContent("#lineup-message")}」)`);
+await page.selectOption("#lineup-steal", "normal");
+await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("普通"));
 await page.click("#screen-lineup .back");
 // 一軍登録(D-425):一軍 29 人と二軍が、調子のマーク付きで出る。「外す」を押すと、同じ役割の二軍の選手だけ「上げる」が押せる。
 // ここでは入れ替えない(この後の結果を Python で同じ新規開始を進めた結果と比べるため)。実際の入れ替えは 2シーズン目で確かめる
@@ -375,10 +382,17 @@ async function waitRows(rows) {
 const termTitle = (label) => JSON.parse(python(`import json\nfrom pennant.glossary import default_glossary, term_text\nprint(json.dumps(term_text(default_glossary().find(${JSON.stringify(label)})), ensure_ascii=False))`));
 
 // 画面の表と同じ形(名前、固定の列があればその値、各列の値)
-const pyStats = (args) => pyGame(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
+// 個人成績はいつも 1 つのリーグ(D-431)。最初は自球団のリーグで、画面で選んだリーグと同じ値を渡す
+let statsLeague = null;
+const pyStats = (args) => pyGame(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: statsLeague, ...args }));
 const headsOnScreen = () => page.$$eval("#stats-table th", (ths) => ths.map((th) => th.textContent.replace(/^[▲▼]/, "")));
 
 await page.click("#tabs button[data-tab=stats]");
+await page.waitForFunction(() => document.querySelector("#stats-league").options.length === 2);
+statsLeague = Number(await page.inputValue("#stats-league"));
+const myStatsLeague = statsLeague;
+const otherLeague = 1 - myStatsLeague;
+check(!(await page.$$eval("#stats-league option", (os) => os.map((o) => o.textContent))).includes("両リーグ"), `個人成績に両リーグをまとめた表はなく、最初は自球団のリーグ(D-431)`);
 let screenRows = await waitStats("打率(高い順)");
 check((await page.$eval("#stats-filter-box", (d) => !d.open)) && (await page.textContent("#stats-filter-text")).includes("規定到達者だけ"), `絞り込みは 1 つにまとめて閉じ、今の絞り込みを 1 行で出す(「${await page.textContent("#stats-filter-text")}」。D-401)`);
 check((await page.textContent("#stats-leader .leader-title")).endsWith("打率 1位") && (await page.textContent("#stats-leader .leader-name .link")) === screenRows[0][0], `表の上に、並べている指標の 1 位の選手のカード(${screenRows[0][0]}。D-400)`);
@@ -410,23 +424,25 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 18 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
+check(sortOptions.length === 20 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
 await page.click("#stats-order button[data-value=asc]");
 screenRows = await waitStats("BABIP(低い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "asc" })), "「低い順」を押すと逆の順になる");
-await page.selectOption("#stats-league", "1");
+await page.selectOption("#stats-league", String(otherLeague));
+statsLeague = otherLeague;
 await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
 await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("BABIP")));
 await waitStats("BABIP(低い順)");
-check((await page.inputValue("#stats-league")) === "1" && (await page.$$eval("#stats-table tbody tr", (trs) => trs.length)) < 60, "「基本」に戻しても、並び順(BABIP の低い順。固定列)とリーグの絞り込みが保たれる");
+check((await page.inputValue("#stats-league")) === String(otherLeague) && (await page.$$eval("#stats-table tbody tr", (trs) => trs.length)) < 60, "「基本」に戻しても、並び順(BABIP の低い順。固定列)とリーグの絞り込みが保たれる");
 await page.click("#stats-role button[data-value=pitcher]");
 screenRows = await waitStats("防御率(低い順)");
-check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "basic", league: 1 })) && (await page.inputValue("#stats-league")) === "1", "打者から投手に切り替えると、投手の既定の並び順(防御率の低い順)に戻る(絞り込みは保つ)");
-await page.selectOption("#stats-league", "");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "basic" })) && (await page.inputValue("#stats-league")) === String(otherLeague), "打者から投手に切り替えると、投手の既定の並び順(防御率の低い順)に戻る(絞り込みは保つ)");
+await page.selectOption("#stats-league", String(myStatsLeague));
+statsLeague = myStatsLeague;
 await page.click("#stats-role button[data-value=batter]");
 await waitStats("打率(高い順)");
 // 本塁打の列で並べ替え → もう一度で逆順
@@ -443,15 +459,17 @@ const all = pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", q
 await waitRows(all);
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(all), `規定到達者の絞り込みを外すと、試合に出た全員(${all.length}人)`);
-await page.selectOption("#stats-league", "1");
+await page.selectOption("#stats-league", String(otherLeague));
+statsLeague = otherLeague;
 await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
 const teamId = await page.$eval("#stats-team", (s) => s.options[2].value);
 await page.selectOption("#stats-team", teamId);
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length < 40);
 screenRows = await statsOnScreen();
-check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false, league: 1, team_id: teamId })), `リーグ・チームで絞り込める(${screenRows.length}人)`);
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false, team_id: teamId })), `リーグ・チームで絞り込める(${screenRows.length}人)`);
 await page.selectOption("#stats-team", "");
-await page.selectOption("#stats-league", "");
+await page.selectOption("#stats-league", String(myStatsLeague));
+statsLeague = myStatsLeague;
 await page.check("#stats-qualified");
 await waitRows(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc" }));
 // 規定到達の判定が、実装⑤の定義(試合数 × 3.1、× 1.0)どおりか
@@ -462,6 +480,29 @@ b = sorted(p for p, c in rec.batters.items() if c["PA"] >= (rec.teams[rec.batter
 p = sorted(p for p, c in rec.pitchers.items() if c["OUTS"] >= rec.teams[rec.pitcher_team[p]]["G"] * 3)
 print(json.dumps([b == sorted(g.select_players("batter")), p == sorted(g.select_players("pitcher")), len(b), len(p)]))`);
 check(qual[0] && qual[1], `規定到達の判定が、規定打席(試合数×3.1)・規定投球回(試合数×1.0)どおり(打者 ${qual[2]}人・投手 ${qual[3]}人)`);
+// 守備の表(D-431):ポジションを選んで並べる。捕手は盗塁阻止・捕逸も。上位 30 人で、続きは「もっと見る」
+const pyFielding = (args) => pyGame(`t = g.fielding_stats(**a)\nprint(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: statsLeague, ...args }));
+await page.click("#stats-role button[data-value=fielder]");
+await page.waitForFunction(() => !document.querySelector("#stats-position-row").hidden && document.querySelector("#stats-kind").hidden && [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("守備イニング")));
+const fieldAll = pyFielding({ position: "all", qualified: false });
+await page.uncheck("#stats-qualified");
+await waitRows(fieldAll);
+check((await page.$$eval("#stats-table tbody tr", (trs) => trs.length)) <= 30 && (await page.isVisible("#stats-table .more")), `守備の表は上位 30 人を出し、続きは「もっと見る」(全 ${fieldAll.length} 人)`);
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(fieldAll), `守備の表(すべて・守備の得点の高い順)が、計算本体と同じ(列: ${(await headsOnScreen()).slice(1).join("・")})`);
+await page.check("#stats-qualified");
+await page.selectOption("#stats-position", "C");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("盗塁阻止率")));
+const fieldC = pyFielding({ position: "C" });
+await waitRows(fieldC);
+screenRows = await statsOnScreen();
+check(JSON.stringify(screenRows) === JSON.stringify(fieldC) && fieldC.length > 0, `捕手の表に 盗塁企図・盗塁阻止・盗塁阻止率・捕逸が出て、計算本体と同じ(規定到達 ${fieldC.length} 人)`);
+await page.selectOption("#stats-position", "all");
+await page.click("#stats-role button[data-value=batter]");
+await page.waitForFunction(() => !document.querySelector("#stats-kind").hidden && document.querySelector("#stats-position-row").hidden);
+await waitStats("打率(高い順)");
+heads = await headsOnScreen();
+check(heads.includes("盗塁"), `打撃の基本の表に盗塁がある(列: ${heads.slice(1).join("・")})`);
 // 投手・セイバー。指標名の解説が、定義データと同じ
 await page.click("#stats-role button[data-value=pitcher]");
 await page.click("#stats-kind button[data-value=saber]");
@@ -526,7 +567,7 @@ await page.click("#stats-table tbody tr:first-child td.sticky .link");
 await page.waitForFunction(() => document.querySelector("#player-name").textContent.length > 0);
 await page.click("#player-kind button[data-value=war]");
 await page.waitForFunction(() => document.querySelectorAll("#player-season td").length === 3);
-const warPid = pyGame(`print(json.dumps(g.stats("pitcher", "war")["rows"][0]["player_id"]))`);
+const warPid = pyGame(`print(json.dumps(g.stats("pitcher", "war", league=a["lg"])["rows"][0]["player_id"]))`, JSON.stringify({ lg: statsLeague }));
 const pyWarPlayer = pyGame(`d = g.player(a["id"])["season"]["war"]
 print(json.dumps([d["values"][c["key"]] for c in d["columns"]], ensure_ascii=False))`, JSON.stringify({ id: warPid }));
 check(JSON.stringify(await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent))) === JSON.stringify(pyWarPlayer), `選手のページの WAR(投球回・失点版・FIP 版)が、計算本体と同じ`);
@@ -565,9 +606,9 @@ await waitStats("FIP(低い順)");
 await page.click("#stats-kind button[data-value=ability]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("スタミナ")) && document.querySelectorAll("#stats-table tbody tr").length > 0);
 const pyAbility = pyGame(`
-t = g.ability_table("pitcher", sort="fip", order="asc")
+t = g.ability_table("pitcher", sort="fip", order="asc", league=a["lg"])
 keys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]
-print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`);
+print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ lg: statsLeague }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `「能力」の表が、並び順(FIP の低い順。固定列)を保ったまま出る(計算本体と同じ。${screenRows.length}人)`);
 check(screenRows.every((r) => /^\d{3}km\/h$/.test(r[2]) && /^[SABCDEFG] \d{1,3}$/.test(r[3]) && /^[SABCDEFG] \d{1,3}$/.test(r[4])), "能力は 球速 km/h・ランクと 1〜100 で表示(D-347)");
@@ -587,7 +628,7 @@ const pitcherName = (await statsOnScreen())[0][0];
 await page.click("#stats-table tbody tr:first-child .link");
 await page.waitForFunction((n) => document.querySelector("#player-name").firstChild?.textContent === n, pitcherName);
 await page.waitForSelector("#player-games table");
-const pid = pyGame(`print(json.dumps(g.stats("pitcher", sort="fip", order="asc")["rows"][0]["player_id"]))`);
+const pid = pyGame(`print(json.dumps(g.stats("pitcher", sort="fip", order="asc", league=a["lg"])["rows"][0]["player_id"]))`, JSON.stringify({ lg: statsLeague }));
 const pyPlayer = pyGame(`d = g.player(a["id"])\nprint(json.dumps({"season": [d["season"]["tables"]["basic"]["values"][c["key"]] for c in d["season"]["tables"]["basic"]["columns"]], "games": [x["day"] for x in d["games"]]}, ensure_ascii=False))`, JSON.stringify({ id: pid }));
 const seasonOnScreen = await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent));
 check(JSON.stringify(seasonOnScreen) === JSON.stringify(pyPlayer.season), `選手のページのシーズン通算が、計算本体と同じ(${pitcherName})`);
@@ -1209,10 +1250,10 @@ const stPy = pyYear2(`v = g.record_standings()\nprint(json.dumps([[r["team_name"
 const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map((t) => [...t.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td .link") ? tr.querySelector("td .link").textContent + (tr.children[1].textContent.endsWith("回") && tr.children[1].textContent !== "0 回" ? tr.children[1].textContent.replace(" 回", "") : "") : "")));
 check(JSON.stringify(stUi.slice(0, 2)) === JSON.stringify(stPy.slice(0, 2)) && JSON.stringify(stUi[2].filter((x) => /\d$/.test(x))) === JSON.stringify(stPy[2]), `歴代の順位と優勝:1シーズン目の順位表と、球団ごとの優勝回数が計算本体と同じ`);
 await page.click("#records-section button[data-value=titles]");
-await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 20);
+await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 22);
 const tiPy = pyYear2(`v = g.record_titles()\nprint(json.dumps([[t["label"], t["value_text"]] for lg in v["leagues"] for t in lg["titles"]], ensure_ascii=False))`);
 const tiUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[2].textContent]));
-check(JSON.stringify(tiUi) === JSON.stringify(tiPy), `年ごとのタイトル:2 リーグ × 10 のタイトルと記録が計算本体と同じ(${tiUi.slice(0, 2).map((x) => x.join(" ")).join("・")} …)`);
+check(JSON.stringify(tiUi) === JSON.stringify(tiPy), `年ごとのタイトル:2 リーグ × 11 のタイトル(盗塁王を含む)と記録が計算本体と同じ(${tiUi.slice(0, 2).map((x) => x.join(" ")).join("・")} …)`);
 await page.click("#records-section button[data-value=leaders]");
 await page.waitForFunction(() => document.querySelector('#records-controls select[aria-label="記録の選択"]') && document.querySelectorAll("#records-body tbody tr").length >= 20);
 await page.selectOption('#records-controls select[aria-label="打者・投手の選択"]', "pitcher");
@@ -1228,7 +1269,7 @@ await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody t
 await page.$eval("#stats-filter-box", (d) => (d.open = true)); // 絞り込みを開く(D-401)
 const seasonOptions = await page.$$eval("#stats-season option", (os) => os.map((o) => o.textContent));
 check(seasonOptions.length === 3 && seasonOptions[1] === "1シーズン目" && seasonOptions[2] === "通算" && (await page.isVisible("#stats-season")), `成績の画面に、シーズンの選択(${seasonOptions.join("・")})が出る`);
-const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify(args));
+const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: myStatsLeague, ...args }));
 await page.selectOption("#stats-season", "1");
 await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
 screenRows = await statsOnScreen();
@@ -1261,7 +1302,7 @@ await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
 await waitStats("打率");
 await page.click("#stats-table tbody tr:first-child td .link");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelectorAll("#player-history tbody tr").length > 0);
-const topId = pyYear2(`print(json.dumps(g.stats("batter", "basic", season="1")["rows"][0]["player_id"]))`);
+const topId = pyYear2(`print(json.dumps(g.stats("batter", "basic", season="1", league=a["lg"])["rows"][0]["player_id"]))`, JSON.stringify({ lg: myStatsLeague }));
 const histPy = pyYear2(`h = g.player(a["id"])["history"]\nprint(json.dumps([[r["label"] if r["season"] == "career" else str(r["year"])] + [r["tables"]["basic"][c["key"]] for c in h["columns"]["basic"]] for r in h["rows"]], ensure_ascii=False))`, JSON.stringify({ id: topId }));
 const histOnScreen = await page.$$eval("#player-history tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td span").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
 const histSame = histOnScreen.length === histPy.length && histOnScreen.every((r, i) => r.slice(1).join("|") === histPy[i].slice(1).join("|"));

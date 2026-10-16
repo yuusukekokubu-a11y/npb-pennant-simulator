@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from .config import ConfigError, _Checker, _read_json
-from .game import GameResult
+from .game import GameResult, state_after
 from .models import League
 from .records import Records, season_records
 
@@ -96,15 +96,16 @@ def tally_game(result: GameResult) -> RunTally:
     for x in result.log:
         halves.setdefault((x.inning, x.half), []).append(x)
     for pas in halves.values():
-        if any(x.walkoff for x in pas):
+        if any(x.ends_walkoff for x in pas):
             continue  # サヨナラで打ち切られた半イニングは外す(D-123)
-        rest = sum(x.runs for x in pas)
+        rest = sum(x.all_runs for x in pas)  # 盗塁・暴投・捕逸の得点も含める(D-430)
         for k, x in enumerate(pas):
             s = state_index(x.base_out)
             t.re_runs[s] += rest
             t.re_count[s] += 1
-            rest -= x.runs
-            after = state_index(pas[k + 1].base_out) if k + 1 < len(pas) else END
+            rest -= x.all_runs
+            nxt = state_after(pas, k)  # 打席の直後(盗塁などの前)の状況
+            after = state_index(nxt) if nxt is not None else END
             e = event_of(x)
             t.moves[e][(s, after)] += 1
             t.move_runs[e][(s, after)] += x.runs

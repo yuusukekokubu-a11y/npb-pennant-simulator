@@ -92,7 +92,7 @@ def test_version_24_save_is_read_with_the_old_roster(mid):
     m = json.loads(files["manifest.json"])
     m["format_version"] = 24
     st = json.loads(files["state.json"])
-    for key in ("condition", "demoted", "roster_auto", "active_history"):
+    for key in ("condition", "demoted", "roster_auto", "active_history", "running_start"):
         st["season"].pop(key, None)
     files["manifest.json"] = json.dumps(m).encode()
     files["state.json"] = json.dumps(st, ensure_ascii=False).encode()
@@ -102,7 +102,7 @@ def test_version_24_save_is_read_with_the_old_roster(mid):
             z.writestr(name, b)
     state = load_game(buf.getvalue())
     s = state.season
-    assert SAVE_FORMAT_VERSION == 25 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form
+    assert SAVE_FORMAT_VERSION == 26 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form and s.running_start == 20  # 版 25 への変換で、盗塁なども読んだ日から(D-433)
     s.play_days(6)
     assert s.day == 26
 

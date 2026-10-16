@@ -35,7 +35,7 @@ def consistency_checks(rec: Records, results: list[GameResult], season: SeasonRe
     b, p, t = _total(rec.batters), _total(rec.pitchers), _total(rec.teams)
     games = len(results)
     ties = sum(1 for r in results if r.tie)
-    log_outs = sum(x.outs_made for r in results for x in r.log)
+    log_outs = sum(x.all_outs for r in results for x in r.log)
     checks = [
         ("全選手の得点の合計 = チームの得点の合計", b["R"] == t["R"], f"{b['R']} / {t['R']}"),
         ("全投手の失点の合計 = チームの失点の合計", p["R"] == t["RA"], f"{p['R']} / {t['RA']}"),

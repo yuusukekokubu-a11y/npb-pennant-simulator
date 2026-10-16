@@ -22,9 +22,42 @@ from pennant.runvalues import (
     season_context,
     season_player_runs,
     situation_key,
+    _delta_event,
 )
+from pennant.game import CAUGHT, PASSED_BALL, STEAL, state_after
 
 SETTINGS = load_baseline_settings()
+
+
+def _halves(result):
+    halves = {}
+    for x in result.log:
+        halves.setdefault((x.inning, x.half), []).append(x)
+    return list(halves.values())
+
+
+def _event_credits(results, base, ctx):
+    """盗塁・盗塁死・捕逸の得点(D-430)を手で数え直す:(走者の走塁, 捕手の守備)。"""
+    running: dict[str, Fraction] = {}
+    catching: dict[str, Fraction] = {}
+    sm, pm = ctx.steal_mean(), ctx.passed_ball_mean()
+    for result in results:
+        catcher = {t: pid for t, slots in result.lineups.items() for _, pid, pos, _ in slots if pos == "C"}
+        for pas in _halves(result):
+            for k, x in enumerate(pas):
+                nxt = state_after(pas, k)
+                if nxt is not None and (nxt.first or nxt.second or nxt.third) and not x.ends_walkoff:
+                    catching[catcher[x.fielding_team_id]] = catching.get(catcher[x.fielding_team_id], Fraction(0)) + pm
+                for j, e in enumerate(x.events):
+                    d = None if e.walkoff else _delta_event(base.re24, pas, k, j)
+                    if d is None:
+                        continue
+                    if e.kind in (STEAL, CAUGHT):
+                        running[e.moves[0].player_id] = running.get(e.moves[0].player_id, Fraction(0)) + d - sm
+                        catching[e.catcher_id] = catching.get(e.catcher_id, Fraction(0)) - (d - sm)
+                    elif e.kind == PASSED_BALL:
+                        catching[e.catcher_id] = catching.get(e.catcher_id, Fraction(0)) - d
+    return running, catching
 
 
 @pytest.fixture(scope="module")
@@ -123,16 +156,18 @@ def test_baserunning_credit_is_mean_difference_split_among_runners(season):
                 if not runners:
                     continue
                 before = base.re24[x.base_out.index]
-                after = Fraction(0) if k + 1 >= len(pas) else base.re24[pas[k + 1].base_out.index]
+                nxt = state_after(pas, k)  # 打席の直後(盗塁などの前。D-430)
+                after = Fraction(0) if nxt is None else base.re24[nxt.index]
                 if before is None or after is None:
                     continue
                 d = after - before + x.runs
                 mean = ctx.situation_mean(situation_key(x))
                 for pid in runners:
                     by_player[pid] = by_player.get(pid, Fraction(0)) + (d - mean) / len(runners)
-    for pid, v in by_player.items():
-        assert runs[pid].baserunning == v
-    assert sum(by_player.values(), Fraction(0)) == 0
+    running, _ = _event_credits(results, base, ctx)
+    for pid in set(by_player) | set(running):
+        assert runs[pid].baserunning == by_player.get(pid, Fraction(0)) + running.get(pid, Fraction(0))
+    assert sum(by_player.values(), Fraction(0)) == 0 and sum(running.values(), Fraction(0)) == 0
 
 
 def test_walks_and_home_runs_give_no_baserunning_credit(season):
@@ -160,8 +195,10 @@ def test_fielding_runs_match_hand_recount(season):
                 made = 1 if pa.result in ("ground_out", "fly_out", "line_out") else 0
                 expected[x.fielder_id] = expected.get(x.fielder_id, Fraction(0)) + (made - rate) * ctx.out_value(pa.batted_ball, base)
                 chances.setdefault(x.fielder_id, Counter())[pa.fielder] += 1
-    for pid, v in expected.items():
-        assert runs[pid].fielding == v and runs[pid].chances_by_position == dict(chances[pid])
+    _, catching = _event_credits(results, base, ctx)
+    for pid in set(expected) | set(catching):
+        assert runs[pid].fielding == expected.get(pid, Fraction(0)) + catching.get(pid, Fraction(0))
+        assert runs[pid].chances_by_position == dict(chances.get(pid, {}))
     for b in ("ground", "line", "fly"):
         assert ctx.out_value(b, base) > 0  # アウトにする価値は正
     # 真の能力が高い遊撃手ほど守備の得点が高い(1シーズンでも、相関は正)

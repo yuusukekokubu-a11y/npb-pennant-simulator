@@ -3,7 +3,7 @@
 export const LOCAL_PYODIDE = new URLSearchParams(location.search).get("pyodide") === "local"; // 試験用(このページに置いた Pyodide を使う)
 export const MAX_SEED = 4294967295;
 export const WAIT_SHOW_MS = 600; // 待ち時間の表示は、これを超えたときだけ出し、出したらこれ以上は続ける(D-118)
-export const STATS_PAGE = 50; // 個人成績の表で、一度に出す人数(仮置き。DESIGN 9章)
+export const STATS_PAGE = 30; // 個人成績の表で、一度に出す人数(並べた上位 30 人。続きは「もっと見る」。D-431)
 export const GAMES_PAGE = 20; // 選手の試合ごとの成績で、一度に出す試合数(仮置き。DESIGN 9章)
 const WIDE_MIN_WIDTH = 900; // この幅(px)以上を「広い画面」とし、fluid の印を付けた表は横スクロールなしで全列を出す(仮置き。D-223。DESIGN 9章)
 // 下のタブ(小さな絵つき。D-401)。増やすときは、ここに足して、同じ名前の画面(screen-…)を index.html に作る。
@@ -43,12 +43,12 @@ export const state = {
   newGame: null, // 新規開始の画面の情報(シードと初期名)
   cache: new Map(), // 見る画面の結果(日が進むまで使い回す)
   cacheStamp: null,
-  stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", season: "current", shown: STATS_PAGE }, // season は "current"・シーズン番号・"career"(F2)
+  stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", season: "current", shown: STATS_PAGE, position: "all" }, // league は "" のとき自球団のリーグ(両リーグの表はない。D-431) // season は "current"・シーズン番号・"career"(F2)
   // 並び順(打者/投手ごとに保つ。基本・セイバー・能力を切り替えても保つ。D-131)。key が null なら、その表の既定
-  sortBy: { batter: { key: null, order: null }, pitcher: { key: null, order: null } },
-  shownSort: { batter: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
-  abilityKeys: { batter: [], pitcher: [] }, // 能力の表の列の名前(作り直し①:能力はいつでも見える。D-335)
-  warKeys: { batter: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
+  sortBy: { batter: { key: null, order: null }, fielder: { key: null, order: null }, pitcher: { key: null, order: null } },
+  shownSort: { batter: null, fielder: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
+  abilityKeys: { batter: [], fielder: [], pitcher: [] }, // 能力の表の列の名前(作り直し①:能力はいつでも見える。D-335)
+  warKeys: { batter: [], fielder: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
   playerKind: "basic",
   gamesDay: null,
   proc: freshProc(), // オフの手続きの画面の状態(F3-1。契約の画面の絞り込み・並び順・開いた行は D-272)

@@ -44,7 +44,7 @@ class OffseasonMixin:
         state.procedure = None
         state.year += 1
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
-        state.season.lineup_plans = {tid: {"style": plan["style"], "slots": None} for tid, plan in season.lineup_plans.items()}  # 打順の型は引き継ぎ、スタメンは AI が組み直す(D-373)
+        state.season.lineup_plans = {tid: {"style": plan["style"], "slots": None, **({"steal": plan["steal"]} if plan.get("steal") else {})} for tid, plan in season.lineup_plans.items()}  # 打順の型と盗塁の作戦は引き継ぎ、スタメンは AI が組み直す(D-373、D-429)
         self._cache = _StatsCache()
         self._park_estimates = None
         self._war = None

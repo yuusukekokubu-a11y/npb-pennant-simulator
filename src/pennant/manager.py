@@ -70,6 +70,7 @@ class TeamSetup:
     active: ActiveRoster
     lineup: Lineup
     starter: Player
+    steal: str = "normal"  # 盗塁の作戦(積極的・普通・慎重。D-429)
 
 
 @dataclass
@@ -359,4 +360,5 @@ class SimpleManager:
         active = active or self.select_active(team)
         lineup = self.starting_lineup(active, rng, plan)
         starter, nxt = self.choose_starter(active, rotation_index)
-        return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter), nxt
+        steal = str((plan or {}).get("steal") or "normal")
+        return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter, steal=steal), nxt

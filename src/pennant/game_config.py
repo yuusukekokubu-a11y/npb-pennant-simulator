@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .abilities import BATTER_ITEMS, FIELDER_POSITIONS, FIELDING_ITEMS
+from .abilities import BATTER_ITEMS, FIELDER_POSITIONS, FIELDING_ITEMS, PITCHER_ITEMS
 from .config import SUPPORTED_FORMAT_VERSION, ConfigError, _Checker, _read_json
 from .pa_config import RATIO_HIGH, RATIO_LOW
 
@@ -27,6 +27,9 @@ ADVANCEMENT_KEYS = (
 )
 # 補正に使える能力:走者・打者は走塁の能力、野手は守備の能力
 EFFECT_GROUPS = {"runner": ("speed", "baserunning"), "batter": ("speed", "baserunning"), "fielder": FIELDING_ITEMS}
+
+
+STEAL_STRATEGIES = ("aggressive", "normal", "cautious")  # 盗塁の作戦(D-429)
 
 
 @dataclass(frozen=True)
@@ -188,6 +191,45 @@ def validate_game_config(data: Any, source: str = "(辞書)") -> GameConfig:
                 else:
                     for i, x in enumerate(shares):
                         c.number(x, f"condition.initial[{i}]", 0, 1)
+    # 盗塁・暴投・捕逸(D-427)。書かなければ起きない(版 25 以前の試合の再現のため)
+    groups = {"runner": BATTER_ITEMS, "catcher": FIELDING_ITEMS, "pitcher": PITCHER_ITEMS}
+
+    def _event(e: Any, path: str) -> None:
+        e = c.section(e, path)
+        if e is None:
+            return
+        c.number(c.get(e, "base", path), f"{path}.base", 0.0, 0.999)
+        for group, table in e.items():
+            if group == "base":
+                continue
+            if group not in groups:
+                c.add(f"{path}.{group}", "runner / catcher / pitcher のどれかにしてください")
+                continue
+            for item, ratio in (c.section(table, f"{path}.{group}") or {}).items():
+                if item not in groups[group]:
+                    c.add(f"{path}.{group}.{item}", f"使えない能力です(使えるもの: {', '.join(groups[group])})")
+                    continue
+                c.number(ratio, f"{path}.{group}.{item}", RATIO_LOW, RATIO_HIGH)
+
+    if "steal" in root:
+        st = c.section(root["steal"], "steal")
+        if st is not None:
+            for key in ("attempt_2b", "attempt_3b", "success_2b", "success_3b"):
+                _event(c.get(st, key, "steal"), f"steal.{key}")
+            c.number(c.get(st, "min_success", "steal"), "steal.min_success", 0, 1)
+            c.integer(c.get(st, "behind_limit", "steal"), "steal.behind_limit", 1, 30)
+            c.integer(c.get(st, "ahead_limit", "steal"), "steal.ahead_limit", 1, 30)
+            strategies = c.section(c.get(st, "strategies", "steal"), "steal.strategies") or {}
+            for key in STEAL_STRATEGIES:
+                e = c.section(c.get(strategies, key, "steal.strategies"), f"steal.strategies.{key}")
+                if e is not None:
+                    c.number(c.get(e, "attempt", f"steal.strategies.{key}"), f"steal.strategies.{key}.attempt", 0, 10)
+                    c.number(c.get(e, "min_success", f"steal.strategies.{key}"), f"steal.strategies.{key}.min_success", 0, 1)
+    if "battery" in root:
+        bt = c.section(root["battery"], "battery")
+        if bt is not None:
+            for key in ("wild_pitch", "passed_ball"):
+                _event(c.get(bt, key, "battery"), f"battery.{key}")
     if "roster" in root:
         ro = c.section(root["roster"], "roster")
         if ro is not None:

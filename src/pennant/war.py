@@ -107,6 +107,7 @@ class WarLine:
     war_fip: Fraction = Fraction(0)
     war_ra: Fraction = Fraction(0)
     runs_per_win: Fraction = Fraction(0)  # 計算に使った1勝あたりの得点(内訳の換算用。指紋には入れない)
+    fielding_by_position: dict = field(default_factory=dict)  # ポジション → 守備の得点(個人成績の守備の表。D-431。指紋には入れない)
 
     def to_dict(self) -> dict:
         if self.role == "batter":
@@ -187,6 +188,7 @@ def season_war(
         r = runs.get(pid, PlayerRuns())
         line = WarLine("batter", rec.batter_team[pid], runs_per_win=rpw)
         line.batting, line.baserunning, line.fielding = r.batting, r.baserunning, r.fielding
+        line.fielding_by_position = dict(r.fielding_by_position)
         line.plate_appearances = r.plate_appearances
         pos = Fraction(0)
         for position, outs in r.outs_by_position.items():
