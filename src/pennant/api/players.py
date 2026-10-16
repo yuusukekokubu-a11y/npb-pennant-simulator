@@ -115,10 +115,9 @@ class PlayersMixin:
         }
 
     def _player_history(self, player_id: str, role: str, config) -> dict | None:
-        """選手のページの「年度別」の表(過去シーズン・今シーズン・通算。F2。D-182)。2シーズン目から。"""
-        if not self.state.history:
-            return None
-        keys = [str(a.year) for a in self.state.history] + ["current", "career"]
+        """選手のページの「年度別」の表(過去シーズン・今シーズン・通算。F2。D-182)。1シーズン目から(通算は今シーズンと同じ値。D-417)。"""
+        first = not self.state.history
+        keys = [str(a.year) for a in self.state.history] + ["current"] + ([] if first else ["career"])
         war_cols = WAR_COLUMNS[role]
         rows = []
         for key in keys:
@@ -142,6 +141,8 @@ class PlayersMixin:
                     "war": None if line is None else {k: v[1] for k, v in _war_values(line).items()},
                 }
             )
+        if first and rows:  # 1シーズン目の通算は今シーズンの写し
+            rows.append({**rows[0], "season": "career", "label": f"通算(1〜{self.state.year}シーズン目)", "year": None, "age": None, "team_name": "", "position": ""})
         return {
             "columns": {kind: [column_info(config, role, k) for k in config["tables"][role][kind]["columns"]] for kind in KIND_LABELS},
             "war_columns": war_cols,
