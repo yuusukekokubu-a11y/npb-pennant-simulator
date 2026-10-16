@@ -24,7 +24,7 @@ from .common import BASELINE_MODES, _gb_text, _pct_text
 
 def preview_teams(seed: int) -> dict:
     """新規開始の画面に出す、球団の並びと架空の初期名(そのシードで作られるリーグ)。"""
-    league = new_league(seed)
+    league = new_league(seed, prerun=False)  # 名前の一覧と点検には事前運転は要らない(押してからの待ちを短く。D-411)
     return {
         "seed": seed,
         "leagues": [
@@ -55,7 +55,7 @@ def check_place_names(seed: int, league_names: Sequence[str | None], stadium_nam
 
 def check_team_names(seed: int, names: Sequence[str | None]) -> list[str | None]:
     """球団名の欄ごとの問題(なければ None)。重複は、後ろの欄に理由を付ける。"""
-    league = new_league(seed)
+    league = new_league(seed, prerun=False)  # 名前の一覧と点検には事前運転は要らない(押してからの待ちを短く。D-411)
     problems: list[str | None] = [check_team_name(n) for n in names]
     if any(problems):
         return problems

@@ -5,7 +5,7 @@ import { call } from "./backend.js";
 import { showScreen } from "./screens.js";
 import { enterGame } from "./progress.js";
 import { termById } from "./glossary.js";
-import { hideLoading, showLoading, updatePercent } from "./loading.js";
+import { busyButton, hideLoading, showLoading, updatePercent } from "./loading.js";
 
 // ---- 新規開始 ----
 
@@ -192,7 +192,11 @@ export async function leagueSeedChanged() {
   await checkNames();
 }
 
-export async function startNewGame() {
+export function startNewGame() {
+  return busyButton($("new-start"), startNewGameInner()); // 押した瞬間に「準備中」(D-411)
+}
+
+async function startNewGameInner() {
   $("new-message").textContent = "";
   const ls = parseSeed("league-seed");
   const ss = parseSeed("season-seed");

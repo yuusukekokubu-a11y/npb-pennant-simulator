@@ -124,6 +124,19 @@ export function addChronicle(e) {
   while (box.children.length > HISTORY_ROWS) box.lastChild.remove();
 }
 
+// ---- 押したボタンの「準備中」(D-411):押した瞬間に、押せたことが分かるようにする ----
+
+export function busyButton(button, promise) {
+  button.disabled = true;
+  button.classList.add("busy");
+  button.setAttribute("aria-busy", "true");
+  return Promise.resolve(promise).finally(() => {
+    button.disabled = false;
+    button.classList.remove("busy");
+    button.removeAttribute("aria-busy");
+  });
+}
+
 // ---- 短い待ち(前の画面を暗くしてボール) ----
 
 let veilTimer = null;

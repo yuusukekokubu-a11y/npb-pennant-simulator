@@ -365,6 +365,9 @@
   .ls-tip-label { display: inline-block; background: var(--accent); color: var(--accent-fg); font-size: 0.7rem; font-weight: 800; padding: 0 8px; border-radius: 999px; }
   .ls-tip p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.6; min-height: 3.2em; }
   /* 短い待ち(D-405):前の画面を暗くしてボール。押す操作は邪魔しない */
+  /* 押したボタンの「準備中」(D-411):文字の前に小さなボールが回る */
+  button.busy { opacity: 1; cursor: progress; }
+  button.busy::before { content: ""; width: 16px; height: 16px; margin-right: 8px; border-radius: 50%; background: #fff; border: 2px dashed #d23b3b; animation: spin 1s linear infinite; flex: none; }
   .wait-veil { position: fixed; inset: 57px 0 0 0; z-index: 4; background: rgba(14, 22, 48, 0.6); display: grid; place-items: center; pointer-events: none; }
   .wide .wait-veil { left: var(--nav-w); }
   .wait-pill { display: flex; align-items: center; gap: 10px; background: var(--box2); padding: 10px 18px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; box-shadow: var(--shadow); }
