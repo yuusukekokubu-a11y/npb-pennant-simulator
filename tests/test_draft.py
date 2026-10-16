@@ -31,7 +31,7 @@ from pennant.generate import generate_league
 from pennant.newgame import new_league
 from pennant.offseason import age_update_retire, load_offseason_settings
 from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
-from pennant.scouting import GRADES, SCOUT_METHOD, grade_cuts, grade_of, item_sd, item_stats, overall_sd, quick_value, report, strengths
+from pennant.scouting import GRADES, SCOUT_METHOD, grade_cuts, grade_of, item_sd, item_stats, overall_sd, public_estimate, quick_value, report, strengths
 from pennant.stats import overall, projected_overall
 
 CONFIG = load_generation_config()
@@ -118,10 +118,11 @@ def test_report_is_deterministic_and_team_specific(pool):
     assert abs(q[0] - a.overall) < 1e-9 and q[1] == a.grade  # AI が使う速い値と、画面の評価が一致する
     assert abs(sum(a.items.values()) / len(a.items) - a.overall) < 1e-9
     assert a.method == SCOUT_METHOD == 3 and a.grade in GRADES
-    # 画面に出すのは評価と一言だけ(能力の数値・ふれ幅は出さない。D-368)
-    pub = a.to_public()
-    assert set(pub) == {"team_id", "grade", "comment"} and pub["comment"]
-    assert "potential" not in json.dumps(pub) and "growth" not in json.dumps(pub)
+    # 画面に出すのは見立て(能力の並び・特殊能力・総合。評価と一言は出さない。D-418)
+    pub = public_estimate(CONFIG, p, a)
+    assert set(pub) == {"team_id", "abilities", "skills", "overall", "overall_text"} and isinstance(pub["skills"], list)
+    text = json.dumps(pub, ensure_ascii=False)
+    assert "potential" not in text and "growth" not in text and "grade" not in text and "comment" not in text
     assert report(p, "T01", 100, SD5, cuts, stats, DS.comment).to_dict() != a.to_dict()  # シードが違えば違う
 
 
@@ -298,8 +299,8 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     v = g.offseason_advance()
     assert v["is_my_turn"] and v["round"] == 1 and v["bidding"] and v["current_team"] is None  # 1 巡目は入札(D-369)
     table = g.decision_table("draft")
-    assert [c["key"] for c in table["columns"]][:2] == ["grade", "comment"] and table["sort"]["key"] == "grade"
-    assert all(set(r["scouting"]) == {"team_id", "grade", "comment"} for r in table["rows"])  # 能力の数値は出さない(D-368)
+    assert [c["key"] for c in table["columns"]][:2] == ["ability", "age"] and table["sort"]["key"] == "ability" and table["columns"][0]["label"] == "見立て"
+    assert all(set(r["scouting"]) == {"team_id", "abilities", "skills", "overall", "overall_text"} for r in table["rows"])  # 見立て(D-418)
     # 保存して読み込むと、途中から再開できる
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
@@ -307,7 +308,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     v2 = again.offseason_view()
     t2 = again.decision_table("draft")
     assert v2["phase"] == "draft" and v2["bidding"] and v2["is_my_turn"] and [r["player_id"] for r in t2["rows"]] == [r["player_id"] for r in table["rows"]]
-    assert t2["rows"][0]["scouting"] == table["rows"][0]["scouting"]  # 評価も同じ(シードから導く)
+    assert t2["rows"][0]["scouting"] == table["rows"][0]["scouting"]  # 見立ても同じ(シードから導く)
     pick = t2["rows"][0]["player_id"]
     v2 = again.offseason_pick(pick)  # 入札
     assert v2["last_bid"]["step"] == 1 and any(x["player_id"] == pick for x in v2["last_bid"]["results"])
@@ -326,7 +327,9 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     assert r["finished"] and again.status()["year"] == 2 and again.state.procedure is None
     assert all(60 <= len(t.players) <= 70 for t in again.state.league.teams)  # 70 人は上限だけ(D-391)
     page = again.player(pick)
-    assert page["player"]["abilities"] and '"ratings"' not in json.dumps(page) and "scouting" not in page["player"]  # プロになったら能力を見せ、スカウト評価は見せない(D-352)
+    assert page["player"]["abilities"] and '"ratings"' not in json.dumps(page) and "scouting" not in page["player"]  # プロになったら能力を見せる(D-352)
+    e = page["player"]["entry_estimate"]  # 入団時の見立て(D-420)
+    assert e["route"] == "draft" and e["year"] == 2 and e["team_name"] and [a["key"] for a in e["abilities"]] == [a["key"] for a in page["player"]["abilities"]] and isinstance(e["skills"], list)
     # 元のゲーム側は「おまかせ」で全部進めても同じ年に進む
     g.offseason_auto()
     assert g.status()["year"] == 2
@@ -351,12 +354,12 @@ def test_draft_review_is_public_and_excludes_prerun(reviewed):
     assert g.review_years() == [2, 3]
     v = g.draft_review()
     assert v["team_id"] == "T01" and v["year"] == 3 and v["years"] == [2, 3] and len(v["teams"]) == 12  # 観戦のみ:最初の球団・最新の年度
-    assert v["rows"] and all(r["route"] in ("foreign", "draft", "dev_draft", "market", "fill") and r["entry_grade"] in GRADES and r["entry_comment"] for r in v["rows"])
+    assert v["rows"] and all(r["route"] in ("foreign", "draft", "dev_draft", "market", "fill") and r["entry_text"] for r in v["rows"])
     assert all(r["status"] in ("same", "moved", "left") and isinstance(r["games"], int) for r in v["rows"])
     text = json.dumps(v, ensure_ascii=False)
     for key in ("ratings", "potential", "growth_type", "archetype", "hidden", "cuts", "items", "overall"):
         assert f'"{key}"' not in text
-    assert "diff" not in text and "actual_ceiling" not in text and "±" not in text  # 入団時の評価は A〜E と一言だけ(D-368)
+    assert "diff" not in text and "actual_ceiling" not in text and "±" not in text and "entry_grade" not in text  # 入団時は見立ての総合(D-420)
     ids = {r["player_id"] for r in v["rows"]}
     players = {p.id: p for p in g.state.league.all_players()}
     assert all(players[pid].scouting["year"] == 3 for pid in ids if pid in players)

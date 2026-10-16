@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from .. import development as devmod, draft as draftmod, market as marketmod
+from .. import ability_model, development as devmod, draft as draftmod, market as marketmod
 from ..abilities import POSITION_LABELS
 from ..draft import PHASE_LABELS, stage_of
+from ..scouting import ScoutReport, public_estimate
 from .common import ROLE_LABELS
 
 
@@ -213,8 +214,8 @@ class DraftMixin:
         return sorted(rows, key=lambda x: (order[x["phase"]], int(x.get("round") or 0), x["player_id"]))
 
     def draft_review(self, team_id: str | None = None, year: int | None = None) -> dict:
-        """ドラフトの振り返り(公開用):入団の経路、入団時の評価(A〜E)と一言、今の所属、出場と WAR の累計(D-216、D-368)。
-        真の能力は含めない(ドラフト候補の能力は見せない。D-342)。"""
+        """ドラフトの振り返り(公開用):入団の経路、入団時の見立ての総合と今の総合、今の所属、出場と WAR の累計(D-216、D-420)。
+        リーグを去った選手は、総合を出さない。"""
         state = self.state
         names = self._team_names()
         years = self.review_years()
@@ -234,12 +235,12 @@ class DraftMixin:
         games, war = self._career_totals()
         players = {p.id: p for p in state.league.all_players() + state.league.development_players()}
         rows = []
+        cfg = state.gen_config
         for x in self.review_entries(team_id, int(year)):
             p = players.get(x["player_id"])
             sc = p.scouting if p is not None and p.scouting else None
-            summary = dict(x)
-            if sc and "grade" not in summary:  # 履歴に要約がなければ、選手が残っていれば評価から引く
-                summary.update(draftmod.entry_summary(sc))
+            entry = public_estimate(cfg, p, ScoutReport.from_dict(sc)) if sc else None
+            now = None if p is None else ability_model.display(cfg, ability_model.overall(p))
             if p is None:
                 status, status_label = "left", "引退・退団"
             elif p.team_id == team_id:
@@ -258,8 +259,10 @@ class DraftMixin:
                     "route_label": {"draft": f"ドラフト {x['round']} 巡" + ("(抽選)" if x.get("lottery") else ""), "dev_draft": f"育成ドラフト {x['round']} 巡", "foreign": "外国人市場", "market": "市場", "minimum": "市場(最低人数)"}.get(x["phase"], "自動補充"),
                     "entry_age": x.get("age"),
                     "age": None if p is None else p.age,
-                    "entry_grade": summary.get("grade", "-"),
-                    "entry_comment": summary.get("comment", ""),
+                    "entry_overall": None if entry is None else entry["overall"],
+                    "entry_text": "—" if entry is None else entry["overall_text"],
+                    "now_overall": now,
+                    "now_text": "—" if now is None else f"{ability_model.rank(cfg, now)} {now}",
                     "status": status,
                     "status_label": status_label,
                     "games": games.get(x["player_id"], 0),
@@ -268,7 +271,7 @@ class DraftMixin:
                 }
             )
         out["rows"] = rows
-        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の評価は、そのときの {names[team_id]} のスカウトの評価(A〜E)と一言。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。"
+        out["note"] = f"{year}シーズン目に {names[team_id]} に入った選手({len(rows)}人)。入団時の見立ては、そのときの {names[team_id]} のスカウトの見立ての総合。出場と WAR は入団から今までの累計(WAR は野手が WAR、投手が失点版)。"
         return out
 
     def transactions(self, year: int | None = None) -> dict:

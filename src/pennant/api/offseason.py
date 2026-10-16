@@ -61,10 +61,6 @@ class OffseasonMixin:
             raise ValueError("操作する球団がありません(観戦のみ)")
         return self._team(self.state.my_team_id)
 
-    def _report_public(self, player, team_id: str) -> dict:
-        proc = self._proc()
-        return draftmod.scout_report(proc, player, team_id, self.state.scout_sd_of(team_id), self.state.draft_settings).to_public()
-
     def offseason_view(self) -> dict:
         """オフの手続きの画面に出す情報(公開用。スカウト評価は操作する球団のもの)。"""
         state = self.state

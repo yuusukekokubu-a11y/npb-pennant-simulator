@@ -8,6 +8,8 @@ from .. import ability_model, draft as draftmod
 from ..abilities import POSITION_LABELS
 from ..draft import stage_of
 from ..market import market_terms
+from ..scouting import estimated_player, public_estimate
+from .abilities import _sort_value, ability_columns, skills_text
 from .common import (
     BATS_LABELS,
     CONTRACT_GROUPS,
@@ -24,7 +26,6 @@ from .common import (
 )
 
 DECISION_STAGES = ("fa", "foreign", "draft", "market")
-GRADE_ORDER = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}
 SHOW_LABELS = {"fa": ("未契約だけ", "契約した選手も"), "foreign": ("未契約だけ", "契約した選手も"), "draft": ("未指名だけ", "指名済みも"), "market": ("未契約だけ", "契約した選手も")}
 THIN_BOTTOM = 9  # 手薄の印:一軍相当の見込みの WAR が、12 球団の中で下から 4 番目以内(自球団より強い球団が 9 つ以上。D-303)
 THIN_SHORT = 2  # 手薄の印:人数が人数の目安より 2 人以上少ない(目安の合計が 70 人なので、1 人の差はどこかに必ず出る。D-303)
@@ -38,15 +39,13 @@ COL = {
     "usage": {"key": "usage", "label": "出場", "type": "count", "better": "high"},
     "former": {"key": "former", "label": "前の所属", "type": "text", "better": "low"},
     "status": {"key": "status", "label": "状態", "type": "text", "better": "low"},
-    "grade": {"key": "grade", "label": "評価", "type": "metric", "better": "high"},
-    "comment": {"key": "comment", "label": "スカウトの一言", "type": "text", "better": "low"},
     "ability": {"key": "ability", "label": "総合", "type": "metric", "better": "high"},
     "salary": {"key": "salary", "label": "年俸", "type": "count", "better": "low"},
 }
 STAGE_COLUMNS = {
     "fa": ["ability", "age", "pos", "depth", "calc", "usage", "former", "status"],
-    "foreign": ["grade", "comment", "age", "pos", "depth", "salary", "status"],
-    "draft": ["grade", "comment", "age", "origin", "pos", "depth"],
+    "foreign": ["ability", "age", "pos", "depth", "salary", "status"],
+    "draft": ["ability", "age", "origin", "pos", "depth"],
     "market": ["ability", "age", "pos", "depth", "calc", "usage", "former", "status"],
 }
 WAR_ALL = {"key": "war_all", "label": "WAR", "type": "metric", "category": "war", "better": "high"}
@@ -175,12 +174,16 @@ class DecisionMixin:
                 kind_cols = [c for c in kind_cols if c["key"] not in ("PA", "OUTS", "plate_appearances", "innings")]
                 metric = next(c for c in WAR_COLUMNS[role] if c["key"] == ("war" if role == "batter" else "war_ra"))
         base = [dict(COL[k]) for k in STAGE_COLUMNS[stage]]
+        if not with_stats:  # 見立て(D-418):「全員」は総合だけ、役割を選んだら総合の後に能力の各項目と特殊能力
+            base[0]["label"] = "見立て"
+            if role is not None:
+                base[1:1] = [{**c, "better": "high"} for c in ability_columns(role)]
         if stage == "draft" and show == "all":
             base.append({**COL["status"]})
         columns = ([metric] if metric else []) + base + [c for c in kind_cols if not metric or c["key"] != metric["key"]]
         keys = {c["key"]: c for c in columns}
         if not sort:
-            sort = metric["key"] if metric else "grade"
+            sort = metric["key"] if metric else "ability"
             order = "desc"
         if sort in keys:
             info = keys[sort]
@@ -210,15 +213,19 @@ class DecisionMixin:
             cells["pos"] = (positions.index(p.position), POSITION_LABELS[p.position] + (" ◆" if p.position in thin else ""))
             depth, in_slots = self._depth(p, team, ctx)
             cells["depth"] = (depth, f"{depth} 番手" + (" ●" if in_slots else ""))
-            amateur = stage in ("draft", "foreign") or (stage == "market" and holder is None and p.id not in former)  # 市場に並ぶ、指名されなかった候補は評価と一言だけ(D-368)。外国人の候補も(D-376)
-            if stage == "foreign":
-                sc = draftmod.scout_report_foreign(proc, p, my, state.scout_sd_of(my), state.draft_settings).to_public()
-            else:
-                sc = self._report_public(p, my) if amateur else None
-            if sc is not None:
-                cells["grade"] = (GRADE_ORDER.get(sc["grade"], 0), sc["grade"])
-                cells["comment"] = (sc["comment"], sc["comment"])
-                cells["ability"] = ((0, GRADE_ORDER.get(sc["grade"], 0)), f"評価 {sc['grade']}")
+            amateur = stage in ("draft", "foreign") or (stage == "market" and holder is None and p.id not in former)  # 市場に並ぶ、指名されなかった候補と、ドラフト・外国人の候補は見立て(D-418)
+            sc = None
+            if amateur:  # 新しく入る選手は自球団のスカウトの見立て(D-418)
+                make = draftmod.scout_report_foreign if stage == "foreign" else draftmod.scout_report
+                rep = make(proc, p, my, state.scout_sd_of(my), state.draft_settings)
+                sc = public_estimate(cfg, p, rep)
+                q = estimated_player(p, rep)
+                cells["ability"] = ((1, sc["overall"]), sc["overall_text"])
+                if not with_stats and role is not None:
+                    shown = {a["key"]: a["text"] for a in sc["abilities"]}
+                    for c in ability_columns(role):
+                        k = c["key"]
+                        cells[k] = (_sort_value(cfg, q, k), skills_text(q) or "—" if k == "skills" else shown.get(k, "—"))
             else:  # プロの選手は能力が見える(D-335、D-370)
                 shown = ability_model.display(cfg, ability_model.overall(p))
                 cells["ability"] = ((1, shown), f"{ability_model.rank(cfg, shown)} {shown}")

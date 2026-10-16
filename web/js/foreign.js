@@ -1,9 +1,9 @@
-// 外国人市場の画面(判断の画面。D-376):候補は評価(A〜E)とスカウトの一言だけ。年俸は評価の段階の表(1 年)。
+// 外国人市場の画面(判断の画面。D-376):候補の能力は自球団のスカウトの見立て(D-418)。年俸は内部の評価の段階の表(1 年)。
 // 欲しい選手を「獲得の希望」に入れ(入れた順が優先の順)、「外国人市場を締める」(状態バー。procedure.js)で、前年の順位が低い球団から 1 人ずつ獲得する
 
 import { state } from "./core.js";
 import { renderCurrent } from "./screens.js";
-import { el } from "./parts.js";
+import { el, estimateBlock } from "./parts.js";
 import { runProc } from "./procedure.js";
 import { decisionFilters, decisionTable, fetchDecision, resultsTable } from "./decision.js";
 
@@ -18,10 +18,9 @@ export async function foreignSection(v, token) {
   const onName = (p) => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); };
   const detail = (p) => {
     if (ps.open !== p.player_id) return null;
-    const sc = p.scouting || {};
     const d = p.deal || {};
     const box = el("div", { className: "offer-panel", id: "foreign-panel", dataset: { playerId: p.player_id } },
-      el("p", {}, `スカウトの評価 ${sc.grade || "-"}:「${sc.comment || ""}」。年俸 ${d.calc_text}(評価の段階で決まる・1 年)。能力は入団すると見えます。`));
+      ...estimateBlock(p.scouting), el("p", {}, `年俸 ${d.calc_text}(1 年)。`));
     if (!canWish(p)) return box;
     const rank = p.offer ? f.offers.findIndex((o) => o.player_id === p.player_id) + 1 : 0;
     if (p.offer) box.append(el("p", { className: "small" }, `獲得の希望 ${rank} 番目(希望は入れた順に優先します)`));

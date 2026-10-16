@@ -100,9 +100,9 @@ def test_find_by_alias_and_parenthesis():
 def test_game_rules_and_new_game_settings_are_terms():
     """ゲームのルール(D-309)と、新規開始の説明バーで引く設定の項目(D-313)。"""
     g = default_glossary()
-    for name in ("資金", "球団の規模", "査定", "FA 権", "愛着", "ドラフト", "入札", "自由契約市場", "獲得の希望", "評価", "スカウトの一言", "能力のランク"):
+    for name in ("資金", "球団の規模", "査定", "FA 権", "愛着", "ドラフト", "入札", "自由契約市場", "獲得の希望", "見立て", "入団時の見立て", "能力のランク"):
         assert g.find(name) is not None, name
-    for name in ("志望", "天井", "ふれ幅"):  # 志望・天井・ふれ幅はなくした(作り直し③。D-365、D-368)
+    for name in ("志望", "天井", "ふれ幅", "評価", "スカウトの一言"):  # 志望・天井・ふれ幅はなくした(作り直し③。D-365、D-368)。評価と一言は画面に出さない(D-418)
         assert g.find(name) is None, name
     assert g.find("予算")["name"] == "資金" and g.find("お金のルール") is None  # お金のルールはなくした(D-353)
     newgame = (ROOT / "web" / "js" / "newgame.js").read_text(encoding="utf-8")

@@ -1,10 +1,10 @@
-// ドラフトの画面(判断の画面。①b。作り直し③。D-296〜D-299、D-368、D-369):列は 名前・評価(A〜E)・スカウトの一言・年齢・出身・ポジション・加入後の序列。
-// 能力の数値は見せない(入団したら見える)。並べ替えは列見出しのタップ。絞り込みの既定は「未指名だけ」。手薄なポジションに ◆。
+// ドラフトの画面(判断の画面。①b。作り直し③。D-296〜D-299、D-369、D-418):列は 名前・見立て(役割を選ぶと能力の各項目と特殊能力)・年齢・出身・ポジション・加入後の序列。
+// 能力は自球団のスカウトの見立て(入団すると本当の数字になる)。並べ替えは列見出しのタップ。絞り込みの既定は「未指名だけ」。手薄なポジションに ◆。
 // 1 巡目は全球団の入札と抽選:名前を押すと「入札する」のボタン。2 巡目からは順番に指名(「次の自分の番まで進める」「パス」は状態バー。procedure.js)
 
 import { state } from "./core.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, table } from "./parts.js";
+import { el, estimateBlock, playerLink, table } from "./parts.js";
 import { runProc } from "./procedure.js";
 import { decisionFilters, decisionTable, fetchDecision } from "./decision.js";
 
@@ -16,9 +16,7 @@ export async function draftSection(v, token) {
   const onName = (p) => { ps.open = ps.open === p.player_id ? null : p.player_id; renderCurrent(); };
   const detail = (p) => {
     if (ps.open !== p.player_id) return null;
-    const sc = p.scouting || {};
-    const box = el("div", { className: "offer-panel", id: "draft-panel", dataset: { playerId: p.player_id } },
-      el("p", { className: "small" }, `スカウトの評価 ${sc.grade || "-"}:「${sc.comment || ""}」(能力は入団すると見えます)`));
+    const box = el("div", { className: "offer-panel", id: "draft-panel", dataset: { playerId: p.player_id } }, ...estimateBlock(p.scouting));
     if (p.open && v.is_my_turn) {
       const label = v.bidding ? "1 巡目に入札する" : v.development_draft ? `育成 ${v.round} 巡目で指名する` : `${v.round} 巡目で指名する`;
       box.append(el("div", { className: "row" }, el("button", { id: "draft-pick", type: "button", disabled: state.running, onclick: () => draftPick(p.player_id) }, label)));

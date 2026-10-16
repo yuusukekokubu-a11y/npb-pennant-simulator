@@ -79,15 +79,22 @@ def test_active_roster_has_at_most_four_foreign(base):
     assert [p.id for p in a.players] == [p.id for p in b.players]
 
 
-def test_foreign_market_shows_grade_only_and_signs_in_order(at_offseason):
+def test_foreign_market_shows_estimates_and_signs_in_order(at_offseason):
     g = fresh(at_offseason)
     v = go_to(g, "foreign")
     assert v["phase"] == "foreign" and v["foreign"]["counts"]["pool"] == DS.foreign["candidates"]
     t = g.decision_table("foreign")
-    assert [c["key"] for c in t["columns"]] == ["grade", "comment", "age", "pos", "depth", "salary", "status"]
+    assert [c["key"] for c in t["columns"]] == ["ability", "age", "pos", "depth", "salary", "status"]
     text = json.dumps(t, ensure_ascii=False)
-    for key in ("abilities", "ratings", "growth_type", "ease", "skills"):
-        assert f'"{key}"' not in text  # 能力・隠し情報・特殊能力は見せない
+    for key in ("ratings", "growth_type", "ease", "grade", "comment"):
+        assert f'"{key}"' not in text  # 隠し情報と、内部の評価・一言は見せない
+    proc = g.state.procedure
+    real = {p.id: p for p in proc.foreign_pool}
+    est = {r["player_id"]: {a["key"]: a["value"] for a in r["scouting"]["abilities"]} for r in t["rows"]}
+    shown = {pid: {a["key"]: a["value"] for a in g.player_abilities(real[pid])} for pid in est}
+    assert any(est[pid] != shown[pid] for pid in est)  # 見立ては本当の数字とずれる(D-418)
+    tp = g.decision_table("foreign", group="pitcher")
+    assert [c["key"] for c in tp["columns"]][:6] == ["ability", "velocity", "control", "stamina", "breaking", "skills"]
     proc = g.state.procedure
     assert all(proc.foreign_salary[p.id] in DS.foreign["salary"].values() for p in proc.foreign_pool)
     pid = min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["player_id"]  # 資金の残りで結べる、年俸の最も安い候補
