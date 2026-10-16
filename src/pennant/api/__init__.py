@@ -103,6 +103,7 @@ from .common import (
 )
 from .abilities import AbilitiesMixin
 from .active_draft import ActiveDraftMixin
+from .archive import ArchiveMixin
 from .base import GameBase
 from .contract import ContractMixin
 from .decisions import DecisionMixin
@@ -121,7 +122,7 @@ from .teams import TeamsMixin
 from .trade import TradeMixin
 
 
-class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, TradeMixin, ActiveDraftMixin, FacilitiesMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, GameBase):
+class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, GamesMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, TradeMixin, ActiveDraftMixin, FacilitiesMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, ArchiveMixin, GameBase):
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 

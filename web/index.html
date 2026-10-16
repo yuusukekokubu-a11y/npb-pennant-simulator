@@ -190,7 +190,7 @@
   th.sorted .arrow { font-size: 0.65rem; margin-right: 1px; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
   /* 広い画面(幅が js/core.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223) */
-  .wide #screen-procedure, .wide #screen-review { max-width: 1180px; }
+  .wide #screen-procedure, .wide #screen-records { max-width: 1180px; }
   .wide .table-wrap.fluid { overflow-x: visible; }
   .wide .table-wrap.fluid table { table-layout: auto; }
   .wide .table-wrap.fluid th { white-space: normal; }
@@ -509,7 +509,7 @@
     <div class="form" id="mine-form"></div>
     <div class="form-note" id="mine-note"></div>
   </div>
-  <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">ドラフト</button></div>
+  <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
 
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
@@ -673,7 +673,6 @@
   <details id="trade-history-box"><summary>このシーズン(オフ)のトレード</summary><div id="trade-history"></div></details>
 </main>
 
-<!-- ドラフトの振り返り(当たり外れの一覧。D-216) -->
 <main class="screen" id="screen-lineup" hidden>
   <div class="page-head"><button class="secondary back">戻る</button><h1>スタメンと打順</h1></div>
   <div class="row">
@@ -688,15 +687,12 @@
   <div id="lineup-bench"></div>
 </main>
 
-<main class="screen" id="screen-review" hidden>
-  <div class="page-head"><button class="secondary back">戻る</button><h1>ドラフトの振り返り</h1></div>
-  <div class="row">
-    <select id="review-team" aria-label="球団の選択"></select>
-    <select id="review-year" aria-label="入団した年度の選択"></select>
-  </div>
-  <p class="loading" id="review-loading" hidden>集計しています…</p>
-  <div id="review-table"></div>
-  <p class="small" id="review-note"></p>
+<!-- 記録室(D-422、D-423):歴代の順位と優勝・年ごとのタイトル・通算記録・補強の記録 -->
+<main class="screen" id="screen-records" hidden>
+  <div class="seg" id="records-section" role="group" aria-label="記録の種類の切り替え"></div>
+  <div class="seg" id="records-kind" role="group" aria-label="補強の記録の切り替え" hidden></div>
+  <div class="row" id="records-controls"></div>
+  <div id="records-body"></div>
 </main>
 
 <!-- チームのページ -->
@@ -710,7 +706,7 @@
   <h2>総年俸と契約</h2>
   <div id="team-budget" class="contract-box"></div>
   <div id="team-salaries"></div>
-  <p><button id="team-review" class="secondary" type="button">ドラフトの振り返り(この球団に入った選手の当たり外れ)</button></p>
+  <p><button id="team-review" class="secondary" type="button">補強の記録(この球団に入った選手の当たり外れ)</button></p>
   <h2>投手</h2>
   <div id="team-pitchers"></div>
   <h2>野手</h2>
