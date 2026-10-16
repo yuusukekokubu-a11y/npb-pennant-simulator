@@ -31,10 +31,71 @@ function names() {
   return teamInputs().map((i) => i.value);
 }
 
+// リーグ名・球場名の欄(「詳しい設定」の中。D-409)
+const leagueNameInputs = () => [...document.querySelectorAll("#place-fields input[data-kind=league]")];
+const stadiumInputs = () => [...document.querySelectorAll("#place-fields input[data-kind=stadium]")];
+
+function places() {
+  const tier = document.querySelector("input[name=my-tier]:checked");
+  return { leagues: leagueNameInputs().map((i) => i.value), stadiums: stadiumInputs().map((i) => i.value), my_tier: tier ? tier.value : "auto" };
+}
+
+function placeInput(kind, index, labelText, placeholder, value) {
+  const id = `${kind}-name-${index}`;
+  const wrap = document.createElement("div");
+  wrap.className = "place-field";
+  const label = document.createElement("label");
+  label.htmlFor = id;
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  Object.assign(input, { type: "text", id, placeholder, autocomplete: "off", spellcheck: false, value: value || "" });
+  input.dataset.kind = kind;
+  input.setAttribute("autocapitalize", "off");
+  input.setAttribute("aria-describedby", `${id}-error`);
+  input.addEventListener("input", schedulePlaceCheck);
+  const err = document.createElement("p");
+  err.className = "error";
+  err.id = `${id}-error`;
+  wrap.append(label, input, err);
+  return wrap;
+}
+
+function buildPlaceFields(pv, prev) {
+  const box = $("place-fields");
+  box.replaceChildren();
+  pv.leagues.forEach((lg, i) => box.append(placeInput("league", i, `${i + 1}つ目のリーグ名`, lg.name, prev && prev.leagues[i])));
+  let i = 0;
+  for (const lg of pv.leagues) for (const t of lg.teams) {
+    const index = i++;
+    box.append(placeInput("stadium", index, `${index + 1}番目の球団(${t.default_name})の球場名`, t.stadium, prev && prev.stadiums[index]));
+  }
+}
+
+let placeTimer = null;
+function schedulePlaceCheck() {
+  clearTimeout(placeTimer);
+  placeTimer = setTimeout(checkPlaces, 250);
+}
+
+async function checkPlaces() {
+  if (!state.newGame) return [];
+  const p = places();
+  const r = await call("checkPlaces", { seed: state.newGame.seed, leagues: p.leagues, stadiums: p.stadiums });
+  const show = (inputs, problems) => inputs.forEach((input, i) => {
+    const msg = (problems || [])[i] || "";
+    $(`${input.id}-error`).textContent = msg;
+    input.setAttribute("aria-invalid", String(Boolean(msg)));
+  });
+  show(leagueNameInputs(), r.value.leagues);
+  show(stadiumInputs(), r.value.stadiums);
+  return [...(r.value.leagues || []), ...(r.value.stadiums || [])].filter(Boolean);
+}
+
 export async function showNewGame() {
   $("new-help").hidden = true;
   $("new-message").textContent = "";
   $("my-team-none").checked = true; // 既定は観戦のみ(D-198)
+  document.querySelector("input[name=my-tier][value=auto]").checked = true; // 自球団の資金力は自動(D-410)
   $("league-seed").value = "";
   $("season-seed").value = "";
   $("league-seed-error").textContent = "";
@@ -47,7 +108,7 @@ async function preparePreview(seed, reset) {
   const r = await call("preview", { seed });
   const pv = r.value;
   // 入力済みの名前と自球団の選択は、作り直す直前の状態を引き継ぐ
-  const prev = reset ? null : { names: names(), mine: myTeamIndex() };
+  const prev = reset ? null : { names: names(), mine: myTeamIndex(), ...places() };
   state.newGame = { seed, preview: pv };
   const box = $("league-fields");
   box.dataset.seed = String(seed);
@@ -92,6 +153,7 @@ async function preparePreview(seed, reset) {
     }
     box.appendChild(fs);
   }
+  buildPlaceFields(pv, prev);
 }
 
 function myTeamIndex() {
@@ -138,9 +200,14 @@ export async function startNewGame() {
   $("season-seed-error").textContent = ss.error || "";
   const problems = await checkNames();
   const bad = problems.findIndex(Boolean);
-  if (ls.error || ss.error || bad >= 0) {
+  const placeProblems = await checkPlaces(); // リーグ名・球場名(D-409)
+  if (ls.error || ss.error || bad >= 0 || placeProblems.length) {
     $("new-message").textContent = "入力に問題があります。赤い字の説明を見て、直してください。";
     if (bad >= 0) teamInputs()[bad].focus();
+    else if (placeProblems.length) {
+      document.querySelector("#screen-new details").open = true; // 詳しい設定の中の欄を見せる
+      [...leagueNameInputs(), ...stadiumInputs()].find((i) => i.getAttribute("aria-invalid") === "true")?.focus();
+    }
     return;
   }
   const mine = myTeamIndex(); // -1 は観戦のみ(球団を操作しない。D-198)
@@ -158,14 +225,14 @@ export async function startNewGame() {
     const t0 = performance.now();
     const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
     const rules = Object.fromEntries([...document.querySelectorAll("input[name=rules]")].map((x) => [x.value, x.checked]));  // 仕組みの選択肢(D-381)
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, rules }).finally(hideLoading);
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, rules, places: places() }).finally(hideLoading);
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");
       return;
     }
     // 入力欄は空にしておく(画面に名前を残さない)
-    for (const input of teamInputs()) input.value = "";
+    for (const input of [...teamInputs(), ...leagueNameInputs(), ...stadiumInputs()]) input.value = "";
     state.newGame = null;
     enterGame(r.value, true);
   } finally {
@@ -196,6 +263,9 @@ export function trialProgress({ day, total }) {
 export function helpIdFor(target) {
   if (!target || !target.matches) return null;
   if (target.matches("#league-fields input[type=text]")) return "setting.team_name";
+  if (target.dataset && target.dataset.kind === "league") return "setting.league_name";
+  if (target.dataset && target.dataset.kind === "stadium") return "setting.stadium_name";
+  if (target.name === "my-tier") return "setting.my_tier";
   if (target.name === "my-team") return target.value === "-1" ? "setting.watch" : "setting.my_team";
   if (target.id === "league-seed") return "setting.league_seed";
   if (target.id === "season-seed") return "setting.season_seed";

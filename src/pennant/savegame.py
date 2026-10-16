@@ -26,7 +26,7 @@ from datetime import date, datetime
 from .baselines import Baselines, BaselineSettings, load_baseline_settings, validate_baseline_settings
 from .offseason import OffseasonSettings, load_offseason_settings, validate_offseason_settings
 from .parkfactors import ParkTally, history_to_dict
-from .contracts import TIERS, load_contract_settings, validate_contract_settings
+from .contracts import ALL_TIERS, load_contract_settings, validate_contract_settings
 from .negotiation import load_negotiation_settings, validate_negotiation_settings
 from .draft import load_draft_settings, validate_draft_settings
 from .trade import load_trade_settings, validate_trade_settings
@@ -67,7 +67,16 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 23  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)
+SAVE_FORMAT_VERSION = 24  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)
+
+
+def _saved_name_problem(value) -> str | None:
+    """セーブデータの中のリーグ名・球場名の点検(D-409):文字列で、空でなく、球団名と同じ点検に通ること。"""
+    if not isinstance(value, str):
+        return "文字列が必要です"
+    if not value.strip():
+        return "空の名前は使えません"
+    return check_team_name(value)
 ZIP_TIME = (2020, 1, 1, 0, 0, 0)  # ZIP の中の日時は固定する(保存日時は manifest にだけ入れる)
 STATE_FILE = "state.json"
 MANIFEST_FILE = "manifest.json"
@@ -448,7 +457,10 @@ def load_game(data: bytes) -> GameState:
     # ---- リーグと選手 ----
     league_d = _need(state, "league", dict, "state.json", p) or {}
     teams_d = _need(league_d, "teams", list, "state.json.league", p) or []
-    _need(league_d, "league_names", list, "state.json.league", p)
+    for li, ln in enumerate(_need(league_d, "league_names", list, "state.json.league", p) or []):  # 入力されたリーグ名も点検(D-409)
+        problem = _saved_name_problem(ln)
+        if problem:
+            p.add(f"state.json.league.league_names[{li}]", problem)
     team_ids: set[str] = set()
     player_ids: set[str] = set()
     for ti, td in enumerate(teams_d):
@@ -462,6 +474,8 @@ def load_game(data: bytes) -> GameState:
         team_ids.add(tid)
         for key in ("place", "nickname", "stadium"):
             _need(td, key, str, where, p)
+        if isinstance(td.get("stadium"), str) and _saved_name_problem(td["stadium"]):  # 入力された球場名も、球団名と同じ点検(D-409)
+            p.add(f"{where}.stadium", _saved_name_problem(td["stadium"]))
         _need(td, "league_index", int, where, p)
         park = _need(td, "park", dict, where, p)
         if park is not None:
@@ -546,8 +560,8 @@ def load_game(data: bytes) -> GameState:
                 p.add(f"state.json.scout_sd.{tid}.{key}", f"0〜30 の数が必要です(値: {x!r})")
                 scout_sd_d[tid] = {"common": 0.0, "item": 0.0}
     tiers_d = state.get("budget_tiers", {})
-    if not isinstance(tiers_d, dict) or any(v not in TIERS for v in tiers_d.values()):
-        p.add("state.json.budget_tiers", "球団 → large / medium / small のまとまりが必要です")
+    if not isinstance(tiers_d, dict) or any(v not in ALL_TIERS for v in tiers_d.values()):
+        p.add("state.json.budget_tiers", "球団 → large / medium / small / huge のまとまりが必要です")
         tiers_d = {}
     funds_d = state.get("team_funds", {})
     if not isinstance(funds_d, dict) or any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in funds_d.values()):

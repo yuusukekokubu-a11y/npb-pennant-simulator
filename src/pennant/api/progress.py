@@ -43,6 +43,16 @@ def preview_teams(seed: int) -> dict:
     }
 
 
+def check_place_names(seed: int, league_names: Sequence[str | None], stadium_names: Sequence[str | None]) -> dict:
+    """リーグ名・球場名の欄ごとの問題(なければ None。D-409)。"""
+    from ..newgame import check_place_names as _check
+
+    try:
+        return _check(new_league(seed, prerun=False), league_names, stadium_names)
+    except TeamNameError as exc:
+        return {"leagues": [], "stadiums": [], "error": exc.problems}
+
+
 def check_team_names(seed: int, names: Sequence[str | None]) -> list[str | None]:
     """球団名の欄ごとの問題(なければ None)。重複は、後ろの欄に理由を付ける。"""
     league = new_league(seed)
@@ -77,6 +87,9 @@ class ProgressMixin:
         scout_level: str | None = None,
         rules: dict | None = None,
         prerun_chronicle=None,
+        league_names: Sequence[str | None] | None = None,
+        stadium_names: Sequence[str | None] | None = None,
+        my_tier: str | None = None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -98,9 +111,14 @@ class ProgressMixin:
         game_rules = rules_from(rules)
         contract_settings = load_contract_settings()
         negotiation_settings = load_negotiation_settings()
-        tiers = assign_tiers([f"T{i:02d}" for i in range(1, 13)], seed, contract_settings)  # 球団の規模(D-353)
+        from ..contracts import ALL_TIERS
+
+        if my_tier not in (None, "", "auto") and my_tier not in ALL_TIERS:
+            raise ValueError(f"自球団の資金力は auto / small / medium / large / huge です(値: {my_tier!r})")
+        fixed = {} if my_tier in (None, "", "auto") or my_team_index is None or isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < 12 else {f"T{my_team_index + 1:02d}": my_tier}
+        tiers = assign_tiers([f"T{i:02d}" for i in range(1, 13)], seed, contract_settings, fixed)  # 球団の規模(D-353)。自球団の資金力を選んだときは、ほかの球団で数を合わせる(D-410)
         contract_info: dict = {}
-        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), tiers=tiers, contract_settings=contract_settings, contract_info=contract_info, negotiation_settings=negotiation_settings, rules=game_rules, chronicle=prerun_chronicle)
+        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), tiers=tiers, contract_settings=contract_settings, contract_info=contract_info, negotiation_settings=negotiation_settings, rules=game_rules, chronicle=prerun_chronicle, league_names=league_names, stadium_names=stadium_names)
         tiers = {tid: t for tid, t in tiers.items() if any(team.id == tid for team in league.teams)}
         if my_team_index is not None and (isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams)):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])

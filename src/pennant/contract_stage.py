@@ -50,7 +50,9 @@ class ContractContext:
 
     def total_cap(self) -> int:
         """全球団の年俸に使える額の合計(単価を求めるため)。"""
-        return sum(int(v) - int(self.upkeep.get(t, 0)) for t, v in self.funds.items())
+        from .contracts import rate_funds
+
+        return sum(rate_funds(int(v), (self.tiers or {}).get(t), self.settings) - int(self.upkeep.get(t, 0)) for t, v in self.funds.items())  # 超大量は大の上限まで(D-410)
 
     def hard(self) -> bool:
         return bool(self.funds)

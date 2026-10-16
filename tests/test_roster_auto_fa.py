@@ -51,7 +51,7 @@ def test_save_keeps_fa_free(auto_season_end):
     p = g._team("T02").players[0]
     p.fa_free = True
     again = load_game(save_game(g.state))
-    assert SAVE_FORMAT_VERSION == 23 and next(q for q in again.league.all_players() if q.id == p.id).fa_free is True
+    assert SAVE_FORMAT_VERSION >= 23 and next(q for q in again.league.all_players() if q.id == p.id).fa_free is True
     bad = copy.deepcopy(g.state)
     bad.league.teams[1].players[0].fa_free = "yes"
     with pytest.raises(SaveDataError, match="fa_free"):

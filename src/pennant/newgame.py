@@ -46,6 +46,38 @@ def check_team_name(name: str | None) -> str | None:
     return None
 
 
+def check_place_names(league: League, league_names: Sequence[str | None] | None, stadium_names: Sequence[str | None] | None) -> dict[str, list[str | None]]:
+    """リーグ名・球場名の欄ごとの問題(なければ None。D-409)。空欄は架空の初期名。リーグ名どうしは重ならないこと。"""
+    lg = list(league_names or [])
+    st = list(stadium_names or [])
+    out = {"leagues": [check_team_name(n) for n in lg], "stadiums": [check_team_name(n) for n in st]}
+    if lg and len(lg) != len(league.league_names):
+        raise TeamNameError([f"リーグ名は {len(league.league_names)} 個を渡してください(渡された数: {len(lg)})"])
+    if st and len(st) != len(league.teams):
+        raise TeamNameError([f"球場名は {len(league.teams)} 個(全球団の分)を渡してください(渡された数: {len(st)})"])
+    finals = [(n.strip() if n and n.strip() else d) for n, d in zip(lg, league.league_names)]
+    for i, name in enumerate(finals):
+        j = next((k for k in range(i) if _same_key(finals[k]) == _same_key(name)), None)
+        if j is not None and out["leagues"][i] is None:
+            out["leagues"][i] = f"「{name}」は {j + 1}つ目のリーグと同じ名前です"
+    return out
+
+
+def apply_place_names(league: League, league_names: Sequence[str | None] | None, stadium_names: Sequence[str | None] | None) -> None:
+    """入力されたリーグ名・球場名を当てはめる(空欄は架空の初期名のまま)。問題があれば TeamNameError(D-409)。"""
+    problems = check_place_names(league, league_names, stadium_names)
+    msgs = [f"{i + 1}つ目のリーグ名: {p}" for i, p in enumerate(problems["leagues"]) if p]
+    msgs += [f"{i + 1}番目の球団の球場名: {p}" for i, p in enumerate(problems["stadiums"]) if p]
+    if msgs:
+        raise TeamNameError(msgs)
+    for i, n in enumerate(league_names or []):
+        if n and n.strip():
+            league.league_names[i] = n.strip()
+    for team, n in zip(league.teams, stadium_names or []):
+        if n and n.strip():
+            team.stadium = n.strip()
+
+
 def resolve_team_names(league: League, names: Sequence[str | None]) -> list[str | None]:
     """入力された球団名を検証し、球団ごとの display_name(空欄は None)を返す。問題があれば TeamNameError。"""
     teams = league.teams
@@ -88,13 +120,16 @@ def new_league(
     negotiation_settings=None,
     rules=None,
     chronicle=None,
+    league_names: Sequence[str | None] | None = None,
+    stadium_names: Sequence[str | None] | None = None,
 ) -> League:
     """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。
 
     prerun=True なら、初期選手の生成の後に事前運転(試合なしで年度の確定を数十年分)と校正を行う(D-190、D-197)。
     tiers は球団 → 規模(大・中・小。D-353)。資金は規模の基準額から始まる。
     progress には事前運転の (終わった年数, 全年数) を知らせる。rules は仕組みの選択肢(D-381。None なら既定)。
-    chronicle には事前運転の 1 年ごとの出来事を知らせる(ロード画面の「歴史」。D-406)。"""
+    chronicle には事前運転の 1 年ごとの出来事を知らせる(ロード画面の「歴史」。D-406)。
+    league_names・stadium_names は入力されたリーグ名・球場名(空欄は架空の初期名。D-409)。"""
     from .offseason import apply_calibration, load_offseason_settings
     from .offseason import prerun as run_prerun
 
@@ -107,6 +142,7 @@ def new_league(
     if team_names is not None:  # 球団名は事前運転の前に当てはめる(歴史に入力した名前で出すため。計算には使わない。D-406)
         for team, name in zip(league.teams, resolve_team_names(league, team_names)):
             team.display_name = name
+    apply_place_names(league, league_names, stadium_names)  # リーグ名・球場名(D-409)
     if tiers is None:  # 球団の規模は新規開始のシードから(Game.new と同じ割り当て。D-353)
         from .contracts import assign_tiers, load_contract_settings
 

@@ -338,6 +338,11 @@
   .loading { color: var(--muted); font-size: 0.9rem; }
   label.radio { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 0.95rem; }
   label.radio input { width: 20px; height: 20px; margin-top: 3px; flex: none; }
+  /* 自球団の資金力の選択肢(D-410)は横に並べる */
+  .tier-choices { display: flex; flex-wrap: wrap; gap: 0 14px; }
+  .tier-choices label.radio { padding: 6px 0; }
+  .place-field { margin: 6px 0 2px; }
+  .place-field label { display: block; font-size: 0.82rem; color: var(--muted); }
   .side-hint { display: none; }
 
   /* ロード画面(D-405):長い待ちの全画面 */
@@ -438,6 +443,16 @@
     <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)</span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong></span></label>
+    <p class="small setting-head"><strong>自球団の資金力</strong>(観戦のみのときは使いません)</p>
+    <div class="tier-choices">
+      <label class="radio"><input type="radio" name="my-tier" value="auto" checked><span><strong>自動</strong></span></label>
+      <label class="radio"><input type="radio" name="my-tier" value="small"><span><strong>小</strong></span></label>
+      <label class="radio"><input type="radio" name="my-tier" value="medium"><span><strong>中</strong></span></label>
+      <label class="radio"><input type="radio" name="my-tier" value="large"><span><strong>大</strong></span></label>
+      <label class="radio"><input type="radio" name="my-tier" value="huge"><span><strong>超大量</strong></span></label>
+    </div>
+    <p class="small setting-head"><strong>リーグ名と球場名</strong>(空欄なら薄く出ている名前)</p>
+    <div id="place-fields"></div>
     <p class="small setting-head"><strong>仕組みの選択肢</strong>(始めた後は変えられません)</p>
     <label class="radio"><input type="checkbox" name="rules" value="auto_fa" id="rule-auto_fa"><span><strong>自動 FA</strong>(FA 権を取ったら必ず FA)</span></label>
     <label class="radio"><input type="checkbox" name="rules" value="active_draft" id="rule-active_draft" checked><span><strong>現役ドラフト</strong></span></label>

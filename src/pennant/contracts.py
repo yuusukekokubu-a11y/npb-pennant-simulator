@@ -21,7 +21,9 @@ from .models import Player, Team
 from .season import derive_seed
 
 TIERS = ("large", "medium", "small")
-TIER_LABELS = {"large": "大", "medium": "中", "small": "小"}
+HUGE = "huge"  # 超大量(自球団だけが新規開始で選べる。数は「大」として数える。D-410)
+ALL_TIERS = TIERS + (HUGE,)
+TIER_LABELS = {"large": "大", "medium": "中", "small": "小", HUGE: "超大量"}
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,10 @@ class ContractSettings:
         return int(self.data["budget"]["base"])
 
     def tier_factor(self, tier: str) -> float:
-        return float(self.data["budget"]["tiers"][tier])
+        tiers = self.data["budget"]["tiers"]
+        if tier == HUGE and HUGE not in tiers:
+            return 100.0 * float(tiers["large"])  # 古い設定には超大量がない(D-410)
+        return float(tiers[tier])
 
     @property
     def tier_counts(self) -> dict[str, int]:
@@ -128,6 +133,8 @@ def validate_contract_settings(root, source: str = "contracts.json") -> Contract
     for t in TIERS:
         c.number(c.get(tiers, t, "budget.tiers"), f"budget.tiers.{t}", 0.1, 3)
         c.integer(c.get(counts, t, "budget.tier_counts"), f"budget.tier_counts.{t}", 0, 12)
+    if isinstance(tiers, dict) and HUGE in tiers:  # 超大量は版 24 から(古い設定にはない。ないときは大の 100 倍。D-410)
+        c.number(tiers[HUGE], f"budget.tiers.{HUGE}", 1, 1000)
     if counts is not None and all(isinstance(counts.get(t), int) for t in TIERS) and sum(counts[t] for t in TIERS) != 12:
         c.add("budget.tier_counts", f"合計が 12 球団になるようにしてください(値: {sum(counts[t] for t in TIERS)})")
     ch = c.get(b, "change_by_rank", "budget")
@@ -260,13 +267,19 @@ def rate_for(expected_wars: list[float], total_funds: float, n_players: int, set
 
 # ---- 資金(D-353、D-354) ----
 
-def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings) -> dict[str, str]:
-    """球団の規模(大・中・小)を、新規開始のシードから割り当てる(別の乱数系列。D-231、D-353)。"""
+def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings, fixed: dict[str, str] | None = None) -> dict[str, str]:
+    """球団の規模(大・中・小)を、新規開始のシードから割り当てる(別の乱数系列。D-231、D-353)。
+    fixed は選んだ球団の規模(自球団の資金力。D-410)。その球団を除き、残りの球団で数を合わせる(超大量は大として数える)。"""
     rng = random.Random(derive_seed(seed, "budget-tiers"))
-    ids = sorted(team_ids)
+    fixed = {tid: t for tid, t in (fixed or {}).items() if tid in team_ids}
+    ids = sorted(t for t in team_ids if t not in fixed)
     rng.shuffle(ids)
-    counts = settings.tier_counts
-    out = {}
+    counts = dict(settings.tier_counts)
+    for t in fixed.values():
+        key = "large" if t == HUGE else t
+        if counts.get(key, 0) > 0:
+            counts[key] -= 1
+    out = dict(fixed)
     i = 0
     for tier in TIERS:
         for _ in range(counts[tier]):
@@ -281,6 +294,13 @@ def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings) -> 
 def base_funds(tier: str | None, settings: ContractSettings) -> int:
     """規模の基準額(資金の初期値)。"""
     return int(round(settings.base_budget * settings.tier_factor(tier or "medium")))
+
+
+def rate_funds(funds: int, tier: str | None, settings: ContractSettings) -> int:
+    """単価を求める資金の合計に数える額(D-410):超大量は「大」の上限(基準額 × 範囲の上限)までとして数える。"""
+    if tier != HUGE:
+        return int(funds)
+    return min(int(funds), int(base_funds("large", settings) * settings.funds_range[1]))
 
 
 def initial_funds(tiers: dict[str, str], settings: ContractSettings) -> dict[str, int]:

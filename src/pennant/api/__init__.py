@@ -115,7 +115,7 @@ from .lineup import LineupMixin
 from .market import MarketMixin
 from .offseason import OffseasonMixin
 from .players import PlayersMixin
-from .progress import ProgressMixin, check_team_names, preview_teams
+from .progress import ProgressMixin, check_place_names, check_team_names, preview_teams
 from .stats import StatsMixin
 from .teams import TeamsMixin
 from .trade import TradeMixin
@@ -125,4 +125,4 @@ class Game(AbilitiesMixin, ProgressMixin, LineupMixin, StatsMixin, TeamsMixin, G
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 
-__all__ = ["Game", "SaveDataError", "TeamNameError", "check_team_names", "preview_teams"]
+__all__ = ["Game", "SaveDataError", "TeamNameError", "check_place_names", "check_team_names", "preview_teams"]

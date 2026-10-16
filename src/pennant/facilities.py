@@ -48,7 +48,7 @@ class FacilitySettings:
         return max(0.0, 1.0 - step) if kind == "medical" else max(0.0, 1.0 + step)
 
     def initial(self, tier: str | None) -> int:
-        return int(self.data["initial"].get(tier or "medium", self.standard))
+        return int(self.data["initial"].get("large" if tier == "huge" else (tier or "medium"), self.standard))  # 超大量は大と同じ(D-410)
 
     def ai_level(self, funds: int | None) -> int:
         if funds is None:
