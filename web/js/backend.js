@@ -2,6 +2,7 @@
 
 import { $, LOCAL_PYODIDE, WAIT_SHOW_MS, state } from "./core.js";
 import { prerunProgress, trialProgress } from "./newgame.js";
+import { addChronicle, hideLoading, showLoading, updatePercent } from "./loading.js";
 import { applyStaticTitles, setGlossary } from "./glossary.js";
 
 let worker = null;
@@ -37,6 +38,10 @@ function createWorker() {
         trialProgress(msg.trial);
         return;
       }
+      if (msg.chronicle) {
+        addChronicle(msg.chronicle); // ロード画面の「歴史」(D-406)
+        return;
+      }
       const p = pending.get(msg.id);
       if (!p) return;
       pending.delete(msg.id);
@@ -58,9 +63,11 @@ function bootProgress({ step, total, text }) {
   $("boot-progress").max = total;
   $("boot-progress").value = step - 1;
   $("boot-text").textContent = `${step} / ${total}:${text}`;
+  updatePercent($("boot-progress"));
 }
 
 export async function boot() {
+  showLoading("boot"); // 最初の起動は、いつも球場のロード画面(D-405)
   try {
     worker = await createWorker();
     await call("boot", { local: LOCAL_PYODIDE });
@@ -70,7 +77,7 @@ export async function boot() {
     setGlossary(g.value);
     applyStaticTitles();
     $("boot-progress").value = $("boot-progress").max;
-    $("boot").hidden = true;
+    hideLoading();
     $("go-new").disabled = false;
     $("open-file-start").disabled = false;
     $("open-file-top").disabled = false;

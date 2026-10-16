@@ -5,6 +5,7 @@ import { call } from "./backend.js";
 import { showScreen } from "./screens.js";
 import { enterGame } from "./progress.js";
 import { termById } from "./glossary.js";
+import { hideLoading, showLoading, updatePercent } from "./loading.js";
 
 // ---- 新規開始 ----
 
@@ -149,13 +150,15 @@ export async function startNewGame() {
     const seed = state.newGame.seed;
     const seasonSeed = ss.value === null ? randomSeed() : ss.value;
     const baselines = document.querySelector("input[name=baseline-mode]:checked").value;
-    $("trial-box").hidden = false; // 事前運転(リーグの歴史を作る)は、基準値の求め方にかかわらず行う(D-190)
+    showLoading("new"); // 事前運転(リーグの歴史を作る)は、基準値の求め方にかかわらず行う(D-190)。全画面のロード画面(D-405)
     $("trial-progress").value = 0;
-    $("trial-text").textContent = "リーグの歴史を作っています(数十年分の選手の入れ替わり)…";
+    $("trial-title").textContent = "リーグの歴史を作っています";
+    $("trial-text").textContent = "数十年分の選手の入れ替わりを進めています…";
+    updatePercent($("trial-progress"));
     const t0 = performance.now();
     const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
     const rules = Object.fromEntries([...document.querySelectorAll("input[name=rules]")].map((x) => [x.value, x.checked]));  // 仕組みの選択肢(D-381)
-    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, rules }).finally(() => ($("trial-box").hidden = true));
+    const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, rules }).finally(hideLoading);
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
       $("new-message").textContent = [r.message, ...r.problems].join("\n");
@@ -173,13 +176,17 @@ export async function startNewGame() {
 export function prerunProgress({ year, total }) {
   $("trial-progress").max = total;
   $("trial-progress").value = year;
-  $("trial-text").textContent = `リーグの歴史を作っています:${year} / ${total} 年(試合はせず、選手の入れ替わりだけを進めます)`;
+  $("trial-title").textContent = "リーグの歴史を作っています";
+  $("trial-text").textContent = `${year} / ${total} 年(試合はせず、選手の入れ替わりだけを進めます)`;
+  updatePercent($("trial-progress"));
 }
 
 export function trialProgress({ day, total }) {
   $("trial-progress").max = total;
   $("trial-progress").value = day;
+  $("trial-title").textContent = "リーグの基準値を求めています";
   $("trial-text").textContent = `試運転のシーズン:${day} / ${total} 日(この結果は、画面に出さず保存もしません)`;
+  updatePercent($("trial-progress"));
 }
 
 // ---- 説明バー(UI の整理②。D-313) ----

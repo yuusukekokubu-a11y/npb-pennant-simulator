@@ -189,7 +189,7 @@ await page.$eval("#new-start", (b) => b.scrollIntoView({ block: "end" }));
 const startVisible = await page.evaluate(() => { const b = document.querySelector("#new-start").getBoundingClientRect(); const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); const h = document.querySelector("#new-help").getBoundingClientRect(); return hit !== null && hit.closest("#new-start") !== null && h.bottom <= b.top + 1; });
 check(startVisible, "説明バーは「この内容で始める」のボタンを隠さない");
 let prerunSeen = false;
-const prerunWatch = page.waitForFunction(() => document.querySelector("#trial-text").textContent.includes("リーグの歴史を作っています"), null, { timeout: 60000 }).then(() => (prerunSeen = true)).catch(() => {});
+const prerunWatch = page.waitForFunction(() => document.querySelector("#trial-box").textContent.includes("リーグの歴史を作っています"), null, { timeout: 60000 }).then(() => (prerunSeen = true)).catch(() => {});
 const trialStart = Date.now();
 await page.click("#new-start");
 // 試運転の進み具合(D-121)
