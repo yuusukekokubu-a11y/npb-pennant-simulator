@@ -21,7 +21,7 @@ DEFAULTS = {"period_days": 5, "step": 3.0, "initial": [0.1, 0.2, 0.4, 0.2, 0.1],
 
 def settings(game_config) -> dict:
     """調子の設定(data/game.json の condition。なければ既定値)。"""
-    raw = game_config.get("condition") if hasattr(game_config, "get") else None
+    raw = game_config.get("condition") if game_config is not None else None
     return {**DEFAULTS, **(raw or {})}
 
 

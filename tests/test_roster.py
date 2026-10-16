@@ -105,3 +105,17 @@ def test_version_24_save_is_read_with_the_old_roster(mid):
     assert SAVE_FORMAT_VERSION == 25 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form
     s.play_days(6)
     assert s.day == 26
+
+
+def test_condition_and_roster_settings_are_checked():
+    from pennant.config import ConfigError
+    from pennant.game_config import default_game_data, validate_game_config
+
+    g = load_game_config()
+    assert settings(g)["period_days"] == 5 and g.get("roster")["lock_days"] == 10  # data/game.json から読む
+    bad = default_game_data()
+    bad["condition"]["initial"] = [0.5, 0.5]
+    bad["roster"]["lock_days"] = -1
+    with pytest.raises(ConfigError) as e:
+        validate_game_config(bad)
+    assert "condition.initial" in str(e.value) and "roster.lock_days" in str(e.value)

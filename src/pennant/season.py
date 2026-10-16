@@ -284,7 +284,7 @@ class Season:
         return self.conditions.level(player_id, self.day)
 
     def roster_settings(self) -> dict:
-        r = self.game_config.get("roster") if hasattr(self.game_config, "get") else None
+        r = self.game_config.get("roster")
         return {"lock_days": 10, "keep_bonus": 4.0, **(r or {})}
 
     def locked(self) -> set[str]:

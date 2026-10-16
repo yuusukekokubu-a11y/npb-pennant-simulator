@@ -37,6 +37,9 @@ class GameConfig:
     def __getitem__(self, key: str) -> Any:
         return self.data[key]
 
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.data.get(key, default)
+
 
 def default_game_data() -> dict:
     data, _ = _read_json(None, "game.json")
@@ -168,6 +171,30 @@ def validate_game_config(data: Any, source: str = "(辞書)") -> GameConfig:
                         c.add(f"{path}.{group}.{item}", f"使えない能力です(使えるもの: {', '.join(EFFECT_GROUPS[group])})")
                         continue
                     c.number(ratio, f"{path}.{group}.{item}", RATIO_LOW, RATIO_HIGH)
+
+    # 調子(D-424)と一軍の入れ替え(D-425)。どちらも書かなければ既定値
+    if "condition" in root:
+        cond = c.section(root["condition"], "condition")
+        if cond is not None:
+            if "period_days" in cond:
+                c.integer(cond["period_days"], "condition.period_days", 1, 200)
+            for key, hi in (("step", 20), ("up", 0.5), ("down", 0.5), ("pull", 0.2)):
+                if key in cond:
+                    c.number(cond[key], f"condition.{key}", 0, hi)
+            if "initial" in cond:
+                shares = cond["initial"]
+                if not isinstance(shares, list) or len(shares) != 5:
+                    c.add("condition.initial", "5 つの割合(絶不調〜絶好調)を並べてください")
+                else:
+                    for i, x in enumerate(shares):
+                        c.number(x, f"condition.initial[{i}]", 0, 1)
+    if "roster" in root:
+        ro = c.section(root["roster"], "roster")
+        if ro is not None:
+            if "lock_days" in ro:
+                c.integer(ro["lock_days"], "roster.lock_days", 0, 200)
+            if "keep_bonus" in ro:
+                c.number(ro["keep_bonus"], "roster.keep_bonus", 0, 50)
 
     if c.problems:
         raise ConfigError(source, c.problems)

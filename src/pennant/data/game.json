@@ -13,6 +13,18 @@
     "fielders": 15,
     "foreign_max": 4
   },
+  "condition": {
+    "period_days": 5,
+    "step": 3.0,
+    "initial": [0.1, 0.2, 0.4, 0.2, 0.1],
+    "up": 0.25,
+    "down": 0.25,
+    "pull": 0.08
+  },
+  "roster": {
+    "lock_days": 10,
+    "keep_bonus": 4.0
+  },
   "lineup": {
     "on_base": {"contact": 0.5, "eye": 0.5},
     "slugging": {"power": 0.7, "batted_ball_quality": 0.3},
