@@ -1,0 +1,55 @@
+# 画面の通し確認(scripts/check_browser.mjs。D-413)を GitHub 上で回す仕組み。Actions の画面の「Run workflow」で手動で始める(PR や取り込みでは動かない)。
+# - 画面を組み立て(scripts/build_web.py)、手元で配信して、本物のブラウザ(画面を出さない Chromium)で操作する。
+# - Python の土台(Pyodide)は、公開のページと同じく配布元(cdn.jsdelivr.net)から読み込む。
+# - Playwright(ブラウザを自動で動かす道具)は版を固定して入れる。
+# - ○×は進み具合としてログに 1 つずつ出し、最後のまとめを実行の結果のページ(Summary)に出す。
+# - Code の作業環境が片付けられても止まらない。手元で回す方法も残す。
+# 秘密情報は使わない。権限は読み取りのみ。外部の部品(Action)は test.yml と同じ 2 つだけ。
+name: e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      width:
+        description: "画面の幅(412・390・768・1280 など。800 未満はスマホ扱い)"
+        default: "412"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      # 使う部品(Action)は、書き換えられないよう commit の番号で固定する(test.yml と同じ)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          mkdir -p "$RUNNER_TEMP/pw"
+          cd "$RUNNER_TEMP/pw"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Build (画面を組み立てる)
+        run: python scripts/build_web.py
+      - name: Check (通し確認)
+        env:
+          WIDTH: ${{ inputs.width }}
+        run: |
+          python -m http.server 8765 --directory _site > /dev/null 2>&1 &
+          sleep 2
+          set -o pipefail
+          PYTHONPATH=src PLAYWRIGHT_MODULE="$RUNNER_TEMP/pw/node_modules/playwright/index.mjs" \
+            node scripts/check_browser.mjs "http://127.0.0.1:8765/" | tee e2e.md
+      - name: Summary (まとめ)
+        if: always()
+        run: |
+          if [ -f e2e.md ]; then cat e2e.md >> "$GITHUB_STEP_SUMMARY"; else echo "通し確認の結果がありません(途中で止まりました)" >> "$GITHUB_STEP_SUMMARY"; fi

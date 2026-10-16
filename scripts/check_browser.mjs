@@ -1,5 +1,6 @@
 // 遊ぶための画面(web/)を、本物のブラウザ(画面を出さない Chromium)で通しで確かめる、開発者向けのスクリプト。
-// CI では動かさない(Playwright という、ブラウザを自動で操作する道具が要るため)。
+// PR の CI では動かさない(Playwright という、ブラウザを自動で操作する道具が要るため)。GitHub の Actions の「e2e」で手動で回せる(D-413)。
+// ○×は 1 つずつその場で標準エラーに出し、最後のまとめを標準出力に出す。
 //
 // 使い方(先に scripts/build_web.py で _site/ を作り、手元で配信しておく):
 //   python scripts/build_web.py --pyodide <Pyodide のフォルダ>
@@ -23,8 +24,19 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const NAME = "ZZテスト球団QX"; // 入力する球団名(通信やファイル名に出ないことを確かめる)
 const expected = JSON.parse(readFileSync(join(ROOT, "tests/data/fingerprints.json"), "utf8"));
 const work = mkdtempSync(join(tmpdir(), "pennant-check-"));
+// 結果の 1 行ずつを、その場で標準エラー(進み具合)にも出す(D-413)。最後のまとめは今までどおり標準出力に出す
 const results = [];
+const push = results.push.bind(results);
+results.push = (...lines) => {
+  for (const line of lines) console.error(line);
+  return push(...lines);
+};
 let failed = 0;
+let finished = false;
+// 途中で止まったとき(待ちの時間切れなど)も、そこまでの結果が分かるようにする
+process.on("exit", (code) => {
+  if (!finished) console.log(`# 途中で止まりました(終了コード ${code})。ここまでの結果\n${results.join("\n")}`);
+});
 
 function check(ok, text) {
   results.push(`${ok ? "○" : "×"} ${text}`);
@@ -1314,4 +1326,5 @@ console.log(results.join("\n"));
 console.log(`\n## 通信した先(${paths.length} 件)`);
 console.log(paths.map((p) => `- ${p}`).join("\n"));
 console.log(`\n${failed ? `× ${failed} 件の問題があります` : "○ すべて確認できました"}`);
+finished = true;
 process.exit(failed ? 1 : 0);
