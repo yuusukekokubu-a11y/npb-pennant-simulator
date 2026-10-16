@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { el, kvTable, link, playerLink, table, teamLink } from "./parts.js";
+import { el, emblem, kvTable, link, playerLink, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 // ---- チームのページ ----
@@ -12,6 +12,8 @@ export async function renderTeam(args, token) {
   const d = await query("team", { team_id: args.id });
   if (token !== state.token) return;
   $("team-name").textContent = d.name + (d.is_mine ? " ★" : "");
+  $("team-emblem").replaceWith(Object.assign(emblem(d.team_id, d.name), { id: "team-emblem" }));
+  $("screen-team").querySelector(".back").hidden = Boolean(args.root); // 自球団のタブで開いたときは「戻る」を出さない(D-401)
   $("team-info").replaceChildren(`${d.league_name} ${d.rank}位 / 本拠地:`, link(d.stadium, () => openPage("stadium", { id: d.team_id })));
   const r = d.record;
   $("team-record").replaceChildren(

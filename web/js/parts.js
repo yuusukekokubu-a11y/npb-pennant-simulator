@@ -1,6 +1,6 @@
 // 共通の部品(要素の作成・リンク・表・試合のカード・並べ替えの向き・項目と値の表)(web/app.js から分けた。保守②。D-291)
 
-import { $ } from "./core.js";
+import { $, teamColor } from "./core.js";
 import { openPage } from "./screens.js";
 import { titleFor } from "./glossary.js";
 
@@ -35,9 +35,9 @@ export function setPressed(groupId, value) {
 // fluid は、広い画面で横スクロールなしに全列を出す表(新しく作る表だけ。D-223)。detail(row) が要素を返せば、その行の下に 1 行足す
 export function table({ firstLabel, columns, rows, first, sort, order, onSort, rowClass, limit, more, extra, fluid, detail }) {
   const headCell = (c, className) => {
-    // ▲▼ は別の要素にして、列の右の余白に置く(文字の右端を数値の右端にそろえる。D-267)
-    const arrow = sort === c.key ? el("span", { className: "arrow" }, order === "desc" ? " ▼" : " ▲") : null;
-    const text = arrow ? [c.label, arrow] : [c.label];
+    // ▲▼ は別の要素にして、見出しの文字の左に置く(列の右の余白はほかの列と同じ。数値が左に寄らない。D-403)
+    const arrow = sort === c.key ? el("span", { className: "arrow" }, order === "desc" ? "▼" : "▲") : null;
+    const text = arrow ? [arrow, c.label] : [c.label];
     const label = onSort ? el("button", { className: "sort", type: "button", onclick: () => onSort(c.key) }, ...text) : el("span", {}, ...text);
     return el("th", { scope: "col", className: `${className} ${sort === c.key ? "sorted" : ""}`.trim(), title: titleFor(c.label) }, label);
   };
@@ -62,16 +62,25 @@ export function table({ firstLabel, columns, rows, first, sort, order, onSort, r
   return wrap;
 }
 
-// 試合の結果のカード(押すと試合のページへ)
+// 球団のマーク(D-400):丸の中に頭文字(文字は CSS で出すので、表や行の文字には入らない)。色は球団の番号ごと
+export function emblem(teamId, name, size = "") {
+  return el("span", { className: `emblem ${size}`.trim(), "data-initial": String(name || "").slice(0, 1), style: `--team: ${teamColor(teamId)}`, "aria-hidden": "true" });
+}
+
+// 順位の数字。1〜3 位はメダル(D-400)
+export function rankBadge(rank) {
+  return el("span", { className: rank >= 1 && rank <= 3 ? `rank medal medal-${rank}` : "rank" }, String(rank));
+}
+
+// 試合の結果のカード(小さな得点板。押すと試合のページへ)
 export function gameCard(g) {
   const tags = g.tags.length ? el("span", { className: "tags" }, g.tags.join("・")) : null;
+  const line = (t, lose) => [emblem(t.team_id, t.name, "small"), el("span", { className: "gc-name" + (lose ? " lose" : "") }, t.name), el("span", { className: "score" + (lose ? " lose" : "") }, String(t.runs))];
   return el(
     "button",
     { className: "game-card" + (g.is_mine ? " mine" : ""), type: "button", onclick: () => openPage("game", { game_no: g.game_no }), dataset: { gameNo: g.game_no } },
-    el("span", {}, g.away.name),
-    el("span", { className: "score" }, String(g.away.runs)),
-    el("span", {}, g.home.name),
-    el("span", { className: "score" }, String(g.home.runs)),
+    ...line(g.away, g.away.runs < g.home.runs),
+    ...line(g.home, g.home.runs < g.away.runs),
     tags,
   );
 }
@@ -101,7 +110,7 @@ export function kvTable(rows) {
   return el("div", { className: "table-wrap" }, el("table", { className: "kv" }, body));
 }
 
-// 特殊能力の札(D-374):良いものは緑、悪いものは赤
+// 特殊能力の札(D-374):良いものは緑、悪いものは灰色
 export function skillBadge(s) {
   return el("span", { className: `skill ${s.good ? "good" : "bad"}`, "data-key": s.key }, s.label);
 }

@@ -6,16 +6,23 @@ export const WAIT_SHOW_MS = 600; // 待ち時間の表示は、これを超え�
 export const STATS_PAGE = 50; // 個人成績の表で、一度に出す人数(仮置き。DESIGN 9章)
 export const GAMES_PAGE = 20; // 選手の試合ごとの成績で、一度に出す試合数(仮置き。DESIGN 9章)
 const WIDE_MIN_WIDTH = 900; // この幅(px)以上を「広い画面」とし、fluid の印を付けた表は横スクロールなしで全列を出す(仮置き。D-223。DESIGN 9章)
-// 下のタブ。増やすときは、ここに足して、同じ名前の画面(screen-…)を index.html に作る
+// 下のタブ(小さな絵つき。D-401)。増やすときは、ここに足して、同じ名前の画面(screen-…)を index.html に作る。
+// screen があるタブは、その画面を開く(自球団のタブは、自球団のチームのページ。観戦のみのときは出さない)
+const ICON = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 export const TABS = [
-  { id: "progress", label: "進行" },
-  { id: "standings", label: "順位表" },
-  { id: "stats", label: "成績" },
-  { id: "games", label: "試合" },
+  { id: "progress", label: "進行", icon: ICON('<circle cx="12" cy="12" r="9"/><path d="M10 8l6 4-6 4z" fill="currentColor"/>') },
+  { id: "standings", label: "順位", icon: ICON('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/>') },
+  { id: "stats", label: "成績", icon: ICON('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>') },
+  { id: "games", label: "試合", icon: ICON('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>') },
+  { id: "myteam", label: "自球団", icon: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>'), screen: "team" },
 ];
+export const tabScreen = (id) => (TABS.find((t) => t.id === id) || {}).screen || id;
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
 const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "review", "lineup", "trade"];
-export const SCREENS = ["start", "new", ...TABS.map((t) => t.id), ...PAGES];
+export const SCREENS = ["start", "new", ...TABS.filter((t) => !t.screen).map((t) => t.id), ...PAGES];
+// 広い画面の 2 列(D-402):左に残すタブの画面と、右に並べるページ
+export const DUAL_BASES = ["standings", "stats", "games", "team"];
+export const DUAL_PAGES = ["player", "team", "game", "stadium"];
 
 export const $ = (id) => document.getElementById(id);
 
@@ -51,8 +58,19 @@ export const state = {
 
 // 広い画面かどうか(D-223):幅が WIDE_MIN_WIDTH 以上なら <html> に wide の印を付け、fluid の表を横スクロールなしにする(CSS)
 const wideQuery = window.matchMedia(`(min-width: ${WIDE_MIN_WIDTH}px)`);
+const wideListeners = [];
+export const isWide = () => wideQuery.matches;
+export const onWideChange = (f) => wideListeners.push(f);
 function applyWide() {
   document.documentElement.classList.toggle("wide", wideQuery.matches);
+  for (const f of wideListeners) f();
 }
 applyWide();
 wideQuery.addEventListener("change", applyWide);
+
+// 球団のマークの色(D-400):球団の番号(T01〜T12)ごとの 12 色。画面だけの飾りで、保存しない
+const TEAM_COLORS = ["#2f9e44", "#e8590c", "#1971c2", "#c2255c", "#0b7285", "#5f3dc4", "#d6336c", "#4263eb", "#862e9c", "#e67700", "#087f5b", "#a61e4d"];
+export function teamColor(teamId) {
+  const n = Number(String(teamId || "").replace(/\D/g, ""));
+  return n ? TEAM_COLORS[(n - 1) % TEAM_COLORS.length] : "#5b6788";
+}

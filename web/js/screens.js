@@ -1,6 +1,6 @@
 // 画面の切り替え(タブ・重ねて開くページ・戻る・今の画面の描き直し)(web/app.js から分けた。保守②。D-291)
 
-import { $, SCREENS, TABS, state } from "./core.js";
+import { $, DUAL_BASES, DUAL_PAGES, SCREENS, TABS, isWide, onWideChange, state, tabScreen } from "./core.js";
 import { el } from "./parts.js";
 import { renderProgress, renderStandings } from "./progress.js";
 import { renderStats } from "./stats.js";
@@ -17,23 +17,44 @@ import { renderGuide, renderSettings } from "./menu.js";
 // ---- 画面の切り替え ----
 
 export function showScreen(name) {
-  for (const id of SCREENS) $(`screen-${id}`).hidden = id !== name;
-  if (name !== "new") $("new-help").hidden = true; // 新規開始の説明バーは、設定の画面から離れると消す(D-313)
   const inGame = !["start", "new"].includes(name);
+  if (TABS.some((t) => t.id === name && !t.screen)) state.tab = name;
+  // 広い画面の 2 列(D-402):タブの画面を左に残し、開いたページを右に並べる。何も開いていなければ右に案内
+  const base = tabScreen(state.tab);
+  const top = state.pages.length ? state.pages[state.pages.length - 1].name : null;
+  const dual = inGame && isWide() && DUAL_BASES.includes(base) && (top === null ? name === base : top === name && DUAL_PAGES.includes(name) && name !== base);
+  for (const id of SCREENS) {
+    const e = $(`screen-${id}`);
+    e.hidden = !(id === name || (dual && id === base));
+    e.classList.toggle("left-pane", dual && id === base);
+    e.classList.toggle("right-pane", dual && id === name && id !== base);
+  }
+  $("side-hint").hidden = !(dual && top === null);
+  document.body.classList.toggle("dual", dual);
+  document.body.classList.toggle("in-game", inGame);
+  if (name !== "new") $("new-help").hidden = true; // 新規開始の説明バーは、設定の画面から離れると消す(D-313)
   $("topbar").hidden = !inGame;
   $("tabs").hidden = !inGame;
-  if (TABS.some((t) => t.id === name)) state.tab = name;
-  for (const b of $("tabs").children) b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
-  window.scrollTo(0, 0);
+  const mine = state.view && state.view.status.my_team;
+  for (const b of $("tabs").children) {
+    b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
+    if (b.dataset.tab === "myteam") b.hidden = !mine; // 観戦のみのときは自球団のタブを出さない(D-401)
+  }
+  if (dual && top !== null) $(`screen-${name}`).scrollTop = 0; // 右のページだけ先頭へ(左の表の位置は保つ)
+  else window.scrollTo(0, 0);
 }
 
 export function current() {
-  return state.pages.length ? state.pages[state.pages.length - 1] : { name: state.tab, args: {} };
+  if (state.pages.length) return state.pages[state.pages.length - 1];
+  const mine = state.view && state.view.status.my_team;
+  if (state.tab === "myteam" && mine) return { name: "team", args: { id: mine.id, root: true } };
+  return { name: state.tab === "myteam" ? "progress" : state.tab, args: {} };
 }
 
 export function showTab(name) {
   state.pages = [];
-  showScreen(name);
+  state.tab = name;
+  showScreen(current().name);
   renderCurrent();
 }
 
@@ -48,6 +69,11 @@ export function back() {
   showScreen(current().name);
   renderCurrent();
 }
+
+// 幅が変わったら、今の画面の並べ方(1 列・2 列)を選び直す
+onWideChange(() => {
+  if (state.view && !$("topbar").hidden) showScreen(current().name);
+});
 
 export function renderCurrent() {
   if (!state.view) return;
@@ -82,7 +108,8 @@ function showError(name, err) {
 export function buildTabs() {
   for (const t of TABS) {
     const b = document.createElement("button");
-    b.textContent = t.label;
+    b.innerHTML = `<span class="tab-icon">${t.icon}</span>`;
+    b.append(t.label);
     b.dataset.tab = t.id;
     b.setAttribute("role", "tab");
     b.addEventListener("click", () => showTab(t.id));
