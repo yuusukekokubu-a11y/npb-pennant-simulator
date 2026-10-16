@@ -114,7 +114,7 @@ def test_season_trades_replay_save_and_deadline(base):
         assert (again.home_runs, again.away_runs, len(again.log)) == (pg.result.home_runs, pg.result.away_runs, len(pg.result.log))
     # 保存と読み込み(版 20)
     loaded = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 24
+    assert SAVE_FORMAT_VERSION == 25
     assert loaded.state.season.trades == season.trades and loaded.state.season.active_history == season.active_history
     for pg in loaded.state.season.played[::11]:
         again = loaded.state.season.replay_game(pg.scheduled.number)

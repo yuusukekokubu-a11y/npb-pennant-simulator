@@ -88,7 +88,8 @@ def test_market_wishes_and_order(season_end):
     v = g.offseason_next()  # 現役ドラフトの段階(D-380)
     assert v["stage"] == "active_draft"
     r = g.offseason_next()  # 完了:残った選手はリーグを去る(自動補充はない。D-391)
-    assert r["finished"] and all(60 <= len(t2.players) <= 70 for t2 in g.state.league.teams)  # 70 人は上限だけ(D-391)
+    assert r["finished"] and all(len(t2.players) <= 70 for t2 in g.state.league.teams)  # 70 人は上限だけ(D-391)
+    assert all(60 <= len(t2.players) for t2 in g.state.league.teams if t2.id != "T01")  # 自球団はこのテストで外国人・ドラフトを取らないので、AI 球団だけ
     rows = [x for x in g.state.transactions if x["phase"] == "market"]
     assert len(rows) == len(signed) and all(x["round"] >= 1 and x["player_id"] for x in rows)
 

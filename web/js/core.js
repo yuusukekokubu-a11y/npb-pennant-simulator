@@ -19,7 +19,7 @@ export const TABS = [
 ];
 export const tabScreen = (id) => (TABS.find((t) => t.id === id) || {}).screen || id;
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "lineup", "trade"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "lineup", "roster", "trade"];
 export const SCREENS = ["start", "new", ...TABS.filter((t) => !t.screen).map((t) => t.id), ...PAGES];
 // 広い画面の 2 列(D-402):左に残すタブの画面と、右に並べるページ
 export const DUAL_BASES = ["standings", "stats", "games", "team"];

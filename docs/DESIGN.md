@@ -77,11 +77,13 @@ src/pennant/
     market.py           自由契約市場の獲得の希望・取り消し・締める(作り直し③。D-370)
     foreign.py          外国人市場の獲得の希望・取り消し・締めると、育成選手を支配下に上げる操作(D-375、D-376)
     lineup.py           自球団のスタメンと打順(打順の型・自分で組む・AI に組ませる。D-373)
+    roster.py           自球団の一軍登録(一軍と二軍の表・1 人ずつの入れ替え・AI に任せるか。D-425)
     trade.py            トレード(画面・あなたから持ちかける・AI からの提案に答える・シーズン中の決まった日の AI の動き。D-378)
     active_draft.py     現役ドラフト(候補を出す・指名する・段階の情報。D-380)
     facilities.py       設備(全球団の段階・あなたの球団の段階を変える。D-383)
     offseason.py        オフの手続きの流れ(段階・次の手続きへ・おまかせ・オフの結果)
   ability_model.py    見せる能力(作り直し①):内部の能力への換算・1〜100 とランク・球速・弾道・球種の見せ方・伸びやすさと球種の生成(D-347〜D-351)
+  condition.py        調子(5 段階。5 日ごとに、シード・選手・日だけで決まる。D-424)
   parks.py            球場の倍率の割り当て(別の乱数。整数の千分率。D-136、D-137)
   parkfactors.py      球場補正の推定(本拠地とアウェイの比較。複数シーズンの履歴。D-140〜D-146)
   runvalues.py        打撃・走塁・守備の得点(第3弾②。D-160〜D-166)
@@ -239,6 +241,7 @@ web/dev/                             開発者向けの測定ページ(技術検
   - 打順:3〜5番は長打の高い3人(4番が最も高い)、1・2番は出塁の高い2人(足の速いほうが1番)、6〜9番は打撃の総合の順。これが打順の型「長打重視」(`batting_order(nine, style)` の既定。D-373)。
   - 休養:主力は一定の確率で休み、控えが同じ打順・ポジションに入る。同じポジションの控えがいなければ近いポジションの控え(守備の能力を少し下げる)、それもいなければ誰か(大きく下げる)。捕手の控えがいなければ休ませない。守備適性そのものは F3 で扱う。
 - **自球団のスタメンと打順**(D-373。`manager.py`・`season.py`・`api/lineup.py`):`Season.lineup_plans`(球団 → {style:打順の型、slots:自分で組んだ [[選手 ID, 守備位置]] × 9 か None、set_day:組んだ日、notice:AI に戻した知らせ})。`SimpleManager.planned_order(active, plan)` は、slots が使えれば(全員が一軍の野手)その順(`custom_order`:本来と違う守備位置は `position_penalty`(休養の控えと同じ −5 / −10。指名打者は 0)だけ守備の能力を下げた写し)、使えなければ型で `batting_order(regular_lineup(active), style)`。型:長打重視(既定。今までの組み方)・二番強打者(2 番に打撃の総合の最高、1 番は残りの出塁の最高)・二番つなぎ役(1 番は出塁、2 番は `lineup.connector`(ミート・走力)の最高)・機動力重視(1・2 番は `lineup.speed`(走力中心)の上位 2 人)。どの型も 3〜5 番は残りの長打の上位 3 人、6〜9 番は打撃の総合の順。既定の型のときは今までどおり `batting_order(nine)` と呼ぶ(差し替えた監督のため)。休養は `starting_lineup` が今までどおり行う(乱数の使い方は同じなので、計画のない球団の試合は変わらない)。`Season.play_day` の最初に `_review_lineups`:日数が `lineup.review_days`(7)の倍数の日に、その日より前に組んだ slots を外して知らせを残す。`_lineup_plan` は一軍にいない選手が入っていれば slots を外す。計画のある球団の試合は `GameContext.lineups` に {style, slots} を記録し、`replay_game` で同じ打順を再現する。次のシーズンは型だけ引き継ぐ(`api/offseason._finish_offseason`)。保存は `season.lineup_plans` と試合ごとの `lineups`(版 17。版 16 は変換なしで読む)。画面は `web/js/lineup.js`(進行の画面の「スタメンと打順」)。
+- **調子と一軍の入れ替え**(D-424、D-425。`condition.py`・`season.py`・`manager.py`・`api/roster.py`):調子は `level_at(seed, 選手, 日, 始めた日)`:5 日(`condition.period_days`)ごとの区切りで、別の乱数(`cond:<選手>:<区切り>`)で 1 段上下するか決める(普通へ戻る向きに少し引く)。前の結果だけで決まるので、途中から読んでも・試合を再現しても同じ。`Season.apply_conditions` が毎日の最初に、全選手の `form` を 段階 × `step`(3.0)にする(打席の計算は今までどおり `form` を足すだけ)。一軍の選び方は `select_active(team, score, exclude)`:点数は総合+調子の段階×step(+今一軍にいる選手に 4 点。入れ替えすぎを防ぐ)、外して 10 日たたない選手(`Season.demoted`)は最後に回す。AI に任せる球団(`Season.roster_auto`。既定はオン。AI の球団は常に)は、7 日ごとの見直しの日に選び直す。変わったら `active_history` に日付つきで残し、試合の再現は `active_on` でその日の一軍を使う。自球団の手の入れ替えは `Season.swap`(投手と投手・野手と野手。外国人の上限・捕手 2 人以上を守る)。保存は `season.condition`(始めた日)・`demoted`・`roster_auto`(版 25)。版 24 は読み込んだ日から調子を始め、それより前の試合は保存してあった `form` で再現する。
 - **差し替え**:采配は `Manager` の形(一軍の選抜・スタメン・先発・降板の上限・救援の選び方)を持つクラスなら入れ替えられる。既定は `SimpleManager`。
 
 ### 4.3 シーズン(実装④。D-066、D-087)

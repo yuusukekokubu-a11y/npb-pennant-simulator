@@ -256,6 +256,25 @@ await page.waitForFunction(() => document.querySelector("#lineup-message").textC
 const luAfter = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 check(JSON.stringify(luAfter) === JSON.stringify(luBefore) && (await page.textContent("#lineup-source")).includes("AI"), "長打重視に戻すと、最初の AI の打順に戻る");
 await page.click("#screen-lineup .back");
+// 一軍登録(D-425):一軍 29 人と二軍が、調子のマーク付きで出る。「外す」を押すと、同じ役割の二軍の選手だけ「上げる」が押せる。
+// ここでは入れ替えない(この後の結果を Python で同じ新規開始を進めた結果と比べるため)。実際の入れ替えは 2シーズン目で確かめる
+await page.waitForSelector("#open-roster:not([hidden])");
+await page.click("#open-roster");
+await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelectorAll("#roster-body tbody tr").length > 29);
+const rosterCounts = await page.$$eval("#roster-body h2", (hs) => hs.map((h) => h.textContent));
+const condMarks = await page.$$eval("#roster-body .cond", (els) => els.map((e) => e.textContent.slice(0, 1)));
+check(rosterCounts.length === 4 && rosterCounts[0].includes("6 人") && rosterCounts[1].includes("8 人") && rosterCounts[2].includes("15 人") && condMarks.length > 29 && condMarks.every((m) => "↑↗→↘↓".includes(m)), `一軍登録の画面:${rosterCounts.join("・")}。調子のマーク(${[...new Set(condMarks)].join("")})`);
+check((await page.isChecked("#roster-auto")) && (await page.textContent("#roster-info")).includes("次の見直し"), `「AI に任せる」が最初からオン(${await page.textContent("#roster-info")})`);
+await page.click("#roster-relievers tbody tr:first-child td:last-child button");
+await page.waitForFunction(() => document.querySelector("#roster-message").textContent.includes("上げる"));
+const farmRows = await page.$$eval("#roster-farm tbody tr", (trs) => trs.map((tr) => [tr.children[3].textContent, tr.querySelector("td:last-child button")?.disabled]));
+const pitcherFarm = farmRows.filter((r) => r[1] !== undefined && /^(投手|先発|救援)/.test(r[0]));
+const batterFarm = farmRows.filter((r) => r[1] !== undefined && !/^(投手|先発|救援)/.test(r[0]));
+check(pitcherFarm.length > 0 && pitcherFarm.every((r) => r[1] === false) && batterFarm.every((r) => r[1] === true), `救援投手の「外す」を押すと、二軍の投手だけ「上げる」が押せる(投手 ${pitcherFarm.length} 人・野手 ${batterFarm.length} 人)`);
+await page.click("#roster-relievers tbody tr:first-child td:last-child button");
+await page.waitForFunction(() => document.querySelector("#roster-message").textContent === "");
+check(true, "もう一度押すと、選ぶのをやめられる");
+await page.click("#screen-roster .back");
 // トレード(D-378):画面を開き、釣り合わない交換を持ちかけると断られて、何も変わらない
 await page.waitForSelector("#open-trade:not([hidden])");
 await page.click("#open-trade");
@@ -566,7 +585,7 @@ await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th"
 await waitStats("FIP(低い順)"); // 能力 → 基本 と切り替えても、FIP の低い順(固定列)が保たれる
 const pitcherName = (await statsOnScreen())[0][0];
 await page.click("#stats-table tbody tr:first-child .link");
-await page.waitForFunction((n) => document.querySelector("#player-name").textContent === n, pitcherName);
+await page.waitForFunction((n) => document.querySelector("#player-name").firstChild?.textContent === n, pitcherName);
 await page.waitForSelector("#player-games table");
 const pid = pyGame(`print(json.dumps(g.stats("pitcher", sort="fip", order="asc")["rows"][0]["player_id"]))`);
 const pyPlayer = pyGame(`d = g.player(a["id"])\nprint(json.dumps({"season": [d["season"]["tables"]["basic"]["values"][c["key"]] for c in d["season"]["tables"]["basic"]["columns"]], "games": [x["day"] for x in d["games"]]}, ensure_ascii=False))`, JSON.stringify({ id: pid }));
@@ -1274,6 +1293,23 @@ check(y2[0] === 2 && y2[1] === 1 && JSON.stringify(y2[2]) === JSON.stringify(["l
 const y2Messages = await page.evaluate(() => window.__messages.join("\n"));
 const leakedY2 = [...HIDDEN.words.filter((w) => y2Messages.includes(w)), ...HIDDEN.keys.filter((k) => y2Messages.includes(`"${k}"`))];
 check(leakedY2.length === 0, `年度の確定の前後に届いたメッセージにも、隠し情報がない${leakedY2.length ? `(見つかった: ${leakedY2.join("、")})` : ""}`);
+// 一軍登録(D-425):2シーズン目に、救援投手を二軍の投手と入れ替える。外した選手は「あと 10 日」になり、上げた選手は一軍に入る
+await page.click("#open-roster");
+await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelectorAll("#roster-body tbody tr").length > 29);
+const relieverOut = await page.textContent("#roster-relievers tbody tr:first-child td .link");
+await page.click("#roster-relievers tbody tr:first-child td:last-child button");
+await page.waitForFunction(() => document.querySelector("#roster-message").textContent.includes("上げる"));
+const upIndex = await page.$$eval("#roster-farm tbody tr", (trs) => trs.findIndex((tr) => { const b = tr.querySelector("td:last-child button"); return b && !b.disabled; }));
+const pitcherUp = await page.textContent(`#roster-farm tbody tr:nth-child(${upIndex + 1}) td .link`);
+await page.click(`#roster-farm tbody tr:nth-child(${upIndex + 1}) td:last-child button`);
+await page.waitForFunction(() => document.querySelector("#roster-message").className.includes("ok") || document.querySelector("#roster-message").className.includes("ng"));
+const relieversNow = await page.$$eval("#roster-relievers tbody td .link", (as) => as.map((a) => a.textContent));
+const farmNow = await page.$$eval("#roster-farm tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, tr.querySelector("td:last-child").textContent]));
+check(relieversNow.includes(pitcherUp) && !relieversNow.includes(relieverOut) && farmNow.some((r) => r[0] === relieverOut && r[1].includes("あと 10 日")) && (await page.textContent("#roster-recent")).includes(pitcherUp), `${relieverOut} を下げて ${pitcherUp} を上げると入れ替わり、下げた選手は「あと 10 日」(「${await page.textContent("#roster-message")}」)`);
+await page.click("#roster-auto");
+await page.waitForFunction(() => document.querySelector("#roster-message").textContent.includes("やめました"));
+check(!(await page.isChecked("#roster-auto")) && (await page.textContent("#roster-info")).includes("変わりません"), "「AI に任せる」を外すと、一軍は手で入れ替えるまで変わらない");
+await page.click("#screen-roster .back");
 // 1シーズン目の終わりのセーブデータに戻して、以降の確認を続ける
 await page.reload();
 await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });

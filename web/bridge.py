@@ -167,6 +167,25 @@ def lineup(name: str, args_json: str = "{}") -> str:
         return _ng(f"操作できませんでした({exc})")
 
 
+_ROSTER = {  # 一軍登録(D-425)
+    "view": lambda a: _game.roster_view(),
+    "swap": lambda a: _game.roster_swap(str(a["out_id"]), str(a["in_id"])),
+    "auto": lambda a: _game.roster_set_auto(bool(a.get("auto", True))),
+}
+
+
+def roster(name: str, args_json: str = "{}") -> str:
+    """自球団の一軍登録(D-425)。戻り値は一軍登録の画面の情報。"""
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in _ROSTER:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(_ROSTER[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"操作できませんでした({exc})")
+
+
 _TRADE = {
     "view": lambda a: _game.trade_view(a.get("team_id")),
     "propose": lambda a: _game.trade_propose(str(a.get("team_id", "")), list(a.get("gives", [])), list(a.get("gets", []))),

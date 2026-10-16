@@ -8,6 +8,7 @@ import { renderGame, renderGames } from "./games.js";
 import { renderPlayer } from "./player.js";
 import { renderRecords } from "./records.js";
 import { renderLineup } from "./lineup.js";
+import { renderRoster } from "./roster.js";
 import { renderTrade } from "./trade.js";
 import { renderProcedure } from "./procedure.js";
 import { renderOffseason, renderYearEnd } from "./yearend.js";
@@ -96,13 +97,14 @@ export function renderCurrent() {
     procedure: () => renderProcedure(token),
     records: () => renderRecords(token),
     lineup: () => renderLineup(token),
+    roster: () => renderRoster(token),
     trade: () => renderTrade(token),
   }[name];
   waitVeil(Promise.resolve(job && job())).catch((err) => showError(name, err)); // 0.3 秒を超えたら前の画面を暗くしてボール(D-405)
 }
 
 function showError(name, err) {
-  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", records: "records-body", lineup: "lineup-message", trade: "trade-message" }[name];
+  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", records: "records-body", lineup: "lineup-message", roster: "roster-message", trade: "trade-message" }[name];
   if (box) $(box).replaceChildren(el("p", { className: "message ng" }, `表示できませんでした:${err.message}`));
 }
 

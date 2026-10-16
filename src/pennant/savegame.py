@@ -67,7 +67,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 24  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)
+SAVE_FORMAT_VERSION = 25  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -254,6 +254,9 @@ def build_state(state: GameState) -> dict:
             "trades": [dict(x) for x in s.trades],  # シーズン中のトレード(D-378。版 20)
             "trade_offers": [dict(x) for x in s.trade_offers],
             "active_history": {tid: [dict(h) for h in hist] for tid, hist in s.active_history.items()},
+            "condition": {"start": int(s.conditions.start), **({"legacy": True, "legacy_form": dict(s.legacy_form)} if s.legacy_roster else {})},  # 調子(D-424。版 25)
+            "demoted": {pid: int(d) for pid, d in s.demoted.items()},  # 一軍から外した日(D-425)
+            "roster_auto": {tid: bool(v) for tid, v in s.roster_auto.items()},
             "games": [
                 {
                     "number": p.scheduled.number,
@@ -378,6 +381,42 @@ def read_manifest(data: bytes) -> dict:
     if p.items or not isinstance(manifest, dict):
         raise SaveDataError(p.items or ["manifest.json: まとまり({ })が必要です"])
     return manifest
+
+
+def _restore_roster(season: Season, season_d: dict, p) -> None:
+    """調子と一軍の入れ替え(D-424〜D-426):調子を始めた日・外した日・AI に任せる・一軍の顔ぶれ(移り変わりの記録の最後)。"""
+    from .condition import Conditions
+
+    cond = season_d.get("condition") or {}
+    demoted = season_d.get("demoted") or {}
+    auto = season_d.get("roster_auto") or {}
+    start = cond.get("start", 0) if isinstance(cond, dict) else None
+    if isinstance(start, bool) or not isinstance(start, int) or start < 0:
+        p.add("state.json.season.condition.start", f"調子を始めた日は 0 以上の整数にしてください(値: {start!r})")
+        return
+    if not (isinstance(demoted, dict) and all(isinstance(d, int) and not isinstance(d, bool) and d >= 0 for d in demoted.values())):
+        p.add("state.json.season.demoted", "一軍から外した日の形が違います")
+        return
+    if not (isinstance(auto, dict) and all(tid in season.teams and isinstance(v, bool) for tid, v in auto.items())):
+        p.add("state.json.season.roster_auto", "AI に任せるかの形が違います(球団 → true / false)")
+        return
+    legacy_form = cond.get("legacy_form") or {}
+    try:
+        season.legacy_form = {str(k): float(v) for k, v in legacy_form.items()}
+    except (TypeError, ValueError, AttributeError):
+        p.add("state.json.season.condition.legacy_form", "好調・不調の形が違います")
+        return
+    season.legacy_roster = bool(cond.get("legacy", False))
+    season.conditions = Conditions(season.seed, season.conditions.cfg, start)
+    season.demoted = {str(k): int(v) for k, v in demoted.items()}
+    season.roster_auto = {str(k): bool(v) for k, v in auto.items()}
+    for tid, team in season.teams.items():
+        hist = season.active_history.get(tid)
+        if hist and not season.is_over:
+            season.actives[tid] = season.active_on(tid, season.day)
+        elif season.legacy_roster:  # 版 24:今までの選び方(総合だけ)
+            season.actives[tid] = season.manager.select_active(team)
+    season.apply_conditions()
 
 
 def load_game(data: bytes) -> GameState:
@@ -691,6 +730,7 @@ def load_game(data: bytes) -> GameState:
     for pg in played:
         season._record(pg.result)
     season.played = played
+    _restore_roster(season, season_d, p)
     history = _check_history(history_d, raws, team_ids, year + (1 if procedure_d else 0), p)  # 手続き中は、今シーズンの集計がすでに履歴にある
     offseasons = _check_offseasons(offseasons_d, p)
     procedure = _check_procedure(procedure_d, team_ids, {p_.id for p_ in season.players.values()}, p)

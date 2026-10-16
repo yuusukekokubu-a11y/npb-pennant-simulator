@@ -3,14 +3,14 @@
 import { $, GAMES_PAGE, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { abilityPanel, el, emblem, kvTable, link, setPressed, table, teamLink } from "./parts.js";
+import { abilityPanel, conditionMark, el, emblem, kvTable, link, setPressed, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 export async function renderPlayer(args, token) {
   const data = await query("player", { player_id: args.id });
   if (token !== state.token) return;
   const p = data.player;
-  $("player-name").textContent = p.name;
+  $("player-name").replaceChildren(p.name, p.condition ? conditionMark(p.condition) : ""); // 今日の調子(D-424)
   // 選手のカード(D-400):マーク・背景にポジションの 1 文字
   $("player-emblem").replaceWith(Object.assign(emblem(p.team_id, p.team_name || "?", "large"), { id: "player-emblem" }));
   $("player-card").dataset.pos = String(p.position_label || "").slice(0, 1);

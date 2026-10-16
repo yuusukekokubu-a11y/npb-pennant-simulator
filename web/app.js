@@ -51,6 +51,7 @@ $("year-end").addEventListener("click", () => openPage("yearend"));
 $("open-offseason").addEventListener("click", () => openPage("procedure"));
 $("open-review").addEventListener("click", () => { openEntries(); showTab("records"); }); // 記録室の補強の記録(D-423)
 $("open-lineup").addEventListener("click", () => { state.lineup = null; openPage("lineup"); });
+$("open-roster").addEventListener("click", () => { state.roster = null; openPage("roster"); }); // 一軍登録(D-425)
 $("open-trade").addEventListener("click", () => { state.trade = null; openPage("trade"); });
 $("team-review").addEventListener("click", () => { openEntries(current().args.id); showTab("records"); });
 $("proc-next").addEventListener("click", procNext);
