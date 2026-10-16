@@ -1127,36 +1127,68 @@ check(await page.isHidden("#year-end-box") && (await page.textContent("#progress
 await page.click(".adv[data-days='1']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("2シーズン目 1日目"));
 check(true, "2シーズン目を1日進められる");
-// ドラフトの振り返り(D-216):進行の画面のボタンから開く。計算本体と同じ行。オフなら真の値は出ない
+// 記録室(D-422、D-423):進行の画面の「補強」で、補強の記録(ドラフト)を開く。計算本体と同じ行。ドラフト以外の入団は混ざらない
 await page.click("#open-review");
-await page.waitForFunction(() => !document.querySelector("#screen-review").hidden && document.querySelectorAll("#review-table tbody tr").length > 0);
-const reviewPy = pyYear2(`v = g.draft_review()\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
-const reviewRows = async () => page.$$eval("#review-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent, tr.children[4].textContent, tr.children[6].textContent, tr.children[8].textContent]));
+await page.waitForFunction(() => !document.querySelector("#screen-records").hidden && document.querySelectorAll("#records-body tbody tr").length > 0);
+const TEAM_SEL = '#records-controls select[aria-label="球団の選択"]';
+const YEAR_SEL = '#records-controls select[aria-label="入団した年度の選択"]';
+const reviewPy = pyYear2(`v = g.record_entries("draft")\nprint(json.dumps([v["team_name"], v["year"], v["years"], [[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]]], ensure_ascii=False))`);
+const reviewRows = async () => page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent, tr.children[4].textContent, tr.children[6].textContent, tr.children[8].textContent]));
 let reviewOnScreen = await reviewRows();
-const reviewHead = await page.$$eval("#review-table thead th", (ths) => ths.map((th) => th.textContent));
-check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue("#review-year")) === String(reviewPy[1]) && (await page.textContent("#review-team option:checked")).startsWith(reviewPy[0]), `ドラフトの振り返り:自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の見立て・今の所属・WAR 累計)`);
-check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の") || h.includes("差")) && !(await page.textContent("#review-note")), "振り返りに真の総合・差・実際の天井の列は出ない(答え合わせモードはなくした)");
-check(reviewOnScreen.every((r) => /^ドラフト \d 巡(\(抽選\))?$|^育成ドラフト \d 巡$|^外国人市場$|^市場$|^市場\(最低人数\)$|^自動補充$/.test(r[1]) && /^([SA-G] \d+|—)$/.test(r[2])), "経路は「ドラフト n 巡」「育成ドラフト n 巡」「外国人市場」「市場」「自動補充」、入団時の見立ては「ランク 数字」(D-420)");
+const reviewHead = await page.$$eval("#records-body thead th", (ths) => ths.map((th) => th.textContent));
+check((await page.getAttribute("#tabs button[data-tab=records]", "aria-selected")) === "true" && (await page.getAttribute("#records-section button[data-value=entries]", "aria-pressed")) === "true" && (await page.getAttribute("#records-kind button[data-value=draft]", "aria-pressed")) === "true", "「補強」で、記録室(下のタブ「記録」)の補強の記録・ドラフトが開く");
+check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewPy[3]) && (await page.inputValue(YEAR_SEL)) === String(reviewPy[1]) && (await page.textContent(`${TEAM_SEL} option:checked`)).startsWith(reviewPy[0]), `補強の記録(ドラフト):自球団(${reviewPy[0]})の最新の年度(${reviewPy[1]}シーズン目に入団)の ${reviewOnScreen.length} 人が、計算本体と同じ(経路・入団時の見立て・今の所属・WAR 累計)`);
+check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の")), `補強の記録の列は 9 つ(${reviewHead.join("・")})`);
+check(reviewOnScreen.every((r) => /^ドラフト \d+ 巡(\(抽選\))?$|^育成ドラフト \d+ 巡$/.test(r[1]) && /^([SA-G] \d+|—)$/.test(r[2])), "ドラフトの欄はドラフト・育成ドラフトの入団だけ(外国人・市場は混ざらない。D-422)、入団時の見立ては「ランク 数字」(D-420)");
 await grab();
 // 入団時の見立て(D-420):ドラフトで入った選手のページに、見立てと今の数字が並ぶ
-const draftRow = await page.$$eval("#review-table tbody tr", (trs) => trs.findIndex((tr) => tr.children[1].textContent.startsWith("ドラフト") && tr.querySelector("td .link")));
+const draftRow = await page.$$eval("#records-body tbody tr", (trs) => trs.findIndex((tr) => tr.children[1].textContent.startsWith("ドラフト") && tr.querySelector("td .link")));
 if (draftRow >= 0) {
-  await page.click(`#review-table tbody tr >> nth=${draftRow} >> td .link`);
+  await page.click(`#records-body tbody tr >> nth=${draftRow} >> td .link`);
   await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && !document.querySelector("#player-entry-box").hidden, null, { timeout: 30000 });
   const entryHead = await page.textContent("#player-entry summary");
   await page.click("#player-entry summary");
   const entryCols = await page.$$eval("#player-entry thead th", (ths) => ths.map((th) => th.textContent));
   check(entryHead.startsWith("入団時の見立て") && entryHead.includes("ドラフト") && JSON.stringify(entryCols) === JSON.stringify(["能力", "見立て", "今の能力", "差"]), `ドラフトで入った選手のページに「${entryHead}」(見立て・今・差の表)`);
   await page.click("#screen-player .back");
-  await page.waitForFunction(() => !document.querySelector("#screen-review").hidden);
-} else check(false, "振り返りにドラフトで入った選手がいない");
+  await page.waitForFunction(() => !document.querySelector("#screen-records").hidden);
+} else check(false, "補強の記録にドラフトで入った選手がいない");
 // 別の球団を選ぶと、その球団の入団者になる
-await page.selectOption("#review-team", "T05");
-const reviewT05Py = pyYear2(`v = g.draft_review("T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
-await page.waitForFunction(([n, top]) => document.querySelector("#review-loading").hidden && document.querySelectorAll("#review-table tbody tr").length === n && document.querySelector("#review-table tbody tr td").textContent === top, [reviewT05Py.length, reviewT05Py[0][0]], { timeout: 60000 });
+await page.selectOption(TEAM_SEL, "T05");
+const reviewT05Py = pyYear2(`v = g.record_entries("draft", "T05")\nprint(json.dumps([[r["name"], r["route_label"], r["entry_text"], r["status_label"], r["war"]] for r in v["rows"]], ensure_ascii=False))`);
+await page.waitForFunction(([n, top]) => document.querySelectorAll("#records-body tbody tr").length === n && document.querySelector("#records-body tbody tr td").textContent === top, [reviewT05Py.length, reviewT05Py[0][0]], { timeout: 60000 });
 reviewOnScreen = await reviewRows();
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);
-await page.click("#screen-review .back");
+// 外国人・出入り
+await page.click("#records-kind button[data-value=foreign]");
+await page.waitForFunction(() => document.querySelector("#records-kind button[data-value=foreign]").getAttribute("aria-pressed") === "true" && document.querySelector("#records-controls select"));
+const foRoutes = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => tr.children[1].textContent));
+check(foRoutes.every((x) => x === "外国人市場"), `外国人の欄は外国人市場の入団だけ(${foRoutes.length} 人)`);
+await page.click("#records-kind button[data-value=moves]");
+await page.waitForFunction(() => document.querySelector("#records-kind button[data-value=moves]").getAttribute("aria-pressed") === "true" && document.querySelector('#records-controls select[aria-label="年の選択"]'));
+await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length > 0, null, { timeout: 30000 });
+const movesPy = pyYear2(`v = g.record_moves()\nprint(json.dumps([[r["name"], r["label"], r["from_team_name"], r["to_team_name"]] for r in v["rows"]], ensure_ascii=False))`);
+const movesUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent, tr.children[2].textContent, tr.children[3].textContent]));
+check(JSON.stringify(movesUi) === JSON.stringify(movesPy) && movesUi.some((r) => r[1] === "引退"), `出入り(最後に終えたオフの年):${movesUi.length} 件が計算本体と同じ(種類・前の所属・新しい所属。引退も含む)`);
+// 歴代の順位と優勝・タイトル・通算記録
+await page.click("#records-section button[data-value=standings]");
+await page.waitForFunction(() => document.querySelectorAll("#records-body h2").length >= 3);
+const stPy = pyYear2(`v = g.record_standings()\nprint(json.dumps([[r["team_name"] for r in lg["rows"]] for lg in v["leagues"]] + [[c["team_name"] + str(c["count"]) for c in v["champions"] if c["count"]]], ensure_ascii=False))`);
+const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map((t) => [...t.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td .link") ? tr.querySelector("td .link").textContent + (tr.children[1].textContent.endsWith("回") && tr.children[1].textContent !== "0 回" ? tr.children[1].textContent.replace(" 回", "") : "") : "")));
+check(JSON.stringify(stUi.slice(0, 2)) === JSON.stringify(stPy.slice(0, 2)) && JSON.stringify(stUi[2].filter((x) => /\d$/.test(x))) === JSON.stringify(stPy[2]), `歴代の順位と優勝:1シーズン目の順位表と、球団ごとの優勝回数が計算本体と同じ`);
+await page.click("#records-section button[data-value=titles]");
+await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 20);
+const tiPy = pyYear2(`v = g.record_titles()\nprint(json.dumps([[t["label"], t["value_text"]] for lg in v["leagues"] for t in lg["titles"]], ensure_ascii=False))`);
+const tiUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[2].textContent]));
+check(JSON.stringify(tiUi) === JSON.stringify(tiPy), `年ごとのタイトル:2 リーグ × 10 のタイトルと記録が計算本体と同じ(${tiUi.slice(0, 2).map((x) => x.join(" ")).join("・")} …)`);
+await page.click("#records-section button[data-value=leaders]");
+await page.waitForFunction(() => document.querySelector('#records-controls select[aria-label="記録の選択"]') && document.querySelectorAll("#records-body tbody tr").length >= 20);
+await page.selectOption('#records-controls select[aria-label="打者・投手の選択"]', "pitcher");
+await page.waitForFunction(() => document.querySelector('#records-controls select[aria-label="記録の選択"] option:checked').textContent === "勝利");
+const ldPy = pyYear2(`v = g.record_leaders("pitcher", "W")\nprint(json.dumps([[r["name"], r["value_text"]] for r in v["rows"]], ensure_ascii=False))`);
+const ldUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, tr.children[1].textContent]));
+check(JSON.stringify(ldUi) === JSON.stringify(ldPy), `通算記録(投手・勝利):上位 ${ldUi.length} 人が計算本体と同じ(1 位 ${ldUi[0] ? ldUi[0].join(" ") : ""})`);
+await grab();
 // 成績:シーズンの選択(今シーズン・1シーズン目・通算)
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=basic]");

@@ -199,6 +199,11 @@ _QUERIES = {
     "team_outlook": lambda a: _game.team_outlook(),
     "transactions": lambda a: _game.transactions(a.get("year")),
     "draft_review": lambda a: _game.draft_review(a.get("team_id"), a.get("year")),
+    "record_standings": lambda a: _game.record_standings(a.get("year")),  # 記録室(D-422、D-423)
+    "record_titles": lambda a: _game.record_titles(a.get("year")),
+    "record_leaders": lambda a: _game.record_leaders(a.get("role", "batter"), a.get("key")),
+    "record_entries": lambda a: _game.record_entries(a.get("kind", "draft"), a.get("team_id"), a.get("year")),
+    "record_moves": lambda a: _game.record_moves(a.get("year"), a.get("team_id")),
     "budget_info": lambda a: _game.budget_info(a["team_id"]),
     "player": lambda a: _game.player(a["player_id"]),
     "games_on": lambda a: _game.games_on(int(a["day"])),

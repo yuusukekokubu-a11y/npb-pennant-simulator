@@ -9,6 +9,10 @@ from ..scouting import ScoutReport, public_estimate
 from .common import ROLE_LABELS
 
 
+# 入団の経路(外国人市場・育成ドラフトも。D-375、D-376。最低人数の補充 D-391)。この順に並べる
+REVIEW_ROUTES = ("foreign", "draft", "dev_draft", "market", "minimum", "fill")
+
+
 class DraftMixin:
     """Game の一部:ドラフトと市場(指名・獲得・手放す選手・成績つきの候補の表・ドラフトの振り返り・入退団の記録)。"""
 
@@ -186,9 +190,9 @@ class DraftMixin:
         table["phase"] = phase
         return table
 
-    def review_years(self) -> list[int]:
-        """振り返りで選べる入団の年度(入団したシーズンの番号。履歴から。事前運転の入団は含まない)。"""
-        return sorted({int(x["year"]) + 1 for x in self.state.transactions if x.get("player_id") and x["phase"] in ("foreign", "draft", "dev_draft", "market", "minimum", "fill")})
+    def review_years(self, routes=REVIEW_ROUTES) -> list[int]:
+        """振り返りで選べる入団の年度(入団したシーズンの番号。履歴から。事前運転の入団は含まない)。routes は入団の経路(記録室では ドラフト・外国人 を分ける。D-423)。"""
+        return sorted({int(x["year"]) + 1 for x in self.state.transactions if x.get("player_id") and x["phase"] in routes})
 
     def _career_totals(self) -> tuple[dict[str, int], dict[str, float]]:
         """選手 ID → 出場(G)の累計、WAR の累計(野手は WAR、投手は失点版)。履歴と今シーズンの合計。"""
@@ -207,18 +211,18 @@ class DraftMixin:
         add(self.records.total, self.war_lines())
         return games, war
 
-    def review_entries(self, team_id: str, year: int) -> list[dict]:
+    def review_entries(self, team_id: str, year: int, routes=REVIEW_ROUTES) -> list[dict]:
         """振り返りの元になる履歴の行(その年度にその球団に入った選手。経路つき)。"""
-        order = {"foreign": 0, "draft": 1, "dev_draft": 2, "market": 3, "minimum": 4, "fill": 5}  # 外国人市場・育成ドラフトも入団の経路(D-375、D-376)。最低人数の補充(D-391)
-        rows = [x for x in self.state.transactions if x.get("player_id") and x["phase"] in order and int(x["year"]) + 1 == int(year) and x["team_id"] == team_id]
+        order = {k: i for i, k in enumerate(REVIEW_ROUTES)}
+        rows = [x for x in self.state.transactions if x.get("player_id") and x["phase"] in routes and int(x["year"]) + 1 == int(year) and x["team_id"] == team_id]
         return sorted(rows, key=lambda x: (order[x["phase"]], int(x.get("round") or 0), x["player_id"]))
 
-    def draft_review(self, team_id: str | None = None, year: int | None = None) -> dict:
+    def draft_review(self, team_id: str | None = None, year: int | None = None, routes=REVIEW_ROUTES) -> dict:
         """ドラフトの振り返り(公開用):入団の経路、入団時の見立ての総合と今の総合、今の所属、出場と WAR の累計(D-216、D-420)。
         リーグを去った選手は、総合を出さない。"""
         state = self.state
         names = self._team_names()
-        years = self.review_years()
+        years = self.review_years(routes)
         teams = [{"team_id": t.id, "team_name": t.name, "is_mine": t.id == state.my_team_id} for t in state.league.teams]
         if team_id is None:
             team_id = state.my_team_id or state.league.teams[0].id
@@ -236,7 +240,7 @@ class DraftMixin:
         players = {p.id: p for p in state.league.all_players() + state.league.development_players()}
         rows = []
         cfg = state.gen_config
-        for x in self.review_entries(team_id, int(year)):
+        for x in self.review_entries(team_id, int(year), routes):
             p = players.get(x["player_id"])
             sc = p.scouting if p is not None and p.scouting else None
             entry = public_estimate(cfg, p, ScoutReport.from_dict(sc)) if sc else None

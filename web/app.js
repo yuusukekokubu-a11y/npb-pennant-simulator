@@ -5,7 +5,8 @@
 
 import { $, STATS_PAGE, state } from "./js/core.js";
 import { boot } from "./js/backend.js";
-import { back, buildTabs, current, openPage, renderCurrent, showScreen } from "./js/screens.js";
+import { back, buildTabs, current, openPage, renderCurrent, showScreen, showTab } from "./js/screens.js";
+import { openEntries } from "./js/records.js";
 import { advance } from "./js/progress.js";
 import { buildStatsFilters, commitSort, currentSort, isAbilityKey } from "./js/stats.js";
 import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
@@ -48,19 +49,10 @@ $("stop").addEventListener("click", () => {
 $("save").addEventListener("click", save);
 $("year-end").addEventListener("click", () => openPage("yearend"));
 $("open-offseason").addEventListener("click", () => openPage("procedure"));
-$("open-review").addEventListener("click", () => openPage("review"));
+$("open-review").addEventListener("click", () => { openEntries(); showTab("records"); }); // 記録室の補強の記録(D-423)
 $("open-lineup").addEventListener("click", () => { state.lineup = null; openPage("lineup"); });
 $("open-trade").addEventListener("click", () => { state.trade = null; openPage("trade"); });
-$("team-review").addEventListener("click", () => openPage("review", { team_id: current().args.id }));
-$("review-team").addEventListener("change", () => {
-  state.review.team = $("review-team").value;
-  state.review.year = null;
-  renderCurrent();
-});
-$("review-year").addEventListener("change", () => {
-  state.review.year = Number($("review-year").value);
-  renderCurrent();
-});
+$("team-review").addEventListener("click", () => { openEntries(current().args.id); showTab("records"); });
 $("proc-next").addEventListener("click", procNext);
 $("proc-stage-auto").addEventListener("click", procStageAuto);
 $("proc-auto").addEventListener("click", procAuto);

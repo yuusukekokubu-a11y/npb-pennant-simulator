@@ -6,7 +6,7 @@ import { renderProgress, renderStandings } from "./progress.js";
 import { renderStats } from "./stats.js";
 import { renderGame, renderGames } from "./games.js";
 import { renderPlayer } from "./player.js";
-import { renderReview } from "./review.js";
+import { renderRecords } from "./records.js";
 import { renderLineup } from "./lineup.js";
 import { renderTrade } from "./trade.js";
 import { renderProcedure } from "./procedure.js";
@@ -94,7 +94,7 @@ export function renderCurrent() {
     yearend: () => renderYearEnd(token),
     offseason: () => renderOffseason(args, token),
     procedure: () => renderProcedure(token),
-    review: () => renderReview(args, token),
+    records: () => renderRecords(token),
     lineup: () => renderLineup(token),
     trade: () => renderTrade(token),
   }[name];
@@ -102,7 +102,7 @@ export function renderCurrent() {
 }
 
 function showError(name, err) {
-  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", review: "review-table", lineup: "lineup-message", trade: "trade-message" }[name];
+  const box = { stats: "stats-table", games: "games-list", player: "player-season", team: "team-record", game: "game-log", yearend: "yearend-message", offseason: "offseason-retired", procedure: "proc-message", records: "records-body", lineup: "lineup-message", trade: "trade-message" }[name];
   if (box) $(box).replaceChildren(el("p", { className: "message ng" }, `表示できませんでした:${err.message}`));
 }
 

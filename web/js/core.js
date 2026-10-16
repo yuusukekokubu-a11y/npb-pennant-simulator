@@ -14,11 +14,12 @@ export const TABS = [
   { id: "standings", label: "順位", icon: ICON('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/>') },
   { id: "stats", label: "成績", icon: ICON('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>') },
   { id: "games", label: "試合", icon: ICON('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>') },
+  { id: "records", label: "記録", icon: ICON('<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6"/>') }, // 記録室(D-422)
   { id: "myteam", label: "自球団", icon: ICON('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>'), screen: "team" },
 ];
 export const tabScreen = (id) => (TABS.find((t) => t.id === id) || {}).screen || id;
 // タブの上に重ねて開くページ(「戻る」で前の画面へ)
-const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "review", "lineup", "trade"];
+const PAGES = ["player", "team", "game", "settings", "guide", "stadium", "yearend", "offseason", "procedure", "lineup", "trade"];
 export const SCREENS = ["start", "new", ...TABS.filter((t) => !t.screen).map((t) => t.id), ...PAGES];
 // 広い画面の 2 列(D-402):左に残すタブの画面と、右に並べるページ
 export const DUAL_BASES = ["standings", "stats", "games", "team"];
@@ -51,7 +52,7 @@ export const state = {
   playerKind: "basic",
   gamesDay: null,
   proc: freshProc(), // オフの手続きの画面の状態(F3-1。契約の画面の絞り込み・並び順・開いた行は D-272)
-  review: { team: null, year: null }, // ドラフトの振り返りの選択(D-216)。null なら計算本体の初期値(自球団・最新の年度)
+  records: { section: "standings", year: null, role: "batter", leaderKey: null, kind: "draft", team: null, moveYear: null, moveTeam: null }, // 記録室の選択(D-422、D-423)。null なら計算本体の初期値
   glossary: null, // 用語集のデータ(起動のときに受け取る。D-311)
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
