@@ -389,6 +389,11 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **短い待ち**:`screens.renderCurrent` が描き直しを `waitVeil` で包み、0.3 秒を超えたら `#wait-veil`(上の帯の下を暗くしてボール。押す操作は通す)を出す。
 - **スクロールの棒**:`html { scrollbar-gutter: stable; }` で、棒の場所を常に空ける。
 
+### 5.1.3 リーグ名・球場名と自球団の資金力(D-409、D-410)
+- **名前**:`newgame.check_place_names`(欄ごとの問題。リーグ名の重複も)と `apply_place_names`(当てはめ。空欄は初期名のまま)。`new_league(league_names, stadium_names)` が球団名と一緒に事前運転の前に当てはめる。画面は `api.check_place_names(seed, …)`(`bridge.check_places`・`worker` の `checkPlaces`)で入力のたびに点検する。名前は `League.league_names` と `Team.stadium` にそのまま入り、保存の形は変わらない。読み込みでは `savegame._saved_name_problem` で点検する(空・画面に出せない文字・長さ)。
+- **資金力**:`contracts.HUGE`(超大量)を足し、`ALL_TIERS` で保存の点検をする(版 24)。`assign_tiers(…, fixed)` は選んだ球団を除いた残りで数を合わせる(fixed がなければ今までと同じ割り当て)。超大量の基準額は `data/contracts.json` の `budget.tiers.huge`(120。古い設定にはないので、そのときは大の 100 倍)。単価を求める資金の合計は `ContractContext.total_cap` が `rate_funds` で超大量を大の上限に抑えて数える。設備の初期は大と同じ(`FacilitySettings.initial`)。
+- **画面**:新規開始の「詳しい設定」の `#place-fields`(リーグ名・球場名の欄)と `input[name=my-tier]`(自動・小・中・大・超大量)。説明バーは用語集の `setting.league_name`・`setting.stadium_name`・`setting.my_tier`。
+
 ### 5.2 ブラウザの中で完結する方式(段階③。D-081)
 - Python をブラウザ上で実行する仕組み(Pyodide)で、計算本体のコードをそのまま動かす。
 - 計算は Web Worker(画面とは別に裏で計算を進めるブラウザの仕組み)で行い、計算中も画面が固まらないようにする。
