@@ -69,6 +69,7 @@ class PlayersMixin:
                 development=None if p.dev_seasons is None else {"seasons": int(p.dev_seasons), "label": f"育成 {int(p.dev_seasons) + 1} 年目"},  # 育成選手(D-375)
                 contract=self._contract_public(p),
                 entry_estimate=self._entry_estimate(p),  # 入団時の見立て(D-420)
+                condition=self.player_condition(p.id),  # 今日の調子(D-424)
             )
             role = p.role
         else:  # 引退した選手(過去シーズンの写しから。F2)

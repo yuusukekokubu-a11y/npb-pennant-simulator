@@ -52,7 +52,7 @@ class LineupMixin:
             ov = ability_model.display(cfg, ability_model.overall(p))
             return {"player_id": p.id, "name": p.name, "position": p.position, "position_label": POSITION_LABELS[p.position], "hand": BATS_LABELS.get(p.bats),
                     "overall": f"{ability_model.rank(cfg, ov)} {ov}", "abilities": {k: shown.get(k, "") for k in ("trajectory",) + SHOWN_ABILITIES},
-                    "skills": public_skills(p)}
+                    "skills": public_skills(p), "condition": self.player_condition(p.id)}
 
         slots = []
         for order, (p, pos) in enumerate(ordered, start=1):

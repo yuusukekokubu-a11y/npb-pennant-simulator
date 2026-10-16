@@ -110,6 +110,12 @@ export function kvTable(rows) {
   return el("div", { className: "table-wrap" }, el("table", { className: "kv" }, body));
 }
 
+// 調子の印(D-424):↑ 絶好調・↗ 好調・→ 普通・↘ 不調・↓ 絶不調。title に名前
+export function conditionMark(c) {
+  if (!c) return "";
+  return el("span", { className: `cond cond-${c.level}`, title: c.label, "data-level": String(c.level) }, `${c.mark} ${c.label}`);
+}
+
 // 特殊能力の札(D-374):良いものは緑、悪いものは灰色
 export function skillBadge(s) {
   return el("span", { className: `skill ${s.good ? "good" : "bad"}`, "data-key": s.key }, s.label);

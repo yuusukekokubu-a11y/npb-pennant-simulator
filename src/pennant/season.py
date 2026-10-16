@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Callable
 
+from .ability_model import overall
+from .condition import Conditions, level_at, settings as condition_settings
 from .fatigue import advance_day, apply_game_fatigue
 from .game import GameResult, simulate_game
 from .game_config import GameConfig, load_game_config
@@ -123,15 +125,20 @@ class Season:
         maker = schedule_maker or RoundRobinSchedule(self.season_config["schedule"]["games_per_opponent"])
         self.schedule = maker.make(league, random.Random(derive_seed(seed, "schedule")))
         self.teams: dict[str, Team] = {t.id: t for t in league.teams}
-        self.actives: dict[str, ActiveRoster] = {t.id: self.manager.select_active(t) for t in league.teams}
-        self.rotation: dict[str, int] = {t.id: 0 for t in league.teams}
         self.players = {p.id: p for p in league.all_players()}
-        self.pitchers = [p for a in self.actives.values() for p in a.starters + a.relievers]
         self.day = 0
+        self.conditions = Conditions(seed, condition_settings(self.game_config))  # 調子(D-424)
+        self.legacy_form: dict[str, float] = {}  # 版 24 から読んだシーズンの、調子を始める前の好調・不調(試合の再現用。D-426)
+        self.demoted: dict[str, int] = {}  # 一軍から外した選手 → 外した日(10 日は戻せない。D-425)
+        self.roster_auto: dict[str, bool] = {}  # 球団 → AI に任せるか(書いていない球団は任せる。自球団の設定)
+        self.legacy_roster = False  # 版 24 から読んだシーズン(一軍を変えていない球団は、総合だけで選んだ顔ぶれ。D-426)
+        self.apply_conditions()
+        self.actives: dict[str, ActiveRoster] = {t.id: self.manager.select_active(t, self._roster_score(t.id, keep=False)) for t in league.teams}
+        self.rotation: dict[str, int] = {t.id: 0 for t in league.teams}
         self.lineup_plans: dict[str, dict] = {}  # 球団 → {style, slots([[選手 ID, 守備位置]] × 9 か None), set_day, notice}(D-373)
         self.trades: list[dict] = []  # シーズン中のトレード(trade.execute の記録。D-378)
         self.trade_offers: list[dict] = []  # AI からあなたへのトレードの提案(まだ答えていないもの)
-        self.active_history: dict[str, list[dict]] = {}  # トレードした球団 → 一軍の顔ぶれの移り変わり [{day, starters, relievers, batters, roles}](試合の再現用)
+        self.active_history: dict[str, list[dict]] = {}  # 一軍を変えた球団 → 一軍の顔ぶれの移り変わり [{day, starters, relievers, batters, roles}](試合の再現と保存。D-378、D-426)
         self.played: list[PlayedGame] = []
         self._records: dict[str, _Record] = {t.id: _Record() for t in league.teams}
 
@@ -228,10 +235,12 @@ class Season:
         """1日分の試合を行い、1日を進めて投手の疲労を回復させる。"""
         if self.is_over:
             raise ValueError("シーズンは終わっています")
+        self.apply_conditions()
         self._review_lineups()
+        self._review_rosters()
         games = [self._play(g) for g in self.schedule.days[self.day]]
         self.played.extend(games)
-        advance_day(self.pitchers, self.game_config)
+        advance_day(self.players.values(), self.game_config)  # 二軍の投手も回復する(D-425)
         result = DayResult(self.day, games)
         self.day += 1
         return result
@@ -260,18 +269,97 @@ class Season:
         return {"day": int(day), "starters": [p.id for p in a.starters], "relievers": [p.id for p in a.relievers], "batters": [p.id for p in a.batters], "roles": dict(a.relief_roles)}
 
     def reselect_actives(self, team_ids) -> None:
-        """トレードの後、球団の一軍を選び直す。試合の再現のため、選び直す前と後の顔ぶれを記録する(この日数の試合から新しい顔ぶれ)。"""
+        """トレードの後、球団の一軍を選び直す(見直しと同じ基準。D-425)。"""
         for tid in team_ids:
-            if tid not in self.active_history:
-                self.active_history[tid] = [self._active_snapshot(tid, 0)]
-            self.actives[tid] = self.manager.select_active(self.teams[tid])
-            snap = self._active_snapshot(tid, self.day)
-            hist = self.active_history[tid]
-            if hist[-1]["day"] == self.day:
-                hist[-1] = snap
-            else:
-                hist.append(snap)
-        self.pitchers = [p for a in self.actives.values() for p in a.starters + a.relievers]
+            self._reselect(tid)
+
+    # ---- 調子と一軍の入れ替え(D-424、D-425) ----
+
+    def apply_conditions(self) -> None:
+        """今日(self.day)の試合の調子を、選手の状態(form)に入れる。"""
+        for p in self.players.values():
+            p.state.form = self.conditions.form(p.id, self.day)
+
+    def condition_level(self, player_id: str) -> int:
+        return self.conditions.level(player_id, self.day)
+
+    def roster_settings(self) -> dict:
+        r = self.game_config.get("roster") if hasattr(self.game_config, "get") else None
+        return {"lock_days": 10, "keep_bonus": 4.0, **(r or {})}
+
+    def locked(self) -> set[str]:
+        """一軍から外して日が浅く、まだ戻せない選手。"""
+        days = int(self.roster_settings()["lock_days"])
+        return {pid for pid, d in self.demoted.items() if self.day - d < days}
+
+    def _roster_score(self, team_id: str, keep: bool = True):
+        step = float(self.conditions.cfg["step"])
+        current = {p.id for p in self.actives[team_id].players} if keep else set()
+        bonus = float(self.roster_settings()["keep_bonus"])
+        return lambda p: overall(p) + step * self.conditions.level(p.id, self.day) + (bonus if p.id in current else 0.0)
+
+    def set_active(self, team_id: str, active: ActiveRoster) -> None:
+        """一軍を変える。外した選手の日を覚え、試合の再現と保存のため顔ぶれを記録する(この日の試合から新しい顔ぶれ)。"""
+        before = {p.id for p in self.actives[team_id].players}
+        after = {p.id for p in active.players}
+        if team_id not in self.active_history:
+            self.active_history[team_id] = [self._active_snapshot(team_id, 0)]
+        for pid in before - after:
+            self.demoted[pid] = self.day
+        for pid in after - before:
+            self.demoted.pop(pid, None)
+        self.actives[team_id] = active
+        snap = self._active_snapshot(team_id, self.day)
+        hist = self.active_history[team_id]
+        if hist[-1]["day"] == self.day:
+            hist[-1] = snap
+        else:
+            hist.append(snap)
+
+    def _reselect(self, team_id: str) -> None:
+        new = self.manager.select_active(self.teams[team_id], self._roster_score(team_id), frozenset(self.locked()))
+        old = self.actives[team_id]
+        if [p.id for p in new.starters] == [p.id for p in old.starters] and [p.id for p in new.relievers] == [p.id for p in old.relievers] and [p.id for p in new.batters] == [p.id for p in old.batters] and new.relief_roles == old.relief_roles:
+            return  # 変わらなければ記録しない
+        self.set_active(team_id, new)
+
+    def swap(self, team_id: str, out_id: str, in_id: str) -> None:
+        """一軍の選手(out)と二軍の選手(in)を入れ替える(自球団の一軍登録。D-425)。投手は投手と、野手は野手と。
+        一軍の最低人数(捕手)と外国人の上限を守る。外して日が浅い選手は戻せない。"""
+        if self.is_over:
+            raise ValueError("シーズンが終わっているので、一軍は変えられません")
+        team = self.teams[team_id]
+        active = self.actives[team_id]
+        ids = {p.id for p in active.players}
+        out = next((p for p in active.players if p.id == out_id), None)
+        new = next((p for p in team.players if p.id == in_id), None)
+        if out is None:
+            raise ValueError("外す選手が一軍にいません")
+        if new is None or new.id in ids:
+            raise ValueError("上げる選手が二軍(支配下の一軍でない選手)にいません")
+        if out.role != new.role:
+            raise ValueError("投手は投手と、野手は野手と入れ替えてください")
+        if new.id in self.locked():
+            left = int(self.roster_settings()["lock_days"]) - (self.day - self.demoted[new.id])
+            raise ValueError(f"{new.name} は一軍から外して日が浅いので、あと {left} 日は戻せません")
+        ar = self.game_config["active_roster"]
+        limit = ar.get("foreign_max") if hasattr(ar, "get") else None
+        if limit is not None and new.foreign and not out.foreign and sum(1 for p in active.players if p.foreign) >= int(limit):
+            raise ValueError(f"一軍に登録できる外国人は {int(limit)} 人までです")
+        if out.position == "C" and new.position != "C" and sum(1 for p in active.batters if p.position == "C") <= int(ar["catchers"]):
+            raise ValueError(f"一軍の捕手は {int(ar['catchers'])} 人より減らせません")
+        rep = lambda xs: [new if p.id == out_id else p for p in xs]
+        starters, relievers, batters = rep(active.starters), rep(active.relievers), rep(active.batters)
+        roles = self.manager._relief_roles(relievers) if hasattr(self.manager, "_relief_roles") else dict(active.relief_roles)
+        self.set_active(team_id, ActiveRoster(starters=starters, relievers=relievers, relief_roles=roles, batters=batters))
+
+    def _review_rosters(self) -> None:
+        """見直しの日(review_days ごと。打順の見直しと同じ日)に、AI に任せる球団の一軍を選び直す。"""
+        if self.day == 0 or self.day % self.review_days() != 0:
+            return
+        for t in self.league.teams:
+            if self.roster_auto.get(t.id, True):
+                self._reselect(t.id)
 
     def active_on(self, team_id: str, day: int) -> ActiveRoster:
         """その日の試合の一軍(トレードした球団は記録から。D-378)。"""
@@ -290,9 +378,15 @@ class Season:
         g = played.scheduled
         teams = [self.teams[g.home_id], self.teams[g.away_id]]
         copied_teams, copied_actives = copy.deepcopy((teams, [self.active_on(t.id, g.day) for t in teams]))
+        cfg = self.conditions.cfg
         for t, a in zip(copied_teams, copied_actives):
             for p in a.starters + a.relievers:
                 p.state.fatigue = played.context.fatigue[p.id]
+            for p in a.players:  # その日の調子(D-424)。調子を始める前の試合は、そのときの好調・不調(D-426)
+                if g.day < self.conditions.start:
+                    p.state.form = self.legacy_form.get(p.id, 0.0)
+                else:
+                    p.state.form = level_at(self.seed, p.id, g.day, self.conditions.start, cfg) * float(cfg["step"])
         rng = self.game_rng(number)
         setups = [
             self.manager.prepare(t, rng, played.context.rotation[t.id], a, played.context.lineups.get(t.id))[0] for t, a in zip(copied_teams, copied_actives)

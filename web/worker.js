@@ -62,6 +62,9 @@ const handlers = {
   lineup({ name, args }) {
     return parse(bridge.lineup(name, JSON.stringify(args || {})));
   },
+  roster({ name, args }) {
+    return parse(bridge.roster(name, JSON.stringify(args || {})));
+  },
   trade({ name, args }) {
     return parse(bridge.trade(name, JSON.stringify(args || {})));
   },

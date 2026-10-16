@@ -84,7 +84,7 @@ class PitchingSituation:
 class Manager(Protocol):
     """采配の形(差し替え用)。"""
 
-    def select_active(self, team: Team) -> ActiveRoster: ...
+    def select_active(self, team: Team, score=None, exclude=frozenset()) -> ActiveRoster: ...
 
     def starting_lineup(self, active: ActiveRoster, rng: random.Random, plan: Mapping | None = None) -> Lineup: ...
 
@@ -121,19 +121,22 @@ class SimpleManager:
 
     # ---- 一軍の選抜 ----
 
-    def select_active(self, team: Team) -> ActiveRoster:
+    def select_active(self, team: Team, score=None, exclude=frozenset()) -> ActiveRoster:
+        """一軍を選ぶ。score は選ぶ基準(既定は総合。見直しでは総合 + 調子 + 今の一軍の有利。D-425)。
+        exclude の選手(一軍から外して日が浅い選手)は、ほかで埋められないときだけ選ぶ。"""
         ar = self.config["active_roster"]
+        score = score or overall
         players = team.players
         limit = ar.get("foreign_max") if hasattr(ar, "get") else None
         foreign = [p for p in players if p.foreign]
-        if limit is not None and len(foreign) > int(limit):  # 一軍の外国人は上限まで:総合の高い順に上限の人数だけ候補に残す(D-376)
-            keep = {p.id for p in sorted(foreign, key=lambda p: (-overall(p), p.id))[: int(limit)]}
+        if limit is not None and len(foreign) > int(limit):  # 一軍の外国人は上限まで:基準の高い順に上限の人数だけ候補に残す(D-376)
+            keep = {p.id for p in sorted(foreign, key=lambda p: (p.id in exclude, -score(p), p.id))[: int(limit)]}
             players = [p for p in players if not p.foreign or p.id in keep]
         pitchers = [p for p in players if p.role == PITCHER]
         batters = [p for p in players if p.role == BATTER]
 
         def best(pool, n, chosen):
-            pool = sorted((p for p in pool if p.id not in chosen), key=overall, reverse=True)
+            pool = sorted((p for p in pool if p.id not in chosen), key=lambda p: (p.id in exclude, -score(p)))
             return pool[:n]
 
         chosen: set[str] = set()

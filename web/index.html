@@ -190,7 +190,7 @@
   th.sorted .arrow { font-size: 0.65rem; margin-right: 1px; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
   /* 広い画面(幅が js/core.js の WIDE_MIN_WIDTH 以上。<html class="wide">)では、fluid の印の表を横スクロールなしで全列出す(D-223) */
-  .wide #screen-procedure, .wide #screen-records { max-width: 1180px; }
+  .wide #screen-procedure, .wide #screen-records, .wide #screen-roster { max-width: 1180px; }
   .wide .table-wrap.fluid { overflow-x: visible; }
   .wide .table-wrap.fluid table { table-layout: auto; }
   .wide .table-wrap.fluid th { white-space: normal; }
@@ -206,6 +206,9 @@
   .player-card::after { content: attr(data-pos); position: absolute; right: -4px; bottom: -36px; font-size: 120px; font-weight: 900; line-height: 1; opacity: 0.12; pointer-events: none; }
   .player-card h1 { font-size: 1.5rem; font-weight: 900; margin: 0; line-height: 1.25; }
   .player-card #player-info { margin: 4px 0 0; font-size: 0.82rem; color: #d6defa; }
+  .cond { font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+  .cond-2 { color: #ff7a59; } .cond-1 { color: #f7c948; } .cond-0 { color: var(--muted); } .cond--1 { color: #7fb2ff; } .cond--2 { color: #9a8cff; }
+  #player-name .cond { margin-left: 8px; font-size: 0.85rem; }
   .player-card #player-info .link { color: #fff; }
   .player-card .back { position: absolute; right: 10px; top: 10px; z-index: 1; min-height: 34px; padding: 2px 10px; font-size: 0.8rem; }
   .player-card-body { min-width: 0; padding-right: 56px; }
@@ -509,7 +512,7 @@
     <div class="form" id="mine-form"></div>
     <div class="form-note" id="mine-note"></div>
   </div>
-  <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
+  <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-roster" class="secondary" type="button" hidden>一軍登録</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
 
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
@@ -671,6 +674,16 @@
   <p class="small" id="trade-summary"></p>
   <div class="row"><button id="trade-propose" type="button">この交換を持ちかける</button></div>
   <details id="trade-history-box"><summary>このシーズン(オフ)のトレード</summary><div id="trade-history"></div></details>
+</main>
+
+<!-- 一軍登録(D-425) -->
+<main class="screen" id="screen-roster" hidden>
+  <div class="page-head"><button class="secondary back">戻る</button><h1>一軍登録</h1></div>
+  <div class="row"><label><input type="checkbox" id="roster-auto"> AI に任せる(7 日ごとに見直す)</label></div>
+  <p class="small" id="roster-info"></p>
+  <p class="muted small" id="roster-recent"></p>
+  <p class="message" id="roster-message"></p>
+  <div id="roster-body"></div>
 </main>
 
 <main class="screen" id="screen-lineup" hidden>
