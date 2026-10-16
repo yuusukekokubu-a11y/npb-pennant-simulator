@@ -1,7 +1,7 @@
 """勝利・敗戦・セーブ・ホールドの判定(実装⑤。D-094。公式記録の簡易版)。
 
 打席ログで点差を追いかけて決める。
-  - 勝ち越しの得点:勝ったチームが、最後にリードを奪った打席の得点。その打席の生還(走者の動きの並び)を
+  - 勝ち越しの得点:勝ったチームが、最後にリードを奪った打席(暴投・捕逸を含む。D-427)の得点。その打席の生還(走者の動きの並び)を
     前から数えて、勝ち越しに必要な分に当たる走者を、決勝点の走者とする。
   - 勝利投手:その時点で、勝ったチームの投手として試合にいた投手(先発は試合の初めから、
     救援は最初に対戦した打席から、試合にいるとみなす)。それが先発で、5回(15アウト)に満たなければ、
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .game import GameResult
+from .game import GameResult, steps
 
 STARTER_MIN_OUTS = 15  # 先発が勝利投手になるのに必要な投球回(5回)
 SAVE_MAX_LEAD = 3
@@ -41,10 +41,11 @@ def decide(result: GameResult) -> Decisions:
     loser = result.away_team_id if winner == result.home_team_id else result.home_team_id
 
     # 打席ごとの「打席の前の点差」(勝ったチームから見た)と、最後にリードを奪った打席
+    seq = list(steps(result))  # 打席と、その後の盗塁・暴投・捕逸(D-427)
     lead_before: list[int] = []
     lead = 0
     go_ahead = None  # (打席の番号, 決勝点の走者の動き)
-    for i, x in enumerate(result.log):
+    for i, x in enumerate(seq):
         lead_before.append(lead)
         if x.batting_team_id == winner:
             if x.runs and lead <= 0 < lead + x.runs:
@@ -56,9 +57,9 @@ def decide(result: GameResult) -> Decisions:
 
     lines = [p for p in result.pitchers if p.team_id == winner]
     first_pa = {}
-    for i, x in enumerate(result.log):
+    for i, x in enumerate(seq):
         first_pa.setdefault(x.pitcher_id, i)
-    entry = {p.pitcher_id: (-1 if p.role == "starter" else first_pa.get(p.pitcher_id, len(result.log))) for p in lines}
+    entry = {p.pitcher_id: (-1 if p.role == "starter" else first_pa.get(p.pitcher_id, len(seq))) for p in lines}
 
     k, run = go_ahead
     of_record = [p for p in lines if entry[p.pitcher_id] <= k][-1]
@@ -72,7 +73,7 @@ def decide(result: GameResult) -> Decisions:
     def entry_state(pid: str) -> tuple[int, int]:
         """登板した最初の打席の前の(リード, 塁上の走者の数)。"""
         i = first_pa[pid]
-        bo = result.log[i].base_out
+        bo = seq[i].base_out
         return lead_before[i], int(bo.first) + int(bo.second) + int(bo.third)
 
     save = None
@@ -95,7 +96,7 @@ def decide(result: GameResult) -> Decisions:
         if entered_lead <= 0:
             continue
         kept = True
-        for i, x in enumerate(result.log):
+        for i, x in enumerate(seq):
             if x.pitcher_id == pid and lead_before[i] - x.runs <= 0:  # 相手の攻撃で点を取られた後の点差
                 kept = False
                 break

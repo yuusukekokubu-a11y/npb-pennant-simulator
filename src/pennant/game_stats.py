@@ -13,7 +13,7 @@ from typing import Iterable
 
 from .abilities import POSITION_LABELS
 from .fatigue import advance_day, apply_game_fatigue
-from .game import BOTTOM, GameResult, simulate_game
+from .game import BOTTOM, GameResult, simulate_game, steps
 from .game_config import GameConfig
 from .manager import DH, RELIEF_ROLE_LABELS, SimpleManager
 from .models import League, Player
@@ -228,7 +228,7 @@ def game_story(result: GameResult, players: dict[str, Player], team_names: dict[
     for pid in d.holds:
         marks[pid] = "H"
     earned: dict[str, int] = {}
-    for x, row in zip(result.log, earned_flags(result)):
+    for x, row in zip(steps(result), earned_flags(result)):
         for m, is_earned in zip([m for m in x.moves if m.scored], row):
             if is_earned:
                 earned[m.responsible_pitcher_id] = earned.get(m.responsible_pitcher_id, 0) + 1
@@ -291,6 +291,7 @@ def game_story(result: GameResult, players: dict[str, Player], team_names: dict[
                 "score": {"away": score[away], "home": score[home]},
             }
         )
+        score[x.batting_team_id] += x.all_runs - x.runs  # 打席の後の暴投・捕逸の得点(文章には出さない。D-427)
 
     n = max(len(result.line[home]), len(result.line[away]))
     line = {

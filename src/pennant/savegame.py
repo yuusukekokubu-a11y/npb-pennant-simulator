@@ -67,7 +67,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 25  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)
+SAVE_FORMAT_VERSION = 26  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -257,6 +257,7 @@ def build_state(state: GameState) -> dict:
             "condition": {"start": int(s.conditions.start), **({"legacy": True, "legacy_form": dict(s.legacy_form)} if s.legacy_roster else {})},  # 調子(D-424。版 25)
             "demoted": {pid: int(d) for pid, d in s.demoted.items()},  # 一軍から外した日(D-425)
             "roster_auto": {tid: bool(v) for tid, v in s.roster_auto.items()},
+            "running_start": int(s.running_start),  # 盗塁などを始めた日(D-433。版 26)
             "games": [
                 {
                     "number": p.scheduled.number,
@@ -274,6 +275,8 @@ def build_state(state: GameState) -> dict:
 def _plain_plan(plan: dict) -> dict:
     """打順の計画(D-373)を保存する形に。"""
     out = {"style": str(plan.get("style") or "power"), "slots": None if plan.get("slots") is None else [[str(pid), str(pos)] for pid, pos in plan["slots"]]}
+    if plan.get("steal") and plan["steal"] != "normal":
+        out["steal"] = str(plan["steal"])  # 盗塁の作戦(D-429)
     if plan.get("set_day") is not None:
         out["set_day"] = int(plan["set_day"])
     if plan.get("notice"):
@@ -283,6 +286,7 @@ def _plain_plan(plan: dict) -> dict:
 
 def _check_plan(d, where: str, team_players: set, p) -> dict | None:
     """打順の計画の点検(D-373):型は決まったもの、スタメンは 9 つの枠に 1 人ずつ、そのチームの選手。"""
+    from .game_config import STEAL_STRATEGIES
     from .manager import LINEUP_POSITIONS, LINEUP_STYLES
 
     if not isinstance(d, dict) or d.get("style") not in LINEUP_STYLES:
@@ -295,6 +299,12 @@ def _check_plan(d, where: str, team_players: set, p) -> dict | None:
             p.add(f"{where}.slots", "スタメンの形が違います(9 つの守備位置に 1 人ずつ、そのチームの別々の選手)")
             return None
     out = {"style": d["style"], "slots": None if slots is None else [[pid, pos] for pid, pos in slots]}
+    steal = d.get("steal", "normal")
+    if steal not in STEAL_STRATEGIES:
+        p.add(f"{where}.steal", f"盗塁の作戦が正しくありません(使えるもの: {' / '.join(STEAL_STRATEGIES)})")
+        return None
+    if steal != "normal":
+        out["steal"] = steal
     if isinstance(d.get("set_day"), int):
         out["set_day"] = d["set_day"]
     n = d.get("notice")
@@ -410,6 +420,11 @@ def _restore_roster(season: Season, season_d: dict, p) -> None:
     season.conditions = Conditions(season.seed, season.conditions.cfg, start)
     season.demoted = {str(k): int(v) for k, v in demoted.items()}
     season.roster_auto = {str(k): bool(v) for k, v in auto.items()}
+    running = season_d.get("running_start", 0)  # 版 25 以前は変換で入る(D-433)
+    if isinstance(running, bool) or not isinstance(running, int) or running < 0:
+        p.add("state.json.season.running_start", f"盗塁などを始めた日は 0 以上の整数にしてください(値: {running!r})")
+        return
+    season.running_start = running
     for tid, team in season.teams.items():
         hist = season.active_history.get(tid)
         if hist and not season.is_over:

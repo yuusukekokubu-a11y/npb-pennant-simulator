@@ -14,6 +14,7 @@ from ..skills import public_skills
 from .common import BATS_LABELS
 
 POSITION_NAMES = {**POSITION_LABELS, DH: "指名打者"}
+STEAL_LABELS = {"aggressive": "積極的", "normal": "普通", "cautious": "慎重"}  # 盗塁の作戦(D-429)
 NOTICE_TEXT = {"review": "{day}日目の見直しで、AI が型({style})で組み直しました。", "roster": "一軍にいない選手がいたので、{day}日目から AI が型({style})で組み直しました。"}
 SHOWN_ABILITIES = ("meet", "power", "speed", "defense")
 
@@ -71,6 +72,8 @@ class LineupMixin:
             "team_id": my,
             "style": plan.get("style") or DEFAULT_LINEUP_STYLE,
             "styles": [{"key": k, "label": v} for k, v in LINEUP_STYLES.items()],
+            "steal": plan.get("steal") or "normal",
+            "steals": [{"key": k, "label": v} for k, v in STEAL_LABELS.items()],
             "source": "user" if user else "ai",
             "source_text": f"自分で組んだスタメンと打順({next_review}日目の見直しまで使います)" if user else f"AI が型({style_label})で組んだスタメンと打順",
             "notice": "" if not notice else NOTICE_TEXT[notice["reason"]].format(day=notice["day"], style=style_label),
@@ -89,6 +92,15 @@ class LineupMixin:
             raise ValueError(f"打順の型は {' / '.join(LINEUP_STYLES.values())} のどれかにしてください(値: {style!r})")
         plan = self._plan()
         plan.update({"style": style, "slots": None, "notice": None, "set_day": None})
+        self.dirty = True
+        return self.lineup_view()
+
+    def set_steal(self, steal: str) -> dict:
+        """盗塁の作戦(積極的・普通・慎重。D-429)を選ぶ。スタメンと打順はそのまま。"""
+        self._lineup_check()
+        if steal not in STEAL_LABELS:
+            raise ValueError(f"盗塁の作戦は {' / '.join(STEAL_LABELS.values())} のどれかにしてください(値: {steal!r})")
+        self._plan()["steal"] = steal
         self.dirty = True
         return self.lineup_view()
 

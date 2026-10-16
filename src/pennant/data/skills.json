@@ -17,6 +17,10 @@
     "strikeout_plus": {"label": "奪三振◯", "role": "pitcher", "good": true, "pair": "strikeout", "when": "always", "effects": {"strikeout": 6}, "probability": 0.10},
     "strikeout_minus": {"label": "奪三振×", "role": "pitcher", "good": false, "pair": "strikeout", "when": "always", "effects": {"strikeout": -6}, "probability": 0.08},
     "heavy_ball": {"label": "重い球", "role": "pitcher", "good": true, "pair": "home_run", "when": "always", "effects": {"stuff": 6}, "probability": 0.10},
-    "homer_prone": {"label": "一発気味", "role": "pitcher", "good": false, "pair": "home_run", "when": "always", "effects": {"stuff": -6}, "probability": 0.08}
+    "homer_prone": {"label": "一発気味", "role": "pitcher", "good": false, "pair": "home_run", "when": "always", "effects": {"stuff": -6}, "probability": 0.08},
+    "steal_plus": {"label": "盗塁◯", "role": "batter", "good": true, "pair": "steal", "when": "steal", "effects": {"speed": 15}, "probability": 0.12, "requires": {"speed": 60}},
+    "steal_minus": {"label": "盗塁×", "role": "batter", "good": false, "pair": "steal", "when": "steal", "effects": {"speed": -15}, "probability": 0.06},
+    "catcher_plus": {"label": "キャッチャー◯", "role": "batter", "good": true, "pair": "catcher", "when": "catching", "effects": {"arm": 10, "fielding": 10}, "lead": 2, "positions": ["C"], "probability": 0.20},
+    "catcher_minus": {"label": "キャッチャー×", "role": "batter", "good": false, "pair": "catcher", "when": "catching", "effects": {"arm": -10, "fielding": -10}, "lead": -2, "positions": ["C"], "probability": 0.12}
   }
 }

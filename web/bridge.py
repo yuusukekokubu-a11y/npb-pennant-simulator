@@ -152,6 +152,7 @@ _LINEUP = {
     "set": lambda a: _game.set_lineup(list(a.get("slots", []))),
     "style": lambda a: _game.set_lineup_style(str(a.get("style", ""))),
     "auto": lambda a: _game.lineup_auto(),
+    "steal": lambda a: _game.set_steal(str(a.get("steal", ""))),
 }
 
 

@@ -14,7 +14,7 @@ from .abilities import BATTER, PITCHER, abilities_for, items_for
 from .baselines import BaselineSettings, Baselines, STATES, VALUE_NAMES
 from .baserunning import RunnerMove
 from .draft import OffseasonProcedure
-from .game import GamePlateAppearance, GameResult, PitcherLine
+from .game import EVENT_KINDS, GamePlateAppearance, GameResult, PitcherLine, RunEvent
 from .history import SeasonArchive
 from .models import HiddenInfo, Player, PlayerState
 from .offseason import OffseasonResult
@@ -188,6 +188,15 @@ def _game_from(d: dict) -> GameResult:
         row["base_out"] = BaseOutState(**x["base_out"])
         row["pa"] = PlateAppearance(**pa)
         row["moves"] = [RunnerMove(**m) for m in x["moves"]]
+        events = []
+        for e in x.get("events") or []:  # 盗塁・暴投・捕逸(D-427。版 25 以前はない)
+            ed = dict(e)
+            if ed.get("kind") not in EVENT_KINDS:
+                raise ValueError(f"盗塁などの種類が正しくありません(値: {ed.get('kind')!r})")
+            ed["base_out"] = BaseOutState(**e["base_out"])
+            ed["moves"] = [RunnerMove(**m) for m in e["moves"]]
+            events.append(RunEvent(**ed))
+        row["events"] = events
         log.append(GamePlateAppearance(**row))
     g = dict(d)
     g["log"] = log

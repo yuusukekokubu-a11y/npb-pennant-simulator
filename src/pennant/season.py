@@ -135,6 +135,7 @@ class Season:
         self.apply_conditions()
         self.actives: dict[str, ActiveRoster] = {t.id: self.manager.select_active(t, self._roster_score(t.id, keep=False)) for t in league.teams}
         self.rotation: dict[str, int] = {t.id: 0 for t in league.teams}
+        self.running_start = 0  # 盗塁・暴投・捕逸を始めた日(版 25 から読んだシーズンだけ 0 でない。D-433)
         self.lineup_plans: dict[str, dict] = {}  # 球団 → {style, slots([[選手 ID, 守備位置]] × 9 か None), set_day, notice}(D-373)
         self.trades: list[dict] = []  # シーズン中のトレード(trade.execute の記録。D-378)
         self.trade_offers: list[dict] = []  # AI からあなたへのトレードの提案(まだ答えていないもの)
@@ -170,11 +171,13 @@ class Season:
             plan = self._lineup_plan(team.id)
             if plan is not None:
                 context.lineups[team.id] = {"style": plan["style"], "slots": None if plan.get("slots") is None else [list(x) for x in plan["slots"]]}
+                if plan.get("steal", "normal") != "normal":
+                    context.lineups[team.id]["steal"] = plan["steal"]  # 盗塁の作戦(D-429)
             expected = active.starters[self.rotation[team.id] % len(active.starters)]
             setup, self.rotation[team.id] = self.manager.prepare(team, rng, self.rotation[team.id], active, plan)
             skipped[team.id] = setup.starter is not expected
             setups[team.id] = setup
-        result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park)
+        result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park, running=g.day >= self.running_start)
         apply_game_fatigue(result.batters_faced(), self.players, self.game_config)
         self._record(result)
         return PlayedGame(g, result, context, skipped)
@@ -391,7 +394,7 @@ class Season:
         setups = [
             self.manager.prepare(t, rng, played.context.rotation[t.id], a, played.context.lineups.get(t.id))[0] for t, a in zip(copied_teams, copied_actives)
         ]
-        return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager, park=copied_teams[0].park)
+        return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager, park=copied_teams[0].park, running=g.day >= self.running_start)
 
     # ---- 順位表 ----
 

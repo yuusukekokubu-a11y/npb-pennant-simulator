@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import ConfigError, _Checker, _read_json
 from .models import Player
 
-WHEN = ("always", "risp", "vs_left")
+WHEN = ("always", "risp", "vs_left", "steal", "catching")  # steal:盗塁のときだけ / catching:捕手として出ているとき(D-428)
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,13 @@ def validate_skill_settings(root, source: str = "skills.json") -> SkillSettings:
                 c.add(f"{w}.effects.{item}", "その役割の内部の能力ではありません")
             c.number(v, f"{w}.effects.{item}", -40, 40)
         c.number(c.get(s, "probability", w), f"{w}.probability", 0, 1)
+        if "lead" in s:
+            c.number(s["lead"], f"{w}.lead", -10, 10)
+        if "positions" in s:
+            from .abilities import FIELDER_POSITIONS
+
+            if not isinstance(s["positions"], list) or not s["positions"] or any(x not in FIELDER_POSITIONS for x in s["positions"]):
+                c.add(f"{w}.positions", f"ポジションを並べてください(使えるもの: {', '.join(FIELDER_POSITIONS)})")
         for item, v in (s.get("requires") or {}).items():
             if item not in ALL_ABILITIES:
                 c.add(f"{w}.requires.{item}", "見せる能力の名前ではありません")
@@ -124,6 +131,37 @@ def situational(player: Player, risp: bool, vs_left: bool, settings: SkillSettin
     return out
 
 
+def _when_effects(player: Player, when: str, settings: SkillSettings | None) -> dict[str, float]:
+    if not player.skills:
+        return {}
+    settings = settings or default_settings()
+    out: dict[str, float] = {}
+    for key in player.skills:
+        s = settings.skills.get(key)
+        if s is not None and s["when"] == when:
+            for item, v in s["effects"].items():
+                out[item] = out.get(item, 0.0) + float(v)
+    return out
+
+
+def steal_effects(player: Player, settings: SkillSettings | None = None) -> dict[str, float]:
+    """盗塁を走るか・成功するかを決めるときだけ効く値(盗塁◯/×。D-428)。"""
+    return _when_effects(player, "steal", settings)
+
+
+def catching_effects(player: Player, settings: SkillSettings | None = None) -> dict[str, float]:
+    """捕手として出ているときに、盗塁を刺す・捕逸を防ぐ能力に足す値(キャッチャー◯/×。D-428)。"""
+    return _when_effects(player, "catching", settings)
+
+
+def lead_bonus(player: Player, settings: SkillSettings | None = None) -> float:
+    """捕手のリードの効き:組む投手の全能力に足す値(キャッチャー◯/×。D-428)。"""
+    if not player.skills:
+        return 0.0
+    settings = settings or default_settings()
+    return sum(float(settings.skills[k].get("lead", 0.0)) for k in player.skills if k in settings.skills)
+
+
 def shifted(player: Player, deltas: dict[str, float]) -> Player:
     """内部の能力に足した写し(打席の計算だけに使う。元の選手は変えない)。"""
     p = copy.copy(player)
@@ -134,6 +172,8 @@ def shifted(player: Player, deltas: dict[str, float]) -> Player:
 # ---- 付け方 ----
 
 def _eligible(player: Player, s: dict) -> bool:
+    if s.get("positions") and player.position not in s["positions"]:
+        return False
     return s["role"] == player.role and all(float(player.abilities.get(item, 0.0)) >= float(v) for item, v in (s.get("requires") or {}).items())
 
 
