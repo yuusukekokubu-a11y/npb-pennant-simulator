@@ -1161,9 +1161,10 @@ reviewOnScreen = await reviewRows();
 check(JSON.stringify(reviewOnScreen) === JSON.stringify(reviewT05Py), `球団を切り替えると、その球団の入団者(${reviewOnScreen.length} 人)が出る(観戦でも見られる形。計算本体と同じ)`);
 // 外国人・出入り
 await page.click("#records-kind button[data-value=foreign]");
-await page.waitForFunction(() => document.querySelector("#records-kind button[data-value=foreign]").getAttribute("aria-pressed") === "true" && document.querySelector("#records-controls select"));
-const foRoutes = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => tr.children[1].textContent));
-check(foRoutes.every((x) => x === "外国人市場"), `外国人の欄は外国人市場の入団だけ(${foRoutes.length} 人)`);
+const foEntPy = pyYear2(`v = g.record_entries("foreign", "T05")\nprint(json.dumps([[r["name"], r["route_label"]] for r in v["rows"]], ensure_ascii=False))`);
+await page.waitForFunction((n) => document.querySelector("#records-kind button[data-value=foreign]").getAttribute("aria-pressed") === "true" && (n ? document.querySelectorAll("#records-body tbody tr").length === n && [...document.querySelectorAll("#records-body tbody tr")].every((tr) => tr.children[1].textContent === "外国人市場") : Boolean(document.querySelector("#records-body .info"))), foEntPy.length, { timeout: 30000 });
+const foUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].textContent]));
+check(JSON.stringify(foUi) === JSON.stringify(foEntPy) && foUi.every((x) => x[1] === "外国人市場"), `外国人の欄は外国人市場の入団だけ(${foUi.length} 人。計算本体と同じ)`);
 await page.click("#records-kind button[data-value=moves]");
 await page.waitForFunction(() => document.querySelector("#records-kind button[data-value=moves]").getAttribute("aria-pressed") === "true" && document.querySelector('#records-controls select[aria-label="年の選択"]'));
 await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length > 0, null, { timeout: 30000 });
