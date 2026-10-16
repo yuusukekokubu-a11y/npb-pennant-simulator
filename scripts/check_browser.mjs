@@ -1010,8 +1010,20 @@ check(!(await page.textContent("#draft-panel")).includes("±") && (await page.te
 const pk0 = Date.now();
 let bids = 0;
 for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位。D-369)
-  const pickId = await page.getAttribute("#draft-panel", "data-player-id");
-  await page.click("#draft-pick");
+  // 入札のパネルは、外れた後の描き直しで入れ替わることがある(広い画面)。描き直しが落ち着くまで待ち、押せなければ開き直す
+  let pickId = null;
+  for (let tries = 0; ; tries += 1) {
+    await page.waitForTimeout(300);
+    if (!(await page.$("#draft-panel"))) await page.click("#proc-body .name-cell .link >> nth=0");
+    await page.waitForSelector("#draft-panel");
+    pickId = await page.getAttribute("#draft-panel", "data-player-id");
+    try {
+      await page.click("#draft-pick", { timeout: 5000 });
+      break;
+    } catch (err) {
+      if (tries >= 3) throw err;
+    }
+  }
   await page.waitForFunction(() => document.querySelector("#proc-message").textContent.startsWith("1 巡目の入札の結果") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
   procOps.push(["offseason_pick", [pickId]]);
   bids += 1;
