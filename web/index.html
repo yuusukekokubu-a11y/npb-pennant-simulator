@@ -30,7 +30,7 @@
     --nav-w: 88px; /* 広い画面の左のタブの幅(D-402) */
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; background: var(--bg); }
+  html { -webkit-text-size-adjust: 100%; background: var(--bg); scrollbar-gutter: stable; } /* スクロールの棒の場所を常に空け、画面によってボタンの位置を変えない(D-408) */
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 16px; line-height: 1.6; }
   [hidden] { display: none !important; }
   .screen { max-width: 640px; margin: 0 auto; padding: 12px 16px 104px; }
@@ -340,6 +340,35 @@
   label.radio input { width: 20px; height: 20px; margin-top: 3px; flex: none; }
   .side-hint { display: none; }
 
+  /* ロード画面(D-405):長い待ちの全画面 */
+  .loading-screen { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-rows: auto 1fr auto; gap: 14px; justify-items: center; padding: max(28px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); text-align: center; overflow-y: auto;
+    background: radial-gradient(ellipse at 50% 0%, rgba(63, 195, 255, 0.18), transparent 60%), radial-gradient(ellipse at 50% 110%, rgba(247, 201, 72, 0.12), transparent 55%), var(--bg); }
+  .ls-head { width: 100%; max-width: 360px; }
+  .ls-title { font-size: 1.25rem; font-weight: 900; margin: 0 0 4px; }
+  .ls-task { color: var(--muted); font-size: 0.82rem; margin: 4px 0; white-space: pre-wrap; }
+  .ls-head progress { width: 100%; height: 12px; margin: 6px 0 0; }
+  .ls-percent { font-weight: 800; color: var(--gold); margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .ls-mid { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 360px; min-height: 0; }
+  .ls-stadium { width: min(280px, 72vw); height: auto; }
+  .ls-history { width: 100%; align-self: start; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+  .ls-row { display: flex; gap: 8px; align-items: center; padding: 7px 10px; border-radius: var(--radius-s); background: rgba(255, 255, 255, 0.04); font-size: 0.8rem; animation: ls-in 0.4s ease-out; }
+  .ls-row:first-child { background: var(--box2); font-weight: 700; }
+  .ls-year { color: var(--gold); font-weight: 900; min-width: 3.4em; font-variant-numeric: tabular-nums; flex: none; }
+  .ls-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @keyframes ls-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .ls-tip { width: 100%; max-width: 360px; background: var(--box); border-radius: var(--radius); padding: 12px 14px; text-align: left; box-shadow: var(--shadow); }
+  .ls-tip-label { display: inline-block; background: var(--accent); color: var(--accent-fg); font-size: 0.7rem; font-weight: 800; padding: 0 8px; border-radius: 999px; }
+  .ls-tip p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.6; min-height: 3.2em; }
+  /* 短い待ち(D-405):前の画面を暗くしてボール。押す操作は邪魔しない */
+  .wait-veil { position: fixed; inset: 57px 0 0 0; z-index: 4; background: rgba(14, 22, 48, 0.6); display: grid; place-items: center; pointer-events: none; }
+  .wide .wait-veil { left: var(--nav-w); }
+  .wait-pill { display: flex; align-items: center; gap: 10px; background: var(--box2); padding: 10px 18px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; box-shadow: var(--shadow); }
+  .wait-ball { width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.1); position: relative; animation: spin 1s linear infinite; }
+  .wait-ball::before, .wait-ball::after { content: ""; position: absolute; top: 3px; bottom: 3px; width: 8px; border: 1.5px solid #d23b3b; border-color: transparent #d23b3b transparent transparent; border-radius: 50%; }
+  .wait-ball::before { left: -2px; } .wait-ball::after { right: -2px; transform: scaleX(-1); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .wait-ball, .ls-row { animation: none; } }
+
   /* 広い画面(D-402):タブを左の縦の列にし、選手・チーム・試合・球場のページを元の画面の右に並べる */
   .wide .tabs { top: 57px; bottom: 0; right: auto; width: var(--nav-w); flex-direction: column; justify-content: flex-start; padding: 12px 4px; box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3); }
   .wide .tabs button { flex: none; min-height: 64px; }
@@ -374,11 +403,6 @@
   <h1>ペナントレース シミュレーター</h1>
   <p>架空の12球団のペナントレースを、試合ごとに計算して進めます。</p>
 
-  <div class="boot" id="boot">
-    <p class="small"><strong>初回は約12MBをダウンロードします</strong>(Wi-Fi をおすすめします)。</p>
-    <progress id="boot-progress" max="3" value="0"></progress>
-    <p class="muted" id="boot-text" role="status" aria-live="polite">準備を始めています…</p>
-  </div>
 
   <div class="stack">
     <button id="go-new" disabled>新しく始める</button>
@@ -421,11 +445,6 @@
     <label class="radio"><input type="checkbox" name="rules" value="foreign_development" id="rule-foreign_development" checked><span><strong>外国人・育成</strong></span></label>
   </details>
 
-  <div class="card" id="trial-box" hidden>
-    <p><strong>リーグの基準値を求めています…</strong></p>
-    <progress id="trial-progress" max="125" value="0" aria-label="試運転の進み具合"></progress>
-    <p class="muted small" id="trial-text" role="status" aria-live="polite"></p>
-  </div>
 
   <!-- 説明バー(D-313):設定の項目を選んでいる間だけ、その項目の説明を 1〜2 行で出す。下に貼り付くが、ボタンの行より前に置くので「始める」を隠さない -->
   <div class="help-bar" id="new-help" role="status" aria-live="polite" hidden><strong id="new-help-name"></strong> <span id="new-help-text"></span></div>
@@ -717,6 +736,8 @@
     <h2>オフの手続き</h2>
     <button class="danger" id="proc-auto">全部おまかせ</button>
   </div>
+  <h2>ロード画面</h2>
+  <div class="seg" id="loading-style" role="group" aria-label="ロード画面の形"><button type="button" data-value="stadium">球場</button><button type="button" data-value="history">歴史</button></div>
   <h2>セーブデータ</h2>
   <label class="button secondary" for="open-file-top" id="open-top-label" style="width:100%">セーブデータを開く</label>
   <h2>用語集</h2>
@@ -733,6 +754,39 @@
   <p class="muted small" id="guide-count" role="status" aria-live="polite"></p>
   <div id="guide-body"></div>
 </main>
+
+<!-- ロード画面(D-405〜D-407):長い待ち(最初の起動・新規開始)の全画面。上に題と進み具合、真ん中に絵(球場か歴史)、下にヒント -->
+<div class="loading-screen" id="loading-screen">
+  <div class="ls-head">
+    <div class="ls-part" id="boot">
+      <p class="ls-title">準備しています</p>
+      <p class="ls-task"><strong>初回は約12MBをダウンロードします</strong>(Wi-Fi をおすすめします)。</p>
+      <progress id="boot-progress" max="3" value="0" aria-label="準備の進み具合"></progress>
+      <p class="ls-task" id="boot-text" role="status" aria-live="polite">準備を始めています…</p>
+    </div>
+    <div class="ls-part" id="trial-box" hidden>
+      <p class="ls-title" id="trial-title">リーグの歴史を作っています</p>
+      <progress id="trial-progress" max="125" value="0" aria-label="新規開始の進み具合"></progress>
+      <p class="ls-task" id="trial-text" role="status" aria-live="polite"></p>
+    </div>
+    <p class="ls-percent" id="ls-percent">0%</p>
+  </div>
+  <div class="ls-mid">
+    <!-- 球場:ダイヤモンドの上を走者が塁を回る -->
+    <svg class="ls-stadium" id="ls-stadium" viewBox="0 0 240 220" aria-hidden="true">
+      <path d="M120 210 L18 108 Q120 -22 222 108 Z" fill="#1d5a3a"/>
+      <path d="M120 186 L64 130 L120 74 L176 130 Z" fill="#a7743f"/>
+      <g fill="#fff"><rect x="114" y="180" width="12" height="12" transform="rotate(45 120 186)"/><rect x="170" y="124" width="12" height="12" transform="rotate(45 176 130)"/><rect x="114" y="68" width="12" height="12" transform="rotate(45 120 74)"/><rect x="58" y="124" width="12" height="12" transform="rotate(45 64 130)"/></g>
+      <circle r="8" fill="#f7c948" stroke="#fff" stroke-width="2"><animateMotion dur="4s" repeatCount="indefinite" path="M120 186 L176 130 L120 74 L64 130 Z"/></circle>
+    </svg>
+    <!-- 歴史:事前運転の年ごとの出来事(D-406) -->
+    <div class="ls-history" id="ls-history" hidden></div>
+  </div>
+  <div class="ls-tip"><span class="ls-tip-label">ヒント</span><p id="ls-tip-text"></p></div>
+</div>
+
+<!-- 短い待ち(画面の切り替え):前の画面を暗くして、小さなボール(D-405) -->
+<div class="wait-veil" id="wait-veil" hidden><div class="wait-pill"><span class="wait-ball"></span>読み込み中…</div></div>
 
 <!-- 広い画面の右側の案内(何も開いていないとき。D-402) -->
 <aside class="side-hint" id="side-hint" hidden>左の表で選手・チーム・試合を選ぶと、ここにくわしく出ます。</aside>

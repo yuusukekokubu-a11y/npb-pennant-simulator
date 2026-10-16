@@ -12,6 +12,7 @@ import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
 import { yearEnd } from "./js/yearend.js";
 import { leagueSeedChanged, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
 import { openFile, save } from "./js/files.js";
+import { setLoadingStyle } from "./js/loading.js";
 
 // ---- 閉じる前の警告(未保存の変更があるときだけ) ----
 
@@ -74,6 +75,7 @@ $("menu").addEventListener("click", () => {
   if (current().name !== "settings") openPage("settings");
 });
 for (const b of document.querySelectorAll(".back")) b.addEventListener("click", back);
+for (const b of $("loading-style").children) b.addEventListener("click", () => setLoadingStyle(b.dataset.value)); // ロード画面の形(D-407)
 
 // 成績
 for (const b of $("stats-role").children) {

@@ -249,12 +249,13 @@ def run_offseason(league: League, seed: int, config: GenerationConfig, parts: Na
 
 # ---- 事前運転と校正(D-034 の完成形。D-190、D-197) ----
 
-def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None, tiers: dict | None = None, contract_settings=None, rules=None) -> int:
+def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts, settings: OffseasonSettings, years: int | None = None, progress=None, draft_settings=None, scout_sd: dict | None = None, tiers: dict | None = None, contract_settings=None, rules=None, chronicle=None) -> int:
     """新規開始のとき、試合をせずに年度の確定の処理だけを years 回回す(事前運転)。履歴は作らない。
     F3-1 からは、オフの手続き(自由契約・ドラフト・市場・最低人数の補充。全球団 AI)を使う(D-210)。
     契約は資金つきで扱う(査定の更改・資金の超過の解消。成績がないので見込みは見せる能力から。順位がないので資金は増減しない)。
     FA は行わない(宣言しない。新規開始の時間のため。D-254)。ドラフト(1 巡目の入札)と市場(希望と順番)はゲームの中と同じ方式(D-370)。tiers は球団 → 規模(なければ全球団が中)。
-    乱数は derive_seed(seed, "prerun:<年>")。戻り値は回した年数。progress には (終わった年数, 全年数) を知らせる。"""
+    乱数は derive_seed(seed, "prerun:<年>")。戻り値は回した年数。progress には (終わった年数, 全年数) を知らせる。
+    chronicle があれば、1 年ごとの出来事(ロード画面の「歴史」。prerun_events)を知らせる。結果は変えない(D-406)。"""
     from .contracts import initial_funds, load_contract_settings
     from .draft import ContractContext, load_draft_settings, run_ai_offseason
     from .negotiation import depth_slots
@@ -270,12 +271,47 @@ def prerun(league: League, seed: int, config: GenerationConfig, parts: NameParts
     funds = initial_funds(tiers, contract_settings)
     for k in range(1, n + 1):
         year_seed = derive_seed(seed, f"prerun:{k}")
-        age_update_retire(league, year_seed, config, settings, k, None, draft_settings.dev_seasons)
+        before = _snapshot(league) if chronicle is not None else None
+        aged, _ = age_update_retire(league, year_seed, config, settings, k, None, draft_settings.dev_seasons)
         ctx = ContractContext(contract_settings, funds, tiers, lambda pid, role: [], sd_map.__getitem__, negotiation=None, league_seed=league.seed, slots=depth_slots(config))
         run_ai_offseason(league, year_seed, config, parts, settings, draft_settings, k, None, sd_map, order, id_prefix="B", ctx=ctx, rules=rules)
+        if chronicle is not None:
+            chronicle(prerun_events(league, before, [n.player_id for n in aged.retired if n.player_id not in set(aged.dev_released)], k))
         if progress is not None:
             progress(k, n)
     return n
+
+
+STRONGEST_TOP = 25  # 戦力 1 位の球団を比べる人数(上位の総合値の合計。仮置き。D-406)
+
+
+def _snapshot(league: League) -> dict:
+    """その年の初めの選手(引退した選手を見つけるため)。読むだけで、リーグは変えない。"""
+    from .ability_model import overall
+
+    names = {t.id: t.name for t in league.teams}
+    return {p.id: (p, overall(p), names.get(p.team_id, "")) for p in league.all_players() + league.development_players()}
+
+
+def prerun_events(league: League, before: dict, retired_ids: list[str], year: int) -> dict:
+    """事前運転の 1 年の出来事(ロード画面の「歴史」。D-406):目玉の新人(その年に入った外国人以外の選手)・
+    引退した名選手(引退した選手。育成の期限で去った選手は除く。総合値は年の初め)・戦力 1 位の球団。読むだけ。"""
+    from .ability_model import overall
+
+    names = {t.id: t.name for t in league.teams}
+    now = {p.id: p for p in league.all_players() + league.development_players()}
+    rookies = [p for pid, p in now.items() if pid not in before and not p.foreign]
+    retired = [before[pid] for pid in retired_ids if pid in before]
+    out: dict = {"year": year, "rookie": None, "retired": None, "strongest": None}
+    if rookies:
+        r = max(rookies, key=lambda p: (overall(p), p.id))
+        out["rookie"] = {"name": r.name, "team_id": r.team_id, "team_name": names.get(r.team_id, ""), "age": r.age}
+    if retired:
+        p, _, team_name = max(retired, key=lambda x: (x[1], x[0].id))
+        out["retired"] = {"name": p.name, "team_name": team_name, "age": p.age}
+    best = max(league.teams, key=lambda t: (sum(sorted((overall(p) for p in t.players), reverse=True)[:STRONGEST_TOP]), t.id))
+    out["strongest"] = {"team_id": best.id, "team_name": best.name}
+    return out
 
 
 def apply_calibration(league: League, calibration: dict[str, float], config: GenerationConfig) -> None:

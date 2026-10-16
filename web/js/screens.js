@@ -13,6 +13,7 @@ import { renderProcedure } from "./procedure.js";
 import { renderOffseason, renderYearEnd } from "./yearend.js";
 import { renderStadium, renderTeam } from "./team.js";
 import { renderGuide, renderSettings } from "./menu.js";
+import { waitVeil } from "./loading.js";
 
 // ---- 画面の切り替え ----
 
@@ -97,7 +98,7 @@ export function renderCurrent() {
     lineup: () => renderLineup(token),
     trade: () => renderTrade(token),
   }[name];
-  Promise.resolve(job && job()).catch((err) => showError(name, err));
+  waitVeil(Promise.resolve(job && job())).catch((err) => showError(name, err)); // 0.3 秒を超えたら前の画面を暗くしてボール(D-405)
 }
 
 function showError(name, err) {

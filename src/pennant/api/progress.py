@@ -76,6 +76,7 @@ class ProgressMixin:
         prerun_progress=None,
         scout_level: str | None = None,
         rules: dict | None = None,
+        prerun_chronicle=None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -99,7 +100,7 @@ class ProgressMixin:
         negotiation_settings = load_negotiation_settings()
         tiers = assign_tiers([f"T{i:02d}" for i in range(1, 13)], seed, contract_settings)  # 球団の規模(D-353)
         contract_info: dict = {}
-        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), tiers=tiers, contract_settings=contract_settings, contract_info=contract_info, negotiation_settings=negotiation_settings, rules=game_rules)
+        league = new_league(seed, team_names, gen, parts, prerun=True, offseason_settings=offseason_settings, progress=prerun_progress, draft_settings=draft_settings, scout_sd=draft_settings.level_sd(level), calibration=offseason_settings.calibration(level), tiers=tiers, contract_settings=contract_settings, contract_info=contract_info, negotiation_settings=negotiation_settings, rules=game_rules, chronicle=prerun_chronicle)
         tiers = {tid: t for tid, t in tiers.items() if any(team.id == tid for team in league.teams)}
         if my_team_index is not None and (isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams)):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])

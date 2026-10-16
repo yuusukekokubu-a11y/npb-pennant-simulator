@@ -1,5 +1,6 @@
 // メニュー(用語集・答え合わせモード)(web/app.js から分けた。保守②。D-291)
 
+import { renderStyleSwitch } from "./loading.js";
 import { $, state } from "./core.js";
 import { el } from "./parts.js";
 
@@ -49,4 +50,5 @@ export function renderGuide() {
 export function renderSettings() {
   $("menu-offseason").hidden = !(state.view && state.view.status && state.view.status.offseason && state.view.status.offseason.active); // 「全部おまかせ」は手続き中だけ(D-271)
   $("proc-auto").disabled = state.running;
+  renderStyleSwitch(); // ロード画面の形(D-407)
 }

@@ -118,9 +118,14 @@ def _web_text() -> str:
 
 
 def test_no_browser_storage_writes():
-    text = _web_text()
+    """ブラウザの保存領域に残すのは、ロード画面の形の選択(1 つの値)だけ(D-084、D-407)。"""
+    loading = (WEB / "js" / "loading.js").read_text(encoding="utf-8")
+    text = _web_text().replace(loading, "")
     for pattern in (r"localStorage\.setItem", r"sessionStorage\.setItem", r"indexedDB\.open", r"document\.cookie\s*=", r"caches\.open", r"IDBFS"):
         assert not re.search(pattern, text), pattern
+        assert pattern.startswith("localStorage") or not re.search(pattern, loading), pattern
+    assert re.findall(r"localStorage\.setItem\(([^)]*)\)", loading) == ["STYLE_KEY, value"]
+    assert 'const STYLES = ["stadium", "history"];' in loading and "if (!STYLES.includes(value)) return;" in loading
 
 
 def test_only_pyodide_cdn_is_contacted():

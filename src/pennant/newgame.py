@@ -87,12 +87,14 @@ def new_league(
     contract_info: dict | None = None,
     negotiation_settings=None,
     rules=None,
+    chronicle=None,
 ) -> League:
     """架空のリーグを作り、入力された球団名を付ける。team_names は球団の順(空欄は None か "")。
 
     prerun=True なら、初期選手の生成の後に事前運転(試合なしで年度の確定を数十年分)と校正を行う(D-190、D-197)。
     tiers は球団 → 規模(大・中・小。D-353)。資金は規模の基準額から始まる。
-    progress には事前運転の (終わった年数, 全年数) を知らせる。rules は仕組みの選択肢(D-381。None なら既定)。"""
+    progress には事前運転の (終わった年数, 全年数) を知らせる。rules は仕組みの選択肢(D-381。None なら既定)。
+    chronicle には事前運転の 1 年ごとの出来事を知らせる(ロード画面の「歴史」。D-406)。"""
     from .offseason import apply_calibration, load_offseason_settings
     from .offseason import prerun as run_prerun
 
@@ -102,6 +104,9 @@ def new_league(
 
     rules = rules_from(rules)
     league = generate_league(seed, gen_config, name_parts, with_foreign=rules.foreign_development)
+    if team_names is not None:  # 球団名は事前運転の前に当てはめる(歴史に入力した名前で出すため。計算には使わない。D-406)
+        for team, name in zip(league.teams, resolve_team_names(league, team_names)):
+            team.display_name = name
     if tiers is None:  # 球団の規模は新規開始のシードから(Game.new と同じ割り当て。D-353)
         from .contracts import assign_tiers, load_contract_settings
 
@@ -114,7 +119,7 @@ def new_league(
 
         settings = offseason_settings or load_offseason_settings()
         draft_settings = draft_settings or load_draft_settings()
-        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress, draft_settings=draft_settings, scout_sd=scout_sd, tiers=tiers, contract_settings=contract_settings, rules=rules)
+        run_prerun(league, seed, gen_config, name_parts, settings, progress=progress, draft_settings=draft_settings, scout_sd=scout_sd, tiers=tiers, contract_settings=contract_settings, rules=rules, chronicle=chronicle)
         apply_calibration(league, calibration if calibration is not None else settings.calibration(draft_settings.default_level), gen_config)
         # 初期選手の契約(校正の後の見せる能力から算定。残りの年数は事前運転から。D-232、D-356)
         from .contracts import initial_funds, load_contract_settings
@@ -129,9 +134,6 @@ def new_league(
         rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config), upkeep=league_upkeep(league)), settings.prerun_years)
         if contract_info is not None:
             contract_info["rate"] = rate
-    if team_names is not None:
-        for team, name in zip(league.teams, resolve_team_names(league, team_names)):
-            team.display_name = name
     return league
 
 
