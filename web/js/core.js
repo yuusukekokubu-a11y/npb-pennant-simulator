@@ -51,6 +51,8 @@ export const state = {
   warKeys: { batter: [], fielder: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
   playerKind: "basic",
   gamesDay: null,
+  gamesPrev: null, // 試合のタブの前・次の試合のある日(休みを飛ばす。D-435)
+  gamesNext: null,
   proc: freshProc(), // オフの手続きの画面の状態(F3-1。契約の画面の絞り込み・並び順・開いた行は D-272)
   records: { section: "standings", year: null, role: "batter", leaderKey: null, kind: "draft", team: null, moveYear: null, moveTeam: null }, // 記録室の選択(D-422、D-423)。null なら計算本体の初期値
   glossary: null, // 用語集のデータ(起動のときに受け取る。D-311)

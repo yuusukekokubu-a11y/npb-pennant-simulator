@@ -30,7 +30,7 @@ WAR = load_war_settings()
 @pytest.fixture(scope="module")
 def season():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     results = [p.result for p in g.state.season.played]
     base = season_baselines(results, SETTINGS, SETTINGS.default_baselines())
     rec = season_records(results)
@@ -169,7 +169,7 @@ def test_screen_war_matches_the_script_and_survives_save_load():
     spec.loader.exec_module(mod)
     # 画面:リーグ 1 を、確認用スクリプト(run_seasons)の1シーズン目と同じシードで最後まで進める
     g = api.Game.new(1, [None] * 12, 0, season_seed=derive_seed(1, "season:1"), baselines="default")
-    g.advance(125)
+    g.advance(1000)
     results = [p.result for p in g.state.season.played]
     expected, _, _ = mod.season_war_lines(results, None, SETTINGS, WAR, screen=True)
     assert war_record(g.war_lines()) == war_record(expected)
@@ -190,7 +190,7 @@ def test_screen_war_matches_the_script_and_survives_save_load():
     # 読み込んだ後も同じ
     from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 
-    assert SAVE_FORMAT_VERSION == 26
+    assert SAVE_FORMAT_VERSION == 27
     again = api.Game(load_game(save_game(g.state)), dirty=False)
     assert war_record(again.war_lines()) == war_record(g.war_lines())
     assert again.stats("batter", "war") == s

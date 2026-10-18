@@ -125,7 +125,7 @@ def test_first_season_uses_no_park_factor():
     pid = g.stats("batter", qualified=False)["rows"][0]["player_id"]
     assert g.player_park_factor(pid) == 1
     assert "1シーズン目のため 1.0" in g.baseline_info()["text"]
-    d = g.stadium("T01")
+    d = g.stadium(g.state.season.played[0].result.home_team_id)  # 連戦の日程では、5 日でホームの試合がない球団がある(D-435)
     assert d["estimate"] is None and "まだ推定できません" in d["estimate_note"] and d["this_season"]["runs"]["home"] != "-"
     with pytest.raises(ValueError):
         g.finish_season()
@@ -169,7 +169,7 @@ def test_history_is_saved(second_season):
 
 def test_finish_season_appends_history():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     assert g.finish_season() == 1 and g.season_number() == 2
     assert g.park_estimates() is not None and set(g.park_estimates()) == {t.id for t in g.state.league.teams}
 

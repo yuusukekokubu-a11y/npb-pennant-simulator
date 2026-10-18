@@ -259,7 +259,7 @@ def test_selection_effect_is_positive():
 def test_spectator_year_end_completes_automatically():
     g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
     assert g.state.my_team_id is None and g.status()["my_team"] is None
-    g.advance(125)
+    g.advance(1000)
     s = g.year_end()
     assert g.status()["year"] == 2 and g.state.procedure is None and g.status()["offseason"] is None
     assert s["counts"]["players"] == sum(len(t.players) for t in g.state.league.teams) and all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
@@ -270,7 +270,7 @@ def test_spectator_year_end_completes_automatically():
 @pytest.fixture(scope="module")
 def operated():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default", scout_level="large")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     finish_renewal(g)
     return g
@@ -304,7 +304,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     # 保存して読み込むと、途中から再開できる
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 26
+    assert SAVE_FORMAT_VERSION == 27
     v2 = again.offseason_view()
     t2 = again.decision_table("draft")
     assert v2["phase"] == "draft" and v2["bidding"] and v2["is_my_turn"] and [r["player_id"] for r in t2["rows"]] == [r["player_id"] for r in table["rows"]]
@@ -342,7 +342,7 @@ def reviewed():
     """観戦のみで 2 回のオフを終えた状態(3 シーズン目)。"""
     g = api.Game.new(3, [None] * 12, None, season_seed=17, baselines="default")
     for _ in range(2):
-        g.advance(125)
+        g.advance(1000)
         g.year_end()
     g.advance(5)
     return g
@@ -406,7 +406,7 @@ def test_finalize_makes_room_when_full_team_lacks_minimum():
 @pytest.fixture(scope="module")
 def release_game():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     finish_renewal(g)
     return g
@@ -467,7 +467,7 @@ def test_market_table_puts_players_without_stats_last(release_game):
     g.advance(3)
     t = g.offseason_table if g.state.procedure else None
     assert t is None
-    g.advance(122)
+    g.advance(1000)
     g.year_end()
     finish_renewal(g)
     c = g.offseason_table("release", "batter", "basic", season="career")

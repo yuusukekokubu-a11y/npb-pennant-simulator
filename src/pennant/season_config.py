@@ -41,7 +41,22 @@ def validate_season_config(data: Any, source: str = "(辞書)") -> SeasonConfig:
     if version is not None and version != SUPPORTED_FORMAT_VERSION:
         c.add("format_version", f"対応していない形式のバージョンです(値: {version!r}、対応: {SUPPORTED_FORMAT_VERSION})")
     sch = c.section(c.get(root, "schedule", ""), "schedule")
-    c.integer(c.get(sch, "games_per_opponent", "schedule"), "schedule.games_per_opponent", 1, 100)
+    gpo = c.integer(c.get(sch, "games_per_opponent", "schedule"), "schedule.games_per_opponent", 1, 100)
+    if isinstance(sch, dict) and "series" in sch:  # 連戦の日程(D-435)。書いていなければ今までのラウンド制
+        series = sch["series"]
+        if not isinstance(series, list) or not series or not all(isinstance(x, int) and not isinstance(x, bool) and 1 <= x <= 10 for x in series):
+            c.add("schedule.series", "1〜10 の整数の並びで書いてください")
+        elif gpo is not None and sum(series) != gpo:
+            c.add("schedule.series", f"合計が games_per_opponent({gpo})と同じになるようにしてください(今は {sum(series)})")
+        il = c.section(c.get(sch, "interleague", "schedule"), "schedule.interleague")
+        c.integer(c.get(il, "games", "schedule.interleague"), "schedule.interleague.games", 0, 10)
+        c.integer(c.get(il, "after_games", "schedule.interleague"), "schedule.interleague.after_games", 0, 200)
+        c.integer(c.get(sch, "max_consecutive_days", "schedule"), "schedule.max_consecutive_days", 3, 30)
+        al = sch.get("allstar")
+        if al is not None:
+            al = c.section(al, "schedule.allstar")
+            c.integer(c.get(al, "after_games", "schedule.allstar"), "schedule.allstar.after_games", 0, 200)
+            c.integer(c.get(al, "games", "schedule.allstar"), "schedule.allstar.games", 1, 5)
     st = c.section(c.get(root, "standings", ""), "standings")
     shared = c.get(st, "allow_shared_rank", "standings")
     if shared is not None and not isinstance(shared, bool):

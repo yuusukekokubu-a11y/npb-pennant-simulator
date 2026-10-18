@@ -30,7 +30,8 @@ from .game_config import GameConfig, load_game_config
 from .manager import ActiveRoster, Manager, SimpleManager
 from .models import League, Team
 from .plate_appearance import PlateAppearanceModel, default_model
-from .schedule import RoundRobinSchedule, Schedule, ScheduledGame, ScheduleMaker
+from . import allstar
+from .schedule import Schedule, ScheduledGame, ScheduleMaker, make_schedule_maker
 from .season_config import SeasonConfig, load_season_config
 
 # 進み具合を知らせる関数:(終わった日数, 全日数, 終わった試合数, 全試合数)
@@ -115,6 +116,7 @@ class Season:
         model: PlateAppearanceModel | None = None,
         manager: Manager | None = None,
         schedule_maker: ScheduleMaker | None = None,
+        year: int = 1,
     ):
         self.league = league
         self.seed = seed
@@ -122,7 +124,8 @@ class Season:
         self.game_config = game_config or load_game_config()
         self.model = model or default_model()
         self.manager = manager or SimpleManager(self.game_config)
-        maker = schedule_maker or RoundRobinSchedule(self.season_config["schedule"]["games_per_opponent"])
+        self.year = year  # 何シーズン目か(交流戦のホームを年ごとに入れ替える。D-435)
+        maker = schedule_maker or make_schedule_maker(self.season_config["schedule"], year)
         self.schedule = maker.make(league, random.Random(derive_seed(seed, "schedule")))
         self.teams: dict[str, Team] = {t.id: t for t in league.teams}
         self.players = {p.id: p for p in league.all_players()}
@@ -141,6 +144,7 @@ class Season:
         self.trade_offers: list[dict] = []  # AI からあなたへのトレードの提案(まだ答えていないもの)
         self.active_history: dict[str, list[dict]] = {}  # 一軍を変えた球団 → 一軍の顔ぶれの移り変わり [{day, starters, relievers, batters, roles}](試合の再現と保存。D-378、D-426)
         self.played: list[PlayedGame] = []
+        self.allstar: list[dict] = []  # オールスターの結果(allstar.play の辞書。D-436)
         self._records: dict[str, _Record] = {t.id: _Record() for t in league.teams}
 
     # ---- 進行 ----
@@ -243,10 +247,23 @@ class Season:
         self._review_rosters()
         games = [self._play(g) for g in self.schedule.days[self.day]]
         self.played.extend(games)
+        if self.day in self.schedule.allstar_days and len(self.allstar) <= self.schedule.allstar_days.index(self.day):
+            self.allstar.append(allstar.play(self, self.schedule.allstar_days.index(self.day), self.day))
         advance_day(self.players.values(), self.game_config)  # 二軍の投手も回復する(D-425)
         result = DayResult(self.day, games)
         self.day += 1
         return result
+
+    def is_game_day(self, day: int) -> bool:
+        """公式戦のある日か(休みとオールスターの日でないか)。"""
+        return bool(self.schedule.days[day])
+
+    def days_to_next_game(self) -> int:
+        """次の公式戦の日まで(その日を含めて)何日か。進行の「1日」に使う(休みとオールスターの日を飛ばす。D-435)。"""
+        d = self.day
+        while d < self.total_days and not self.is_game_day(d):
+            d += 1
+        return min(d + 1, self.total_days) - self.day
 
     def play_days(self, n: int, progress: Progress | None = None) -> list[DayResult]:
         """n 日進める(シーズンの終わりで止まる)。progress には1日ごとに進み具合を知らせる。"""
@@ -438,6 +455,31 @@ class Season:
             gbp = 0.0 if prev is None else ((prev.wins - r.wins) + (r.losses - prev.losses)) / 2
             rows.append(StandingRow(tid, self.teams[tid].name, r.wins, r.losses, r.ties, float(pct), gb, gbp, rank))
             prev = r
+        return rows
+
+    def has_interleague(self) -> bool:
+        return any(g.interleague for day in self.schedule.days for g in day)
+
+    def interleague_standings(self) -> list[StandingRow]:
+        """交流戦だけの順位表(12 球団。勝率 → 勝利数 → 抽選。D-437)。"""
+        league_of = {t.id: t.league_index for t in self.league.teams}
+        recs = {}
+        for t in self.league.teams:
+            w = losses = ties = 0
+            for opp, (a, b, c) in self._records[t.id].vs.items():
+                if league_of[opp] != t.league_index:
+                    w, losses, ties = w + a, losses + b, ties + c
+            recs[t.id] = (w, losses, ties)
+        ordered = sorted(recs, key=lambda tid: (-_pct(recs[tid][0], recs[tid][1]), -recs[tid][0], derive_seed(self.seed, f"lot:il:{tid}")))
+        rows = []
+        lead = recs[ordered[0]]
+        prev = None
+        for i, tid in enumerate(ordered):
+            w, losses, ties = recs[tid]
+            gb = ((lead[0] - w) + (losses - lead[1])) / 2
+            gbp = 0.0 if prev is None else ((prev[0] - w) + (losses - prev[1])) / 2
+            rows.append(StandingRow(tid, self.teams[tid].name, w, losses, ties, float(_pct(w, losses)), gb, gbp, i + 1))
+            prev = recs[tid]
         return rows
 
     def league_indexes(self) -> list[int]:

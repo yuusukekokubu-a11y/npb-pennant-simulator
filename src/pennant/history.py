@@ -52,6 +52,8 @@ class SeasonArchive:
     games: list | None = None  # 打席ログつきの試合の結果(残しているときだけ)
     day: int = 0
     total_days: int = 0
+    interleague: dict | None = None  # 交流戦 {champion, rows: [{team_id, wins, losses, ties}]}(D-437。版 27。交流戦のないシーズンは None)
+    allstar: list[dict] = field(default_factory=list)  # オールスターの結果(allstar.play の辞書。D-436)
 
     def to_dict(self) -> dict:
         return {
@@ -74,6 +76,8 @@ class SeasonArchive:
             "war": {pid: _war_to_dict(v) for pid, v in self.war.items()},
             "baselines": self.baselines.to_dict(),
             "has_games": self.games is not None,
+            "interleague": None if self.interleague is None else {"champion": self.interleague["champion"], "rows": [dict(x) for x in self.interleague["rows"]]},
+            "allstar": [dict(x) for x in self.allstar],
         }
 
     @classmethod
@@ -99,7 +103,15 @@ class SeasonArchive:
             games=games,
             day=int(d.get("day", 0)),
             total_days=int(d.get("total_days", 0)),
+            interleague=_interleague_from(d.get("interleague")),
+            allstar=[dict(x) for x in (d.get("allstar") or [])],
         )
+
+
+def _interleague_from(d) -> dict | None:
+    if d is None:
+        return None
+    return {"champion": str(d["champion"]), "rows": [{"team_id": str(x["team_id"]), "wins": int(x["wins"]), "losses": int(x["losses"]), "ties": int(x["ties"])} for x in d["rows"]]}
 
 
 _WAR_FIELDS = ("batting", "baserunning", "fielding", "position", "replacement", "war", "fip_runs", "ra_runs", "defense_adjustment", "park_factor", "war_fip", "war_ra", "runs_per_win")

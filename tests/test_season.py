@@ -126,7 +126,7 @@ def test_seed_derivation_is_stable():
 
 def test_replay_single_game(season_done):
     season, result = season_done
-    for number in (0, 137, 400, 749):
+    for number in (0, 137, 400, 857):
         original = result.games[number].result
         again = season.replay_game(number)
         assert [x.pa for x in again.log] == [x.pa for x in original.log]
@@ -139,11 +139,11 @@ def test_daily_flow_and_progress(league3):
     season = Season(copy.deepcopy(league3), 4)
     calls = []
     season.play_days(3, progress=lambda *a: calls.append(a))
-    assert calls == [(1, 125, 6, 750), (2, 125, 12, 750), (3, 125, 18, 750)]
+    assert calls == [(1, 170, 6, 858), (2, 170, 12, 858), (3, 170, 18, 858)]
     starters = {l.pitcher_id for p in season.played for l in p.result.pitchers if l.role == "starter"}
     assert len(starters) == 36  # 3日 × 12チーム。各チームの先発は毎日別の投手(6人ローテーション)
     season.play_days(1000)
-    assert season.is_over and season.day == 125
+    assert season.is_over and season.day == 170
     with pytest.raises(ValueError, match="終わって"):
         season.play_day()
 
@@ -156,12 +156,13 @@ def test_rotation_mostly_keeps_order(season_done):
 
 def test_season_result(season_done):
     _, result = season_done
-    assert len(result.games) == 750
+    assert len(result.games) == 858
     for i, rows in result.standings.items():
         assert len(rows) == 6
-        assert all(r.games == 125 for r in rows)
+        assert all(r.games == 143 for r in rows)
         assert result.champions[i] == [rows[0].team_id]
-        assert sum(r.wins for r in rows) == sum(r.losses for r in rows)
+    rows = [r for rs in result.standings.values() for r in rs]
+    assert sum(r.wins for r in rows) == sum(r.losses for r in rows)  # 交流戦があるので、両リーグを合わせて
 
 
 # ---- 受け入れ条件3:順位表の並び ----

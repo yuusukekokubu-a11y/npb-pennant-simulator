@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import copy
+
 from .. import development as devmod, draft as draftmod, fa as famod, foreign as foreignmod, market as marketmod
 from ..abilities import POSITION_LABELS
 from ..draft import STAGES, STAGE_LABELS, stage_of
 from ..season import Season, derive_seed
+from ..season_config import default_season_data, validate_season_config
 from ..active_draft import current_picker
 from .common import ORIGIN_LABELS, ROLE_LABELS, _StatsCache
 
@@ -43,7 +46,7 @@ class OffseasonMixin:
         self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log)}  # 終わった市場(保存しない。集計用。D-300)
         state.procedure = None
         state.year += 1
-        state.season = Season(state.league, derive_seed(season.seed, "next-season"), season.season_config, season.game_config, season.model, season.manager)
+        state.season = Season(state.league, derive_seed(season.seed, "next-season"), _next_season_config(season.season_config), season.game_config, season.model, season.manager, year=state.year)
         state.season.lineup_plans = {tid: {"style": plan["style"], "slots": None, **({"steal": plan["steal"]} if plan.get("steal") else {})} for tid, plan in season.lineup_plans.items()}  # 打順の型と盗塁の作戦は引き継ぎ、スタメンは AI が組み直す(D-373、D-429)
         self._cache = _StatsCache()
         self._park_estimates = None
@@ -301,3 +304,12 @@ class OffseasonMixin:
             "counts": {"retired": len(r.retired), "rookies": len(r.rookies), "players": len(self.state.league.all_players())},
             "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は下の表)。新人は、ドラフト・自由契約市場などで入った選手です。",
         }
+
+
+def _next_season_config(cfg):
+    """次のシーズンの設定。版 26 から読んだ設定(連戦の値がない)は、今の data/season.json の日程に置き換える(D-438)。"""
+    if "series" in cfg["schedule"]:
+        return cfg
+    data = copy.deepcopy(cfg.data)
+    data["schedule"] = default_season_data()["schedule"]
+    return validate_season_config(data, cfg.source)
