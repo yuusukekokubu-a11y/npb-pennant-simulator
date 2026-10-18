@@ -353,7 +353,7 @@ class ProgressMixin:
             war=dict(self.war_lines()),
             baselines=self.baselines()[0],
             games=list(season.played) if keep else None,
-            day=season.day,
+            day=min(season.day, season.total_days),  # 成績はレギュラーシーズンの日まで(ポストシーズンの日は数えない。D-440)
             total_days=season.total_days,
             interleague=self._interleague_archive(season),
             allstar=[dict(x) for x in season.allstar],
