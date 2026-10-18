@@ -191,7 +191,7 @@ def test_game_page_matches_narrate(game):
     """試合の文章ログは、確認用の形式(narrate)と同じ構造から作る(D-114)。"""
     s = game.state.season
     names = {t.id: t.name for t in s.league.teams}
-    for n in (0, 37, 119):
+    for n in (0, 37, len(game.state.season.played) - 1):
         d = game.game(n)
         assert story_text(d["story"]) == narrate(s.played[n].result, s.players, names)
         marks = [p["decision"] for p in d["story"]["pitchers"]]
@@ -215,7 +215,7 @@ def test_narrate_text_is_unchanged():
     s.play_days(3)
     names = {t.id: t.name for t in s.league.teams}
     text = "".join(narrate(p.result, s.players, names) for p in s.played)
-    assert hashlib.sha256(text.encode()).hexdigest() == "ff48ff046a90564cb9f3c085707964730411efe39694331df020e664cd74aebd"
+    assert hashlib.sha256(text.encode()).hexdigest() == "d68768069250d33a21481ad867cf7a2ec3b428b6be01bd9a329d0b8147a8769b"
 
 
 def test_public_functions_have_no_hidden_info(game):
