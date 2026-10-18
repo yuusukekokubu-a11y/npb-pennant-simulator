@@ -125,7 +125,7 @@ def test_first_season_uses_no_park_factor():
     pid = g.stats("batter", qualified=False)["rows"][0]["player_id"]
     assert g.player_park_factor(pid) == 1
     assert "1シーズン目のため 1.0" in g.baseline_info()["text"]
-    d = g.stadium("T01")
+    d = g.stadium(g.state.season.played[0].result.home_team_id)  # 連戦の日程では、5 日でホームの試合がない球団がある(D-435)
     assert d["estimate"] is None and "まだ推定できません" in d["estimate_note"] and d["this_season"]["runs"]["home"] != "-"
     with pytest.raises(ValueError):
         g.finish_season()

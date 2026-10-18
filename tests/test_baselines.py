@@ -179,7 +179,7 @@ def test_blend_weight_grows_to_about_75_percent(game, trial):
         weights.append(fresh.baselines()[1])
     assert weights == sorted(weights) and weights[0] > 0
     final, w = game.baselines()
-    assert Fraction(74, 100) < w < Fraction(76, 100)
+    assert Fraction(74, 100) < w < Fraction(78, 100)  # 125 試合で約 75%、143 試合で約 77%(D-435)
     rec = game.records.total
     current = compute_baselines(game.records.tally, league_totals(rec, "batter"), league_totals(rec, "pitcher"), SETTINGS, trial)
     for k in ("w_hr", "lg_obp", "fip_constant", "woba_scale"):  # 混ぜた値は、出発点と今シーズンの値の間(比重 w の位置)
