@@ -60,7 +60,8 @@ def test_new_game_rejects_bad_input():
 
 def test_status_and_my_team(game):
     st = game.status()
-    assert st["day"] == 7 and st["total_days"] == 125 and st["games_played"] == 42 and st["dirty"] is True
+    days = game.state.season.schedule.days
+    assert st["day"] == 7 and st["total_days"] == 170 and st["games_played"] == sum(len(d) for d in days[:7]) >= 36 and st["dirty"] is True
     assert st["my_team"]["id"] == game.state.league.teams[3].id
     json.dumps(st, ensure_ascii=False)
 
@@ -124,6 +125,6 @@ def test_advance_stops_at_end_and_matches_fingerprint_d():
     g.advance(30)
     g = api.Game.load(g.save(today="2026-10-02")["data"])
     st = g.advance(1000)
-    assert st["is_over"] and st["day"] == 125 and st["games_played"] == 750
-    assert g.advance(1)["day"] == 125
+    assert st["is_over"] and st["day"] == 170 and st["games_played"] == 858
+    assert g.advance(1)["day"] == 170
     assert _digest(season_record(g.state.season.result())) == _digest(season_record(straight.state.season.result()))

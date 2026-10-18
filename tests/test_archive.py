@@ -13,7 +13,7 @@ def two_seasons():
     """観戦のみで 2 回のオフを終えた状態(3 シーズン目の途中)。"""
     g = api.Game.new(3, [None] * 12, None, season_seed=17, baselines="default")
     for _ in range(2):
-        g.advance(125)
+        g.advance(1000)
         g.year_end()
     g.advance(10)
     return g
