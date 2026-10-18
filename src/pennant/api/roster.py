@@ -40,7 +40,7 @@ class RosterMixin:
     def _roster_check(self):
         if self.state.my_team_id is None:
             raise ValueError("操作する球団がありません(観戦のみ)")
-        if self.state.procedure is not None or self.state.season.is_over:
+        if self.state.procedure is not None or self.state.season.complete:
             raise ValueError("シーズン中だけ、一軍を入れ替えられます")
         return self.state.season
 

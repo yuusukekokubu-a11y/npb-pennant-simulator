@@ -25,7 +25,7 @@ class LineupMixin:
     def _lineup_check(self):
         if self.state.my_team_id is None:
             raise ValueError("操作する球団がありません(観戦のみ)")
-        if self.state.procedure is not None or self.state.season.is_over:
+        if self.state.procedure is not None or self.state.season.complete:
             raise ValueError("シーズン中だけ、スタメンと打順を決められます")
         return self.state.season
 
@@ -82,7 +82,7 @@ class LineupMixin:
             "positions": [{"key": k, "label": POSITION_NAMES[k]} for k in LINEUP_POSITIONS],
             "review_days": days,
             "next_review_day": next_review,
-            "editable": self.state.procedure is None and not season.is_over,
+            "editable": self.state.procedure is None and not season.complete,
         }
 
     def set_lineup_style(self, style: str) -> dict:

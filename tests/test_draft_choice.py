@@ -11,7 +11,7 @@ from pennant import api, draft as draftmod
 def at_draft():
     """自球団 T01 の 1 シーズン目を終え、ドラフトの段階の入口まで進めたところ。"""
     g = api.Game.new(4, [None] * 12, 0, season_seed=7, baselines="default")
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     g.year_end()
     while g.offseason_view()["stage"] != "draft":
         if g.offseason_view()["stage"] == "foreign":

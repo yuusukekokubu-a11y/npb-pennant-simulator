@@ -47,6 +47,7 @@ from .newgame import check_team_name, new_league
 from .pa_config import load_pa_config, validate_pa_config
 from .plate_appearance import OddsRatioModel
 from .season import GameContext, PlayedGame, Season
+from .schedule import ScheduledGame
 from .season_config import load_season_config, validate_season_config
 from .save_checks import (  # RATING_RANGE・GROWTH_TYPES は、分ける前と同じく savegame からも参照できるように残す
     RATING_RANGE,
@@ -67,7 +68,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 27  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)
+SAVE_FORMAT_VERSION = 28  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -259,6 +260,7 @@ def build_state(state: GameState) -> dict:
             "roster_auto": {tid: bool(v) for tid, v in s.roster_auto.items()},
             "running_start": int(s.running_start),  # 盗塁などを始めた日(D-433。版 26)
             "allstar": [dict(x) for x in s.allstar],  # オールスターの結果(D-436。版 27)
+            **({} if s.postseason is None else {"postseason": {**s.postseason.to_dict(), "games": [_post_game_state(p) for p in s.postseason.games]}}),  # ポストシーズン(D-441。版 28)
             "games": [
                 {
                     "number": p.scheduled.number,
@@ -270,6 +272,20 @@ def build_state(state: GameState) -> dict:
                 for p in s.played
             ],
         },
+    }
+
+
+def _post_game_state(p) -> dict:
+    g = p.scheduled
+    return {
+        "number": g.number,
+        "day": g.day,
+        "home": g.home_id,
+        "away": g.away_id,
+        "rotation": p.context.rotation,
+        "fatigue": p.context.fatigue,
+        "starter_skipped": p.starter_skipped,
+        **({"lineups": {tid: _plain_plan(x) for tid, x in p.context.lineups.items()}} if p.context.lineups else {}),
     }
 
 
@@ -326,6 +342,9 @@ def save_game(state: GameState, saved_at: datetime | None = None) -> bytes:
         STATE_FILE: _json_bytes(build_state(state)),
         f"logs/season-{state.year}.jsonl": b"\n".join(log_lines) + (b"\n" if log_lines else b""),
     }
+    if state.season.postseason is not None:  # ポストシーズンの試合の記録(D-441)
+        post = [_json_bytes({"number": p.scheduled.number, "result": _plain(p.result)}) for p in state.season.postseason.games]
+        files[f"logs/post-{state.year}.jsonl"] = b"\n".join(post) + (b"\n" if post else b"")
     for a in state.history:  # 打席ログを残している過去シーズン(D-189)
         if a.games is not None:
             lines = [_json_bytes({"number": p.scheduled.number, "result": _plain(p.result)}) for p in a.games]
@@ -434,11 +453,60 @@ def _restore_roster(season: Season, season_d: dict, p) -> None:
     season.allstar = [dict(x) for x in stars]
     for tid, team in season.teams.items():
         hist = season.active_history.get(tid)
-        if hist and not season.is_over:
+        if hist and not season.complete:
             season.actives[tid] = season.active_on(tid, season.day)
         elif season.legacy_roster:  # 版 24:今までの選び方(総合だけ)
             season.actives[tid] = season.manager.select_active(team)
     season.apply_conditions()
+
+
+def _restore_postseason(season: Season, post_d, raw: bytes, year: int, p) -> None:
+    """ポストシーズンの状態と試合(D-441)。日程は状態から求めるので、試合の日と組み合わせを確かめる。"""
+    from .postseason import STAGE_KEYS, Postseason
+
+    where = "state.json.season.postseason"
+    cfg = season.postseason_settings()
+    if cfg is None or not season.is_over or not isinstance(post_d, dict):
+        p.add(where, "ポストシーズンは、設定に postseason があり、レギュラーシーズンが終わってからです")
+        return
+    series_d, games_d = post_d.get("series"), post_d.get("games")
+    log_name = f"logs/post-{year}.jsonl"
+    lines = [line for line in raw.split(b"\n") if line.strip()]
+    if not isinstance(series_d, list) or not isinstance(games_d, list) or len(lines) != len(games_d):
+        p.add(where, f"シリーズと試合の形が違います(試合の記録は {log_name} と同じ数)")
+        return
+    post = Postseason(season, cfg)
+    try:
+        for s in series_d:
+            if s["stage"] not in STAGE_KEYS or any(t not in season.teams for t in s["teams"]) or (s["winner"] is not None and s["winner"] not in s["teams"]):
+                raise ValueError("知らない球団かステージ")
+            post.series.append({"stage": str(s["stage"]), "league": None if s["league"] is None else int(s["league"]), "teams": [str(t) for t in s["teams"]], "seeds": [int(x) for x in s.get("seeds", [])],
+                                "wins": [int(x) for x in s["wins"]], "ties": int(s["ties"]), "start": int(s["start"]), "games": [int(x) for x in s["games"]], "winner": s["winner"], "mvp": s.get("mvp")})
+    except (KeyError, TypeError, ValueError) as exc:
+        p.add(f"{where}.series", f"シリーズの形が違います({exc})")
+        return
+    for i, (gd, raw_line) in enumerate(zip(games_d, lines)):
+        row = _read_json(raw_line, f"{log_name} の {i + 1} 行目", p)
+        if row is None:
+            return
+        try:
+            result = _game_from(row["result"])
+            if row["number"] != i or gd["number"] != i or (result.home_team_id, result.away_team_id) != (gd["home"], gd["away"]):
+                raise ValueError("番号か組み合わせが合いません")
+            context = GameContext(dict(gd["rotation"]), {k: float(v) for k, v in gd["fatigue"].items()})
+            for tid, x in (gd.get("lineups") or {}).items():
+                plan = _check_plan(x, f"{where}.games[{i}].lineups.{tid}", set(season.players), p)
+                if plan is not None:
+                    context.lineups[tid] = plan
+            g = ScheduledGame(i, int(gd["day"]), season.teams[gd["home"]].league_index, gd["home"], gd["away"])
+            post.games.append(PlayedGame(g, result, context, {k: bool(v) for k, v in gd["starter_skipped"].items()}))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            p.add(f"{where}.games[{i}]", f"ポストシーズンの試合の形が違います({exc})")
+            return
+    if sorted(n for s in post.series for n in s["games"]) != list(range(len(post.games))):
+        p.add(where, "シリーズの試合と、試合の記録が合いません")
+        return
+    season.postseason = post
 
 
 def load_game(data: bytes) -> GameState:
@@ -673,7 +741,8 @@ def load_game(data: bytes) -> GameState:
 
     # ---- シーズンの状態と打席ログ ----
     total_days = season.total_days
-    if not 0 <= day <= total_days:
+    post_d = season_d.get("postseason")
+    if not 0 <= day <= total_days + (60 if post_d is not None else 0):  # ポストシーズンの間は、シーズンの日に続けて数える(D-441)
         p.add("state.json.season.day", f"日付が範囲外です(値: {day}。0〜{total_days})")
     for tid, idx in rotation.items():
         if tid not in team_ids:
@@ -753,6 +822,12 @@ def load_game(data: bytes) -> GameState:
     for pg in played:
         season._record(pg.result)
     season.played = played
+    if post_d is not None:
+        _restore_postseason(season, post_d, raws.get(f"logs/post-{year}.jsonl", b""), year, p)
+    elif season.is_over:
+        season._start_postseason()  # 設定にあれば、レギュラーシーズンの最後の日の後に始める
+    if p.items:
+        raise SaveDataError(p.items)
     _restore_roster(season, season_d, p)
     history = _check_history(history_d, raws, team_ids, year + (1 if procedure_d else 0), p)  # 手続き中は、今シーズンの集計がすでに履歴にある
     offseasons = _check_offseasons(offseasons_d, p)

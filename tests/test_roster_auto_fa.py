@@ -16,7 +16,7 @@ from pennant.savegame import SAVE_FORMAT_VERSION, SaveDataError, load_game, save
 def auto_season_end():
     """自動 FA で 1 シーズン目を終える直前。T01 の選手を 3 通りに整えておく。"""
     g = api.Game.new(5, [None] * 12, 0, season_seed=9, baselines="default", rules={"auto_fa": True})
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     return g
 
 

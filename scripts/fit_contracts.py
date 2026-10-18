@@ -44,7 +44,7 @@ def main(argv=None):
         for k in range(args.seasons):
             state = g.state
             est = {p.id: (p.role, overall(p)) for p in state.league.all_players()}
-            g.advance(state.season.total_days)
+            g.advance_to_end()
             lines = g.war_lines()
             for pid, (role, value) in est.items():
                 line = lines.get(pid)

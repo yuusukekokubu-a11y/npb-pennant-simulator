@@ -11,6 +11,6 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import v16_to_v17, v17_to_v18, v18_to_v19, v19_to_v20, v20_to_v21, v21_to_v22, v22_to_v23, v23_to_v24, v24_to_v25, v25_to_v26, v26_to_v27
+from . import v16_to_v17, v17_to_v18, v18_to_v19, v19_to_v20, v20_to_v21, v21_to_v22, v22_to_v23, v23_to_v24, v24_to_v25, v25_to_v26, v26_to_v27, v27_to_v28
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {16: v16_to_v17.convert, 17: v17_to_v18.convert, 18: v18_to_v19.convert, 19: v19_to_v20.convert, 20: v20_to_v21.convert, 21: v21_to_v22.convert, 22: v22_to_v23.convert, 23: v23_to_v24.convert, 24: v24_to_v25.convert, 25: v25_to_v26.convert, 26: v26_to_v27.convert}
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {16: v16_to_v17.convert, 17: v17_to_v18.convert, 18: v18_to_v19.convert, 19: v19_to_v20.convert, 20: v20_to_v21.convert, 21: v21_to_v22.convert, 22: v22_to_v23.convert, 23: v23_to_v24.convert, 24: v24_to_v25.convert, 25: v25_to_v26.convert, 26: v26_to_v27.convert, 27: v27_to_v28.convert}

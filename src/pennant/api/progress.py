@@ -151,6 +151,7 @@ class ProgressMixin:
         season = self.state.season
         days = season.days_to_next_game() if int(days) == 1 else int(days)  # 「1日」は次の公式戦の日まで(休みとオールスターの日を飛ばす。D-435)
         n = max(0, min(days, season.total_days - season.day))
+        rest = max(0, days - n)  # レギュラーシーズンの後はポストシーズン(D-440)
         if n:
             from ..trade import deadline_day, season_check_days
 
@@ -163,7 +164,15 @@ class ProgressMixin:
                 if season.day in checks:
                     self._season_trade_check()
             self.dirty = True
+        if rest and not season.complete:
+            season.play_days(rest)
+            self.dirty = True
         return self.status()
+
+    def advance_to_end(self) -> dict:
+        """シーズンの最後(ポストシーズンを含む)まで進める(年度の確定の前。D-440)。"""
+        season = self.state.season
+        return self.advance(max(1, season.total_days - season.day) + 200)
 
     def status(self) -> dict:
         season = self.state.season
@@ -189,23 +198,28 @@ class ProgressMixin:
             "total_days": season.total_days,
             "games_played": len(season.played),
             "total_games": len(season.schedule),
-            "is_over": season.is_over,
+            "is_over": season.complete,
             "seed": season.seed,
             "my_team": mine,
             "dirty": self.dirty,
             "year": self.state.year,
-            "can_year_end": season.is_over and self.state.procedure is None,
+            "can_year_end": season.complete and self.state.procedure is None,
             "seasons": self.season_choices(),
             "offseason": None if self.state.procedure is None else {"active": True, "phase": self.state.procedure.phase, "phase_label": STAGE_LABELS[stage_of(self.state.procedure.phase)], "year": self.state.procedure.year},
             "scout_level": self.state.scout_level,
             "trade": self._trade_status(),
-            "next_day": None if season.is_over else self._day_kind(season.day),
+            "next_day": None if season.complete else self._day_kind(season.day),
             "allstar": self.allstar_results(),
+            "regular_over": season.is_over,
+            "postseason": self.postseason_view(),
+            "post_days_max": 30,  # ポストシーズンの日数の目安(進み具合のバー用)
         }
 
     def _day_kind(self, day: int) -> dict:
-        """その日の種類(試合・交流戦・オールスター・休み。D-435、D-436)。"""
+        """その日の種類(試合・交流戦・オールスター・休み・ポストシーズン。D-435、D-436、D-439)。"""
         season = self.state.season
+        if day >= season.total_days:
+            return self._post_day_kind(day)
         if day in season.schedule.allstar_days:
             return {"kind": "allstar", "label": f"オールスター 第{season.schedule.allstar_days.index(day) + 1}戦"}
         games = season.schedule.days[day]
@@ -288,7 +302,7 @@ class ProgressMixin:
 
     def finish_season(self) -> int:
         """シーズンを終えて、球場 × シーズンの集計を履歴に足す(年度の確定の一部。D-146)。戻り値は履歴の数。"""
-        if not self.state.season.is_over:
+        if not self.state.season.complete:
             raise ValueError("シーズンがまだ終わっていません")
         self.state.park_history.append(season_tallies(p.result for p in self.state.season.played))
         self._park_estimates = None
@@ -300,13 +314,14 @@ class ProgressMixin:
         season = self.state.season
         names = self._team_names()
         champs = []
-        if season.is_over:
+        if season.complete:
             for i in season.league_indexes():
                 champs.append({"league_name": self.state.league.league_names[i], "teams": [names[t] for t in season.result().champions[i]]})
         return {
             "year": self.state.year,
-            "is_over": season.is_over,
+            "is_over": season.complete,
             "champions": champs,
+            "japan_champion": None if season.postseason is None or season.postseason.champion is None else names[season.postseason.champion],  # 日本一(D-440)
             "players": len(self.state.league.all_players()),
             "log_seasons": self.state.offseason_settings.log_seasons,
             "dirty": self.dirty,
@@ -338,10 +353,11 @@ class ProgressMixin:
             war=dict(self.war_lines()),
             baselines=self.baselines()[0],
             games=list(season.played) if keep else None,
-            day=season.day,
+            day=min(season.day, season.total_days),  # 成績はレギュラーシーズンの日まで(ポストシーズンの日は数えない。D-440)
             total_days=season.total_days,
             interleague=self._interleague_archive(season),
             allstar=[dict(x) for x in season.allstar],
+            postseason=None if season.postseason is None else season.postseason.summary(),
         )
 
     @staticmethod
@@ -356,7 +372,7 @@ class ProgressMixin:
         加齢・能力の更新・引退・補充(offseason.run_offseason)→ 次のシーズンを作る。戻り値はオフの結果の要約。"""
         state = self.state
         season = state.season
-        if not season.is_over:
+        if not season.complete:
             raise ValueError("シーズンがまだ終わっていません(最後まで進めてから、年度を確定してください)")
         if state.procedure is not None:
             raise ValueError("オフの手続きが進行中です(手続きを終えると、次のシーズンが始まります)")

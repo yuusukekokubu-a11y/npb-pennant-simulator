@@ -11,7 +11,8 @@ export async function renderGames(token) {
   const last = state.view.status.day;
   const sel = $("games-day");
   if (sel.options.length !== last) {
-    sel.replaceChildren(...Array.from({ length: last }, (_, i) => el("option", { value: String(i + 1) }, `${i + 1}日目`)));
+    const total = state.view.status.total_days; // ポストシーズンの日は「ポストシーズン N日目」(D-439)
+    sel.replaceChildren(...Array.from({ length: last }, (_, i) => el("option", { value: String(i + 1) }, i < total ? `${i + 1}日目` : `ポストシーズン ${i + 1 - total}日目`)));
   }
   if (state.gamesDay === null || state.gamesDay > last) state.gamesDay = last;
   $("games-empty").hidden = last > 0;
@@ -42,7 +43,8 @@ export async function renderGame(args, token) {
   if (token !== state.token) return;
   const s = d.summary;
   const st = d.story;
-  $("game-title").textContent = `${s.day}日目 ${s.away.name} ${s.away.runs} - ${s.home.runs} ${s.home.name}`;
+  const total = state.view.status.total_days;
+  $("game-title").textContent = `${s.day <= total ? `${s.day}日目` : `ポストシーズン ${s.day - total}日目`} ${s.away.name} ${s.away.runs} - ${s.home.runs} ${s.home.name}`;
   $("game-tags").textContent = [s.innings > 9 ? `延長${s.innings}回` : "", ...st.tags.filter((t) => t !== "延長")].filter(Boolean).join("・");
   $("game-stadium").replaceChildren("球場:", link(s.stadium, () => openPage("stadium", { id: s.home.team_id })), `(${s.home.name}の本拠地)`);
   const lineCols = [...st.line.innings.map((i) => ({ key: i, label: i })), { key: "total", label: "計" }];

@@ -28,10 +28,10 @@ import sys
 from pennant import api
 from pennant.savegame import save_game
 g = api.Game.new(1, [None] * 12, 0, season_seed=1, baselines="default")
-g.advance(g.state.season.total_days); g.year_end(); g.offseason_auto(); g.advance(40)
+g.advance_to_end(); g.year_end(); g.offseason_auto(); g.advance(40)
 open(sys.argv[1], "wb").write(save_game(g.state))
 g = api.Game.new(2, [None] * 12, 0, season_seed=2, baselines="default")
-g.advance(g.state.season.total_days); g.year_end()
+g.advance_to_end(); g.year_end()
 open(sys.argv[2], "wb").write(save_game(g.state))
 `, saves.season, saves.offseason], { cwd: ROOT, env: { ...process.env, PYTHONPATH: join(ROOT, "src") } });
 

@@ -130,6 +130,6 @@ def test_version_25_save_starts_running_at_load_day(mid):
             z.writestr(name, b)
     state = load_game(buf.getvalue())
     s = state.season
-    assert SAVE_FORMAT_VERSION == 27 and s.running_start == 40 and s.game_config.get("steal") == load_game_config().get("steal")
+    assert SAVE_FORMAT_VERSION == 28 and s.running_start == 40 and s.game_config.get("steal") == load_game_config().get("steal")
     s.play_days(5)
     assert any(x.events for p in s.played[-30:] for x in p.result.log)

@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { call, delayedShow, ready } from "./backend.js";
 import { current, renderCurrent, showScreen } from "./screens.js";
-import { allstarCard, el, emblem, gameCard, rankBadge, teamLink } from "./parts.js";
+import { allstarCard, el, emblem, gameCard, rankBadge, seriesCard, teamLink } from "./parts.js";
 import { buildStatsFilters } from "./stats.js";
 
 // ---- 進行・順位表 ----
@@ -52,10 +52,17 @@ function seasonWord(s) {
   return `${s.year}シーズン目`;
 }
 
+// 日の書き方:レギュラーシーズンは「N日目 / 全日数」、その後は「ポストシーズン N日目」(D-439)
+export function dayWord(s) {
+  if (s.is_over) return `全${s.total_days}日 終了` + (s.postseason && s.postseason.champion ? `・日本一 ${s.postseason.champion}` : "");
+  if (s.regular_over) return s.day === s.total_days ? "レギュラーシーズン終了" : `ポストシーズン ${s.day - s.total_days}日目`;
+  return `${s.day}日目 / ${s.total_days}日`;
+}
+
 export function renderProgress() {
   const s = state.view.status;
-  $("day-text").textContent = `${seasonWord(s)} ` + (s.is_over ? `全${s.total_days}日 終了` : `${s.day}日目 / ${s.total_days}日`);
-  $("topbar-day").textContent = `${seasonWord(s)} ` + (s.is_over ? "シーズン終了" : `${s.day}日目 / ${s.total_days}日`);
+  $("day-text").textContent = `${seasonWord(s)} ${dayWord(s)}`;
+  $("topbar-day").textContent = `${seasonWord(s)} ` + (s.is_over ? "シーズン終了" : s.regular_over ? (s.day === s.total_days ? "ポストシーズンへ" : `ポストシーズン ${s.day - s.total_days}日目`) : `${s.day}日目 / ${s.total_days}日`);
   $("year-end-box").hidden = !s.can_year_end;
   $("year-end").disabled = state.running;
   const off = s.offseason;
@@ -73,6 +80,9 @@ export function renderProgress() {
   if (m) renderForm(m);
   const nd = s.next_day; // 次の日の種類(休みは「1日すすめる」で飛ばす。D-435)
   $("next-day-text").textContent = nd ? `次の日(${s.day + 1}日目)は${nd.label}${nd.kind === "off" || nd.kind === "allstar" ? "(「1日すすめる」で次の公式戦の日まで進みます)" : ""}` : "";
+  const ps = s.postseason; // ポストシーズン(D-440):シリーズの勝敗と次の試合
+  $("post-box").hidden = !ps;
+  if (ps) $("post-list").replaceChildren(...(ps.next_label ? [el("p", { className: "small" }, `次(${ps.next_day - s.total_days}日目):${ps.next_label}`)] : []), ...ps.series.map((x) => seriesCard(x, false)));
   $("allstar-box").hidden = !s.allstar.length;
   $("allstar-list").replaceChildren(...s.allstar.map(allstarCard));
   const last = state.view.last_day;
@@ -98,8 +108,9 @@ export function renderStandings() {
   const table = state.view.standings;
   const sw = $("league-switch");
   const il = table.interleague; // 交流戦の表(交流戦が始まってから。D-437)
-  const tabs = [...table.leagues.map((lg) => ({ index: lg.index, name: lg.name })), ...(il ? [{ index: "il", name: "交流戦" }] : [])];
-  if (!il && state.league === "il") state.league = 0;
+  const ps = table.postseason; // ポストシーズンの組み合わせ表(D-440)
+  const tabs = [...table.leagues.map((lg) => ({ index: lg.index, name: lg.name })), ...(il ? [{ index: "il", name: "交流戦" }] : []), ...(ps ? [{ index: "ps", name: "ポストシーズン" }] : [])];
+  if ((!il && state.league === "il") || (!ps && state.league === "ps")) state.league = 0;
   if (sw.children.length !== tabs.length) {
     sw.replaceChildren();
     for (const t of tabs) {
@@ -112,8 +123,17 @@ export function renderStandings() {
     b.textContent = tabs[i].name;
     b.setAttribute("aria-pressed", String(tabs[i].index === state.league));
   });
+  const post = state.league === "ps";
+  $("standings-post").hidden = !post;
+  $("standings-table").hidden = post;
+  if (post) {
+    $("standings-day").textContent = ps.champion ? `日本一:${ps.champion}` : "ポストシーズン(クライマックスシリーズ・日本シリーズ)";
+    $("standings-champion").hidden = true;
+    $("standings-post").replaceChildren(...ps.series.map((x) => seriesCard(x)));
+    return;
+  }
   const lg = state.league === "il" ? il : table.leagues[state.league];
-  $("standings-day").textContent = `${table.day}日目まで(全${state.view.status.total_days}日)・差はゲーム差` + (state.league === "il" ? `・交流戦だけの成績(各球団 ${il.games} 試合)` : "");
+  $("standings-day").textContent = `${Math.min(table.day, state.view.status.total_days)}日目まで(全${state.view.status.total_days}日)・差はゲーム差` + (state.league === "il" ? `・交流戦だけの成績(各球団 ${il.games} 試合)` : "");
   $("standings-champion").hidden = !(state.league === "il" && il.champion);
   if (state.league === "il" && il.champion) $("standings-champion").textContent = `交流戦の優勝:${il.champion}`;
   const body = $("standings-body");
@@ -158,7 +178,8 @@ export async function advance(days) {
   $("progress-message").textContent = "";
   renderProgress();
   const start = state.view.status.day;
-  const total = days === 0 ? state.view.status.total_days - start : Math.min(days, state.view.status.total_days - start);
+  const st0 = state.view.status; // 「最後まで」はポストシーズンまで(日数は目安。D-440)
+  const total = days === 0 ? Math.max(1, st0.total_days + st0.post_days_max - start) : days;
   const showRun = () => {
     $("run-progress").max = total;
     $("run-box").hidden = false;

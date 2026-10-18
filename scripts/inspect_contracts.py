@@ -44,7 +44,7 @@ def distribution(worlds: int, log) -> None:
     team_rows = []
     for seed in range(1, worlds + 1):
         g = api.Game.new(seed, [None] * 12, None, season_seed=seed, baselines="default")
-        g.advance(g.state.season.total_days)
+        g.advance_to_end()
         g.year_end()  # 1 シーズン目の成績で更改された契約を見る
         state = g.state
         from pennant.draft import state_war_history
@@ -63,7 +63,7 @@ def distribution(worlds: int, log) -> None:
                     exp = sum(w for w, _ in hist[:1])
                     if exp > 0.2:
                         ratios.append(sal[p.id] / exp)
-        g.advance(state.season.total_days)  # 翌シーズン
+        g.advance_to_end()  # 翌シーズン
         lines = g.war_lines()
         for t in state.league.teams:
             for p in t.players:
@@ -96,7 +96,7 @@ def trend(worlds: int, years: int, log) -> list[dict]:
             totals = [team_salary(t) for t in state.league.teams]
             caps = [g.budget_info(t.id)["cap"] for t in state.league.teams]
             row = {"seed": seed, "year": year, "rate": state.contract_rates.get(str(year)), "total_mean": statistics.fmean(totals), "total_max": max(totals), "usage_max": max(t / c for t, c in zip(totals, caps)) if caps[0] else None}
-            g.advance(state.season.total_days)
+            g.advance_to_end()
             if year < years:
                 g.year_end()
                 tx = [x for x in state.transactions if x["year"] == year]

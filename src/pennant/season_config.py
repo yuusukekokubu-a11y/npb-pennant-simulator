@@ -57,6 +57,22 @@ def validate_season_config(data: Any, source: str = "(辞書)") -> SeasonConfig:
             al = c.section(al, "schedule.allstar")
             c.integer(c.get(al, "after_games", "schedule.allstar"), "schedule.allstar.after_games", 0, 200)
             c.integer(c.get(al, "games", "schedule.allstar"), "schedule.allstar.games", 1, 5)
+    ps = root.get("postseason")
+    if ps is not None:  # ポストシーズン(D-439)。書いていなければ行わない(版 27 の続き)
+        ps = c.section(ps, "postseason")
+        for key in ("first_stage", "final_stage", "japan_series"):
+            sec = c.section(c.get(ps, key, "postseason"), f"postseason.{key}")
+            games = c.integer(c.get(sec, "games", f"postseason.{key}"), f"postseason.{key}.games", 1, 15)
+            wins = c.integer(c.get(sec, "wins", f"postseason.{key}"), f"postseason.{key}.wins", 1, 15)
+            adv = c.integer(sec.get("advantage", 0) if sec else 0, f"postseason.{key}.advantage", 0, 5)
+            if games is not None and wins is not None and adv is not None and not (wins - adv <= games):
+                c.add(f"postseason.{key}", "勝ち抜けに必要な勝利数(アドバンテージを除く)は、試合数以下にしてください")
+            travel = sec.get("travel_after", []) if sec else []
+            if not (isinstance(travel, list) and all(isinstance(x, int) and not isinstance(x, bool) and x >= 1 for x in travel)):
+                c.add(f"postseason.{key}.travel_after", "1 以上の整数の並びで書いてください")
+        rest = c.get(ps, "rest_days", "postseason")
+        if rest is not None and not (isinstance(rest, list) and len(rest) == 3 and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 10 for x in rest)):
+            c.add("postseason.rest_days", "0〜10 の整数を 3 つ(シーズンの後・CS の間・日本シリーズの前)で書いてください")
     st = c.section(c.get(root, "standings", ""), "standings")
     shared = c.get(st, "allow_shared_rank", "standings")
     if shared is not None and not isinstance(shared, bool):

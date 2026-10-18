@@ -1,5 +1,5 @@
 {
-  "fingerprint_version": 34,
+  "fingerprint_version": 35,
   "league": "26a50a1d03a1028b33b300849d7b083b590fcff8989ce5f9acaadff454c63774",
   "game": "c0737d0bf95afa4cd2099718311642b81e88c88d6accd16abd2827c51d8e2fe8",
   "days": "df14cb864e4cb9b825e6a4a90dedf9fd9c7c6523333c58b8c87224db7b3bf802",
@@ -12,11 +12,11 @@
   "park_estimates": "83be98088fd227665f812f5f4463e1acf23422ad4159d33b4df0090c3330d9b6",
   "run_values": "c70b76ff159898d79523c9e819143f908dd31b829a6dc3ffc824336f42047d08",
   "war": "0bcbf063050c3e645fa538db01fd088aeb512a1739cd27551590ba7b693e36ee",
-  "multiyear": "3e8616a4eec456c3543e24d4e64d1f348b1b3c7e5ba0bd3c42064f57df4a1713",
-  "procedure": "26a43c16479b133aa96ebcf3ca96ffa0387a4c538505c9a971f6eb3fa12da9de",
-  "contracts": "89a962214f2495caeac5524322c4d5f4e9cc77eeeb0b7cd00589968bfd8c079f",
-  "negotiation": "bccb045c60c58c4b174f23e1aa06c7f3188312ae378ccfdd0012761fde3db9be",
-  "fa": "b0398a4a9c79d6184a373c9e24d6a62a496ab71be0ac309b048360408042c616",
+  "multiyear": "5b5936ff58e41c5f2fd86ab1da9f05e692f128d83c7dbd2e929e9d50e140a7f8",
+  "procedure": "3ffdb694623c1115f54f4802b158fd1bf40b241f8819c66dd09ac0e432538f51",
+  "contracts": "edd9c1561d9b0f2a72f32e6f9efac6f5a6b5a6988ea327b2b9b45418aca74572",
+  "negotiation": "71538c6d4f4347b3627783c1b3fcc272e0b4e9ae8f01e1b97a081a3587165734",
+  "fa": "2d42bf359c77e788efc075f8384d129a32ef4fe9a62b89431e7f4c78032cb9a3",
   "counts": {
     "players": 833,
     "game_plate_appearances": 71,
@@ -92,9 +92,9 @@
       ],
       "rookies": [
         123,
-        127
+        140
       ],
-      "players": 797,
+      "players": 801,
       "seasons": 3,
       "history": 2
     },
@@ -102,61 +102,61 @@
       "year_ends": 2,
       "picked": [
         77,
-        84
+        94
       ],
       "released": [
         50,
-        59
+        71
       ],
       "market": [
         10,
-        15
+        18
       ],
-      "players": 797,
-      "scouted": 797
+      "players": 801,
+      "scouted": 801
     },
     "contracts": {
       "year_ends": 2,
       "budget_releases": [
         20,
-        27
+        36
       ],
       "rates": [
         11697,
         10187,
-        10023
+        9986
       ],
       "totals": [
         376292,
-        380325
+        378150
       ],
-      "players": 797
+      "players": 801
     },
     "negotiation": {
       "year_ends": 2,
       "renewed": [
         756,
-        716
+        714
       ],
       "declared": [
         34,
-        31
+        33
       ],
       "multi_year": [
         31,
-        13
+        14
       ],
       "floored": [
         270,
-        250
+        258
       ],
-      "players": 797
+      "players": 801
     },
     "fa": {
       "year_ends": 2,
       "declared": [
         34,
-        31
+        33
       ],
       "signed": [
         21,
@@ -168,9 +168,9 @@
       ],
       "offers": [
         37,
-        26
+        36
       ],
-      "players": 797
+      "players": 801
     }
   }
 }

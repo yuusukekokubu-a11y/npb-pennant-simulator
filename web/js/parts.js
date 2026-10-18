@@ -102,6 +102,17 @@ export function allstarCard(a) {
   );
 }
 
+// ポストシーズンのシリーズのカード(D-440):両球団の勝ち数(アドバンテージを含む)・勝ち抜け・MVP。試合のスコアは試合のページへ
+export function seriesCard(s, withGames = true) {
+  const team = (t) => el("span", { className: "series-team" + (t.winner ? " win" : "") + (t.is_mine ? " mine" : "") }, `${t.seed ? `${t.seed}位 ` : ""}${t.name} ${t.wins}`);
+  const head = el("p", {}, el("b", {}, s.label), " ", team(s.teams[0]), " - ", team(s.teams[1]), s.ties ? `(${s.ties}分)` : "");
+  const note = [s.advantage ? `${s.teams[0].name}に${s.advantage}勝のアドバンテージ` : "", s.winner ? `${s.winner}の勝ち抜け` : "", s.mvp ? `MVP:${s.mvp.name}(${s.mvp.team}${s.mvp.text ? ` ${s.mvp.text}` : ""})` : ""].filter(Boolean).join("・");
+  const games = withGames && s.games && s.games.length
+    ? el("p", { className: "small" }, ...s.games.flatMap((g, i) => [i ? " / " : "", link(`第${i + 1}戦 ${g.away} ${g.score} ${g.home}`, () => openPage("game", { game_no: g.game_no }))]))
+    : null;
+  return el("div", { className: "card series" }, head, note ? el("p", { className: "small muted" }, note) : null, games);
+}
+
 // 見出しを押したときの並び順の決め方(表の部品で共通。D-131):今の並びと同じ列なら逆順に、違う列ならその指標の「よい」向き(能力の項目は高い順)から
 export function sortToggle(sortBy, shown, key) {
   if (shown && shown.key === key) {

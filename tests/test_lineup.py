@@ -118,7 +118,7 @@ def test_review_resets_to_ai_and_replay_and_save(base):
         assert (again.home_runs, again.away_runs, len(again.log)) == (pg.result.home_runs, pg.result.away_runs, len(pg.result.log))
     # 保存と読み込み(版 17)で、計画と試合ごとの記録が残る
     loaded = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 27
+    assert SAVE_FORMAT_VERSION == 28
     assert loaded.state.season.lineup_plans["T01"]["slots"] == [[x["player_id"], x["position"]] for x in s] and loaded.state.season.lineup_plans["T01"]["style"] == "speed"
     assert [pg.context.lineups for pg in loaded.state.season.played] == [pg.context.lineups for pg in season.played]
     # 見直し(7 日ごと):8 日目の試合の前に、型で AI が組み直す
@@ -166,7 +166,7 @@ def test_style_carries_over_to_the_next_season(base):
     g = fresh(base)
     g.set_lineup_style("contact_second")
     g.set_lineup(slots_of(g.lineup_view()))
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     assert g.lineup_view()["editable"] is False
     with pytest.raises(ValueError, match="シーズン中"):
         g.lineup_auto()
