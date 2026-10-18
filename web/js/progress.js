@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { call, delayedShow, ready } from "./backend.js";
 import { current, renderCurrent, showScreen } from "./screens.js";
-import { el, emblem, gameCard, rankBadge, teamLink } from "./parts.js";
+import { allstarCard, el, emblem, gameCard, rankBadge, teamLink } from "./parts.js";
 import { buildStatsFilters } from "./stats.js";
 
 // ---- 進行・順位表 ----
@@ -71,6 +71,10 @@ export function renderProgress() {
   if (tr) $("open-trade").textContent = tr.offers ? `トレード ${tr.offers}` : "トレード";
   renderBoard(s);
   if (m) renderForm(m);
+  const nd = s.next_day; // 次の日の種類(休みは「1日すすめる」で飛ばす。D-435)
+  $("next-day-text").textContent = nd ? `次の日(${s.day + 1}日目)は${nd.label}${nd.kind === "off" || nd.kind === "allstar" ? "(「1日すすめる」で次の公式戦の日まで進みます)" : ""}` : "";
+  $("allstar-box").hidden = !s.allstar.length;
+  $("allstar-list").replaceChildren(...s.allstar.map(allstarCard));
   const last = state.view.last_day;
   $("last-day-title").textContent = last.games.length ? `直近の日の試合(${last.day}日目)` : "直近の日の試合";
   $("last-day").replaceChildren(...last.games.map(gameCard));
@@ -93,24 +97,30 @@ export function renderProgress() {
 export function renderStandings() {
   const table = state.view.standings;
   const sw = $("league-switch");
-  if (sw.children.length !== table.leagues.length) {
+  const il = table.interleague; // 交流戦の表(交流戦が始まってから。D-437)
+  const tabs = [...table.leagues.map((lg) => ({ index: lg.index, name: lg.name })), ...(il ? [{ index: "il", name: "交流戦" }] : [])];
+  if (!il && state.league === "il") state.league = 0;
+  if (sw.children.length !== tabs.length) {
     sw.replaceChildren();
-    for (const lg of table.leagues) {
+    for (const t of tabs) {
       sw.appendChild(
-        el("button", { type: "button", onclick: () => { state.league = lg.index; renderStandings(); } }, lg.name),
+        el("button", { type: "button", onclick: () => { state.league = t.index; renderStandings(); } }, t.name),
       );
     }
   }
   [...sw.children].forEach((b, i) => {
-    b.textContent = table.leagues[i].name;
-    b.setAttribute("aria-pressed", String(i === state.league));
+    b.textContent = tabs[i].name;
+    b.setAttribute("aria-pressed", String(tabs[i].index === state.league));
   });
-  const lg = table.leagues[state.league];
-  $("standings-day").textContent = `${table.day}日目まで(全${state.view.status.total_days}日)・差はゲーム差`;
+  const lg = state.league === "il" ? il : table.leagues[state.league];
+  $("standings-day").textContent = `${table.day}日目まで(全${state.view.status.total_days}日)・差はゲーム差` + (state.league === "il" ? `・交流戦だけの成績(各球団 ${il.games} 試合)` : "");
+  $("standings-champion").hidden = !(state.league === "il" && il.champion);
+  if (state.league === "il" && il.champion) $("standings-champion").textContent = `交流戦の優勝:${il.champion}`;
   const body = $("standings-body");
   body.replaceChildren();
   for (const r of lg.rows) {
     const cell = el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.name), teamLink(r.name, r.team_id));
+    if (r.league_name) cell.append(el("span", { className: "sub" }, r.league_name));
     if (r.is_mine) cell.append(el("span", { className: "you", "aria-label": "自球団" }, "★"));
     const name = el("td", { className: "sticky" }, cell);
     const tr = el("tr", { className: r.is_mine ? "mine" : "" }, name);
@@ -157,12 +167,12 @@ export async function advance(days) {
   const hideRun = days === 1 ? async () => {} : delayedShow(showRun, () => ($("run-box").hidden = true));
   let done = 0;
   try {
-    // 1日ずつ裏に頼む。日の区切りごとに、止める指示を確かめる
+    // 1日ずつ裏に頼む(休みの日は飛ばして次の公式戦の日まで。D-435)。日の区切りごとに、止める指示を確かめる
     while (done < total && !state.view.status.is_over && !state.stopRequested) {
       const r = await call("advance", { days: 1 });
       state.view = r.value;
       setDirty(true);
-      done += 1;
+      done = state.view.status.day - start;
       $("run-progress").value = done;
       $("run-text").textContent = `${done} / ${total} 日分を進めました(${state.view.status.day}日目)`;
       renderProgress();

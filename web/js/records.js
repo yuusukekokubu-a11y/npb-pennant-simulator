@@ -4,7 +4,7 @@
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, setPressed, table, teamLink } from "./parts.js";
+import { allstarCard, el, playerLink, setPressed, table, teamLink } from "./parts.js";
 
 const SECTIONS = [["standings", "順位と優勝"], ["titles", "タイトル"], ["leaders", "通算記録"], ["entries", "補強"]];
 const ENTRY_KINDS = [["draft", "ドラフト"], ["foreign", "外国人"], ["moves", "出入り"]];
@@ -61,10 +61,13 @@ async function renderStandingsHistory(token) {
     el("h2", {}, lg.league_name),
     table({ firstLabel: "順位・チーム", columns: cols, rows: lg.rows.map((x) => ({ ...x, values: { wins: String(x.wins), losses: String(x.losses), ties: String(x.ties), pct: x.pct, gb: x.games_behind } })),
       first: (x) => [el("span", { className: "rank" + (x.champion ? " medal medal-1" : "") }, String(x.rank)), teamLink(x.team_name, x.team_id)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })));
-  const champs = table({ firstLabel: "チーム", columns: [{ key: "count", label: "優勝" }, { key: "years", label: "優勝した年" }],
-    rows: d.champions.map((c) => ({ ...c, values: { count: `${c.count} 回`, years: c.years.length ? c.years.map((y) => `${y}`).join("・") : "—" } })),
+  const champs = table({ firstLabel: "チーム", columns: [{ key: "count", label: "優勝" }, { key: "years", label: "優勝した年" }, { key: "il", label: "交流戦の優勝" }],
+    rows: d.champions.map((c) => ({ ...c, values: { count: `${c.count} 回`, years: c.years.length ? c.years.map((y) => `${y}`).join("・") : "—", il: c.interleague_years.length ? c.interleague_years.join("・") : "—" } })),
     first: (c) => [teamLink(c.team_name, c.team_id), el("span", { className: "sub" }, c.league_name)], rowClass: (c) => (c.is_mine ? "mine" : ""), fluid: true });
-  $("records-body").replaceChildren(...blocks, el("h2", {}, "球団ごとの優勝回数"), champs);
+  const extra = []; // 交流戦の優勝とオールスター(D-436、D-437)
+  if (d.interleague) extra.push(el("h2", {}, "交流戦"), el("p", { className: "small" + (d.interleague.is_mine ? " mine" : "") }, `優勝:${d.interleague.champion}(${d.interleague.rows[0].wins}勝${d.interleague.rows[0].losses}敗${d.interleague.rows[0].ties}分)`));
+  if (d.allstar.length) extra.push(el("h2", {}, "オールスター"), ...d.allstar.map(allstarCard));
+  $("records-body").replaceChildren(...blocks, ...extra, el("h2", {}, "球団ごとの優勝回数"), champs);
 }
 
 // ---- 年ごとのタイトル ----

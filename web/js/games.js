@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage } from "./screens.js";
-import { el, gameCard, link, playerLink, table, teamLink } from "./parts.js";
+import { allstarCard, el, gameCard, link, playerLink, table, teamLink } from "./parts.js";
 
 // ---- 試合(日付ごとの一覧) ----
 
@@ -15,16 +15,24 @@ export async function renderGames(token) {
   }
   if (state.gamesDay === null || state.gamesDay > last) state.gamesDay = last;
   $("games-empty").hidden = last > 0;
-  $("games-prev").disabled = state.gamesDay <= 1;
-  $("games-next").disabled = state.gamesDay >= last;
   if (last === 0) {
     $("games-list").replaceChildren();
+    $("games-allstar").replaceChildren();
+    $("games-day-kind").hidden = true;
     return;
   }
   sel.value = String(state.gamesDay);
   const data = await query("games_on", { day: state.gamesDay });
   if (token !== state.token) return;
+  state.gamesPrev = data.prev_day; // 前の日・次の日は、休みの日を飛ばす(D-435)
+  state.gamesNext = data.next_day;
+  $("games-prev").disabled = data.prev_day === null;
+  $("games-next").disabled = data.next_day === null;
   $("games-list").replaceChildren(...data.games.map(gameCard));
+  const kind = data.day_kind; // 休みの日・オールスターの日(D-435、D-436)
+  $("games-day-kind").hidden = !kind || (kind.kind !== "off" && kind.kind !== "allstar");
+  if (kind) $("games-day-kind").textContent = kind.kind === "off" ? "この日は休みです(試合はありません)。" : `この日は${kind.label}です(公式戦はありません)。`;
+  $("games-allstar").replaceChildren(...(data.allstar ? [allstarCard(data.allstar)] : []));
 }
 
 // ---- 試合のページ(文章ログと投手の成績) ----

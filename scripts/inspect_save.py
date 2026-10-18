@@ -1,7 +1,7 @@
 """セーブデータの保存・読み込みの時間と大きさ、壊れたデータの検証の例を、表で出す開発者向けスクリプト。
 
 使い方:
-    python scripts/inspect_save.py              # 1日目・62日目・最後(125日目)で保存・読み込みを測る
+    python scripts/inspect_save.py              # 1日目・85日目・最後(170日目)で保存・読み込みを測る
     python scripts/inspect_save.py --days 3     # 3日目で1回だけ測る(短く確かめるとき)
 
 出力は Markdown の表を含む文章。ファイルは作らない(メモリの上だけで行う)。
@@ -71,7 +71,7 @@ def _broken_examples(data: bytes) -> list[list[str]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="セーブデータの保存・読み込みを確かめる")
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--days", type=int, nargs="*", default=[1, 62, 125], help="保存する日(複数可)")
+    parser.add_argument("--days", type=int, nargs="*", default=[1, 85, 170], help="保存する日(複数可)")
     args = parser.parse_args(argv)
 
     state = start_game(args.seed)

@@ -83,7 +83,7 @@ class ArchiveMixin:
         state = self.state
         names = self._team_names()
         lnames = state.league.league_names
-        out = {"years": self.record_years(), "year": None, "leagues": [], "champions": []}
+        out = {"years": self.record_years(), "year": None, "leagues": [], "champions": [], "interleague": None, "allstar": []}
         a = self._archive(year)
         if a is None:
             return out
@@ -96,14 +96,25 @@ class ArchiveMixin:
                 rows.append({"rank": s.rank, "team_id": s.team_id, "team_name": names.get(s.team_id, s.team_id), "wins": s.wins, "losses": s.losses, "ties": s.ties,
                              "pct": f"{s.wins / games:.3f}".lstrip("0") if games else "-", "games_behind": gb, "champion": s.team_id in a.champions.get(i, []), "is_mine": s.team_id == state.my_team_id})
             out["leagues"].append({"league_index": i, "league_name": lnames[i] if i < len(lnames) else f"リーグ {i + 1}", "rows": rows})
+        if a.interleague is not None:  # 交流戦の優勝(D-437)
+            il = a.interleague
+            out["interleague"] = {
+                "champion": names.get(il["champion"], il["champion"]),
+                "is_mine": il["champion"] == state.my_team_id,
+                "rows": [{"rank": k + 1, "team_name": names.get(x["team_id"], x["team_id"]), "wins": x["wins"], "losses": x["losses"], "ties": x["ties"], "is_mine": x["team_id"] == state.my_team_id} for k, x in enumerate(il["rows"])],
+            }
+        out["allstar"] = self.allstar_results(a.allstar)  # オールスター(D-436)
         count: dict[str, list[int]] = {}
+        il_count: dict[str, list[int]] = {}
         for x in state.history:
             for tids in x.champions.values():
                 for tid in tids:
                     count.setdefault(tid, []).append(x.year)
+            if x.interleague is not None:
+                il_count.setdefault(x.interleague["champion"], []).append(x.year)
         league_of = self._league_of()
         out["champions"] = sorted(
-            ({"team_id": t.id, "team_name": t.name, "league_name": lnames[league_of[t.id]] if league_of[t.id] < len(lnames) else "", "count": len(count.get(t.id, [])), "years": count.get(t.id, []), "is_mine": t.id == state.my_team_id} for t in state.league.teams),
+            ({"team_id": t.id, "team_name": t.name, "league_name": lnames[league_of[t.id]] if league_of[t.id] < len(lnames) else "", "count": len(count.get(t.id, [])), "years": count.get(t.id, []), "interleague_years": il_count.get(t.id, []), "is_mine": t.id == state.my_team_id} for t in state.league.teams),
             key=lambda r: (-r["count"], league_of[r["team_id"]], r["team_id"]),
         )
         return out

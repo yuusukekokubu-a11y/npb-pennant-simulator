@@ -37,7 +37,34 @@ class TeamsMixin:
                     }
                 )
             leagues.append({"index": i, "name": self.state.league.league_names[i], "rows": rows})
-        return {"day": season.day, "leagues": leagues}
+        return {"day": season.day, "leagues": leagues, "interleague": self._interleague_table()}
+
+    def _interleague_table(self) -> dict | None:
+        """交流戦の順位表(D-437)。交流戦が始まってから出す。全部終わったら優勝の球団を付ける。"""
+        season = self.state.season
+        games = [g for day in season.schedule.days for g in day if g.interleague]
+        if not games or season.day <= games[0].day:
+            return None
+        my = self.state.my_team_id
+        lnames = self.state.league.league_names
+        rows = [
+            {
+                "rank": r.rank,
+                "team_id": r.team_id,
+                "name": r.name,
+                "league_name": lnames[self._team(r.team_id).league_index],
+                "games": r.games,
+                "wins": r.wins,
+                "losses": r.losses,
+                "ties": r.ties,
+                "pct": _pct_text(r.pct, r.wins + r.losses),
+                "games_behind": _gb_text(r.games_behind, r.rank == 1),
+                "is_mine": r.team_id == my,
+            }
+            for r in season.interleague_standings()
+        ]
+        finished = season.day > games[-1].day
+        return {"rows": rows, "finished": finished, "champion": rows[0]["name"] if finished else None, "games": len(games) * 2 // len(season.league.teams)}
 
     def teams(self) -> list[dict]:
         return [

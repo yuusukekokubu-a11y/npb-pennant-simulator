@@ -23,9 +23,9 @@ AT = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
 
 
 def short_state(seed=4, team_names=None, days=0):
-    """短いシーズン(同じ相手と2試合。10日)の状態。テストを速くするため。"""
+    """短いシーズン(同じ相手と2試合。10日。今までのラウンド制の日程)の状態。テストを速くするため。"""
     data = default_season_data()
-    data["schedule"]["games_per_opponent"] = 2
+    data["schedule"] = {"games_per_opponent": 2}
     state = start_game(seed, team_names)
     state.season = Season(state.season.league, seed, season_config=validate_season_config(data))
     state.season.play_days(days)
@@ -233,16 +233,16 @@ def test_old_version_is_converted(monkeypatch, saved):
         bundle["state"]["season"]["day"] = bundle["state"]["season"].pop("today")
         return bundle
 
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 27)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 26: v1_to_v2})
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 28)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 27: v1_to_v2})
     state = load_game(old)
     assert calls == [1] and state.season.day == 4
 
 
 def test_missing_conversion_is_reported(monkeypatch, saved):
-    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 28)
-    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 26: lambda b: b})
-    _assert_error(saved[1], "バージョン 27 から 28 への変換がありません")
+    monkeypatch.setattr(savegame, "SAVE_FORMAT_VERSION", 29)
+    monkeypatch.setattr(savegame, "MIGRATIONS", {**savegame.MIGRATIONS, 27: lambda b: b})
+    _assert_error(saved[1], "バージョン 28 から 29 への変換がありません")
 
 
 # ---- 受け入れ条件6:球団名の入力 ----

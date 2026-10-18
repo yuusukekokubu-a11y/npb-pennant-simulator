@@ -137,11 +137,11 @@ $("games-day").addEventListener("change", () => {
   renderCurrent();
 });
 $("games-prev").addEventListener("click", () => {
-  state.gamesDay -= 1;
+  state.gamesDay = state.gamesPrev ?? state.gamesDay - 1; // 休みの日を飛ばす(D-435)
   renderCurrent();
 });
 $("games-next").addEventListener("click", () => {
-  state.gamesDay += 1;
+  state.gamesDay = state.gamesNext ?? state.gamesDay + 1;
   renderCurrent();
 });
 

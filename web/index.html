@@ -491,6 +491,7 @@
     <button class="adv secondary" data-days="7">1週間</button>
     <button class="adv secondary" data-days="0">最後まで</button>
   </div>
+  <p class="muted small" id="next-day-text"></p>
   <!-- 「止める」と進み具合のバーは、処理が 0.6 秒を超えたときだけ出す(D-118) -->
   <div class="run-box" id="run-box" hidden>
     <progress id="run-progress" max="1" value="0" aria-label="進めている途中の進み具合"></progress>
@@ -514,6 +515,11 @@
   </div>
   <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-roster" class="secondary" type="button" hidden>一軍登録</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
 
+  <div id="allstar-box" hidden>
+    <h2>オールスター</h2>
+    <div id="allstar-list"></div>
+  </div>
+
   <h2 id="last-day-title">直近の日の試合</h2>
   <div id="last-day"></div>
   <p class="muted small" id="last-day-empty">まだ試合がありません。</p>
@@ -526,6 +532,7 @@
 <!-- 順位表 -->
 <main class="screen" id="screen-standings" hidden>
   <div class="seg" id="league-switch" role="group" aria-label="リーグの切り替え"></div>
+  <p class="small" id="standings-champion" hidden></p>
   <p class="muted small" id="standings-day"></p>
   <div class="table-wrap">
     <table>
@@ -586,6 +593,8 @@
     <select id="games-day" aria-label="日付を選ぶ"></select>
     <button class="secondary" id="games-next" aria-label="次の日">次の日 ▶</button>
   </div>
+  <p class="muted small" id="games-day-kind" hidden></p>
+  <div id="games-allstar"></div>
   <div id="games-list"></div>
   <p class="muted small" id="games-empty">まだ試合がありません。「進行」のタブで進めてください。</p>
 </main>

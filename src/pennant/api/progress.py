@@ -149,7 +149,8 @@ class ProgressMixin:
     def advance(self, days: int = 1) -> dict:
         """days 日進める(シーズンの終わりで止まる)。戻り値は status と同じ。"""
         season = self.state.season
-        n = max(0, min(int(days), season.total_days - season.day))
+        days = season.days_to_next_game() if int(days) == 1 else int(days)  # 「1日」は次の公式戦の日まで(休みとオールスターの日を飛ばす。D-435)
+        n = max(0, min(days, season.total_days - season.day))
         if n:
             from ..trade import deadline_day, season_check_days
 
@@ -198,7 +199,41 @@ class ProgressMixin:
             "offseason": None if self.state.procedure is None else {"active": True, "phase": self.state.procedure.phase, "phase_label": STAGE_LABELS[stage_of(self.state.procedure.phase)], "year": self.state.procedure.year},
             "scout_level": self.state.scout_level,
             "trade": self._trade_status(),
+            "next_day": None if season.is_over else self._day_kind(season.day),
+            "allstar": self.allstar_results(),
         }
+
+    def _day_kind(self, day: int) -> dict:
+        """その日の種類(試合・交流戦・オールスター・休み。D-435、D-436)。"""
+        season = self.state.season
+        if day in season.schedule.allstar_days:
+            return {"kind": "allstar", "label": f"オールスター 第{season.schedule.allstar_days.index(day) + 1}戦"}
+        games = season.schedule.days[day]
+        if not games:
+            return {"kind": "off", "label": "休み"}
+        return {"kind": "interleague", "label": "交流戦"} if games[0].interleague else {"kind": "league", "label": "リーグ戦"}
+
+    def allstar_results(self, results: list | None = None) -> list[dict]:
+        """オールスターの結果(D-436)。得点・勝ったリーグ・MVP・出た選手(名前と球団)。"""
+        names = self._team_names()
+        lnames = self.state.league.league_names
+        out = []
+        for a in self.state.season.allstar if results is None else results:
+            home, away = int(a["home_league"]), int(a["away_league"])
+            ln = lambda i: lnames[i] if i < len(lnames) else f"リーグ {i + 1}"
+            out.append(
+                {
+                    "number": a["number"] + 1,
+                    "day": a["day"] + 1,
+                    "home": {"league_name": ln(home), "runs": a["runs"][str(home)], "line": a["line"]["home"]},
+                    "away": {"league_name": ln(away), "runs": a["runs"][str(away)], "line": a["line"]["away"]},
+                    "park": names.get(a["park_team_id"], ""),
+                    "winner": None if a["winner"] is None else ln(int(a["winner"])),
+                    "mvp": [{"name": m["name"], "team": names.get(m["team_id"], ""), "league_name": ln(int(m["league"])), "H": m["H"], "HR": m["HR"], "RBI": m["RBI"]} for m in a["mvp"]],
+                    "players": {ln(int(li)): [{"name": x["name"], "team": names.get(x["team_id"], ""), "role": x["role"], "position": x["position"]} for x in xs] for li, xs in a["players"].items()},
+                }
+            )
+        return out
 
     def _my_form(self, team_id: str) -> dict:
         """進行の画面の得点板と調子(作り直し④。D-400):次の相手(シーズンが終わったら最後の相手)・連勝連敗・直近 10 試合。
@@ -305,7 +340,16 @@ class ProgressMixin:
             games=list(season.played) if keep else None,
             day=season.day,
             total_days=season.total_days,
+            interleague=self._interleague_archive(season),
+            allstar=[dict(x) for x in season.allstar],
         )
+
+    @staticmethod
+    def _interleague_archive(season) -> dict | None:
+        if not season.has_interleague():
+            return None
+        rows = season.interleague_standings()
+        return {"champion": rows[0].team_id, "rows": [{"team_id": x.team_id, "wins": x.wins, "losses": x.losses, "ties": x.ties} for x in rows]}
 
     def year_end(self) -> dict:
         """年度の確定(F2。D-185、D-186):今シーズンの集計を履歴へ → 球場補正の履歴と基準値の出発点を更新 →

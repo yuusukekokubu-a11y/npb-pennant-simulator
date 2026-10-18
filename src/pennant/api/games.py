@@ -39,7 +39,7 @@ class GamesMixin:
         played = self.state.season.played[n]
         r = played.result
         names = self._team_names()
-        tags = [t for t, on in (("延長", r.extra_innings), ("サヨナラ", r.walkoff), ("引き分け", r.tie)) if on]
+        tags = [t for t, on in (("交流戦", played.scheduled.interleague), ("延長", r.extra_innings), ("サヨナラ", r.walkoff), ("引き分け", r.tie)) if on]
         return {
             "game_no": n,
             "day": played.scheduled.day + 1,
@@ -55,12 +55,22 @@ class GamesMixin:
 
     def games_on(self, day: int) -> dict:
         """その日(1から)の試合の一覧。まだ行っていない日は、空の一覧。"""
-        games = [self._game_summary(i) for i, p in enumerate(self.state.season.played) if p.scheduled.day + 1 == day]
-        return {"day": day, "last_day": self.state.season.day, "total_days": self.state.season.total_days, "games": games}
+        season = self.state.season
+        games = [self._game_summary(i) for i, p in enumerate(season.played) if p.scheduled.day + 1 == day]
+        kind = self._day_kind(day - 1) if 1 <= day <= season.day else None  # 休み・オールスターの日(D-435、D-436)
+        stars = [a for a in self.allstar_results() if a["day"] == day]
+        shown = lambda d: season.is_game_day(d - 1) or (d - 1) in season.schedule.allstar_days  # 試合のある日(1 から)
+        prev = next((d for d in range(min(day, season.day + 1) - 1, 0, -1) if shown(d)), None)  # 前後の試合のある日(休みを飛ばす)
+        nxt = next((d for d in range(max(day, 0) + 1, season.day + 1) if shown(d)), None)
+        return {"day": day, "last_day": season.day, "total_days": season.total_days, "games": games, "day_kind": kind, "allstar": stars[0] if stars else None, "prev_day": prev, "next_day": nxt}
 
     def last_day_games(self) -> dict:
-        """直近の日(最後に進めた日)の全試合(D-117)。"""
-        return self.games_on(self.state.season.day)
+        """直近の試合の日(最後に進めた日から、休みの日を除いて)の全試合(D-117、D-435)。"""
+        season = self.state.season
+        day = season.day
+        while day > 1 and not season.is_game_day(day - 1):
+            day -= 1
+        return self.games_on(day)
 
     def game(self, game_no: int) -> dict:
         """1試合の文章ログと投手の成績(勝敗・セーブ・ホールドの印つき)。"""

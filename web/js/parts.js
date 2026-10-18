@@ -85,6 +85,23 @@ export function gameCard(g) {
   );
 }
 
+// オールスターの結果のカード(D-436):得点・球場・MVP。出た選手は開いて見る
+export function allstarCard(a) {
+  const score = `${a.away.league_name} ${a.away.runs} - ${a.home.runs} ${a.home.league_name}`;
+  const mvp = a.mvp.map((m) => `${m.name}(${m.team}) ${m.H}安打 ${m.HR}本塁打 ${m.RBI}打点`).join("、");
+  const members = Object.entries(a.players).map(([lg, xs]) =>
+    el("div", {}, el("h4", {}, lg), el("p", { className: "small" }, xs.map((x) => `${x.name}(${x.team})`).join("、"))),
+  );
+  return el(
+    "div",
+    { className: "card allstar" },
+    el("p", {}, el("b", {}, `オールスター 第${a.number}戦(${a.day}日目)`), ` ${score}`),
+    el("p", { className: "small muted" }, `球場:${a.park}の本拠地・${a.winner ? `${a.winner}の勝ち` : "引き分け"}`),
+    el("p", { className: "small" }, `MVP:${mvp || "なし"}`),
+    el("details", {}, el("summary", {}, "出た選手"), ...members),
+  );
+}
+
 // 見出しを押したときの並び順の決め方(表の部品で共通。D-131):今の並びと同じ列なら逆順に、違う列ならその指標の「よい」向き(能力の項目は高い順)から
 export function sortToggle(sortBy, shown, key) {
   if (shown && shown.key === key) {

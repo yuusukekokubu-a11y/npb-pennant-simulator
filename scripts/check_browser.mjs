@@ -108,7 +108,7 @@ const grab = async () => {
 };
 async function day() {
   const text = await page.textContent("#day-text");
-  if (text.includes("終了")) return 125;
+  if (text.includes("終了")) return Number((text.match(/全(\d+)日/) || [0, -1])[1]);
   const m = text.match(/(\d+)日目/);
   return m ? Number(m[1]) : -1;
 }
@@ -118,9 +118,14 @@ async function standingsOnScreen(endLeague = null) {
   await page.click("#tabs button[data-tab=standings]");
   const out = [];
   const n = await page.locator("#league-switch button").count();
-  for (let i = 0; i < n; i++) {
+  const rowsNow = () => page.$$eval("#standings-body tr", (trs) => trs.map((tr) => ({ mine: tr.classList.contains("mine"), cells: [...tr.children].map((td) => td.innerText.replace("★", "").trim()) })));
+  for (let i = 0; i < Math.min(n, 2); i++) {
     await page.locator("#league-switch button").nth(i).click();
-    out.push(await page.$$eval("#standings-body tr", (trs) => trs.map((tr) => ({ mine: tr.classList.contains("mine"), cells: [...tr.children].map((td) => td.innerText.replace("★", "").trim()) }))));
+    out.push(await rowsNow());
+  }
+  if (n > 2) { // 交流戦の表(D-437)。3 つ目のボタン
+    await page.locator("#league-switch button").nth(2).click();
+    out.il = { rows: await rowsNow(), champion: (await page.isVisible("#standings-champion")) ? await page.textContent("#standings-champion") : null };
   }
   if (endLeague !== null) await page.locator("#league-switch button").nth(endLeague).click();
   await grab();
@@ -206,7 +211,7 @@ const trialStart = Date.now();
 await page.click("#new-start");
 // 試運転の進み具合(D-121)
 await page.waitForSelector("#trial-box:not([hidden])");
-await page.waitForFunction(() => /\d+ \/ 125 日/.test(document.querySelector("#trial-text").textContent));
+await page.waitForFunction(() => /\d+ \/ 170 日/.test(document.querySelector("#trial-text").textContent));
 check((await page.textContent("#trial-box")).includes("リーグの基準値を求めています"), `試運転の進み具合が出る(「${await page.textContent("#trial-text")}」)`);
 await page.waitForSelector("#screen-progress:not([hidden])", { timeout: 120000 });
 check(await page.isHidden("#new-help"), "設定の画面から離れると、説明バーは消える(D-313)");
@@ -215,7 +220,7 @@ results.push(`  事前運転(25 年)と試運転(1シーズン)を含めた新�
 check(prerunSeen, "新規開始の間に、事前運転(リーグの歴史を作っています)の進み具合が出る");
 const mineName = await page.textContent("#vs .vs-name"); // 得点板の左が自球団(D-400)
 check(mineName === placeholder7, `選んだ8番目の球団が自球団になる(${mineName})`);
-check((await page.textContent("#day-text")).startsWith("1シーズン目 0日目 / 125日"), `進行の画面:「${await page.textContent("#day-text")}」`);
+check((await page.textContent("#day-text")).startsWith("1シーズン目 0日目 / 170日"), `進行の画面:「${await page.textContent("#day-text")}」`);
 check(await isDirty(), "新規開始のあとは「未保存」(閉じる前に警告が出る)");
 check(!(await page.isHidden("#dirty")) && (await page.$eval("#save", (b) => b.classList.contains("unsaved"))), "未保存の印(保存のアイコンの点)が出る(D-401)");
 
@@ -312,7 +317,7 @@ check(frame < 500, `進めている途中も画面が固まらない(次の描�
 await page.click("#stop");
 await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("止めました"), null, { timeout: 30000 });
 const stoppedDay = await day();
-check(stoppedDay > 8 && stoppedDay < 125, `「止める」で、日の区切りで止まる(${stoppedDay}日目。「${await page.textContent("#progress-message")}」)`);
+check(stoppedDay > 8 && stoppedDay < 170, `「止める」で、日の区切りで止まる(${stoppedDay}日目。「${await page.textContent("#progress-message")}」)`);
 await page.waitForFunction(() => !document.querySelector(".adv[data-days='1']").disabled);
 check(!(await page.isDisabled(".adv[data-days='1']")), "止めたあと、また進められる");
 const runLog = await page.evaluate(() => window.__runLog);
@@ -663,9 +668,14 @@ const cards = await page.locator("#games-list .game-card").count();
 check(cards === 6, `試合のタブで、その日の試合の一覧が出る(${stoppedDay}日目・${cards}試合)`);
 await findBlocks();
 await page.click("#games-prev");
-await page.waitForFunction((d) => document.querySelector("#games-day").value === String(d - 1), stoppedDay);
-await page.click("#games-list .game-card");
-await page.waitForFunction((d) => document.querySelector("#game-title").textContent.startsWith(`${d - 1}日目`), stoppedDay);
+await page.waitForFunction((d) => Number(document.querySelector("#games-day").value) < d && document.querySelectorAll("#games-list .game-card, #games-allstar .card").length > 0, stoppedDay);
+const prevDay = Number(await page.$eval("#games-day", (s) => s.value));
+const prevExpected = Number(pyGame(`print(json.dumps(g.games_on(a["d"])["prev_day"]))`, JSON.stringify({ d: stoppedDay })));
+check(prevDay === prevExpected, `「前の日」は休みの日を飛ばして、前の試合の日へ(${stoppedDay} → ${prevDay}日目)`);
+if (await page.locator("#games-list .game-card").count()) {
+  await page.click("#games-list .game-card");
+  await page.waitForFunction((d) => document.querySelector("#game-title").textContent.startsWith(`${d}日目`), prevDay);
+}
 check(true, "前の日の試合を開ける");
 await page.click("#tabs button[data-tab=progress]");
 check((await page.locator("#last-day .game-card").count()) === 6, "進行の画面に、直近の日の全試合のスコアが出る");
@@ -726,8 +736,21 @@ await page.click(".adv[data-days='0']");
 await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("シーズンが終わりました"), null, { timeout: 600000 });
 check(await page.isDisabled(".adv[data-days='1']"), `最後まで進んだ(「${await page.textContent("#progress-message")}」)`);
 await grab();
-await standingsOnScreen();
+const endTable = await standingsOnScreen();
+// オールスター(D-436)と交流戦(D-437):進行の画面のオールスターの結果、順位表の交流戦の表と優勝
+check((await page.locator("#allstar-list .allstar").count()) === 2, `進行の画面に、オールスターの結果が 2 試合出る(「${(await page.textContent("#allstar-list")).slice(0, 60)}…」)`);
+check(Boolean(endTable.il) && endTable.il.rows.length === 12 && Boolean(endTable.il.champion), `順位表に交流戦の表(12 球団)と優勝が出る(「${endTable.il && endTable.il.champion}」)`);
 const last = await saveFile("end");
+const ilPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+il = g.standings()["interleague"]
+print(json.dumps({"champion": il["champion"], "names": [r["name"] for r in il["rows"]], "allstar": [a["mvp"][0]["name"] if a["mvp"] else "" for a in g.status()["allstar"]]}, ensure_ascii=False))
+`, last.path));
+check(endTable.il.champion.includes(ilPy.champion) && endTable.il.rows.every((r, k) => r.cells[0].includes(ilPy.names[k])), `交流戦の表の並びと優勝が、計算本体と同じ(${ilPy.champion})`);
+const allstarText = await page.textContent("#allstar-list");
+check(ilPy.allstar.every((name) => !name || allstarText.includes(name)), `オールスターの MVP が、計算本体と同じ(${ilPy.allstar.join("・")})`);
 const digest = python(`
 import sys
 from pennant import api
@@ -735,14 +758,14 @@ from pennant.fingerprint import _digest, season_record
 g = api.Game.load(open(sys.argv[1], "rb").read())
 print(g.state.season.day, g.state.my_team_id, _digest(season_record(g.state.season.result())))
 `, last.path).trim().split(" ");
-check(digest[0] === "125", "保存したファイルは125日目(最後)");
+check(digest[0] === "170", "保存したファイルは170日目(最後)");
 // シーズン中の AI どうしのトレード(D-378)があるので、指紋 (d)(シーズンだけ)ではなく、同じ新規開始を Python で最後まで進めた結果と比べる
 const [pyDigest] = python(`
 import sys
 from pennant import api
 from pennant.fingerprint import _digest, season_record
 g = api.Game.new(1, [None] * 12, int(sys.argv[1][1:]) - 1, season_seed=13, baselines="default")
-g.advance(125)
+g.advance(g.state.season.total_days)
 print(_digest(season_record(g.state.season.result())))
 `, digest[1]).trim().split(" ");
 check(digest[2] === pyDigest, `最後の結果が、同じ新規開始を Python で進めた結果と同じ(${digest[2].slice(0, 16)}…。トレード ${digest[2] === expected.season ? "なし" : "あり"})`);
@@ -753,7 +776,7 @@ let s0 = Date.now();
 await page.click("#tabs button[data-tab=stats]");
 await page.waitForFunction(() => document.querySelector("#stats-loading").hidden && document.querySelectorAll("#stats-table tbody tr").length > 0);
 results.push(`  シーズンの最後で、個人成績を開くまで: ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
-// 読み込み直したセーブデータ(125日目)では、最初の1回だけ集計を作る
+// 読み込み直したセーブデータ(170日目)では、最初の1回だけ集計を作る
 await page.reload();
 await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
 await page.setInputFiles("#open-file-start", last.path);
@@ -766,13 +789,13 @@ s0 = Date.now();
 await page.click("#tabs button[data-tab=progress]");
 await page.click("#tabs button[data-tab=stats]");
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0);
-results.push(`  125日目のセーブデータを開いて、個人成績を開くまで: 1回目 ${firstOpen.toFixed(2)} 秒 / 開き直し ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
+results.push(`  170日目のセーブデータを開いて、個人成績を開くまで: 1回目 ${firstOpen.toFixed(2)} 秒 / 開き直し ${((Date.now() - s0) / 1000).toFixed(2)} 秒`);
 const frame2 = await page.evaluate(() => new Promise((r) => { const s = performance.now(); requestAnimationFrame(() => r(performance.now() - s)); }));
 check(frame2 < 500, `成績の表示中も画面が固まらない(次の描画まで ${frame2.toFixed(0)} ミリ秒)`);
 await grab();
 
 // ---- 6b. 年度の確定(F2。D-185)→ オフの結果 → 2シーズン目 → 過去シーズン・通算の成績 → 保存と読み込み ----
-// Python 側:125日目のセーブデータを読み、同じように年度を確定して1日進めた状態(同じシードなので同じ結果になるはず)
+// Python 側:170日目のセーブデータを読み、同じように年度を確定して1日進めた状態(同じシードなので同じ結果になるはず)
 function pyYear2(code, ...args) {
   return pyProc(code, false, ...args);
 }
@@ -803,7 +826,7 @@ function pyProc(code, market, ...args) {
 ${code}`, ...args);
 }
 await page.click("#tabs button[data-tab=progress]");
-check((await page.textContent("#day-text")).startsWith("1シーズン目 全125日 終了") && (await page.isVisible("#year-end-box")), `シーズンが終わると、進行の画面に「年度を確定する」が出る(「${await page.textContent("#day-text")}」)`);
+check((await page.textContent("#day-text")).startsWith("1シーズン目 全170日 終了") && (await page.isVisible("#year-end-box")), `シーズンが終わると、進行の画面に「年度を確定する」が出る(「${await page.textContent("#day-text")}」)`);
 await page.click("#year-end");
 await page.waitForFunction(() => !document.querySelector("#screen-yearend").hidden && document.querySelector("#yearend-title").textContent.length > 0);
 const champsPy = JSON.parse(python(`
@@ -1249,6 +1272,9 @@ await page.waitForFunction(() => document.querySelectorAll("#records-body h2").l
 const stPy = pyYear2(`v = g.record_standings()\nprint(json.dumps([[r["team_name"] for r in lg["rows"]] for lg in v["leagues"]] + [[c["team_name"] + str(c["count"]) for c in v["champions"] if c["count"]]], ensure_ascii=False))`);
 const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map((t) => [...t.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td .link") ? tr.querySelector("td .link").textContent + (tr.children[1].textContent.endsWith("回") && tr.children[1].textContent !== "0 回" ? tr.children[1].textContent.replace(" 回", "") : "") : "")));
 check(JSON.stringify(stUi.slice(0, 2)) === JSON.stringify(stPy.slice(0, 2)) && JSON.stringify(stUi[2].filter((x) => /\d$/.test(x))) === JSON.stringify(stPy[2]), `歴代の順位と優勝:1シーズン目の順位表と、球団ごとの優勝回数が計算本体と同じ`);
+const ilRec = pyYear2(`v = g.record_standings()\nprint(json.dumps([v["interleague"]["champion"], len(v["allstar"])], ensure_ascii=False))`);
+const recText = await page.textContent("#records-body");
+check(recText.includes(`優勝:${ilRec[0]}`) && ilRec[1] === 2 && (await page.locator("#records-body .allstar").count()) === 2, `記録室の「順位と優勝」に、交流戦の優勝(${ilRec[0]})とオールスター 2 試合が出る`);
 await page.click("#records-section button[data-value=titles]");
 await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 22);
 const tiPy = pyYear2(`v = g.record_titles()\nprint(json.dumps([[t["label"], t["value_text"]] for lg in v["leagues"] for t in lg["titles"]], ensure_ascii=False))`);
