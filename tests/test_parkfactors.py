@@ -169,7 +169,7 @@ def test_history_is_saved(second_season):
 
 def test_finish_season_appends_history():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     assert g.finish_season() == 1 and g.season_number() == 2
     assert g.park_estimates() is not None and set(g.park_estimates()) == {t.id for t in g.state.league.teams}
 

@@ -138,7 +138,7 @@ def test_different_seed_gives_different_offseason():
 @pytest.fixture(scope="module")
 def two_seasons():
     g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     before = {
         "status": g.status(),
         "batting": g.stats("batter", "basic"),
@@ -182,7 +182,7 @@ def test_year_end_advances_year_and_runs_offseason(two_seasons):
 def test_history_keeps_final_season_values(two_seasons):
     g, before, _ = two_seasons
     past = g.stats("batter", "basic", season=1)
-    assert past["season"] == "1" and past["day"] == 125
+    assert past["season"] == "1" and past["day"] == 170
     assert [(r["player_id"], r["values"]) for r in past["rows"]] == [(r["player_id"], r["values"]) for r in before["batting"]["rows"]]
     assert war_record(g.state.history[0].war) == before["war"]
     assert g.stats("batter", "war", season="1")["rows"][0]["values"]["war"] == f"{float(g.state.history[0].war[g.stats('batter', 'war', season='1')['rows'][0]['player_id']].war):.2f}"
@@ -253,7 +253,7 @@ def test_save_v6_round_trip_and_log_policy(two_seasons):
 
 def test_broken_history_is_reported():
     g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     data = save_game(g.state)
     zin = zipfile.ZipFile(io.BytesIO(data))
@@ -393,7 +393,7 @@ def test_career_metrics_are_weighted_averages_of_seasons(two_seasons):
 
 def test_career_with_one_season_equals_current():
     g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     with pytest.raises(ValueError):
         g.stats("batter", "saber", season="career")  # 1 シーズン目は通算を選べない
     g.year_end()

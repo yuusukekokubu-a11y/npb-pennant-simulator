@@ -63,7 +63,7 @@ def _event_credits(results, base, ctx):
 @pytest.fixture(scope="module")
 def season():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     results = [p.result for p in g.state.season.played]
     base = season_baselines(results, SETTINGS, SETTINGS.default_baselines())
     return g, results, base, season_player_runs(results, base)

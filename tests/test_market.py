@@ -19,7 +19,7 @@ HIDDEN_KEYS = ("ratings", "potential", "growth_type", "archetype", "preference",
 def season_end():
     """自球団 T01 の 1 シーズン目を終えて年度を確定した直後(契約の段階)。"""
     g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     return g
 

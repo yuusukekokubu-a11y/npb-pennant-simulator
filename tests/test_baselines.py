@@ -36,7 +36,7 @@ SETTINGS = load_baseline_settings()
 def game():
     """試運転つきの新規開始(リーグ 1・シーズン 13。指紋 (d) と同じ)で、1シーズンを最後まで。"""
     g = api.Game.new(1, [None] * 12, 0, season_seed=13)
-    g.advance(125)
+    g.advance(1000)
     return g
 
 
@@ -55,7 +55,7 @@ def test_trial_does_not_touch_league_and_is_reproducible(trial):
     again = trial_baselines(league, SETTINGS, lambda d, n: days.append((d, n)))
     assert json.dumps(league.to_dict(), sort_keys=True) == before  # 疲労などの状態も変わらない
     assert again.to_dict() == trial.to_dict() and again.source == "trial"
-    assert days[0] == (1, 125) and days[-1] == (125, 125)  # 進み具合を知らせる
+    assert days[0] == (1, 170) and days[-1] == (170, 170)  # 進み具合を知らせる
     assert trial_seed(1) == trial_seed(1) != trial_seed(2) and trial_seed(1) != 1
 
 
@@ -65,7 +65,7 @@ def test_trial_does_not_change_the_season(game):
     from pennant.fingerprint import _digest, season_record
 
     other = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    other.advance(125)
+    other.advance(1000)
     assert _digest(season_record(game.state.season.result())) == _digest(season_record(other.state.season.result()))
 
 

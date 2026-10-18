@@ -82,7 +82,7 @@ def test_declare_probability():
 @pytest.fixture(scope="module")
 def season_end():
     g = api.Game.new(2, [None] * 12, 0, season_seed=5, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     return g
 

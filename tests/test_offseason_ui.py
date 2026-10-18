@@ -17,7 +17,7 @@ from pennant.savegame import load_game, save_game
 def contract_game():
     g = api.Game.new(3, [None] * 12, 0, season_seed=11, baselines="default")
     funds_before = dict(g.state.team_funds)
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     g.funds_before = funds_before
     return g

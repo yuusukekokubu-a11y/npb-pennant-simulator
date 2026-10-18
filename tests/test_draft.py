@@ -259,7 +259,7 @@ def test_selection_effect_is_positive():
 def test_spectator_year_end_completes_automatically():
     g = api.Game.new(1, [None] * 12, None, season_seed=13, baselines="default")
     assert g.state.my_team_id is None and g.status()["my_team"] is None
-    g.advance(125)
+    g.advance(1000)
     s = g.year_end()
     assert g.status()["year"] == 2 and g.state.procedure is None and g.status()["offseason"] is None
     assert s["counts"]["players"] == sum(len(t.players) for t in g.state.league.teams) and all(60 <= len(t.players) <= 70 for t in g.state.league.teams)  # 70 人は上限だけ(D-391)
@@ -270,7 +270,7 @@ def test_spectator_year_end_completes_automatically():
 @pytest.fixture(scope="module")
 def operated():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default", scout_level="large")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     finish_renewal(g)
     return g
@@ -342,7 +342,7 @@ def reviewed():
     """観戦のみで 2 回のオフを終えた状態(3 シーズン目)。"""
     g = api.Game.new(3, [None] * 12, None, season_seed=17, baselines="default")
     for _ in range(2):
-        g.advance(125)
+        g.advance(1000)
         g.year_end()
     g.advance(5)
     return g
@@ -406,7 +406,7 @@ def test_finalize_makes_room_when_full_team_lacks_minimum():
 @pytest.fixture(scope="module")
 def release_game():
     g = api.Game.new(1, [None] * 12, 0, season_seed=13, baselines="default")
-    g.advance(125)
+    g.advance(1000)
     g.year_end()
     finish_renewal(g)
     return g
