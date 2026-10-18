@@ -46,7 +46,9 @@ class OffseasonMixin:
         self.last_market = {"results": list(proc.market_results), "log": list(proc.market_log)}  # 終わった市場(保存しない。集計用。D-300)
         state.procedure = None
         state.year += 1
-        state.season = Season(state.league, derive_seed(season.seed, "next-season"), _next_season_config(season.season_config), season.game_config, season.model, season.manager, year=state.year)
+        from ..injuries import default_settings as injury_settings
+
+        state.season = Season(state.league, derive_seed(season.seed, "next-season"), _next_season_config(season.season_config), season.game_config, season.model, season.manager, year=state.year, farm=True, injuries=injury_settings() if state.rules.injuries else None)  # 版 29 の続きも、次のシーズンから二軍・けが(D-448)
         state.season.lineup_plans = {tid: {"style": plan["style"], "slots": None, **({"steal": plan["steal"]} if plan.get("steal") else {})} for tid, plan in season.lineup_plans.items()}  # 打順の型と盗塁の作戦は引き継ぎ、スタメンは AI が組み直す(D-373、D-429)
         self._cache = _StatsCache()
         self._park_estimates = None

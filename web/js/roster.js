@@ -1,6 +1,7 @@
 // 一軍登録の画面(D-425):一軍(先発・救援・野手)と二軍の選手を、調子・総合・成績・疲労と並べる。
 // 一軍の選手の「外す」を押してから、二軍の同じ役割(投手・野手)の選手の「上げる」を押すと入れ替わる。
 // 「AI に任せる」なら、7 日ごとの見直しで AI が選び直す。外した選手は 10 日戻せない
+// 二軍の成績(D-446)と、けが(D-445。けが人は一軍に上げられない。一軍の選手がけがをしたら、自動で外れて代わりが上がる)
 
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
@@ -14,7 +15,7 @@ async function rosterCall(name, args = {}) {
   return r.value;
 }
 
-const COLUMNS = [{ key: "cond", label: "調子" }, { key: "overall", label: "総合" }, { key: "pos", label: "ポジション" }, { key: "stats", label: "成績" }, { key: "fatigue", label: "疲労" }, { key: "action", label: "入れ替え" }];
+const COLUMNS = [{ key: "cond", label: "調子" }, { key: "overall", label: "総合" }, { key: "pos", label: "ポジション" }, { key: "stats", label: "成績" }, { key: "farm", label: "二軍成績" }, { key: "fatigue", label: "疲労" }, { key: "action", label: "入れ替え" }];
 const ROLE_LABELS = { closer: "抑え", setup: "勝ち継投", middle: "中継ぎ", mopup: "敗戦処理" };
 
 export async function renderRoster(token) {
@@ -38,18 +39,20 @@ export async function renderRoster(token) {
     overall: r.overall_text,
     pos: r.role_label ? `${r.position_label}(${ROLE_LABELS[r.role_label] || ""})` : r.position_label + (r.foreign ? "・外" : ""),
     stats: r.stats,
+    farm: r.farm_stats,
     fatigue: r.fatigue === null ? "—" : String(r.fatigue),
     action,
   });
   const outButton = (r) => el("button", { type: "button", className: rs.out === r.player_id ? "" : "secondary", disabled: state.running, dataset: { playerId: r.player_id }, onclick: () => { rs.out = rs.out === r.player_id ? null : r.player_id; rs.message = null; renderCurrent(); } }, rs.out === r.player_id ? "選択中" : "外す");
   const inButton = (r) => {
+    if (r.injury) return el("span", { className: "injury small" }, r.injury.text); // けが人は上げられない(D-445)
     if (r.lock_days > 0) return el("span", { className: "muted small" }, `あと ${r.lock_days} 日`);
     const ok = out && out.role === r.role;
     return el("button", { type: "button", className: "secondary", disabled: state.running || !ok, dataset: { playerId: r.player_id }, onclick: () => run("swap", { out_id: out.player_id, in_id: r.player_id }, `${out.name} を二軍に下げ、${r.name} を一軍に上げました。`) }, "上げる");
   };
   const block = (id, title, rows, action) => el("section", { id },
     el("h2", {}, `${title}(${rows.length} 人)`),
-    rows.length ? table({ firstLabel: "選手", columns: COLUMNS, rows: rows.map((r) => ({ ...r, values: values(r, action(r)) })), first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, `${r.age}歳${r.hand ? ` ${r.hand}` : ""}`)], rowClass: (r) => (rs.out === r.player_id ? "selected" : r.lock_days > 0 ? "muted" : ""), fluid: true })
+    rows.length ? table({ firstLabel: "選手", columns: COLUMNS, rows: rows.map((r) => ({ ...r, values: values(r, action(r)) })), first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, `${r.age}歳${r.hand ? ` ${r.hand}` : ""}`)], rowClass: (r) => (rs.out === r.player_id ? "selected" : r.lock_days > 0 || r.injury ? "muted" : ""), fluid: true })
       : el("p", { className: "muted small" }, "いません。"));
   $("roster-body").replaceChildren(
     block("roster-starters", "一軍:先発", v.starters, outButton),

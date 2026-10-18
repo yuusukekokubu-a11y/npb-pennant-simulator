@@ -187,11 +187,11 @@ def replenish(team: Team, slots: list[tuple[str, str]], config: GenerationConfig
     return rookies
 
 
-def age_update_retire(league: League, seed: int, config: GenerationConfig, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None, dev_limit: int = 3, facility_settings=None) -> tuple[OffseasonResult, dict[str, list[tuple[str, str]]]]:
+def age_update_retire(league: League, seed: int, config: GenerationConfig, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None, dev_limit: int = 3, facility_settings=None, playing: dict[str, float] | None = None) -> tuple[OffseasonResult, dict[str, list[tuple[str, str]]]]:
     """年度の確定の前半(加齢 → 能力の更新 → 引退)。league を書き換える。戻り値は結果と、球団ごとに空いた枠(役割, ポジション)。
     引退の判定は校正前の目盛りで行う(校正の定数を引く。事前運転と同じ基準にするため。D-197)。
     育成選手(D-375)は別の乱数の系列で加齢・能力の更新をし、育成で dev_limit シーズン過ごしたら自由契約(リーグを去る。引退の一覧に入れる)。
-    能力の伸びと下がり方には、球団の設備の効きを掛ける(D-383)。"""
+    能力の伸びと下がり方には、球団の設備の効きを掛ける(D-383)。playing は選手 → 出場による伸びの倍率(若手。D-447)。"""
     from .facilities import growth_factors
 
     rng = random.Random(seed)
@@ -202,7 +202,7 @@ def age_update_retire(league: League, seed: int, config: GenerationConfig, setti
         vacated: list[tuple[str, str]] = []
         growth, decline, _ = growth_factors(team, facility_settings)
         for p in list(team.players):
-            changes = age_and_update(p, config, rng, growth, decline)
+            changes = age_and_update(p, config, rng, growth * (playing or {}).get(p.id, 1.0), decline)
             retire = rng.random() < retirement_probability(settings, p.age, overall(p) - (calibration or {}).get(p.role, 0.0))
             if retire:
                 result.retired.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
@@ -222,7 +222,7 @@ def age_update_retire(league: League, seed: int, config: GenerationConfig, setti
         kept = []
         _, decline, dev_growth = growth_factors(team, facility_settings)
         for p in list(team.development):
-            changes = age_and_update(p, config, dev_rng, dev_growth, decline)
+            changes = age_and_update(p, config, dev_rng, dev_growth * (playing or {}).get(p.id, 1.0), decline)
             p.dev_seasons = int(p.dev_seasons or 0) + 1
             if p.dev_seasons >= dev_limit:
                 result.retired.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))

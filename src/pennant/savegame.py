@@ -64,11 +64,12 @@ from .save_checks import (  # RATING_RANGE・GROWTH_TYPES は、分ける前と�
     _check_park_history,
     _check_baselines,
 )
+from .injuries import default_settings as injury_default
 from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 29  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)
+SAVE_FORMAT_VERSION = 30  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -260,6 +261,9 @@ def build_state(state: GameState) -> dict:
             "roster_auto": {tid: bool(v) for tid, v in s.roster_auto.items()},
             "running_start": int(s.running_start),  # 盗塁などを始めた日(D-433。版 26)
             "allstar": [dict(x) for x in s.allstar],  # オールスターの結果(D-436。版 27)
+            "injury_on": s.injury_settings is not None,  # けが(D-445。版 30)
+            "injury_log": [dict(x) for x in s.injury_log],
+            **({} if s.farm is None else {"farm": s.farm.to_dict()}),  # 二軍の試合(D-446。版 30)
             **({} if s.postseason is None else {"postseason": {**s.postseason.to_dict(), "games": [_post_game_state(p) for p in s.postseason.games]}}),  # ポストシーズン(D-441。版 28)
             "games": [
                 {
@@ -458,6 +462,25 @@ def _restore_roster(season: Season, season_d: dict, p) -> None:
         elif season.legacy_roster:  # 版 24:今までの選び方(総合だけ)
             season.actives[tid] = season.manager.select_active(team)
     season.apply_conditions()
+
+
+def _restore_farm_injuries(season: Season, season_d: dict, p) -> None:
+    """二軍の試合とけが(D-445、D-446。版 30)。"""
+    log = season_d.get("injury_log") or []
+    ok = isinstance(log, list) and all(isinstance(x, dict) and isinstance(x.get("player_id"), str) and isinstance(x.get("until"), int) and not isinstance(x.get("until"), bool) and x.get("team_id") in season.teams for x in log)
+    if not ok:
+        p.add("state.json.season.injury_log", "けがの記録の形が違います(選手・球団・戻れる日が必要です)")
+        return
+    season.injury_log = [dict(x) for x in log]
+    season.injuries = {x["player_id"]: x for x in season.injury_log}
+    farm_d = season_d.get("farm")
+    if farm_d is not None:
+        from .farm import Farm
+
+        try:
+            season.farm = Farm.from_dict(season, farm_d)
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            p.add("state.json.season.farm", f"二軍の試合の記録の形が違います({exc})")
 
 
 def _restore_postseason(season: Season, post_d, raw: bytes, year: int, p) -> None:
@@ -735,6 +758,8 @@ def load_game(data: bytes) -> GameState:
             model=OddsRatioModel(cfg["plate_appearance"]),
             manager=SimpleManager(cfg["game"]),
             year=year,
+            farm=season_d.get("farm") is not None,  # 版 29 のシーズンは二軍・けがなし(次のシーズンから。D-448)
+            injuries=injury_default() if season_d.get("injury_on") is True else None,
         )
     except (ValueError, KeyError, IndexError) as exc:
         raise SaveDataError([f"state.json.league: この内容ではシーズンを作れません({exc})"]) from exc
@@ -829,6 +854,7 @@ def load_game(data: bytes) -> GameState:
     if p.items:
         raise SaveDataError(p.items)
     _restore_roster(season, season_d, p)
+    _restore_farm_injuries(season, season_d, p)
     history = _check_history(history_d, raws, team_ids, year + (1 if procedure_d else 0), p)  # 手続き中は、今シーズンの集計がすでに履歴にある
     offseasons = _check_offseasons(offseasons_d, p)
     procedure = _check_procedure(procedure_d, team_ids, {p_.id for p_ in season.players.values()}, p)

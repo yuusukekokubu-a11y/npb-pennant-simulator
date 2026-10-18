@@ -19,6 +19,10 @@ from .records import Records, game_records
 
 MIN_PITCHERS = 7
 MIN_BATTERS = 10
+YOUNG_AGE = 25  # 出場と若手の成長(D-447):この年齢まで
+PLAYING_ENOUGH = 250  # 一軍と二軍の打席(投手は対戦打者)の合計がこれ以上なら伸びやすく
+PLAYING_FEW = 30  # これ未満なら伸びにくく
+PLAYING_FACTORS = (1.15, 0.9)
 
 
 class Farm:
@@ -104,6 +108,26 @@ class Farm:
                 f.rotation[tid] = int(v)
         f.games = int(d.get("games", 0))
         return f
+
+
+def playing_growth(players, *records) -> dict[str, float]:
+    """出場と若手の成長(D-447):YOUNG_AGE 歳以下の選手の、一軍と二軍の打席(投手は対戦打者)の合計による伸びの倍率。"""
+    out = {}
+    for p in players:
+        if p.age > YOUNG_AGE:
+            continue
+        n = 0
+        for rec in records:
+            if rec is None:
+                continue
+            c = (rec.pitchers if p.role == PITCHER else rec.batters).get(p.id)
+            if c:
+                n += int(c["BF"] if p.role == PITCHER else c["PA"])
+        if n >= PLAYING_ENOUGH:
+            out[p.id] = PLAYING_FACTORS[0]
+        elif n < PLAYING_FEW:
+            out[p.id] = PLAYING_FACTORS[1]
+    return out
 
 
 def _seed(seed: int, number: int) -> int:

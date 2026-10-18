@@ -61,6 +61,7 @@
   .error { color: var(--ng); font-size: 0.9rem; margin: 4px 0 0; white-space: pre-wrap; }
   .message { margin: 8px 0; white-space: pre-wrap; }
   .message.ng { color: var(--ng); }
+  .injury, .injury-new { color: var(--ng); } /* けが(D-445) */
   .message.ok { color: var(--ok); }
 
   /* 上の帯:題と、保存・メニューの 2 つのアイコン。未保存は保存のアイコンに点(D-401) */
@@ -430,6 +431,7 @@
   <div class="notice" id="real-name-notice">
     <strong>ご注意</strong>:実在の名前を入れたセーブデータは、ほかの人と共有しないでください。
   </div>
+  <div id="new-step-names">
   <label class="pick"><input type="radio" name="my-team" value="-1" id="my-team-none" checked>観戦のみ(球団を操作しない)</label>
 
   <div id="league-fields"></div>
@@ -459,19 +461,30 @@
     </div>
     <p class="small setting-head"><strong>リーグ名と球場名</strong>(空欄なら薄く出ている名前)</p>
     <div id="place-fields"></div>
+  </details>
+  </div>
+
+  <!-- 設定(D-448):球団名を決めた次の画面。仕組みの選択肢をまとめる -->
+  <div id="new-step-settings" hidden>
+    <h2>設定</h2>
     <p class="small setting-head"><strong>仕組みの選択肢</strong>(始めた後は変えられません)</p>
     <label class="radio"><input type="checkbox" name="rules" value="auto_fa" id="rule-auto_fa"><span><strong>自動 FA</strong>(FA 権を取ったら必ず FA)</span></label>
     <label class="radio"><input type="checkbox" name="rules" value="active_draft" id="rule-active_draft" checked><span><strong>現役ドラフト</strong></span></label>
     <label class="radio"><input type="checkbox" name="rules" value="trade" id="rule-trade" checked><span><strong>トレード</strong></span></label>
     <label class="radio"><input type="checkbox" name="rules" value="foreign_development" id="rule-foreign_development" checked><span><strong>外国人・育成</strong></span></label>
-  </details>
+    <label class="radio"><input type="checkbox" name="rules" value="injuries" id="rule-injuries" checked><span><strong>けが</strong></span></label>
+  </div>
 
 
   <!-- 説明バー(D-313):設定の項目を選んでいる間だけ、その項目の説明を 1〜2 行で出す。下に貼り付くが、ボタンの行より前に置くので「始める」を隠さない -->
   <div class="help-bar" id="new-help" role="status" aria-live="polite" hidden><strong id="new-help-name"></strong> <span id="new-help-text"></span></div>
   <p class="message ng" id="new-message" role="alert"></p>
-  <div class="row">
+  <div class="row" id="new-row-names">
     <button id="new-back" class="secondary">戻る</button>
+    <button id="new-next">次へ(設定)</button>
+  </div>
+  <div class="row" id="new-row-settings" hidden>
+    <button id="new-settings-back" class="secondary">戻る</button>
     <button id="new-start">この内容で始める</button>
   </div>
 </main>
@@ -515,6 +528,10 @@
   </div>
   <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-roster" class="secondary" type="button" hidden>一軍登録</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
 
+  <div id="injury-box" hidden>
+    <h2>けが</h2>
+    <div id="injury-list"></div>
+  </div>
   <div id="post-box" hidden>
     <h2>ポストシーズン</h2>
     <div id="post-list"></div>
@@ -626,6 +643,14 @@
   <div id="player-awards-box" hidden>
     <h2>受賞歴</h2>
     <div id="player-awards"></div>
+  </div>
+  <div id="player-injury-box" hidden>
+    <h2>けが</h2>
+    <div id="player-injury"></div>
+  </div>
+  <div id="player-farm-box" hidden>
+    <h2>二軍の成績</h2>
+    <div id="player-farm"></div>
   </div>
   <div id="player-history-box" hidden>
     <h2>年度別の成績</h2>

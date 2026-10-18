@@ -37,7 +37,7 @@ class TeamsMixin:
                     }
                 )
             leagues.append({"index": i, "name": self.state.league.league_names[i], "rows": rows})
-        return {"day": season.day, "leagues": leagues, "interleague": self._interleague_table(), "postseason": self.postseason_view()}
+        return {"day": season.day, "leagues": leagues, "interleague": self._interleague_table(), "postseason": self.postseason_view(), "farm": self.farm_standings() if season.farm is not None else None}  # 二軍の順位表(D-446)
 
     def _interleague_table(self) -> dict | None:
         """交流戦の順位表(D-437)。交流戦が始まってから出す。全部終わったら優勝の球団を付ける。"""

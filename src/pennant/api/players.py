@@ -70,6 +70,7 @@ class PlayersMixin:
                 contract=self._contract_public(p),
                 entry_estimate=self._entry_estimate(p),  # 入団時の見立て(D-420)
                 condition=self.player_condition(p.id),  # 今日の調子(D-424)
+                injury=self.injury_public(p.id),  # けが(D-445)
             )
             role = p.role
         else:  # 引退した選手(過去シーズンの写しから。F2)
@@ -130,6 +131,8 @@ class PlayersMixin:
             "season": season_block,
             "history": self._player_history(player_id, role, config),
             "awards": self.player_awards(player_id),  # 受賞歴(D-442)
+            "farm": self.player_farm(player_id, role),  # 二軍の成績(D-446)
+            "injuries": self.player_injuries(player_id),  # けがの記録(D-445)
             "game_columns": [column_info(config, role, k) for k in game_cols],
             "games": games,
         }

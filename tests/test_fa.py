@@ -202,7 +202,7 @@ def test_fa_hidden_info_is_not_shown(season_end):
 def test_save_round_trip(season_end):
     g = _fresh(season_end)
     data = save_game(g.state)
-    assert SAVE_FORMAT_VERSION == 29
+    assert SAVE_FORMAT_VERSION == 30
     again = load_game(data)
     assert [p.fa_seasons for p in again.league.all_players()] == [p.fa_seasons for p in g.state.league.all_players()]
     assert again.procedure.fa_info == g.state.procedure.fa_info and [p.id for p in again.procedure.fa_pool] == [p.id for p in g.state.procedure.fa_pool]

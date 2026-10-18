@@ -123,13 +123,18 @@ async function standingsOnScreen(endLeague = null) {
     await page.locator("#league-switch button").nth(i).click();
     out.push(await rowsNow());
   }
-  if (n > 2) { // 交流戦の表(D-437)。3 つ目のボタン
-    await page.locator("#league-switch button").nth(2).click();
+  const names = await page.$$eval("#league-switch button", (bs) => bs.map((b) => b.textContent));
+  if (names.includes("交流戦")) { // 交流戦の表(D-437)
+    await page.locator("#league-switch button").nth(names.indexOf("交流戦")).click();
     out.il = { rows: await rowsNow(), champion: (await page.isVisible("#standings-champion")) ? await page.textContent("#standings-champion") : null };
   }
-  if (n > 3) { // ポストシーズンの組み合わせ表(D-440)。4 つ目のボタン
-    await page.locator("#league-switch button").nth(3).click();
+  if (names.includes("ポストシーズン")) { // ポストシーズンの組み合わせ表(D-440)
+    await page.locator("#league-switch button").nth(names.indexOf("ポストシーズン")).click();
     out.post = { series: await page.$$eval("#standings-post .series", (cs) => cs.map((c) => c.querySelector("b").textContent)), day: await page.textContent("#standings-day") };
+  }
+  if (names.includes("二軍")) { // 二軍の順位表(D-446)
+    await page.locator("#league-switch button").nth(names.indexOf("二軍")).click();
+    out.farm = await page.$$eval("#standings-post .farm-league", (ls) => ls.map((l) => l.querySelectorAll("tbody tr").length));
   }
   if (endLeague !== null) await page.locator("#league-switch button").nth(endLeague).click();
   await grab();
@@ -167,20 +172,13 @@ await page.fill("#team-0", NAME);
 await page.fill("#team-2", NAME);
 await page.waitForFunction(() => document.querySelector("#team-2-error").textContent.length > 0);
 check(true, `同じ名前の理由が出る(「${await page.textContent("#team-2-error")}」)`);
-await page.click("#new-start");
+await page.click("#new-next");
 await page.waitForFunction(() => document.querySelector("#new-message").textContent.length > 0);
-check((await page.textContent("#new-message")).includes("入力に問題") && (await page.isVisible("#screen-new")), "問題があるまま始めようとすると、止められる");
+check((await page.textContent("#new-message")).includes("入力に問題") && (await page.isVisible("#screen-new")) && (await page.isHidden("#new-step-settings")), "問題があるまま次へ進もうとすると、止められる");
 await page.fill("#team-2", "");
 await grab();
 // 指紋 (d) と同じシード(リーグ 1・シーズン 13)にする
 await page.click("details summary");
-// 仕組みの選択肢(D-381):自動 FA はなし、ほかはありが最初から選ばれている。選ぶと説明バーに出る
-const rulesUi = await page.$$eval("input[name=rules]", (xs) => xs.map((x) => [x.value, x.checked]));
-check(JSON.stringify(rulesUi) === JSON.stringify([["auto_fa", false], ["active_draft", true], ["trade", true], ["foreign_development", true]]), `新規開始の「仕組みの選択肢」4 つ(自動 FA はなし、ほかはあり)`);
-await page.check("#rule-auto_fa");
-await page.waitForFunction(() => !document.querySelector("#new-help").hidden && document.querySelector("#new-help-name").textContent.includes("自動 FA"));
-check(true, `選択肢を選ぶと説明バーに出る(「${await page.textContent("#new-help-text")}」)`);
-await page.uncheck("#rule-auto_fa");
 await page.fill("#league-seed", "1");
 await page.dispatchEvent("#league-seed", "change");
 await page.waitForFunction(() => document.querySelector("#league-fields").dataset.seed === "1");
@@ -206,6 +204,16 @@ await page.waitForFunction(() => document.querySelector("#new-help-name").textCo
 const helpMedium = await helpText();
 const helpPy = JSON.parse(python(`import json\nfrom pennant.glossary import default_glossary\ng = default_glossary()\nprint(json.dumps([g.by_id(i)["meaning"] for i in ("setting.team_name", "setting.scout.large", "setting.scout.medium")], ensure_ascii=False))`));
 check(helpTeam.includes(helpPy[0]) && helpLarge.includes(helpPy[1]) && helpMedium.includes(helpPy[2]), `項目を選ぶと、その説明(用語集の文)が下のバーに出て、選び直すと入れ替わる(「${helpMedium}」)`);
+// 設定の段(D-448):球団名などの次。仕組みの選択肢 5 つ(自動 FA はなし、ほかはあり)。選ぶと説明バーに出る
+await page.click("#new-next");
+await page.waitForSelector("#new-step-settings:not([hidden])");
+check(await page.isHidden("#new-step-names"), "「次へ(設定)」で設定の段に変わる(球団名の欄は隠れる)");
+const rulesUi = await page.$$eval("input[name=rules]", (xs) => xs.map((x) => [x.value, x.checked]));
+check(JSON.stringify(rulesUi) === JSON.stringify([["auto_fa", false], ["active_draft", true], ["trade", true], ["foreign_development", true], ["injuries", true]]), `設定の「仕組みの選択肢」5 つ(自動 FA はなし、けがを含むほかはあり)`);
+await page.check("#rule-auto_fa");
+await page.waitForFunction(() => !document.querySelector("#new-help").hidden && document.querySelector("#new-help-name").textContent.includes("自動 FA"));
+check(true, `選択肢を選ぶと説明バーに出る(「${await page.textContent("#new-help-text")}」)`);
+await page.uncheck("#rule-auto_fa");
 await page.$eval("#new-start", (b) => b.scrollIntoView({ block: "end" }));
 const startVisible = await page.evaluate(() => { const b = document.querySelector("#new-start").getBoundingClientRect(); const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); const h = document.querySelector("#new-help").getBoundingClientRect(); return hit !== null && hit.closest("#new-start") !== null && h.bottom <= b.top + 1; });
 check(startVisible, "説明バーは「この内容で始める」のボタンを隠さない");
@@ -743,6 +751,7 @@ await grab();
 const endTable = await standingsOnScreen();
 // オールスター(D-436)と交流戦(D-437):進行の画面のオールスターの結果、順位表の交流戦の表と優勝
 check((await page.locator("#allstar-list .allstar").count()) === 2, `進行の画面に、オールスターの結果が 2 試合出る(「${(await page.textContent("#allstar-list")).slice(0, 60)}…」)`);
+check(Array.isArray(endTable.farm) && endTable.farm.length === 2 && endTable.farm.every((n) => n === 6), `順位表に二軍の順位表(2 リーグ・各 6 球団)が出る(D-446)`);
 check(Boolean(endTable.il) && endTable.il.rows.length === 12 && Boolean(endTable.il.champion), `順位表に交流戦の表(12 球団)と優勝が出る(「${endTable.il && endTable.il.champion}」)`);
 const last = await saveFile("end");
 const ilPy = JSON.parse(python(`
@@ -1461,6 +1470,8 @@ await page.fill("#stadium-name-0", "テスト球場");
 await page.check("input[name=my-team][value='0']");
 await page.check("input[name=my-tier][value=huge]");
 const fastStart = Date.now();
+await page.click("#new-next");
+await page.waitForSelector("#new-step-settings:not([hidden])");
 await page.click("#new-start");
 await page.waitForSelector("#screen-progress:not([hidden])");
 const fastSeconds = (Date.now() - fastStart) / 1000;

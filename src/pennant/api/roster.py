@@ -12,6 +12,7 @@ from .. import ability_model
 from ..abilities import POSITION_LABELS
 from ..condition import public as condition_public
 from .common import BATS_LABELS, THROWS_LABELS
+from .farm import farm_short
 
 
 def _avg(c) -> str:
@@ -72,6 +73,7 @@ class RosterMixin:
                 "overall": ov, "overall_text": f"{ability_model.rank(cfg, ov)} {ov}", "condition": condition_public(season.condition_level(p.id)),
                 "fatigue": round(float(p.state.fatigue), 1) if p.role == "pitcher" else None, "stats": stats,
                 "slot": ids.get(p.id), "lock_days": left, "role_label": active.relief_roles.get(p.id),
+                "farm_stats": farm_short(p.role, self.farm_records_of(p.id)), "injury": self.injury_public(p.id),  # 二軍の成績とけが(D-445、D-446)
             }
 
         rows = [row(p) for p in team.players]
