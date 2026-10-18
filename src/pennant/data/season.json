@@ -2,12 +2,52 @@
   "format_version": 1,
   "schedule": {
     "games_per_opponent": 25,
-    "series": [2, 3, 2, 3, 3, 3, 3, 3, 3],
-    "interleague": {"games": 3, "after_games": 45},
+    "series": [
+      2,
+      3,
+      2,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+    ],
+    "interleague": {
+      "games": 3,
+      "after_games": 45
+    },
     "max_consecutive_days": 6,
-    "allstar": {"after_games": 86, "games": 2}
+    "allstar": {
+      "after_games": 86,
+      "games": 2
+    }
   },
   "standings": {
     "allow_shared_rank": false
+  },
+  "postseason": {
+    "first_stage": {
+      "games": 3,
+      "wins": 2
+    },
+    "final_stage": {
+      "games": 6,
+      "wins": 4,
+      "advantage": 1
+    },
+    "japan_series": {
+      "games": 7,
+      "wins": 4,
+      "travel_after": [
+        2,
+        5
+      ]
+    },
+    "rest_days": [
+      1,
+      1,
+      2
+    ]
   }
 }

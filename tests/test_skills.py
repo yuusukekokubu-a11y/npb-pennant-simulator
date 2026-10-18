@@ -149,7 +149,7 @@ def test_yearly_change_keeps_pairs_and_is_reproducible(game):
 @pytest.mark.slow
 def test_offseason_records_skill_changes(game):
     g = api.Game(copy.deepcopy(game.state), dirty=False)
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     g.year_end()
     g.offseason_auto()
     r = g.state.offseasons[-1]
@@ -184,7 +184,7 @@ def test_skills_are_shown_for_pros_only_and_saved(game):
 
 def test_draft_candidates_skills_are_hidden():
     g = api.Game.new(1, [None] * 12, 0, season_seed=4, baselines="default")
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     g.year_end()
     while g.state.procedure is not None and g.offseason_view()["stage"] != "draft":
         g.offseason_stage_auto()

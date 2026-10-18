@@ -18,7 +18,7 @@ FS = facmod.load_facility_settings()
 @pytest.fixture(scope="module")
 def season_end():
     g = api.Game.new(5, ["X"] + [None] * 11, 0, season_seed=9, baselines="default")
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     g.year_end()
     return g
 
@@ -83,7 +83,7 @@ def test_set_facility_in_contract_stage(season_end):
         g.set_facility("stadium", 3)
     # 保存して読み込んでも同じ(版 22)
     again = load_game(save_game(g.state))
-    assert SAVE_FORMAT_VERSION == 27 and next(t for t in again.league.teams if t.id == "T01").facilities["practice"] == 5
+    assert SAVE_FORMAT_VERSION == 28 and next(t for t in again.league.teams if t.id == "T01").facilities["practice"] == 5
     # 契約の段階を過ぎると変えられない
     while g.offseason_view()["stage"] == "contract":
         g.offseason_stage_auto()

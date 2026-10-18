@@ -83,7 +83,7 @@ class ArchiveMixin:
         state = self.state
         names = self._team_names()
         lnames = state.league.league_names
-        out = {"years": self.record_years(), "year": None, "leagues": [], "champions": [], "interleague": None, "allstar": []}
+        out = {"years": self.record_years(), "year": None, "leagues": [], "champions": [], "interleague": None, "allstar": [], "postseason": None}
         a = self._archive(year)
         if a is None:
             return out
@@ -104,17 +104,31 @@ class ArchiveMixin:
                 "rows": [{"rank": k + 1, "team_name": names.get(x["team_id"], x["team_id"]), "wins": x["wins"], "losses": x["losses"], "ties": x["ties"], "is_mine": x["team_id"] == state.my_team_id} for k, x in enumerate(il["rows"])],
             }
         out["allstar"] = self.allstar_results(a.allstar)  # オールスター(D-436)
+        if a.postseason is not None:  # ポストシーズン(D-440)
+            ps = a.postseason
+            out["postseason"] = {
+                "champion": names.get(ps["champion"], ps["champion"]) if ps.get("champion") else None,
+                "is_mine": ps.get("champion") == state.my_team_id,
+                "series": [
+                    {"label": self._series_label(s), "teams": [{"name": names.get(t, t), "wins": w, "is_mine": t == state.my_team_id} for t, w in zip(s["teams"], s["wins"])], "ties": s["ties"],
+                     "winner": names.get(s["winner"], s["winner"]) if s["winner"] else None, "mvp": None if not s.get("mvp") else {"name": s["mvp"]["name"], "team": names.get(s["mvp"]["team_id"], "")}}
+                    for s in ps["series"]
+                ],
+            }
         count: dict[str, list[int]] = {}
         il_count: dict[str, list[int]] = {}
+        js_count: dict[str, list[int]] = {}  # 日本一(D-440)
         for x in state.history:
             for tids in x.champions.values():
                 for tid in tids:
                     count.setdefault(tid, []).append(x.year)
             if x.interleague is not None:
                 il_count.setdefault(x.interleague["champion"], []).append(x.year)
+            if x.postseason is not None and x.postseason.get("champion"):
+                js_count.setdefault(x.postseason["champion"], []).append(x.year)
         league_of = self._league_of()
         out["champions"] = sorted(
-            ({"team_id": t.id, "team_name": t.name, "league_name": lnames[league_of[t.id]] if league_of[t.id] < len(lnames) else "", "count": len(count.get(t.id, [])), "years": count.get(t.id, []), "interleague_years": il_count.get(t.id, []), "is_mine": t.id == state.my_team_id} for t in state.league.teams),
+            ({"team_id": t.id, "team_name": t.name, "league_name": lnames[league_of[t.id]] if league_of[t.id] < len(lnames) else "", "count": len(count.get(t.id, [])), "years": count.get(t.id, []), "interleague_years": il_count.get(t.id, []), "japan_years": js_count.get(t.id, []), "is_mine": t.id == state.my_team_id} for t in state.league.teams),
             key=lambda r: (-r["count"], league_of[r["team_id"]], r["team_id"]),
         )
         return out

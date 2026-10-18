@@ -515,6 +515,10 @@
   </div>
   <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-roster" class="secondary" type="button" hidden>一軍登録</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
 
+  <div id="post-box" hidden>
+    <h2>ポストシーズン</h2>
+    <div id="post-list"></div>
+  </div>
   <div id="allstar-box" hidden>
     <h2>オールスター</h2>
     <div id="allstar-list"></div>
@@ -534,7 +538,8 @@
   <div class="seg" id="league-switch" role="group" aria-label="リーグの切り替え"></div>
   <p class="small" id="standings-champion" hidden></p>
   <p class="muted small" id="standings-day"></p>
-  <div class="table-wrap">
+  <div id="standings-post" hidden></div>
+  <div class="table-wrap" id="standings-table">
     <table>
       <thead>
         <tr>

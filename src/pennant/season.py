@@ -145,6 +145,7 @@ class Season:
         self.active_history: dict[str, list[dict]] = {}  # 一軍を変えた球団 → 一軍の顔ぶれの移り変わり [{day, starters, relievers, batters, roles}](試合の再現と保存。D-378、D-426)
         self.played: list[PlayedGame] = []
         self.allstar: list[dict] = []  # オールスターの結果(allstar.play の辞書。D-436)
+        self.postseason = None  # ポストシーズン(postseason.Postseason。レギュラーシーズンが終わったら始める。D-439)
         self._records: dict[str, _Record] = {t.id: _Record() for t in league.teams}
 
     # ---- 進行 ----
@@ -155,19 +156,36 @@ class Season:
 
     @property
     def is_over(self) -> bool:
+        """レギュラーシーズンが終わったか(ポストシーズンは complete で見る)。"""
         return self.day >= self.total_days
+
+    @property
+    def complete(self) -> bool:
+        """レギュラーシーズンとポストシーズン(あれば)が終わったか。年度の確定はこの後(D-440)。"""
+        return self.is_over and (self.postseason is None or self.postseason.finished)
+
+    def postseason_settings(self) -> dict | None:
+        return self.season_config.data.get("postseason")
+
+    def _start_postseason(self) -> None:
+        from .postseason import Postseason
+
+        cfg = self.postseason_settings()
+        if cfg is not None and self.postseason is None:
+            self.postseason = Postseason(self, cfg)
+            self.postseason.begin()
 
     def game_rng(self, number: int) -> random.Random:
         """試合の通し番号から、その試合の乱数を作る。"""
         return random.Random(derive_seed(self.seed, f"game:{number}"))
 
-    def _play(self, g: ScheduledGame) -> PlayedGame:
+    def _play(self, g: ScheduledGame, rng: random.Random | None = None, record: bool = True) -> PlayedGame:
         home, away = self.teams[g.home_id], self.teams[g.away_id]
         context = GameContext(
             rotation={home.id: self.rotation[home.id], away.id: self.rotation[away.id]},
             fatigue={p.id: p.state.fatigue for t in (home, away) for p in self._active_pitchers(t.id)},
         )
-        rng = self.game_rng(g.number)
+        rng = rng or self.game_rng(g.number)
         skipped = {}
         setups = {}
         for team in (home, away):
@@ -183,7 +201,8 @@ class Season:
             setups[team.id] = setup
         result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park, running=g.day >= self.running_start)
         apply_game_fatigue(result.batters_faced(), self.players, self.game_config)
-        self._record(result)
+        if record:  # ポストシーズンは順位に入れない(D-440)
+            self._record(result)
         return PlayedGame(g, result, context, skipped)
 
     def _lineup_plan(self, team_id: str) -> dict | None:
@@ -239,27 +258,37 @@ class Season:
             hv[1] += 1
 
     def play_day(self) -> DayResult:
-        """1日分の試合を行い、1日を進めて投手の疲労を回復させる。"""
-        if self.is_over:
+        """1日分の試合を行い、1日を進めて投手の疲労を回復させる。レギュラーシーズンの後はポストシーズンの日(D-439)。"""
+        if self.complete:
             raise ValueError("シーズンは終わっています")
         self.apply_conditions()
         self._review_lineups()
         self._review_rosters()
-        games = [self._play(g) for g in self.schedule.days[self.day]]
-        self.played.extend(games)
+        if self.is_over:
+            games = self.postseason.play_day(self.day)
+        else:
+            games = [self._play(g) for g in self.schedule.days[self.day]]
+            self.played.extend(games)
         if self.day in self.schedule.allstar_days and len(self.allstar) <= self.schedule.allstar_days.index(self.day):
             self.allstar.append(allstar.play(self, self.schedule.allstar_days.index(self.day), self.day))
         advance_day(self.players.values(), self.game_config)  # 二軍の投手も回復する(D-425)
         result = DayResult(self.day, games)
         self.day += 1
+        if self.day == self.total_days:
+            self._start_postseason()
         return result
 
     def is_game_day(self, day: int) -> bool:
-        """公式戦のある日か(休みとオールスターの日でないか)。"""
+        """公式戦(ポストシーズンを含む)のある日か(休みとオールスターの日でないか)。ポストシーズンは行った日だけ分かる。"""
+        if day >= self.total_days:
+            return self.postseason is not None and any(p.scheduled.day == day for p in self.postseason.games)
         return bool(self.schedule.days[day])
 
     def days_to_next_game(self) -> int:
         """次の公式戦の日まで(その日を含めて)何日か。進行の「1日」に使う(休みとオールスターの日を飛ばす。D-435)。"""
+        if self.is_over:
+            nxt = None if self.postseason is None else self.postseason.next_day()
+            return 0 if nxt is None else nxt + 1 - self.day
         d = self.day
         while d < self.total_days and not self.is_game_day(d):
             d += 1
@@ -270,7 +299,7 @@ class Season:
         days = []
         total_games = len(self.schedule)
         for _ in range(n):
-            if self.is_over:
+            if self.complete:
                 break
             days.append(self.play_day())
             if progress:
@@ -278,8 +307,8 @@ class Season:
         return days
 
     def play_to_end(self, progress: Progress | None = None) -> SeasonResult:
-        """シーズンの最後まで進め、結果を返す。"""
-        self.play_days(self.total_days - self.day, progress)
+        """レギュラーシーズンの最後まで進め、結果を返す(ポストシーズンは進めない)。"""
+        self.play_days(max(0, self.total_days - self.day), progress)
         return self.result()
 
     # ---- トレード(D-378) ----
@@ -346,7 +375,7 @@ class Season:
     def swap(self, team_id: str, out_id: str, in_id: str) -> None:
         """一軍の選手(out)と二軍の選手(in)を入れ替える(自球団の一軍登録。D-425)。投手は投手と、野手は野手と。
         一軍の最低人数(捕手)と外国人の上限を守る。外して日が浅い選手は戻せない。"""
-        if self.is_over:
+        if self.complete:
             raise ValueError("シーズンが終わっているので、一軍は変えられません")
         team = self.teams[team_id]
         active = self.actives[team_id]
@@ -392,9 +421,13 @@ class Season:
 
     # ---- 再現 ----
 
-    def replay_game(self, number: int) -> GameResult:
-        """行った試合を、試合前の状態とシーズンのシードから、もう一度計算する(シーズンの状態は変えない)。"""
-        played = next(p for p in self.played if p.scheduled.number == number)
+    def replay_game(self, number: int, post: bool = False) -> GameResult:
+        """行った試合を、試合前の状態とシーズンのシードから、もう一度計算する(シーズンの状態は変えない)。
+        post はポストシーズンの試合(number はその通し番号。D-439)。"""
+        if post:
+            played = self.postseason.games[number]
+        else:
+            played = next(p for p in self.played if p.scheduled.number == number)
         g = played.scheduled
         teams = [self.teams[g.home_id], self.teams[g.away_id]]
         copied_teams, copied_actives = copy.deepcopy((teams, [self.active_on(t.id, g.day) for t in teams]))
@@ -407,7 +440,7 @@ class Season:
                     p.state.form = self.legacy_form.get(p.id, 0.0)
                 else:
                     p.state.form = level_at(self.seed, p.id, g.day, self.conditions.start, cfg) * float(cfg["step"])
-        rng = self.game_rng(number)
+        rng = self.postseason.rng(number) if post else self.game_rng(number)
         setups = [
             self.manager.prepare(t, rng, played.context.rotation[t.id], a, played.context.lineups.get(t.id))[0] for t, a in zip(copied_teams, copied_actives)
         ]

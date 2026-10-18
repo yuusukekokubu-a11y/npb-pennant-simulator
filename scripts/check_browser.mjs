@@ -127,6 +127,10 @@ async function standingsOnScreen(endLeague = null) {
     await page.locator("#league-switch button").nth(2).click();
     out.il = { rows: await rowsNow(), champion: (await page.isVisible("#standings-champion")) ? await page.textContent("#standings-champion") : null };
   }
+  if (n > 3) { // ポストシーズンの組み合わせ表(D-440)。4 つ目のボタン
+    await page.locator("#league-switch button").nth(3).click();
+    out.post = { series: await page.$$eval("#standings-post .series", (cs) => cs.map((c) => c.querySelector("b").textContent)), day: await page.textContent("#standings-day") };
+  }
   if (endLeague !== null) await page.locator("#league-switch button").nth(endLeague).click();
   await grab();
   await page.click("#tabs button[data-tab=progress]");
@@ -749,6 +753,15 @@ il = g.standings()["interleague"]
 print(json.dumps({"champion": il["champion"], "names": [r["name"] for r in il["rows"]], "allstar": [a["mvp"][0]["name"] if a["mvp"] else "" for a in g.status()["allstar"]]}, ensure_ascii=False))
 `, last.path));
 check(endTable.il.champion.includes(ilPy.champion) && endTable.il.rows.every((r, k) => r.cells[0].includes(ilPy.names[k])), `交流戦の表の並びと優勝が、計算本体と同じ(${ilPy.champion})`);
+const postPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+v = g.status()["postseason"]
+print(json.dumps({"champion": v["champion"], "labels": [s["label"] for s in v["series"]], "games": sum(len(s["games"]) for s in v["series"])}, ensure_ascii=False))
+`, last.path));
+check(Boolean(endTable.post) && JSON.stringify(endTable.post.series) === JSON.stringify(postPy.labels) && endTable.post.day.includes(postPy.champion), `順位表のポストシーズンの組み合わせ表(${postPy.labels.length} シリーズ・${postPy.games} 試合)と日本一(${postPy.champion})が、計算本体と同じ`);
+check((await page.locator("#post-list .series").count()) === postPy.labels.length && (await page.textContent("#day-text")).includes(`日本一 ${postPy.champion}`), "進行の画面に、ポストシーズンの各シリーズと日本一が出る");
 const allstarText = await page.textContent("#allstar-list");
 check(ilPy.allstar.every((name) => !name || allstarText.includes(name)), `オールスターの MVP が、計算本体と同じ(${ilPy.allstar.join("・")})`);
 const digest = python(`
@@ -758,14 +771,14 @@ from pennant.fingerprint import _digest, season_record
 g = api.Game.load(open(sys.argv[1], "rb").read())
 print(g.state.season.day, g.state.my_team_id, _digest(season_record(g.state.season.result())))
 `, last.path).trim().split(" ");
-check(digest[0] === "170", "保存したファイルは170日目(最後)");
+check(Number(digest[0]) > 170, `保存したファイルは、ポストシーズンの後(${digest[0]}日)`);
 // シーズン中の AI どうしのトレード(D-378)があるので、指紋 (d)(シーズンだけ)ではなく、同じ新規開始を Python で最後まで進めた結果と比べる
 const [pyDigest] = python(`
 import sys
 from pennant import api
 from pennant.fingerprint import _digest, season_record
 g = api.Game.new(1, [None] * 12, int(sys.argv[1][1:]) - 1, season_seed=13, baselines="default")
-g.advance(g.state.season.total_days)
+g.advance_to_end()
 print(_digest(season_record(g.state.season.result())))
 `, digest[1]).trim().split(" ");
 check(digest[2] === pyDigest, `最後の結果が、同じ新規開始を Python で進めた結果と同じ(${digest[2].slice(0, 16)}…。トレード ${digest[2] === expected.season ? "なし" : "あり"})`);
@@ -1274,6 +1287,8 @@ const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map
 check(JSON.stringify(stUi.slice(0, 2)) === JSON.stringify(stPy.slice(0, 2)) && JSON.stringify(stUi[2].filter((x) => /\d$/.test(x))) === JSON.stringify(stPy[2]), `歴代の順位と優勝:1シーズン目の順位表と、球団ごとの優勝回数が計算本体と同じ`);
 const ilRec = pyYear2(`v = g.record_standings()\nprint(json.dumps([v["interleague"]["champion"], len(v["allstar"])], ensure_ascii=False))`);
 const recText = await page.textContent("#records-body");
+const jsRec = pyYear2(`v = g.record_standings()\nprint(json.dumps(v["postseason"]["champion"], ensure_ascii=False))`);
+check(recText.includes(`日本一:${jsRec}`), `記録室の「順位と優勝」に、日本一(${jsRec})とポストシーズンの結果が出る`);
 check(recText.includes(`優勝:${ilRec[0]}`) && ilRec[1] === 2 && (await page.locator("#records-body .allstar").count()) === 2, `記録室の「順位と優勝」に、交流戦の優勝(${ilRec[0]})とオールスター 2 試合が出る`);
 await page.click("#records-section button[data-value=titles]");
 await page.waitForFunction(() => document.querySelectorAll("#records-body tbody tr").length === 22);

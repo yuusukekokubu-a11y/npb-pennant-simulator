@@ -13,7 +13,7 @@ from pennant.savegame import SAVE_FORMAT_VERSION, load_game, save_game
 @pytest.fixture(scope="module")
 def season_end():
     g = api.Game.new(5, [None] * 12, 0, season_seed=9, baselines="default")
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     g.year_end()
     return g
 
@@ -87,7 +87,7 @@ def test_stage_auto_and_save(season_end):
     g = fresh(season_end)
     to_active(g)
     again = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 27 and again.state.rules == g.state.rules
+    assert SAVE_FORMAT_VERSION == 28 and again.state.rules == g.state.rules
     r = g.offseason_stage_auto()
     assert r["finished"]
     log = r["auto_log"]["items"]
@@ -103,7 +103,7 @@ def test_auto_fa_and_skipped_stages():
     assert g.state.rules.auto_fa and g._trade_status() is None
     with pytest.raises(ValueError, match="トレードはありません"):
         g.trade_view() and g.trade_propose("T02", [], [])
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     assert not g.state.season.trades
     g.year_end()
     proc = g.state.procedure

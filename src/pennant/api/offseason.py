@@ -307,9 +307,12 @@ class OffseasonMixin:
 
 
 def _next_season_config(cfg):
-    """次のシーズンの設定。版 26 から読んだ設定(連戦の値がない)は、今の data/season.json の日程に置き換える(D-438)。"""
-    if "series" in cfg["schedule"]:
+    """次のシーズンの設定。版 26 から読んだ設定(連戦の値がない)は今の日程に、版 27 から読んだ設定(ポストシーズンがない)は今のポストシーズンを足す(D-438、D-441)。"""
+    if "series" in cfg["schedule"] and "postseason" in cfg.data:
         return cfg
     data = copy.deepcopy(cfg.data)
-    data["schedule"] = default_season_data()["schedule"]
+    defaults = default_season_data()
+    if "series" not in data["schedule"]:
+        data["schedule"] = defaults["schedule"]
+    data.setdefault("postseason", defaults["postseason"])  # 版 27 から読んだ設定にはポストシーズンがない(D-441)
     return validate_season_config(data, cfg.source)

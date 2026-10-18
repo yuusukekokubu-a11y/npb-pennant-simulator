@@ -57,7 +57,7 @@ def test_before_the_season_and_spectator():
 @pytest.mark.slow
 def test_after_the_season_shows_the_last_opponent(game):
     g = api.Game(copy.deepcopy(game.state), dirty=False)
-    g.advance(g.state.season.total_days)
+    g.advance_to_end()
     n = g.status()["my_team"]["next_game"]
     last = next(p for p in reversed(g.state.season.played) if g.state.my_team_id in (p.scheduled.home_id, p.scheduled.away_id))
     assert n["finished"] and n["day"] == last.scheduled.day + 1  # 終わったら最後の試合の相手

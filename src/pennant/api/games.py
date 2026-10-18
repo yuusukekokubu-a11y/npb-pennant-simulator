@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from ..game_stats import game_story
+from ..records import decide
+from .postseason import POST_OFFSET
 
 
 class GamesMixin:
@@ -57,6 +59,8 @@ class GamesMixin:
         """その日(1から)の試合の一覧。まだ行っていない日は、空の一覧。"""
         season = self.state.season
         games = [self._game_summary(i) for i, p in enumerate(season.played) if p.scheduled.day + 1 == day]
+        if season.postseason is not None:  # ポストシーズンの試合(D-440)
+            games += [self._post_game_summary(k) for k, p in enumerate(season.postseason.games) if p.scheduled.day + 1 == day]
         kind = self._day_kind(day - 1) if 1 <= day <= season.day else None  # 休み・オールスターの日(D-435、D-436)
         stars = [a for a in self.allstar_results() if a["day"] == day]
         shown = lambda d: season.is_game_day(d - 1) or (d - 1) in season.schedule.allstar_days  # 試合のある日(1 から)
@@ -75,8 +79,14 @@ class GamesMixin:
     def game(self, game_no: int) -> dict:
         """1試合の文章ログと投手の成績(勝敗・セーブ・ホールドの印つき)。"""
         season = self.state.season
-        if not 0 <= int(game_no) < len(season.played):
-            raise ValueError(f"試合 {game_no} は、まだ行っていません")
         n = int(game_no)
+        if n >= POST_OFFSET:  # ポストシーズンの試合(D-440)
+            k = n - POST_OFFSET
+            if season.postseason is None or not 0 <= k < len(season.postseason.games):
+                raise ValueError(f"試合 {game_no} は、まだ行っていません")
+            result = season.postseason.games[k].result
+            return {"summary": self._post_game_summary(k), "story": game_story(result, season.players, self._team_names(), decide(result))}
+        if not 0 <= n < len(season.played):
+            raise ValueError(f"試合 {game_no} は、まだ行っていません")
         story = game_story(season.played[n].result, season.players, self._team_names(), self.records.decisions[n])
         return {"summary": self._game_summary(n), "story": story}

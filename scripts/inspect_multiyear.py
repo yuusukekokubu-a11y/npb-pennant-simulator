@@ -106,7 +106,7 @@ def run_world(seed: int, years: int, config, war_settings, log=sys.stderr, scout
     positions = {t.id: sorted(p.position for p in t.players) for t in g.state.league.teams}
     rows = []
     for year in range(1, years + 1):
-        g.advance(g.state.season.total_days)
+        g.advance_to_end()
         row = measure(g, config, war_settings)
         row["year"] = year
         row["seed"] = seed
