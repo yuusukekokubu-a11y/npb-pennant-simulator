@@ -143,7 +143,7 @@ def test_daily_flow_and_progress(league3):
     starters = {l.pitcher_id for p in season.played for l in p.result.pitchers if l.role == "starter"}
     assert len(starters) == 36  # 3日 × 12チーム。各チームの先発は毎日別の投手(6人ローテーション)
     season.play_days(1000)
-    assert season.is_over and season.day == 170
+    assert season.complete and season.is_over and season.day > 170  # レギュラーシーズンの後にポストシーズン(D-439)
     with pytest.raises(ValueError, match="終わって"):
         season.play_day()
 
