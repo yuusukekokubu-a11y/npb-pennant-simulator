@@ -6,6 +6,7 @@ import { current, openPage, renderCurrent, showScreen } from "./screens.js";
 import { el, playerLink, table } from "./parts.js";
 import { renderProgress, setDirty } from "./progress.js";
 import { buildStatsFilters } from "./stats.js";
+import { awardTables } from "./records.js";
 
 // ---- 年度の確定(F2。D-185)と、オフの結果 ----
 
@@ -77,11 +78,12 @@ export async function renderOffseason(args, token) {
   if (token !== state.token) return;
   if (!d.available) {
     $("offseason-counts").textContent = "まだ年度を確定していません。";
-    for (const id of ["offseason-retired", "offseason-rookies", "offseason-changes"]) $(id).replaceChildren();
+    for (const id of ["offseason-retired", "offseason-rookies", "offseason-changes", "offseason-awards"]) $(id).replaceChildren();
     return;
   }
   $("offseason-title").textContent = `オフの結果(${d.year}シーズン目の終わり)`;
   $("offseason-counts").textContent = `引退 ${d.counts.retired}人 / 新人 ${d.counts.rookies}人 / 選手の数 ${d.counts.players}人(変わりません)`;
+  $("offseason-awards").replaceChildren(...(d.awards.length ? awardTables(d.awards) : [el("p", { className: "muted" }, "表彰の記録はありません。")])); // 表彰(D-442)
   $("offseason-retired").replaceChildren(d.retired.length ? playerTable(d.retired, false) : el("p", { className: "muted" }, "引退した選手はいません。"));
   $("offseason-rookies").replaceChildren(d.rookies.length ? playerTable(d.rookies, true) : el("p", { className: "muted" }, "入団した新人はいません。"));
   const box = $("offseason-changes"); // 能力の増減(作り直し①:能力はいつでも見える)

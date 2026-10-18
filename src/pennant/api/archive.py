@@ -78,6 +78,38 @@ class ArchiveMixin:
     def _league_of(self) -> dict[str, int]:
         return {t.id: t.league_index for t in self.state.league.teams}
 
+    def _award_view(self, x: dict, names: dict) -> dict:
+        from ..awards import SLOT_LABELS
+
+        return {"key": x["key"], "label": x["label"], "slot": SLOT_LABELS.get(x["slot"], "") if x.get("slot") else "", "player_id": x["player_id"], "name": x["name"],
+                "team_id": x["team_id"], "team_name": names.get(x["team_id"], x["team_id"]), "value": x["value"], "is_mine": x["team_id"] == self.state.my_team_id}
+
+    def record_awards(self, year: int | None = None) -> dict:
+        """表彰(公開用。D-442):選んだシーズンの、リーグごとの賞と両リーグの賞。版 28 までのシーズンは記録なし。"""
+        names = self._team_names()
+        lnames = self.state.league.league_names
+        out = {"years": self.record_years(), "year": None, "available": False, "groups": []}
+        a = self._archive(year)
+        if a is None:
+            return out
+        out["year"] = a.year
+        if a.awards is None:
+            return out
+        out["available"] = True
+        for li in sorted({x["league"] for x in a.awards if x["league"] is not None}):
+            out["groups"].append({"label": lnames[li] if li < len(lnames) else f"リーグ {li + 1}", "awards": [self._award_view(x, names) for x in a.awards if x["league"] == li]})
+        both = [self._award_view(x, names) for x in a.awards if x["league"] is None]
+        if both:
+            out["groups"].append({"label": "両リーグ", "awards": both})
+        return out
+
+    def player_awards(self, player_id: str) -> list[dict]:
+        """選手の受賞歴(古い順。D-442)。"""
+        from ..awards import SLOT_LABELS
+
+        return [{"year": a.year, "label": x["label"] + (f"({SLOT_LABELS[x['slot']]})" if x.get("slot") else ""), "value": x["value"]}
+                for a in self.state.history for x in (a.awards or []) if x["player_id"] == player_id]
+
     def record_standings(self, year: int | None = None) -> dict:
         """歴代の順位と優勝(公開用。D-423):選んだシーズンのリーグごとの順位表と、球団ごとの優勝回数。"""
         state = self.state
