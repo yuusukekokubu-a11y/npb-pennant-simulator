@@ -129,6 +129,7 @@ class PlayersMixin:
             "player": info,
             "season": season_block,
             "history": self._player_history(player_id, role, config),
+            "awards": self.player_awards(player_id),  # 受賞歴(D-442)
             "game_columns": [column_info(config, role, k) for k in game_cols],
             "games": games,
         }

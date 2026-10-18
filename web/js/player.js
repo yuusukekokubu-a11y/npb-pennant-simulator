@@ -20,6 +20,9 @@ export async function renderPlayer(args, token) {
     ` / ${p.position_label} / ${p.age}歳${p.hand ? ` / ${p.hand}` : ""}${p.foreign ? " / 外国人" : ""}${p.development ? ` / ${p.development.label}` : ""}${p.retired ? "(引退)" : ""}`,
   );
   renderPlayerHistory(data);
+  const aw = data.awards || []; // 受賞歴(D-442)
+  $("player-awards-box").hidden = !aw.length;
+  $("player-awards").replaceChildren(...(aw.length ? [table({ firstLabel: "シーズン", columns: [{ key: "label", label: "賞" }, { key: "value", label: "理由" }], rows: aw.map((x) => ({ ...x, values: { label: x.label, value: x.value } })), first: (x) => [el("span", {}, `${x.year}シーズン目`)] })] : []));
   renderPlayerContract(data);
   renderPlayerAbilities(data);
   if (state.playerKind === "ability") state.playerKind = "basic"; // 能力は上に常に出すので、成績の切り替えからは外した(作り直し①)

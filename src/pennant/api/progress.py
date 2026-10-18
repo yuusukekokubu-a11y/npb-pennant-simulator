@@ -328,7 +328,7 @@ class ProgressMixin:
             "note": "年度を確定すると、今シーズンの集計を履歴に残し、選手の年齢が1つ進んで能力が更新され、引退と新人の入団が決まり、次のシーズンが始まります。この操作は戻せません。直前の状態を残したいときは、先に「保存」で別の名前のファイルに保存してください。",
         }
 
-    def _archive_current_season(self) -> SeasonArchive:
+    def _archive_current_season(self, prior_registered: dict[str, int] | None = None) -> SeasonArchive:
         season = self.state.season
         result = season.result()
         standings = [
@@ -342,7 +342,7 @@ class ProgressMixin:
             p = season.players[pid]
             players[pid] = {"name": p.name, "team_id": p.team_id, "role": p.role, "position": p.position, "age": p.age}
         keep = len(self.state.history) + 1 < self.state.offseason_settings.log_seasons  # 今シーズンのログを残すか(今シーズンを含めて log_seasons 分)
-        return SeasonArchive(
+        archive = SeasonArchive(
             year=self.state.year,
             seed=season.seed,
             standings=standings,
@@ -359,6 +359,12 @@ class ProgressMixin:
             allstar=[dict(x) for x in season.allstar],
             postseason=None if season.postseason is None else season.postseason.summary(),
         )
+        if prior_registered is not None:  # 表彰(D-442)
+            from .. import awards as awardsmod
+
+            team_league = {t.id: t.league_index for t in self.state.league.teams}
+            archive.awards = awardsmod.compute(archive, team_league, season.players, list(self.state.history), prior_registered)
+        return archive
 
     @staticmethod
     def _interleague_archive(season) -> dict | None:
@@ -376,8 +382,9 @@ class ProgressMixin:
             raise ValueError("シーズンがまだ終わっていません(最後まで進めてから、年度を確定してください)")
         if state.procedure is not None:
             raise ValueError("オフの手続きが進行中です(手続きを終えると、次のシーズンが始まります)")
+        prior_registered = {p.id: famod.seasons_of(p) for p in season.players.values()}  # 表彰の新人王の対象(今シーズンの前までの一軍登録。D-443)
         famod.count_active_seasons(state.league, season.actives)  # このシーズンの一軍に入っていた選手の FA 権の年数(D-258)
-        archive = self._archive_current_season()
+        archive = self._archive_current_season(prior_registered)
         state.history.append(archive)
         # 残す打席ログの数を守る(直近 log_seasons シーズン。今シーズンは次のシーズンの分として数える)
         limit = max(0, state.offseason_settings.log_seasons - 1)

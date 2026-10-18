@@ -6,7 +6,7 @@ import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { allstarCard, el, playerLink, seriesCard, setPressed, table, teamLink } from "./parts.js";
 
-const SECTIONS = [["standings", "順位と優勝"], ["titles", "タイトル"], ["leaders", "通算記録"], ["entries", "補強"]];
+const SECTIONS = [["standings", "順位と優勝"], ["titles", "タイトル"], ["awards", "表彰"], ["leaders", "通算記録"], ["entries", "補強"]];
 const ENTRY_KINDS = [["draft", "ドラフト"], ["foreign", "外国人"], ["moves", "出入り"]];
 
 // 記録室を、補強の記録のドラフト(球団を選んだ状態)で開く(進行の画面の「ドラフト」・チームのページのボタン)
@@ -36,7 +36,7 @@ export async function renderRecords(token) {
   segButtons("records-section", SECTIONS, r.section, (v) => { r.section = v; r.year = null; renderCurrent(); });
   $("records-kind").hidden = r.section !== "entries";
   if (r.section === "entries") segButtons("records-kind", ENTRY_KINDS, r.kind, (v) => { r.kind = v; r.year = null; renderCurrent(); });
-  const render = { standings: renderStandingsHistory, titles: renderTitles, leaders: renderLeaders, entries: r.kind === "moves" ? renderMoves : renderEntries }[r.section];
+  const render = { standings: renderStandingsHistory, titles: renderTitles, awards: renderAwards, leaders: renderLeaders, entries: r.kind === "moves" ? renderMoves : renderEntries }[r.section];
   await render(token);
 }
 
@@ -87,6 +87,28 @@ async function renderTitles(token) {
       rows: lg.titles.map((t) => ({ ...t, values: { who: el("span", { className: "title-who" }, ...who(t)), value: t.value_text } })),
       first: (t) => [el("span", {}, t.label)], rowClass: (t) => (t.players.some((p) => p.is_mine) ? "mine" : ""), fluid: true })));
   $("records-body").replaceChildren(...blocks, el("p", { className: "muted small" }, "打率・出塁率・防御率は、規定打席・規定投球回に届いた選手だけ。"));
+}
+
+// ---- 表彰(D-442) ----
+
+// 賞の一覧の表(記録室・オフの結果で共通):賞・選手(所属)・理由の数字
+export function awardTables(groups) {
+  return groups.map((g) => el("section", { className: "record-league" },
+    el("h2", {}, g.label),
+    table({ firstLabel: "賞", columns: [{ key: "who", label: "選手" }, { key: "value", label: "理由" }],
+      rows: g.awards.map((x) => ({ ...x, values: { who: el("span", { className: "title-who" }, playerLink(x.name, x.player_id), el("span", { className: "sub" }, x.team_name)), value: x.value } })),
+      first: (x) => [el("span", {}, x.slot ? `${x.label}(${x.slot})` : x.label)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })));
+}
+
+async function renderAwards(token) {
+  const r = state.records;
+  const d = await query("record_awards", { year: r.year });
+  if (token !== state.token) return;
+  if (d.year === null) return empty(NO_SEASON);
+  r.year = d.year;
+  $("records-controls").replaceChildren(select("シーズンの選択", d.years.map((y) => [y, `${y}シーズン目`]).reverse(), d.year, (v) => { r.year = Number(v); renderCurrent(); }));
+  if (!d.available) return $("records-body").replaceChildren(el("p", { className: "info" }, "このシーズンの表彰の記録はありません(表彰を足す前に終わったシーズン)。"));
+  $("records-body").replaceChildren(...awardTables(d.groups));
 }
 
 // ---- 通算記録 ----

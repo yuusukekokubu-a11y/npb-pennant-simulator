@@ -302,6 +302,7 @@ class OffseasonMixin:
             "retired": retired,
             "rookies": rookies,
             "counts": {"retired": len(r.retired), "rookies": len(r.rookies), "players": len(self.state.league.all_players())},
+            "awards": self.record_awards(r.year)["groups"],  # その年の表彰(D-442)
             "note": f"{r.year}シーズン目の終わりに行ったオフの結果です。残った選手は年齢が1つ進み、能力が更新されました(能力の増減は下の表)。新人は、ドラフト・自由契約市場などで入った選手です。",
         }
 

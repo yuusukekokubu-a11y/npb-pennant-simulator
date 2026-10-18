@@ -1296,6 +1296,12 @@ await page.waitForFunction(() => document.querySelectorAll("#records-body tbody 
 const tiPy = pyYear2(`v = g.record_titles()\nprint(json.dumps([[t["label"], t["value_text"]] for lg in v["leagues"] for t in lg["titles"]], ensure_ascii=False))`);
 const tiUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[2].textContent]));
 check(JSON.stringify(tiUi) === JSON.stringify(tiPy), `年ごとのタイトル:2 リーグ × 11 のタイトル(盗塁王を含む)と記録が計算本体と同じ(${tiUi.slice(0, 2).map((x) => x.join(" ")).join("・")} …)`);
+// 表彰(D-442):記録室の「表彰」と、計算本体の一覧が同じ
+await page.click("#records-section button[data-value=awards]");
+const awPy = pyYear2(`v = g.record_awards()\nprint(json.dumps([[(x["label"] + ("(" + x["slot"] + ")" if x["slot"] else "")), x["name"], x["value"]] for grp in v["groups"] for x in grp["awards"]], ensure_ascii=False))`);
+await page.waitForFunction((n) => document.querySelectorAll("#records-body tbody tr").length === n, awPy.length);
+const awUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td").textContent, tr.children[1].querySelector(".link").textContent, tr.children[2].textContent]));
+check(awPy.length > 50 && JSON.stringify(awUi) === JSON.stringify(awPy), `表彰:${awPy.length} 件(MVP・新人王・ベストナインなど)が計算本体と同じ(${awUi.slice(0, 2).map((x) => x.join(" ")).join("・")} …)`);
 await page.click("#records-section button[data-value=leaders]");
 await page.waitForFunction(() => document.querySelector('#records-controls select[aria-label="記録の選択"]') && document.querySelectorAll("#records-body tbody tr").length >= 20);
 await page.selectOption('#records-controls select[aria-label="打者・投手の選択"]', "pitcher");

@@ -55,6 +55,7 @@ class SeasonArchive:
     interleague: dict | None = None  # 交流戦 {champion, rows: [{team_id, wins, losses, ties}]}(D-437。版 27。交流戦のないシーズンは None)
     allstar: list[dict] = field(default_factory=list)  # オールスターの結果(allstar.play の辞書。D-436)
     postseason: dict | None = None  # ポストシーズン {champion, series: [...]}(Postseason.summary。D-440。版 28)
+    awards: list | None = None  # 表彰(awards.compute の一覧。D-442。版 29。版 28 までのシーズンは None)
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +81,7 @@ class SeasonArchive:
             "interleague": None if self.interleague is None else {"champion": self.interleague["champion"], "rows": [dict(x) for x in self.interleague["rows"]]},
             "allstar": [dict(x) for x in self.allstar],
             "postseason": self.postseason,
+            "awards": None if self.awards is None else [dict(x) for x in self.awards],
         }
 
     @classmethod
@@ -108,6 +110,7 @@ class SeasonArchive:
             interleague=_interleague_from(d.get("interleague")),
             allstar=[dict(x) for x in (d.get("allstar") or [])],
             postseason=None if d.get("postseason") is None else dict(d["postseason"]),
+            awards=None if d.get("awards") is None else [dict(x) for x in d["awards"]],
         )
 
 
