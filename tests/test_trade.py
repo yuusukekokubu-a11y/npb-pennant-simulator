@@ -102,7 +102,7 @@ def test_propose_and_offer_in_season(base):
 @pytest.mark.slow
 def test_season_trades_replay_save_and_deadline(base):
     g = fresh(base)
-    g.advance(90)  # 期限(83 日目)を過ぎる
+    g.advance(120)  # 期限(113 日目。170 日の 3 分の 2)を過ぎる
     season = g.state.season
     assert g.trade_view()["window"] is None and "期限" in g.trade_view()["reason"]
     with pytest.raises(ValueError, match="期限"):

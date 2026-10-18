@@ -467,7 +467,7 @@ def test_market_table_puts_players_without_stats_last(release_game):
     g.advance(3)
     t = g.offseason_table if g.state.procedure else None
     assert t is None
-    g.advance(122)
+    g.advance(1000)
     g.year_end()
     finish_renewal(g)
     c = g.offseason_table("release", "batter", "basic", season="career")
