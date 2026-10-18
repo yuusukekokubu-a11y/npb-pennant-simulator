@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import hashlib
 import random
 from dataclasses import dataclass, field
@@ -117,6 +118,8 @@ class Season:
         manager: Manager | None = None,
         schedule_maker: ScheduleMaker | None = None,
         year: int = 1,
+        farm: bool = False,
+        injuries=None,
     ):
         self.league = league
         self.seed = seed
@@ -146,6 +149,15 @@ class Season:
         self.played: list[PlayedGame] = []
         self.allstar: list[dict] = []  # オールスターの結果(allstar.play の辞書。D-436)
         self.postseason = None  # ポストシーズン(postseason.Postseason。レギュラーシーズンが終わったら始める。D-439)
+        self.injury_settings = injuries  # けが(injuries.InjurySettings。None ならけがなし。D-445)
+        self.injuries: dict[str, dict] = {}  # けがをしている選手 → {until(戻れる日), severity, label, start}
+        self.injury_log: list[dict] = []  # そのシーズンのけが(起きた順)
+        if farm:  # 二軍の試合(D-446)。測定用のシーズンでは行わない
+            from .farm import Farm
+
+            self.farm = Farm(self)
+        else:
+            self.farm = None
         self._records: dict[str, _Record] = {t.id: _Record() for t in league.teams}
 
     # ---- 進行 ----
@@ -163,6 +175,77 @@ class Season:
     def complete(self) -> bool:
         """レギュラーシーズンとポストシーズン(あれば)が終わったか。年度の確定はこの後(D-440)。"""
         return self.is_over and (self.postseason is None or self.postseason.finished)
+
+    def all_players(self) -> dict:
+        """支配下と育成の選手(二軍の試合の疲労・けがで使う)。"""
+        out = dict(self.players)
+        for t in self.league.teams:
+            for p in t.development:
+                out[p.id] = p
+        return out
+
+    def is_injured(self, player_id: str, day: int | None = None) -> bool:
+        x = self.injuries.get(player_id)
+        return x is not None and int(x["until"]) > (self.day if day is None else day)
+
+    def check_injuries(self, result, fatigue: dict, kind: str, number: int, day: int) -> list[dict]:
+        """試合のあとのけが(D-445)。乱数は試合と別の系列。"""
+        if self.injury_settings is None:
+            return []
+        from . import facilities, injuries as injmod
+
+        fs = facilities.default_settings()
+        medical = {tid: fs.effect("medical", facilities.levels_of(self.teams[tid], fs)["medical"]) for tid in (result.home_team_id, result.away_team_id)}
+        players = self.all_players()
+        rng = random.Random(derive_seed(self.seed, f"injury:{kind}:{number}"))
+        new = []
+        for x in injmod.check_game(result, fatigue, players, medical, self.injury_settings, rng, day):
+            if self.is_injured(x["player_id"], day + 1):
+                continue
+            entry = {"player_id": x["player_id"], "name": players[x["player_id"]].name, "team_id": x["team_id"], "start": int(day), "where": kind, **{k: x[k] for k in ("severity", "label", "days", "until", "after")}}
+            self.injuries[x["player_id"]] = entry
+            self.injury_log.append(entry)
+            new.append(entry)
+        return new
+
+    def _handle_injuries(self) -> None:
+        """一軍のけが人を外し、代わりを上げる(AI に任せない自球団も仮の代わりを AI が入れる。10 日の決まりは当てはめない。D-445)。"""
+        if not self.injuries:
+            return
+        nxt = self.day
+        for t in self.league.teams:
+            hurt = [p.id for p in self.actives[t.id].players if self.is_injured(p.id, nxt)]
+            if not hurt:
+                continue
+            if self.roster_auto.get(t.id, True):
+                self._reselect(t.id, nxt)
+            else:
+                self._replace_injured(t.id, hurt, nxt)
+            for pid in hurt:
+                self.demoted.pop(pid, None)
+
+    def _replace_injured(self, team_id: str, hurt: list[str], day: int) -> None:
+        active = self.actives[team_id]
+        ids = {p.id for p in active.players}
+        pool = [p for p in self.teams[team_id].players if p.id not in ids and not self.is_injured(p.id, day)]
+        score = self._roster_score(team_id, keep=False)
+        lists = [list(active.starters), list(active.relievers), list(active.batters)]
+        for pid in hurt:
+            old = next(p for p in active.players if p.id == pid)
+            cands = [p for p in pool if p.role == old.role]
+            if old.position == "C" and any(p.position == "C" for p in cands):
+                cands = [p for p in cands if p.position == "C"]
+            if not cands:
+                self._reselect(team_id, day)
+                return
+            new = max(cands, key=lambda p: (score(p), p.id))
+            pool.remove(new)
+            for lst in lists:
+                for i, p in enumerate(lst):
+                    if p.id == pid:
+                        lst[i] = new
+        roles = self.manager._relief_roles(lists[1]) if hasattr(self.manager, "_relief_roles") else dict(active.relief_roles)
+        self.set_active(team_id, ActiveRoster(starters=lists[0], relievers=lists[1], relief_roles=roles, batters=lists[2]))
 
     def postseason_settings(self) -> dict | None:
         return self.season_config.data.get("postseason")
@@ -203,6 +286,7 @@ class Season:
         apply_game_fatigue(result.batters_faced(), self.players, self.game_config)
         if record:  # ポストシーズンは順位に入れない(D-440)
             self._record(result)
+        self.check_injuries(result, context.fatigue, "first" if record else "post", g.number, g.day)
         return PlayedGame(g, result, context, skipped)
 
     def _lineup_plan(self, team_id: str) -> dict | None:
@@ -269,11 +353,14 @@ class Season:
         else:
             games = [self._play(g) for g in self.schedule.days[self.day]]
             self.played.extend(games)
+            if self.farm is not None and self.schedule.days[self.day]:
+                self.farm.play_day(self.day, self.schedule.days[self.day])
         if self.day in self.schedule.allstar_days and len(self.allstar) <= self.schedule.allstar_days.index(self.day):
             self.allstar.append(allstar.play(self, self.schedule.allstar_days.index(self.day), self.day))
-        advance_day(self.players.values(), self.game_config)  # 二軍の投手も回復する(D-425)
+        advance_day(self.all_players().values(), self.game_config)  # 二軍・育成の投手も回復する(D-425、D-446)
         result = DayResult(self.day, games)
         self.day += 1
+        self._handle_injuries()  # 次の日の一軍から(D-445)
         if self.day == self.total_days:
             self._start_postseason()
         return result
@@ -365,8 +452,11 @@ class Season:
         else:
             hist.append(snap)
 
-    def _reselect(self, team_id: str) -> None:
-        new = self.manager.select_active(self.teams[team_id], self._roster_score(team_id), frozenset(self.locked()))
+    def _reselect(self, team_id: str, day: int | None = None) -> None:
+        team = self.teams[team_id]
+        if self.injuries:  # けが人は選ばない(D-445)
+            team = dataclasses.replace(team, players=[p for p in team.players if not self.is_injured(p.id, day)])
+        new = self.manager.select_active(team, self._roster_score(team_id), frozenset(self.locked()))
         old = self.actives[team_id]
         if [p.id for p in new.starters] == [p.id for p in old.starters] and [p.id for p in new.relievers] == [p.id for p in old.relievers] and [p.id for p in new.batters] == [p.id for p in old.batters] and new.relief_roles == old.relief_roles:
             return  # 変わらなければ記録しない
@@ -388,6 +478,8 @@ class Season:
             raise ValueError("上げる選手が二軍(支配下の一軍でない選手)にいません")
         if out.role != new.role:
             raise ValueError("投手は投手と、野手は野手と入れ替えてください")
+        if self.is_injured(new.id):
+            raise ValueError(f"{new.name} はけがをしているので、一軍に上げられません")
         if new.id in self.locked():
             left = int(self.roster_settings()["lock_days"]) - (self.day - self.demoted[new.id])
             raise ValueError(f"{new.name} は一軍から外して日が浅いので、あと {left} 日は戻せません")
