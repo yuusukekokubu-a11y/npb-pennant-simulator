@@ -125,6 +125,6 @@ def test_advance_stops_at_end_and_matches_fingerprint_d():
     g.advance(30)
     g = api.Game.load(g.save(today="2026-10-02")["data"])
     st = g.advance(1000)
-    assert st["is_over"] and st["day"] == 170 and st["games_played"] == 858
-    assert g.advance(1)["day"] == 170
+    assert st["is_over"] and st["day"] > 170 and st["games_played"] == 858  # ポストシーズンの日もシーズンの日に続けて数える。成績の試合はレギュラーシーズンだけ(D-439、D-440)
+    assert g.advance(1)["day"] == st["day"] and st["postseason"] == straight.status()["postseason"]
     assert _digest(season_record(g.state.season.result())) == _digest(season_record(straight.state.season.result()))
