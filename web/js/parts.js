@@ -96,7 +96,7 @@ export function allstarCard(a) {
     "div",
     { className: "card allstar" },
     el("p", {}, el("b", {}, `オールスター 第${a.number}戦(${a.day}日目)`), ` ${score}`),
-    el("p", { className: "small muted" }, `球場:${a.park}の本拠地・${a.winner ? `${a.winner}の勝ち` : "引き分け"}`),
+    el("p", { className: "small muted" }, `球場:${a.stadium_of}の本拠地・${a.winner ? `${a.winner}の勝ち` : "引き分け"}`),
     el("p", { className: "small" }, `MVP:${mvp || "なし"}`),
     el("details", {}, el("summary", {}, "出た選手"), ...members),
   );

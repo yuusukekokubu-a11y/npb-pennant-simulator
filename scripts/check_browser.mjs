@@ -94,7 +94,7 @@ async function findBlocks() {
   const f = await page.evaluate(() => {
     const scr = [...document.querySelectorAll("main.screen")].find((m) => !m.hidden);
     if (!scr) return null;
-    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions, #mine-card";
+    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .allstar, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions, #mine-card";
     const blocks = [...scr.querySelectorAll("p, dl, dd, .info, .notice, .card")].filter((e) => e.offsetParent && !e.closest(skip) && !e.classList.contains("message") && e.textContent.trim().length > 50).map((e) => e.textContent.trim().slice(0, 30));
     return { screen: scr.id, blocks };
   });

@@ -227,7 +227,7 @@ class ProgressMixin:
                     "day": a["day"] + 1,
                     "home": {"league_name": ln(home), "runs": a["runs"][str(home)], "line": a["line"]["home"]},
                     "away": {"league_name": ln(away), "runs": a["runs"][str(away)], "line": a["line"]["away"]},
-                    "park": names.get(a["park_team_id"], ""),
+                    "stadium_of": names.get(a["park_team_id"], ""),
                     "winner": None if a["winner"] is None else ln(int(a["winner"])),
                     "mvp": [{"name": m["name"], "team": names.get(m["team_id"], ""), "league_name": ln(int(m["league"])), "H": m["H"], "HR": m["HR"], "RBI": m["RBI"]} for m in a["mvp"]],
                     "players": {ln(int(li)): [{"name": x["name"], "team": names.get(x["team_id"], ""), "role": x["role"], "position": x["position"]} for x in xs] for li, xs in a["players"].items()},
