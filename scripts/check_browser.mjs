@@ -407,6 +407,7 @@ await page.click("#tabs button[data-tab=progress]");
 page.once("dialog", (d) => d.accept().catch(() => {}));
 await page.setInputFiles("#open-file-top", staffBase.path);
 await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("開きました"), null, { timeout: 60000 });
+await openPolicyTeam(); // 元の流れ(チームのページから戻る)に合わせる
 await page.click("#screen-team .back");
 await page.click("#tabs button[data-tab=progress]");
 // トレード(D-378):画面を開き、釣り合わない交換を持ちかけると断られて、何も変わらない
