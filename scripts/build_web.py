@@ -8,7 +8,7 @@ _site/ の中身:
     index.html・app.js・worker.js・bridge.py      遊ぶための画面(web/ のファイルをそのまま写す)
     js/                                          画面の処理(app.js が読み込む ES モジュール。web/js/ をそのまま写す。保守②)
     dev/                                         開発者向けの測定ページ(web/dev/ をそのまま写す。D-111)
-    pennant.zip                                  計算本体(src/pennant の .py と data/*.json)。両方の画面が読み込んで使う
+    pennant.zip                                  計算本体(src/pennant の .py と data/*.json、テンプレートの data/templates/)。両方の画面が読み込んで使う
     sample-save.*・expected-fingerprints.json    測定ページの確認用(架空のデータだけ)
     build.json                               作った日時と、入れたファイルの一覧
 
@@ -39,9 +39,10 @@ def web_module_files() -> list[str]:
 
 
 def package_files() -> list[Path]:
-    """pennant.zip に入れるファイル(.py と data/*.json だけ。キャッシュなどは入れない)。
+    """pennant.zip に入れるファイル(.py と data/*.json と新規開始のテンプレート data/templates/ だけ。キャッシュなどは入れない)。
     計算本体の中のフォルダ(api/ など。保守②)の .py も入れる。"""
     files = sorted(f for f in PACKAGE.rglob("*.py") if "__pycache__" not in f.parts) + sorted((PACKAGE / "data").glob("*.json"))
+    files += sorted((PACKAGE / "data" / "templates").glob("*.json")) + sorted((PACKAGE / "data" / "templates").glob("*.sav"))  # D-463
     return files
 
 

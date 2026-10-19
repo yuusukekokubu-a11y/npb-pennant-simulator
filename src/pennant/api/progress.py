@@ -71,6 +71,14 @@ def check_team_names(seed: int, names: Sequence[str | None]) -> list[str | None]
     return problems
 
 
+def template_info() -> dict:
+    """新規開始の最初の段に出す、用意したリーグ(テンプレート)の名前・紹介とリーグのシード(D-462、D-464)。
+    名前の一覧と点検は、このリーグのシードで preview_teams・check_team_names・check_place_names を使う。"""
+    from ..template import template_info as info
+
+    return info()
+
+
 class ProgressMixin:
     """Game の一部:新規開始・開く・保存・進める・状態・年度の確定。"""
 
@@ -90,6 +98,7 @@ class ProgressMixin:
         league_names: Sequence[str | None] | None = None,
         stadium_names: Sequence[str | None] | None = None,
         my_tier: str | None = None,
+        trial_keep: list | None = None,
     ) -> "Game":
         """新しいリーグを作る。seed はリーグ(選手の生成)の、season_seed はシーズン(日程と試合)のシード
         (省略時は seed と同じ)。球団名・自球団に問題があれば TeamNameError(理由つき)。
@@ -123,7 +132,7 @@ class ProgressMixin:
         if my_team_index is not None and (isinstance(my_team_index, bool) or not isinstance(my_team_index, int) or not 0 <= my_team_index < len(league.teams)):
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
         settings = load_baseline_settings()
-        prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
+        prior = trial_baselines(league, settings, progress, trial_keep) if baselines == "trial" else settings.default_baselines()
         from ..injuries import default_settings as injury_settings
 
         season = Season(league, seed if season_seed is None else season_seed, farm=True, injuries=injury_settings() if game_rules.injuries else None)  # 二軍の試合とけが(D-445、D-446)
@@ -132,6 +141,24 @@ class ProgressMixin:
         state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings, budget_tiers=tiers, team_funds=initial_funds(tiers, contract_settings), contract_settings=contract_settings, negotiation_settings=negotiation_settings, rules=game_rules)
         state.contract_rates["1"] = float(contract_info.get("rate", 0.0))  # 新規開始時の単価(初期選手の契約の算定で求めた値)
         return cls(state, dirty=True)
+
+    @classmethod
+    def from_template(
+        cls,
+        team_names: Sequence[str | None],
+        my_team_index: int | None,
+        season_seed: int,
+        rules: dict | None = None,
+        league_names: Sequence[str | None] | None = None,
+        stadium_names: Sequence[str | None] | None = None,
+        my_tier: str | None = None,
+    ) -> "Game":
+        """用意したリーグ(テンプレート)で始める(D-465、D-466)。事前運転と試運転はしない。シーズンは season_seed で作る。
+        リーグのシード・基準値・スカウト評価のずれはテンプレートのまま。球団名・自球団に問題があれば TeamNameError、
+        仕組みの選択肢・資金力が正しくなければ ValueError。"""
+        from ..template import start_from_template
+
+        return cls(start_from_template(team_names, my_team_index, season_seed, rules, league_names, stadium_names, my_tier), dirty=True)
 
     @classmethod
     def load(cls, data: bytes) -> "Game":

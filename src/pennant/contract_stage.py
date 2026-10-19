@@ -177,17 +177,17 @@ def entry_player(team: Team, entry: dict) -> Player:
     return next(p for p in team.players if p.id == entry["player_id"])
 
 
-def initialize_contracts(league: League, seed: int, ctx: ContractContext, prerun_years: int) -> float:
-    """新規開始のとき、初期選手の契約を作り直す(D-232、D-356):年俸は見せる能力から算定(校正の後の能力で)、残りの年数は事前運転の契約から引き継ぐ
-    (事前運転で契約を扱わなかったときは、更改と同じ方針の年数。主力級は 2〜3 年、ほかは 1 年。D-360)。
+def fit_initial_salaries(league: League, ctx: ContractContext) -> tuple[float, dict[str, int]]:
+    """新規開始の初期選手の年俸(D-232、D-356):単価は資金の合計から求め、年俸は見せる能力から算定する。
     資金を超える球団は、最低年俸を超える分を同じ割合で縮めて資金の中に収める(開始直後に選手を手放さなくて済むように)。
-    1 シーズン目から数えた満了シーズンに付け替える。戻り値は単価。"""
+    戻り値は (単価, 選手 ID → 年俸)。ctx.rate も単価にする。テンプレートの資金力の入れ替えでも使う(D-466)。"""
     expected = {}
     for team in league.teams:
         for p in team.players:
             expected[p.id] = ctx.expected(p)[0]
     total_funds = ctx.total_cap() if ctx.funds else ctx.settings.base_budget * len(league.teams)
     ctx.rate = round(rate_for(list(expected.values()), total_funds, len(expected), ctx.settings), 4)
+    out: dict[str, int] = {}
     for team in league.teams:
         salaries = {p.id: salary_for(expected[p.id], ctx.rate, ctx.settings) for p in team.players}
         cap = ctx.cap(team.id)
@@ -200,8 +200,18 @@ def initialize_contracts(league: League, seed: int, ctx: ContractContext, prerun
             scale = max(0.0, room / excess) if excess > 0 else 0.0
             step = ctx.settings.rounding
             salaries = {pid: max(mn, int((mn + (v - mn) * scale) // step) * step) for pid, v in salaries.items()}
+        out.update(salaries)
+    return ctx.rate, out
+
+
+def initialize_contracts(league: League, seed: int, ctx: ContractContext, prerun_years: int) -> float:
+    """新規開始のとき、初期選手の契約を作り直す(D-232、D-356):年俸は見せる能力から算定(校正の後の能力で。fit_initial_salaries)、
+    残りの年数は事前運転の契約から引き継ぐ(事前運転で契約を扱わなかったときは、更改と同じ方針の年数。主力級は 2〜3 年、ほかは 1 年。D-360)。
+    1 シーズン目から数えた満了シーズンに付け替える。戻り値は単価。"""
+    _, salaries = fit_initial_salaries(league, ctx)
+    for team in league.teams:
         for p in team.players:
-            years = contract_years(p.age, expected[p.id], ctx.settings)
+            years = contract_years(p.age, ctx.expected(p)[0], ctx.settings)
             remaining = max(1, int(p.contract["until"]) - prerun_years) if p.contract else years
             p.contract = None
             set_contract(p, salaries[p.id], remaining, 1, "initial")

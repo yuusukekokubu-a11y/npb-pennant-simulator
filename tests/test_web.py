@@ -98,7 +98,8 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
     expected = {"pennant/" + p.relative_to(ROOT / "src" / "pennant").as_posix() for p in build.package_files()}
     assert names == expected == set(info["package_files"])
     assert "pennant/__init__.py" in names and "pennant/data/names.json" in names
-    assert all(n.endswith((".py", ".json")) for n in names)
+    assert all(n.endswith((".py", ".json")) or n.startswith("pennant/data/templates/") for n in names)
+    assert {"pennant/data/templates/standard.sav", "pennant/data/templates/standard.json"} <= names  # 新規開始のテンプレート(架空のデータだけ。D-463)
     assert not (site / "pyodide").exists()  # 公開用には Pyodide を入れない(配布元から読む)
 
 

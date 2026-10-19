@@ -91,18 +91,21 @@ async function checkPlaces() {
   return [...(r.value.leagues || []), ...(r.value.stadiums || [])].filter(Boolean);
 }
 
-// 新規開始の 2 つの段(D-448):球団名などの段と、設定(仕組みの選択肢)の段
+// 新規開始の段(D-448、D-464):最初の 2 つのボタンの段("choice")、球団名などの段(false)、設定(仕組みの選択肢)の段(true)
 export function newGameStep(settings) {
-  $("new-step-names").hidden = settings;
-  $("new-row-names").hidden = settings;
-  $("new-step-settings").hidden = !settings;
-  $("new-row-settings").hidden = !settings;
+  const choice = settings === "choice";
+  $("new-step-choice").hidden = !choice;
+  $("new-row-choice").hidden = !choice;
+  $("new-step-names").hidden = choice || settings === true;
+  $("new-row-names").hidden = choice || settings === true;
+  $("new-step-settings").hidden = settings !== true;
+  $("new-row-settings").hidden = settings !== true;
   $("new-help").hidden = true;
+  $("new-message").textContent = "";
   window.scrollTo(0, 0);
 }
 
 export async function showNewGame() {
-  newGameStep(false);
   $("new-help").hidden = true;
   $("new-message").textContent = "";
   $("my-team-none").checked = true; // 既定は観戦のみ(D-198)
@@ -111,8 +114,26 @@ export async function showNewGame() {
   $("season-seed").value = "";
   $("league-seed-error").textContent = "";
   $("season-seed-error").textContent = "";
-  await preparePreview(randomSeed(), true);
+  const r = await call("templateInfo", {}); // 用意したリーグの紹介(D-462)
+  state.template = r.value;
+  const intro = $("template-intro");
+  intro.replaceChildren(...r.value.lines.map((line) => Object.assign(document.createElement("li"), { textContent: line })));
+  state.newGame = null;
+  newGameStep("choice");
   showScreen("new");
+}
+
+// 最初の段のボタン(D-464):用意したリーグ(テンプレートのリーグのシードで名前の一覧を作る)か、新しく作るか
+export function chooseNewGame(template) {
+  return busyButton($(template ? "new-use-template" : "new-build"), chooseNewGameInner(template));
+}
+
+async function chooseNewGameInner(template) {
+  await preparePreview(template ? state.template.league_seed : randomSeed(), true);
+  state.newGame.template = template;
+  for (const el of document.querySelectorAll("#screen-new .new-build-only")) el.hidden = template; // リーグのシード・基準値・スカウトはテンプレートのまま(D-464)
+  $("new-mode-text").textContent = template ? `${state.template.title}で始めます。` : "新しくリーグを作って始めます。";
+  newGameStep(false);
 }
 
 async function preparePreview(seed, reset) {
@@ -120,7 +141,7 @@ async function preparePreview(seed, reset) {
   const pv = r.value;
   // 入力済みの名前と自球団の選択は、作り直す直前の状態を引き継ぐ
   const prev = reset ? null : { names: names(), mine: myTeamIndex(), ...places() };
-  state.newGame = { seed, preview: pv };
+  state.newGame = { seed, preview: pv, template: Boolean(state.newGame && state.newGame.template) };
   const box = $("league-fields");
   box.dataset.seed = String(seed);
   box.replaceChildren();
@@ -197,7 +218,8 @@ export async function leagueSeedChanged() {
   const s = parseSeed("league-seed");
   $("league-seed-error").textContent = s.error || "";
   if (s.error) return;
-  if (s.value !== null && state.newGame && state.newGame.seed === s.value) return; // 同じシードなら作り直さない
+  if (!state.newGame || state.newGame.template) return; // 用意したリーグはリーグのシードを変えない
+  if (s.value !== null && state.newGame.seed === s.value) return; // 同じシードなら作り直さない
   const seed = s.value === null ? randomSeed() : s.value;
   await preparePreview(seed, false);
   await checkNames();
@@ -214,7 +236,7 @@ export async function nextNewGame() {
 
 async function checkNewGameInputs() {
   $("new-message").textContent = "";
-  const ls = parseSeed("league-seed");
+  const ls = state.newGame && state.newGame.template ? { value: null } : parseSeed("league-seed"); // 用意したリーグはリーグのシードを使わない
   const ss = parseSeed("season-seed");
   $("league-seed-error").textContent = ls.error || "";
   $("season-seed-error").textContent = ss.error || "";
@@ -244,6 +266,22 @@ async function startNewGameInner() {
   if (state.dirty && !confirm("今のゲームに、未保存の変更があります。新しく始めると失われます。始めますか?")) return;
   $("new-start").disabled = true;
   try {
+    const rules = Object.fromEntries([...document.querySelectorAll("input[name=rules]")].map((x) => [x.value, x.checked]));  // 仕組みの選択肢(D-381)
+    if (state.newGame.template) { // 用意したリーグ(D-465):事前運転も試運転もしないので、ロード画面は出さない(ボタンのボールだけ)
+      const seasonSeed = ss.value === null ? randomSeed() : ss.value; // シーズンは毎回ちがう
+      const t0 = performance.now();
+      const r = await call("newFromTemplate", { seasonSeed, names: names(), myTeamIndex: mine, rules, places: places() });
+      state.templateSeconds = (performance.now() - t0) / 1000;
+      state.trialSeconds = null;
+      if (!r.ok) {
+        $("new-message").textContent = [r.message, ...r.problems].join("\n");
+        return;
+      }
+      for (const input of [...teamInputs(), ...leagueNameInputs(), ...stadiumInputs()]) input.value = "";
+      state.newGame = null;
+      enterGame(r.value, true);
+      return;
+    }
     const seed = state.newGame.seed;
     const seasonSeed = ss.value === null ? randomSeed() : ss.value;
     const baselines = document.querySelector("input[name=baseline-mode]:checked").value;
@@ -254,7 +292,6 @@ async function startNewGameInner() {
     updatePercent($("trial-progress"));
     const t0 = performance.now();
     const scoutLevel = document.querySelector("input[name=scout-level]:checked").value;
-    const rules = Object.fromEntries([...document.querySelectorAll("input[name=rules]")].map((x) => [x.value, x.checked]));  // 仕組みの選択肢(D-381)
     const r = await call("newGame", { seed, seasonSeed, names: names(), myTeamIndex: mine, baselines, scoutLevel, rules, places: places() }).finally(hideLoading);
     state.trialSeconds = baselines === "trial" ? (performance.now() - t0) / 1000 : null;
     if (!r.ok) {
@@ -292,6 +329,8 @@ export function trialProgress({ day, total }) {
 
 export function helpIdFor(target) {
   if (!target || !target.matches) return null;
+  if (target.id === "new-use-template") return "setting.template";
+  if (target.id === "new-build") return "setting.build";
   if (target.matches("#league-fields input[type=text]")) return "setting.team_name";
   if (target.dataset && target.dataset.kind === "league") return "setting.league_name";
   if (target.dataset && target.dataset.kind === "stadium") return "setting.stadium_name";

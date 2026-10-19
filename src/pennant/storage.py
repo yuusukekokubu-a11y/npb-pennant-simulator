@@ -95,3 +95,8 @@ def read_text_file(path: str | Path) -> str:
 def read_package_text(*parts: str) -> str:
     """パッケージに同梱した初期データ(src/pennant/data/ など)を読む。"""
     return resources.files("pennant").joinpath(*parts).read_text(encoding="utf-8")
+
+
+def read_package_bytes(*parts: str) -> bytes:
+    """パッケージに同梱したバイナリのデータ(新規開始のテンプレート `data/templates/*.sav` など。D-463)を読む。"""
+    return resources.files("pennant").joinpath(*parts).read_bytes()

@@ -161,6 +161,15 @@ await grab();
 await page.click("#go-new");
 await page.waitForSelector("#screen-new:not([hidden])");
 check(await page.isVisible("#real-name-notice"), "新規開始の画面に、実名の注意が出ている");
+// 最初の段(D-464):2 つのボタンと、用意したリーグの紹介(計算本体の template_info と同じ)
+const tplPy = JSON.parse(python(`import json\nfrom pennant.api import template_info\nprint(json.dumps(template_info(), ensure_ascii=False))`));
+check((await page.isVisible("#new-use-template")) && (await page.isVisible("#new-build")) && (await page.isHidden("#new-step-names")) && (await page.isHidden("#new-row-names")), `「新しく始める」の最初は 2 つのボタン(「${await page.textContent("#new-use-template")}」「${await page.textContent("#new-build")}」)`);
+const introUi = await page.$$eval("#template-intro li", (ls) => ls.map((l) => l.textContent));
+check(introUi.length >= 3 && JSON.stringify(introUi) === JSON.stringify(tplPy.lines), `用意したリーグの紹介が出る(「${introUi.join(" / ")}」)`);
+await grab();
+await page.click("#new-build");
+await page.waitForSelector("#new-step-names:not([hidden])");
+check(await page.$$eval("#screen-new .new-build-only", (es) => es.length === 2 && es.every((e) => !e.hidden)), "「新しくリーグを作る」では、詳しい設定にリーグのシード・基準値・スカウトの欄がある");
 await page.fill("#team-1", "   ");
 await page.waitForFunction(() => document.querySelector("#team-1-error").textContent.length > 0);
 check((await page.textContent("#team-1-error")).includes("空白だけ"), `空白だけの名前の理由が、欄の下に出る(「${await page.textContent("#team-1-error")}」)`);
@@ -1532,6 +1541,8 @@ await page.reload();
 await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
 await page.click("#go-new");
 await page.waitForSelector("#screen-new:not([hidden])");
+await page.click("#new-build");
+await page.waitForSelector("#new-step-names:not([hidden])");
 await page.click("details summary");
 await page.check("input[name=baseline-mode][value=default]");
 // リーグ名・球場名の入力(D-409)と、自球団の資金力(D-410)。重なったリーグ名は理由を出して止める
@@ -1562,6 +1573,89 @@ await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=saber]");
 await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent === "シーズン途中の値(ここまで)。");
 check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 25 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)`);
+await grab();
+
+// ---- 6c. 用意したリーグで始める(D-462〜D-466) ----
+async function startTemplate({ name = null, mine = null, tier = null, seasonSeed = "", noForeign = false } = {}) {
+  await page.reload();
+  await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
+  await page.click("#go-new");
+  await page.waitForSelector("#new-step-choice:not([hidden])");
+  await page.click("#new-use-template");
+  await page.waitForSelector("#new-step-names:not([hidden])");
+  if (name !== null) await page.fill(`#team-${mine}`, name);
+  if (mine !== null) await page.check(`input[name=my-team][value='${mine}']`);
+  await page.click("details summary");
+  if (tier !== null) await page.check(`input[name=my-tier][value=${tier}]`);
+  await page.fill("#season-seed", seasonSeed);
+  await page.click("#new-next");
+  await page.waitForSelector("#new-step-settings:not([hidden])");
+  if (noForeign) await page.uncheck("#rule-foreign_development");
+  const s = Date.now();
+  await page.click("#new-start");
+  await page.waitForSelector("#screen-progress:not([hidden])");
+  return (Date.now() - s) / 1000;
+}
+await page.reload();
+await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
+await page.click("#go-new");
+await page.waitForSelector("#new-step-choice:not([hidden])");
+await page.focus("#new-use-template");
+await page.waitForSelector("#new-help:not([hidden])");
+check((await page.textContent("#new-help-name")) === "用意したリーグ", `ボタンを選ぶと説明バーに用語集の文が出る(「${await page.textContent("#new-help")}」)`);
+await page.click("#new-use-template");
+await page.waitForSelector("#new-step-names:not([hidden])");
+await page.click("details summary");
+check((await page.$eval("#league-fields", (b) => b.dataset.seed)) === String(tplPy.league_seed) && (await page.$$eval("#screen-new .new-build-only", (es) => es.every((e) => e.hidden))) && (await page.isVisible("#season-seed")) && (await page.isVisible("input[name=my-tier][value=large]")), "用意したリーグでは、名前の欄はテンプレートの初期名で、詳しい設定にリーグのシード・基準値・スカウトの欄がない(シーズンのシードと資金力はある)");
+await grab();
+await page.click("#new-back");
+await page.waitForSelector("#new-step-choice:not([hidden])");
+check(await page.isHidden("#new-step-names"), "名前の段の「戻る」で、最初の 2 つのボタンの段に戻る");
+const TNAME = "ZZテンプレ球団";
+const tplSeconds = await startTemplate({ name: TNAME, mine: 3, tier: "large", seasonSeed: "21" });
+results.push(`  用意したリーグで始める時間: ${tplSeconds.toFixed(1)} 秒`);
+check(tplSeconds < fastSeconds, `用意したリーグは、すぐ始まる(${tplSeconds.toFixed(1)} 秒。新しく作ると既定値でも ${fastSeconds.toFixed(1)} 秒)`);
+check((await page.textContent("#vs .vs-name")) === TNAME && (await page.textContent("#day-text")).startsWith("1シーズン目 0日目"), `入れた名前の球団が自球団になり、1 シーズン目の 0 日目から始まる(${await page.textContent("#vs .vs-name")})`);
+await page.click("#tabs button[data-tab=myteam]");
+await page.waitForFunction(() => document.querySelector("#team-budget").textContent.includes("大"));
+check(true, `選んだ資金力(大)が自球団のページに出る(「${(await page.textContent("#team-budget")).slice(0, 40)}」)`);
+await page.click("#tabs button[data-tab=progress]");
+await page.click(".adv[data-days='7']");
+await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 7日目") || document.querySelector("#day-text").textContent.startsWith("1シーズン目 8日目"));
+await page.waitForFunction(() => !document.querySelector(".adv[data-days='1']").disabled);
+const tplShown = await standingsOnScreen();
+const tplSave = await saveFile("template");
+const tplSame = python(`
+import sys
+from pennant import api
+from pennant.savegame import build_state
+ui = api.Game.load(open(sys.argv[1], "rb").read())
+names = [None] * 12
+names[3] = sys.argv[2]
+py = api.Game.from_template(names, 3, 21, my_tier="large")
+py.advance(ui.state.season.day)
+print(build_state(ui.state) == build_state(py.state), ui.state.season.day, ui.state.budget_tiers[ui.state.my_team_id])
+`, tplSave.path, TNAME).trim().split(" ");
+check(tplSame[0] === "True" && tplSame[2] === "large", `用意したリーグで始めて進めた状態(${tplSame[1]} 日目)が、計算本体で同じ設定で始めて進めた状態と同じ`);
+await page.reload();
+await page.waitForSelector("#go-new:not([disabled])", { timeout: 300000 });
+await page.setInputFiles("#open-file-start", tplSave.path);
+await page.waitForSelector("#screen-progress:not([hidden])");
+check(flat(await standingsOnScreen()) === flat(tplShown), "用意したリーグのゲームも、保存して開き直すと同じ順位表から続く");
+await startTemplate({ noForeign: true });
+const blank1 = await saveFile("template-blank1");
+await startTemplate({});
+const blank2 = await saveFile("template-blank2");
+const blankPy = JSON.parse(python(`
+import json, sys
+from pennant import api
+a = api.Game.load(open(sys.argv[1], "rb").read()).state
+b = api.Game.load(open(sys.argv[2], "rb").read()).state
+fa = lambda s: sum(1 for t in s.league.teams for p in list(t.players) + list(t.development) if p.foreign or p in t.development)
+print(json.dumps([a.season.seed, b.season.seed, fa(a), fa(b), min(len(t.players) for t in a.league.teams), a.rules.foreign_development]))
+`, blank1.path, blank2.path));
+check(blankPy[0] !== blankPy[1], `シーズンのシードを空欄にすると、同じリーグでも始めるたびに違うシーズンになる(${blankPy[0]} と ${blankPy[1]})`);
+check(blankPy[2] === 0 && blankPy[3] > 0 && blankPy[4] >= 60 && blankPy[5] === false, `「外国人・育成」を外すと、外国人と育成の選手がいない(支配下は最少でも ${blankPy[4]} 人。外したときの外国人・育成 ${blankPy[2]} 人、外さないとき ${blankPy[3]} 人)`);
 await grab();
 
 // ---- 7. 隠し情報・通信・保存領域 ----

@@ -19,8 +19,8 @@ dev = ["pytest>=8"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-# 生成設定・名前の部品(JSON)を一緒に入れる
-pennant = ["data/*.json"]
+# 生成設定・名前の部品(JSON)と、新規開始のテンプレート(D-463)を一緒に入れる
+pennant = ["data/*.json", "data/templates/*.json", "data/templates/*.sav"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
