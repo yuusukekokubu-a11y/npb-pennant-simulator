@@ -93,6 +93,7 @@ from .common import (
     _war_values,
     table_cols,
     sortable_keys,
+    war_columns,
     is_sortable,
     glossary_view,
     raw_rate,

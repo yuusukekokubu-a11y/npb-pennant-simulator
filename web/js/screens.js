@@ -24,7 +24,9 @@ export function showScreen(name) {
   // 広い画面の 2 列(D-402):タブの画面を左に残し、開いたページを右に並べる。何も開いていなければ右に案内
   const base = tabScreen(state.tab);
   const top = state.pages.length ? state.pages[state.pages.length - 1].name : null;
-  const dual = inGame && isWide() && DUAL_BASES.includes(base) && (top === null ? name === base : top === name && DUAL_PAGES.includes(name) && name !== base);
+  // 選手の札のある画面(成績・チーム)は、ページを開いたときだけ 2 列(何も開いていなければ、表と札で幅を使う。D-485)
+  const hasCard = Boolean($(`screen-${base}`) && $(`screen-${base}`).querySelector(".pick-split"));
+  const dual = inGame && isWide() && DUAL_BASES.includes(base) && (top === null ? name === base && !hasCard : top === name && DUAL_PAGES.includes(name) && name !== base);
   for (const id of SCREENS) {
     const e = $(`screen-${id}`);
     e.hidden = !(id === name || (dual && id === base));

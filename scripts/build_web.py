@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 PACKAGE = ROOT / "src" / "pennant"
-WEB_FILES = ("index.html", "app.js", "worker.js", "bridge.py")
+WEB_FILES = ("index.html", "style.css", "app.js", "worker.js", "bridge.py")
 WEB_MODULES = "js"  # app.js が読み込む画面の処理(ES モジュール:import と export でつなぐ JavaScript のファイル)
 DEV_FILES = ("index.html", "app.js", "worker.js", "bench.py")
 FIXED_TIME = (2020, 1, 1, 0, 0, 0)  # zip の中の日時を固定する(同じ中身なら同じファイルになる)

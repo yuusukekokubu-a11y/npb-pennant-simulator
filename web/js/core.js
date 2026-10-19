@@ -49,8 +49,8 @@ export const state = {
   // 並び順(打者/投手ごとに保つ。基本・セイバー・能力を切り替えても保つ。D-131)。key が null なら、その表の既定
   sortBy: { batter: { key: null, order: null }, fielder: { key: null, order: null }, pitcher: { key: null, order: null } },
   shownSort: { batter: null, fielder: null, pitcher: null }, // 今の表で実際に使った並び順(既定を解決したもの)
-  abilityKeys: { batter: [], fielder: [], pitcher: [] }, // 能力の表の列の名前(作り直し①:能力はいつでも見える。D-335)
-  warKeys: { batter: [], fielder: [], pitcher: [] }, // WAR の表の列の名前(WAR の表でだけ並び順に使える。D-179)
+  pick: {}, // 選手の札に出している選手(札の置き場 → 選手。画面を描き直しても保つ。保存しない。D-485)
+  bands: {}, // 操作の帯の「絞り込み」「並び」を開いているか(描き直しても閉じない。D-482)
   playerKind: "basic",
   gamesDay: null,
   gamesPrev: null, // 試合のタブの前・次の試合のある日(休みを飛ばす。D-435)

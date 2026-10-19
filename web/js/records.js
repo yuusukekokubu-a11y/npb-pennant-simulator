@@ -3,8 +3,8 @@
 
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
-import { renderCurrent } from "./screens.js";
-import { allstarCard, el, playerLink, seriesCard, setPressed, table, teamLink } from "./parts.js";
+import { openPage, renderCurrent } from "./screens.js";
+import { allstarCard, el, nameCell, playerChip, seriesCard, setPressed, table } from "./parts.js";
 
 const SECTIONS = [["standings", "順位と優勝"], ["titles", "タイトル"], ["awards", "表彰"], ["leaders", "通算記録"], ["entries", "補強"], ["managers", "監督"]];
 const ENTRY_KINDS = [["draft", "ドラフト"], ["foreign", "外国人"], ["moves", "出入り"]];
@@ -60,10 +60,10 @@ async function renderStandingsHistory(token) {
   const blocks = d.leagues.map((lg) => el("section", { className: "record-league" },
     el("h2", {}, lg.league_name),
     table({ firstLabel: "順位・チーム", columns: cols, rows: lg.rows.map((x) => ({ ...x, values: { wins: String(x.wins), losses: String(x.losses), ties: String(x.ties), pct: x.pct, gb: x.games_behind } })),
-      first: (x) => [el("span", { className: "rank" + (x.champion ? " medal medal-1" : "") }, String(x.rank)), teamLink(x.team_name, x.team_id)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })));
+      first: (x) => [el("span", { className: "rank" + (x.champion ? " medal medal-1" : "") }, String(x.rank)), ...nameCell(x.team_name)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true, onRow: (x) => openPage("team", { id: x.team_id }) })));
   const champs = table({ firstLabel: "チーム", columns: [{ key: "count", label: "優勝" }, { key: "years", label: "優勝した年" }, { key: "il", label: "交流戦の優勝" }, { key: "js", label: "日本一" }],
     rows: d.champions.map((c) => ({ ...c, values: { count: `${c.count} 回`, years: c.years.length ? c.years.map((y) => `${y}`).join("・") : "—", il: c.interleague_years.length ? c.interleague_years.join("・") : "—", js: c.japan_years.length ? c.japan_years.join("・") : "—" } })),
-    first: (c) => [teamLink(c.team_name, c.team_id), el("span", { className: "sub" }, c.league_name)], rowClass: (c) => (c.is_mine ? "mine" : ""), fluid: true });
+    first: (c) => nameCell(c.team_name, c.league_name), rowClass: (c) => (c.is_mine ? "mine" : ""), fluid: true, onRow: (c) => openPage("team", { id: c.team_id }) });
   const extra = []; // 交流戦の優勝とオールスター(D-436、D-437)
   if (d.interleague) extra.push(el("h2", {}, "交流戦"), el("p", { className: "small" + (d.interleague.is_mine ? " mine" : "") }, `優勝:${d.interleague.champion}(${d.interleague.rows[0].wins}勝${d.interleague.rows[0].losses}敗${d.interleague.rows[0].ties}分)`));
   if (d.postseason) extra.push(el("h2", {}, "ポストシーズン"), ...(d.postseason.champion ? [el("p", { className: "small" + (d.postseason.is_mine ? " mine" : "") }, `日本一:${d.postseason.champion}`)] : []), ...d.postseason.series.map((x) => seriesCard({ ...x, teams: x.teams.map((t) => ({ ...t, winner: t.name === x.winner })), games: [] }, false)));
@@ -80,7 +80,7 @@ async function renderTitles(token) {
   if (d.year === null) return empty(NO_SEASON);
   r.year = d.year;
   $("records-controls").replaceChildren(select("シーズンの選択", d.years.map((y) => [y, `${y}シーズン目`]).reverse(), d.year, (v) => { r.year = Number(v); renderCurrent(); }));
-  const who = (t) => (t.players.length ? t.players.map((p) => [playerLink(p.name, p.player_id), el("span", { className: "sub" }, p.team_name)]).flat() : [el("span", { className: "muted" }, "—")]);
+  const who = (t) => (t.players.length ? t.players.map((p) => [playerChip(p.name, p.player_id), el("span", { className: "sub" }, p.team_name)]).flat() : [el("span", { className: "muted" }, "—")]); // 行はタイトルなので、選手は名札(D-484)
   const blocks = d.leagues.map((lg) => el("section", { className: "record-league" },
     el("h2", {}, lg.league_name),
     table({ firstLabel: "タイトル", columns: [{ key: "who", label: "選手" }, { key: "value", label: "記録" }],
@@ -96,7 +96,7 @@ export function awardTables(groups) {
   return groups.map((g) => el("section", { className: "record-league" },
     el("h2", {}, g.label),
     table({ firstLabel: "賞", columns: [{ key: "who", label: "選手" }, { key: "value", label: "理由" }],
-      rows: g.awards.map((x) => ({ ...x, values: { who: el("span", { className: "title-who" }, playerLink(x.name, x.player_id), el("span", { className: "sub" }, x.team_name)), value: x.value } })),
+      rows: g.awards.map((x) => ({ ...x, values: { who: el("span", { className: "title-who" }, playerChip(x.name, x.player_id), el("span", { className: "sub" }, x.team_name)), value: x.value } })),
       first: (x) => [el("span", {}, x.slot ? `${x.label}(${x.slot})` : x.label)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })));
 }
 
@@ -125,7 +125,7 @@ async function renderLeaders(token) {
   $("records-body").replaceChildren(
     table({ firstLabel: "順位・選手", columns: [{ key: "value", label: d.label }, { key: "seasons", label: "シーズン" }, { key: "team", label: "今の所属" }],
       rows: d.rows.map((x) => ({ ...x, values: { value: x.value_text, seasons: String(x.seasons), team: x.team_name } })),
-      first: (x) => [el("span", { className: "rank" }, String(x.rank)), playerLink(x.name, x.player_id)], rowClass: (x) => (x.is_mine ? "mine" : !x.active ? "muted" : ""), fluid: true }),
+      first: (x) => [el("span", { className: "rank" }, String(x.rank)), ...nameCell(x.name)], rowClass: (x) => (x.is_mine ? "mine" : !x.active ? "muted" : ""), fluid: true, pick: "records" }),
     el("p", { className: "muted small" }, "今シーズン(進行中)までの通算。引退した選手も含む。"),
   );
 }
@@ -155,7 +155,7 @@ async function renderEntries(token) {
   const rows = d.rows.map((x) => ({ ...x, values: { route: x.route_label, position: x.position_label, age: x.age !== null ? `${x.age}歳` : x.entry_age !== null ? `(${x.entry_age}歳)` : "", entry: x.entry_text, now: x.now_text, status: x.status_label, games: String(x.games), war: x.war } }));
   $("records-body").replaceChildren(
     rows.length
-      ? table({ firstLabel: "選手", columns: cols, rows, first: (x) => [x.in_league ? playerLink(x.name, x.player_id) : el("span", {}, x.name)], rowClass: (x) => (x.status === "left" ? "muted" : ""), fluid: true })
+      ? table({ firstLabel: "選手", columns: cols, rows, first: (x) => nameCell(x.name), rowClass: (x) => (x.status === "left" ? "muted" : ""), fluid: true, pick: "records" })
       : el("p", { className: "info" }, "この年度にこの球団に入った選手はいません。"),
   );
 }
@@ -175,7 +175,7 @@ async function renderMoves(token) {
   $("records-body").replaceChildren(
     d.rows.length
       ? table({ firstLabel: "選手", columns: cols, rows: d.rows.map((x) => ({ ...x, values: { label: x.label, from: x.from_team_name, to: x.to_team_name, position: x.position_label, age: x.age ? `${x.age}歳` : "" } })),
-        first: (x) => [x.linkable ? playerLink(x.name, x.player_id) : el("span", {}, x.name)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })
+        first: (x) => nameCell(x.name), rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true, pick: "records" })
       : el("p", { className: "info" }, "この条件の出入りはありません。"),
   );
 }
@@ -193,9 +193,9 @@ async function renderManagers(token) {
   const orows = d.others.map((x) => ({ ...x, values: { year: `${x.year}シーズン目`, team: x.team_name, role: x.role_label } }));
   $("records-body").replaceChildren(
     el("h2", {}, "監督の通算"),
-    el("div", { id: "records-managers" }, table({ firstLabel: "監督", columns: cols, rows, first: (x) => [el("span", {}, x.name + (x.former ? "(元選手)" : ""))], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })),
+    el("div", { id: "records-managers" }, table({ firstLabel: "監督", columns: cols, rows, first: (x) => nameCell(x.name + (x.former ? "(元選手)" : "")), rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })),
     el("p", { className: "muted small" }, "年度の確定のときにその球団の監督だった人の、そのシーズンの成績。"),
     el("h2", {}, "コーチ・スカウトの所属"),
-    orows.length ? table({ firstLabel: "職員", columns: ocols, rows: orows, first: (x) => [el("span", {}, x.name + (x.former ? "(元選手)" : ""))], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true, limit: state.records.othersShown || 30, more: () => { state.records.othersShown = (state.records.othersShown || 30) + 60; renderCurrent(); } }) : el("p", { className: "muted small" }, "まだありません。"),
+    orows.length ? table({ firstLabel: "職員", columns: ocols, rows: orows, first: (x) => nameCell(x.name + (x.former ? "(元選手)" : "")), rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true, limit: state.records.othersShown || 30, more: () => { state.records.othersShown = (state.records.othersShown || 30) + 60; renderCurrent(); } }) : el("p", { className: "muted small" }, "まだありません。"),
   );
 }

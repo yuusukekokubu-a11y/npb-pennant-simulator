@@ -276,6 +276,11 @@ class ContractMixin:
         if order not in ("asc", "desc"):
             order = "desc" if info.get("better", "high") == "high" else "asc"
         columns = [metric] + CONTRACT_COLUMNS + [c for c in kind_cols if c["key"] != metric["key"]]
+        slots = len(columns) + 1  # 列の枠の数(D-483):種類を変えても足りる数と、並べた列の固定列
+        if role is not None:
+            usage = ("PA", "OUTS", "plate_appearances", "innings")
+            more = [list(WAR_COLUMNS[role]) if k == WAR_KIND else table_cols(config, role, k) for k in (*KIND_LABELS, WAR_KIND)]
+            slots = 1 + len(CONTRACT_COLUMNS) + max(len([c for c in cs if c["key"] not in usage]) for cs in more) + 1
         statuses = self._contract_statuses(proc)
         team = self._my_team()
         mins, min_batters = self._mins()
@@ -336,7 +341,7 @@ class ContractMixin:
             "phase": "contract", "group": group, "groups": [{"key": k, "label": v[0]} for k, v in CONTRACT_GROUPS.items()],
             "kind": kind, "kinds": [] if role is None else [{"key": k, "label": v} for k, v in KIND_LABELS.items()] + [{"key": WAR_KIND, "label": "WAR"}],
             "status": status, "statuses": [{"key": "all", "label": "全部"}] + [{"key": k, "label": v} for k, v in CONTRACT_STATUS_LABELS.items()],
-            "columns": columns, "sort": info, "order": order, "extra_column": None, "rows": rows,
+            "columns": columns, "slots": slots, "sort": info, "order": order, "extra_column": None, "rows": rows,
             "season": view.key, "season_label": view.label, "seasons": self.roster_seasons(),
         }
 

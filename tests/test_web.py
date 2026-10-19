@@ -294,9 +294,9 @@ def test_main_page_basics():
 
 def test_table_fixed_columns_use_one_width():
     """表の固定列の幅と位置は、見出しと本体で同じ変数を使う(em は文字の大きさで変わるので使わない。D-267・D-268、D-403)。
-    実際の位置のそろいは scripts/check_table_align.mjs がブラウザで測る。"""
-    html = (WEB / "index.html").read_text(encoding="utf-8")
-    rules = {m.group(1).strip(): m.group(2) for m in re.finditer(r"([^{}\n]+)\{([^{}]*)\}", html)}
+    実際の位置のそろいは scripts/check_table_align.mjs がブラウザで測る。見た目は web/style.css(D-288 で index.html から分けた)。"""
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    rules = {m.group(1).strip(): m.group(2) for m in re.finditer(r"([^{}\n]+)\{([^{}]*)\}", css)}
     fixed = rules["th.name-fixed, td.name-fixed"]
     sticky2 = rules["th.sticky2, td.sticky2"]
     assert "var(--table-name-w)" in fixed and "border-box" in fixed and "em" not in fixed.replace("var(--table-name-w)", "")
@@ -305,4 +305,32 @@ def test_table_fixed_columns_use_one_width():
     assert not any("padding" in body for sel, body in rules.items() if ".sorted" in sel and "fluid" not in sel)
     assert any("var(--table-first-scroll-gap)" in body for sel, body in rules.items() if "td.sticky2 + td" in sel)
     app = _main_js()
-    assert 'className: "arrow"' in app and 'className: "sorted"' in app and "[arrow, c.label]" in app  # ▲▼ は別の要素で文字の左、本体の並べ替えた列にも印
+    assert 'className: "arrow"' in app and "[arrow, c.label]" in app  # ▲▼ は別の要素で文字の左、本体の並べ替えた列にも印
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert '<link rel="stylesheet" href="style.css">' in html and "<style>" not in html
+
+
+def test_tables_follow_one_system():
+    """表の仕組みは 1 つ(デザインの見直し。D-481〜D-488)。ファイルの中身から確かめる(実際の動きは通し確認)。"""
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    rules = {m.group(1).strip(): m.group(2) for m in re.finditer(r"([^{}\n]+)\{([^{}]*)\}", css)}
+    app = _main_js()
+    # 名前は青い下線のリンクにしない(D-484):選手の名前を下線のリンクで作る部品はなく、名札にも下線を引かない
+    assert "playerLink" not in app and "text-decoration: underline" not in css
+    assert "text-decoration: none" in rules[".link"]
+    # 行を押すと選手の札(D-484〜D-486):表は pick(札の置き場)を受け取り、札の置き場が画面にある
+    parts = (WEB / "js" / "parts.js").read_text(encoding="utf-8")
+    card = (WEB / "js" / "card.js").read_text(encoding="utf-8")
+    assert "registerRow(pick, r, actions)" in parts and 'query("player_card"' in card and "選手のページを開く" in card
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    hosts = set(re.findall(r'id="pcard-([a-z]+)"', html))
+    used = set(re.findall(r'pick: "([a-z]+)"', app))
+    assert used and used <= hosts, used - hosts
+    # 表示を切り替えても形が動かない(D-483):列の幅を決めた表
+    assert "table-layout: fixed" in rules["table.fixed"] and "slots: data.slots" in app
+    # 年俸の増減のボタンは、増やすが緑・減らすが赤(D-487)
+    assert "var(--up)" in rules[".salary-input button.pct.up"] and "var(--down)" in rules[".salary-input button.pct.down"]
+    root = rules[":root"]
+    assert "--up: #1f7a45" in root and "--down: #b8373f" in root
+    # 書体は外から読まない(D-488。通信先の制限)
+    assert "fonts.googleapis" not in css and "@import" not in css and "url(http" not in css

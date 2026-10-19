@@ -1,5 +1,5 @@
 // 一軍登録の画面(D-425):一軍(先発・救援・野手)と二軍の選手を、調子・総合・成績・疲労と並べる。
-// 一軍の選手の「外す」を押してから、二軍の同じ役割(投手・野手)の選手の「上げる」を押すと入れ替わる。
+// 一軍の選手の行を押して札の「外す」を押してから、二軍の同じ役割(投手・野手)の選手の札の「上げる」を押すと入れ替わる(D-486)。
 // 「AI に任せる」なら、7 日ごとの見直しで AI が選び直す。外した選手は 10 日戻せない
 // 二軍の成績(D-446)と、けが(D-445。けが人は一軍に上げられない。一軍の選手がけがをしたら、自動で外れて代わりが上がる)
 // 投手の起用(D-449〜D-451):先発の表の「番手」(▲▼)と救援の表の「役割」を変え、「この起用にする」で決める。「AI に戻す」まで使う
@@ -7,7 +7,7 @@
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { conditionMark, el, playerLink, table } from "./parts.js";
+import { conditionMark, el, nameCell, table } from "./parts.js";
 import { setDirty } from "./progress.js";
 
 async function rosterCall(name, args = {}) {
@@ -16,7 +16,7 @@ async function rosterCall(name, args = {}) {
   return r.value;
 }
 
-const COLUMNS = [{ key: "cond", label: "調子" }, { key: "overall", label: "総合" }, { key: "pos", label: "ポジション" }, { key: "stats", label: "成績" }, { key: "farm", label: "二軍成績" }, { key: "fatigue", label: "疲労" }, { key: "action", label: "入れ替え" }];
+const COLUMNS = [{ key: "cond", label: "調子" }, { key: "overall", label: "総合" }, { key: "pos", label: "ポジション" }, { key: "state", label: "状態" }, { key: "stats", label: "成績" }, { key: "farm", label: "二軍成績" }, { key: "fatigue", label: "疲労" }];
 const STARTER_COLUMNS = [{ key: "turn", label: "番手" }, ...COLUMNS];
 const RELIEF_COLUMNS = [{ key: "role", label: "役割" }, ...COLUMNS];
 const ROLE_ORDER = ["closer", "setup", "middle", "mopup"];
@@ -44,7 +44,7 @@ export async function renderRoster(token) {
   $("roster-recent").textContent = v.recent ? `${v.recent.day}日目の入れ替え:下げた ${v.recent.out.join("・") || "なし"} / 上げた ${v.recent.in.join("・") || "なし"}` : "";
   const msg = $("roster-message");
   msg.className = rs.message ? `message ${rs.message.ok ? "ok" : "ng"}` : "message";
-  msg.textContent = rs.message ? rs.message.text : out ? `${out.name} と入れ替える二軍の選手(${out.role === "pitcher" ? "投手" : "野手"})の「上げる」を押してください。` : "";
+  msg.textContent = rs.message ? rs.message.text : out ? `${out.name} と入れ替える二軍の選手(${out.role === "pitcher" ? "投手" : "野手"})を選び、札の「上げる」を押してください。` : "";
 
   const pv = v.pitching;
   const draft = pitchDraft(rs, v);
@@ -62,7 +62,9 @@ export async function renderRoster(token) {
     sel.value = draft.roles[r.player_id];
     return sel;
   };
-  const values = (r, action) => ({
+  // 状態の列:外す候補・外した日数(あと N 日)・けが(D-425、D-445)
+  const stateText = (r) => (rs.out === r.player_id ? el("span", { className: "warn" }, "外す候補") : r.injury ? el("span", { className: "injury small" }, r.injury.text) : r.lock_days > 0 ? `あと ${r.lock_days} 日` : "");
+  const values = (r) => ({
     turn: r.slot === "starter" ? turnCell(r) : "",
     role: r.slot === "reliever" ? roleCell(r) : "",
     cond: conditionMark(r.condition),
@@ -71,18 +73,19 @@ export async function renderRoster(token) {
     stats: r.stats,
     farm: r.farm_stats,
     fatigue: r.fatigue === null ? "—" : String(r.fatigue),
-    action,
+    state: stateText(r),
   });
-  const outButton = (r) => el("button", { type: "button", className: rs.out === r.player_id ? "" : "secondary", disabled: state.running, dataset: { playerId: r.player_id }, onclick: () => { rs.out = rs.out === r.player_id ? null : r.player_id; rs.message = null; renderCurrent(); } }, rs.out === r.player_id ? "選択中" : "外す");
+  // 札の下の操作(D-486):一軍の選手は「外す」(もう一度で取り消し)、二軍の選手は「上げる」(先に外す選手を選ぶ)
+  const outButton = (r) => el("div", { className: "row" }, el("button", { type: "button", className: rs.out === r.player_id ? "secondary roster-out" : "roster-out", disabled: state.running, dataset: { playerId: r.player_id }, onclick: () => { rs.out = rs.out === r.player_id ? null : r.player_id; rs.message = null; renderCurrent(); } }, rs.out === r.player_id ? "外すのをやめる" : "二軍に外す"));
   const inButton = (r) => {
-    if (r.injury) return el("span", { className: "injury small" }, r.injury.text); // けが人は上げられない(D-445)
-    if (r.lock_days > 0) return el("span", { className: "muted small" }, `あと ${r.lock_days} 日`);
+    if (r.injury) return el("p", { className: "injury small" }, `けが:${r.injury.text}(一軍に上げられません)`); // けが人は上げられない(D-445)
+    if (r.lock_days > 0) return el("p", { className: "muted small" }, `外した日から 10 日たつまで上げられません(あと ${r.lock_days} 日)`);
     const ok = out && out.role === r.role;
-    return el("button", { type: "button", className: "secondary", disabled: state.running || !ok, dataset: { playerId: r.player_id }, onclick: () => run("swap", { out_id: out.player_id, in_id: r.player_id }, `${out.name} を二軍に下げ、${r.name} を一軍に上げました。`) }, "上げる");
+    return el("div", { className: "row" }, el("button", { type: "button", className: "roster-in", disabled: state.running || !ok, dataset: { playerId: r.player_id }, onclick: () => run("swap", { out_id: out.player_id, in_id: r.player_id }, `${out.name} を二軍に下げ、${r.name} を一軍に上げました。`) }, out ? `${out.name} と入れ替えて上げる` : "一軍に上げる(先に外す選手を選ぶ)"));
   };
-  const block = (id, title, rows, action, columns = COLUMNS) => el("section", { id },
+  const block = (id, title, rows, actions, columns = COLUMNS) => el("section", { id },
     el("h2", {}, `${title}(${rows.length} 人)`),
-    rows.length ? table({ firstLabel: "選手", columns, rows: rows.map((r) => ({ ...r, values: values(r, action(r)) })), first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, `${r.age}歳${r.hand ? ` ${r.hand}` : ""}`)], rowClass: (r) => (rs.out === r.player_id ? "selected" : r.lock_days > 0 || r.injury ? "muted" : ""), fluid: true })
+    rows.length ? table({ firstLabel: "選手", columns, rows: rows.map((r) => ({ ...r, values: values(r) })), first: (r) => nameCell(r.name, `${r.age}歳${r.hand ? ` ${r.hand}` : ""}`), rowClass: (r) => (rs.out === r.player_id ? "selected" : r.lock_days > 0 || r.injury ? "muted" : ""), fluid: true, pick: "roster", actions })
       : el("p", { className: "muted small" }, "いません。"));
   const starters = draft.starters.map((id) => v.starters.find((r) => r.player_id === id));
   const rank = (r) => ROLE_ORDER.indexOf(r.role_label); // 救援は決まっている役割の順に並べる(選んでいる間は並べ替えない)

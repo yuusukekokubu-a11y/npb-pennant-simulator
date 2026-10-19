@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { call, query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { el, emblem, kvTable, link, playerLink, table, teamLink } from "./parts.js";
+import { el, emblem, kvTable, link, nameCell, table, teamLink } from "./parts.js";
 import { seasonCaution, titleFor } from "./glossary.js";
 import { setDirty } from "./progress.js";
 import { renderTeamStaff } from "./staff.js";
@@ -43,7 +43,7 @@ export async function renderTeam(args, token) {
   $("team-budget").replaceChildren(...budgetLines(d.budget, d.facilities));
   $("team-salaries").replaceChildren(
     d.salaries.length
-      ? table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸(万円)" }, { key: "remaining", label: "残り" }], rows: d.salaries.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, salary: r.salary_text, remaining: `${r.remaining} 年` } })), first: (r) => [playerLink(r.name, r.player_id)], fluid: true, limit: d.salariesShown || 20, more: () => { d.salariesShown = (d.salariesShown || 20) + 50; renderCurrent(); } })
+      ? table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸(万円)" }, { key: "remaining", label: "残り" }], rows: d.salaries.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, salary: r.salary_text, remaining: `${r.remaining} 年` } })), first: (r) => nameCell(r.name), fluid: true, pick: "team", limit: d.salariesShown || 20, more: () => { d.salariesShown = (d.salariesShown || 20) + 50; renderCurrent(); } })
       : el("p", { className: "muted" }, "契約の情報がありません。"),
   );
   const cols = [
@@ -55,14 +55,14 @@ export async function renderTeam(args, token) {
   // 能力の列(作り直し①。D-335):野手は弾道〜捕球、投手は球速〜変化球
   const rows = (role) => d.players.filter((p) => p.role === role).map((p) => ({ ...p, values: { position: p.position, age: String(p.age), hand: p.hand || "", games: String(p.games), ...p.abilities } }));
   // 外国人は名前の右に「外」(一軍に登録できるのは d.foreign_max 人まで。D-376)
-  const first = (p) => [playerLink(p.name, p.player_id), p.foreign ? el("span", { className: "badge-foreign", title: "外国人選手" }, "外") : ""];
-  $("team-pitchers").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.pitcher], rows: rows("pitcher"), first }));
-  $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.batter], rows: rows("batter"), first }));
+  const first = (p) => nameCell(p.name, "", p.foreign ? el("span", { className: "badge-foreign", title: "外国人選手" }, "外") : "");
+  $("team-pitchers").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.pitcher], rows: rows("pitcher"), first, pick: "team" }));
+  $("team-batters").replaceChildren(table({ firstLabel: "選手", columns: [...cols, ...d.ability_columns.batter], rows: rows("batter"), first, pick: "team" }));
   // 育成選手(支配下 70 人とは別の枠。試合には出ない。D-375)
   const dev = d.development || [];
   $("team-development-box").hidden = !dev.length;
   const devCols = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "hand", label: "投打" }, { key: "year", label: "育成" }];
-  $("team-development").replaceChildren(dev.length ? table({ firstLabel: "選手", columns: devCols, rows: dev.map((p) => ({ ...p, values: { position: p.position, age: `${p.age}歳`, hand: p.hand || "", year: `${p.dev_seasons + 1} 年目` } })), first, fluid: true }) : "");
+  $("team-development").replaceChildren(dev.length ? table({ firstLabel: "選手", columns: devCols, rows: dev.map((p) => ({ ...p, values: { position: p.position, age: `${p.age}歳`, hand: p.hand || "", year: `${p.dev_seasons + 1} 年目` } })), first, fluid: true, pick: "team" }) : "");
 }
 
 // チーム方針(D-454〜D-457):練習の重点・起用の方針・盗塁・バント。どの球団でも、いつでも変えられ、「AI に戻す」まで続く

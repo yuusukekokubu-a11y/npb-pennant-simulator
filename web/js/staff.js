@@ -4,13 +4,14 @@
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, table } from "./parts.js";
+import { el, playerChip, table } from "./parts.js";
 import { runProc } from "./procedure.js";
 import { setDirty } from "./progress.js";
 
 const contractText = (m) => (m.remaining === null || m.remaining === undefined ? `${m.years} 年` : `${m.remaining} 年`);
 const careerText = (m) => [m.former ? "元選手" : "", m.former_team_name ? `前 ${m.former_team_name}` : ""].filter(Boolean).join("・");
-const nameCell = (m) => [m.player_id ? playerLink(m.name, m.player_id) : el("span", {}, m.name)];
+// 職員は選手ではないので、行の中のボタン(解任・希望)のまま。元選手の名前は名札(押すと選手のページ。D-484)
+const nameCell = (m) => [m.player_id ? playerChip(m.name, m.player_id) : el("span", { className: "pname" }, m.name)];
 
 // ---- オフの手続きの「職員」の段階 ----
 

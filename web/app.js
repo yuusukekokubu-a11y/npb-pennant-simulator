@@ -3,12 +3,11 @@
 // 能力は公開の情報として query から受け取る(答え合わせモードはなくした。作り直し①。D-338)。
 // 入口(保守②。D-291):閉じる前の警告・ボタンのつなぎ・起動。画面ごとの処理は js/ の各ファイルにある(一覧は web/README.md)。
 
-import { $, STATS_PAGE, state } from "./js/core.js";
+import { $, state } from "./js/core.js";
 import { boot } from "./js/backend.js";
 import { back, buildTabs, current, openPage, renderCurrent, showScreen, showTab } from "./js/screens.js";
 import { openEntries } from "./js/records.js";
 import { advance } from "./js/progress.js";
-import { buildStatsFilters, commitSort, currentSort, isAbilityKey } from "./js/stats.js";
 import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
 import { yearEnd } from "./js/yearend.js";
 import { chooseNewGame, leagueSeedChanged, newGameStep, nextNewGame, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
@@ -75,7 +74,7 @@ $("menu").addEventListener("click", () => {
 for (const b of document.querySelectorAll(".back")) b.addEventListener("click", back);
 for (const b of $("loading-style").children) b.addEventListener("click", () => setLoadingStyle(b.dataset.value)); // ロード画面の形(D-407)
 
-// 成績
+// 成績(打撃・守備・投球。表示・絞り込み・並びは表の上の帯。stats.js。D-482)
 for (const b of $("stats-role").children) {
   b.addEventListener("click", () => {
     // 打者と投手を切り替えたときは、その側の既定の並び順に戻す(絞り込みと表示件数は保つ。D-131)
@@ -85,57 +84,6 @@ for (const b of $("stats-role").children) {
     renderCurrent();
   });
 }
-for (const b of $("stats-kind").children) {
-  b.addEventListener("click", () => {
-    commitSort();
-    state.stats.kind = b.dataset.value; // 並び順・絞り込み・表示件数は保つ(D-131)
-    renderCurrent();
-  });
-}
-$("stats-sort").addEventListener("change", () => {
-  const key = $("stats-sort").value;
-  state.sortBy[state.stats.role] = { key, order: null };
-  if (isAbilityKey(key)) state.stats.kind = "ability"; // 能力の項目を選んだら、能力の表で見せる
-  state.stats.shown = STATS_PAGE;
-  renderCurrent();
-});
-for (const b of $("stats-order").children) {
-  b.addEventListener("click", () => {
-    commitSort();
-    currentSort().order = b.dataset.value;
-    state.stats.shown = STATS_PAGE;
-    renderCurrent();
-  });
-}
-$("stats-season").addEventListener("change", () => {
-  state.stats.season = $("stats-season").value;
-  state.stats.shown = STATS_PAGE;
-  renderCurrent();
-});
-$("stats-position").addEventListener("change", () => {
-  state.stats.position = $("stats-position").value; // 守備のポジション(D-431)
-  state.sortBy.fielder = { key: null, order: null };
-  state.shownSort.fielder = null;
-  state.stats.shown = STATS_PAGE;
-  renderCurrent();
-});
-$("stats-league").addEventListener("change", () => {
-  state.stats.league = $("stats-league").value;
-  state.stats.shown = STATS_PAGE;
-  buildStatsFilters();
-  renderCurrent();
-});
-$("stats-team").addEventListener("change", () => {
-  state.stats.team = $("stats-team").value;
-  state.stats.shown = STATS_PAGE;
-  renderCurrent();
-});
-$("stats-qualified").addEventListener("change", () => {
-  state.stats.qualified = $("stats-qualified").checked;
-  state.stats.shown = STATS_PAGE;
-  renderCurrent();
-});
-
 // 試合
 $("games-day").addEventListener("change", () => {
   state.gamesDay = Number($("games-day").value);

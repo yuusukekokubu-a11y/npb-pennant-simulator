@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from fractions import Fraction
 
+from .. import ability_model
 from ..abilities import FIELDER_POSITIONS, POSITION_LABELS
 from ..contracts import remaining_years
 from ..metrics import innings_text
@@ -28,6 +29,7 @@ from .common import (
     metrics_config,
     table_cols,
 )
+from .abilities import _sort_value, ability_columns, skills_text, stats_slots
 
 
 FIELDING_POSITIONS = tuple(p for p in FIELDER_POSITIONS if p != "DH")
@@ -45,8 +47,42 @@ CATCHER_COLUMNS = (
 )
 
 
+FIELDING_SLOTS = 1 + len(FIELDING_COLUMNS) + len(CATCHER_COLUMNS) + 1  # 守備の表の列の枠の数(主なポジション + 共通 + 捕手 + 固定列。D-483)
+
+
 class StatsMixin:
     """Game の一部:成績の表(個人成績・WAR・成績つきの選手の表)。"""
+
+    def _cross_sort(self, role: str, key: str, pids: list[str], view: "_SeasonView") -> tuple[dict, dict] | None:
+        """どの表示の列でも並べられるように(D-483):元の数・指標・WAR の列・能力のどれかなら、その列の情報と、選手ごとの (並べ替え用の数, 表示) を返す。
+        使えない列なら None。能力は今の能力(過去のシーズンを見ていても)。"""
+        config = metrics_config()
+        if is_sortable(config, role, key):
+            rec = view.records
+            group = rec.batters if role == "batter" else rec.pitchers
+            cells = {}
+            for pid in pids:
+                counts = group.get(pid)
+                cells[pid] = _values(config, role, counts, view.baselines, view.park_factor(pid) if role == "batter" else None, (view.override or {}).get(pid))[key] if counts is not None else (None, "—")
+            return column_info(config, role, key), cells
+        if key in _WAR_SORT_KEYS[role]:
+            lines = view.war
+            return next(c for c in WAR_COLUMNS[role] if c["key"] == key), {pid: (_war_values(lines[pid])[key] if pid in lines else (None, "—")) for pid in pids}
+        col = next((c for c in ability_columns(role) if c["key"] == key), None)
+        if col is None:
+            return None
+        cfg = self.state.gen_config
+        cells = {}
+        for pid in pids:
+            p = self.state.season.players.get(pid)
+            if p is None:
+                cells[pid] = (None, "—")
+            elif key == "skills":
+                cells[pid] = (_sort_value(cfg, p, key), skills_text(p) or "—")
+            else:
+                shown = {a["key"]: a["text"] for a in ability_model.public_abilities(cfg, p)}
+                cells[pid] = (_sort_value(cfg, p, key), shown.get(key, "—"))
+        return {**col, "better": "high"}, cells
 
     def select_players(self, role: str, qualified: bool = True, league: int | None = None, team_id: str | None = None, season: str | int | None = None) -> list[str]:
         """個人成績に出す選手(試合に出た選手。規定到達者・リーグ・チームで絞り込む)。"""
@@ -98,22 +134,32 @@ class StatsMixin:
         config = metrics_config()
         table = config["tables"][role][kind]
         sort = sort or table["sort"]
-        if not is_sortable(config, role, sort):
-            raise ValueError(f"並び順に使えない列です(値: {sort!r})")
-        info = column_info(config, role, sort)
+        pids = self.select_players(role, qualified, league, team_id, view.key)
+        cross = None
+        if is_sortable(config, role, sort):
+            info = column_info(config, role, sort)
+        else:  # WAR の列・能力で並べたまま切り替えたとき(D-483)
+            cross = self._cross_sort(role, sort, pids, view)
+            if cross is None:
+                raise ValueError(f"並び順に使えない列です(値: {sort!r})")
+            info = cross[0]
         extra = None if sort in table["columns"] else info
-        shown_keys = list(table["columns"]) + ([sort] if extra else [])
+        shown_keys = list(table["columns"]) + ([sort] if extra and cross is None else [])
         if order not in ("asc", "desc"):
-            order = "desc" if info["better"] == "high" else "asc"
+            order = "desc" if info.get("better", "high") == "high" else "asc"
         rec = view.records
         group, owner = (rec.batters, rec.batter_team) if role == "batter" else (rec.pitchers, rec.pitcher_team)
         rows = []
         base = view.baselines
-        for pid in self.select_players(role, qualified, league, team_id, view.key):
+        for pid in pids:
             values = _values(config, role, group[pid], base, view.park_factor(pid) if role == "batter" else None, (view.override or {}).get(pid))
             row = self._player_row(pid, owner[pid], view)
             row["values"] = {k: values[k][1] for k in shown_keys}
-            row["_sort"] = values[sort][0]
+            if cross is None:
+                row["_sort"] = values[sort][0]
+            else:
+                row["values"][sort] = cross[1][pid][1]
+                row["_sort"] = cross[1][pid][0]
             rows.append(row)
         present = [r for r in rows if r["_sort"] is not None]
         missing = [r for r in rows if r["_sort"] is None]
@@ -133,6 +179,7 @@ class StatsMixin:
             "sort": info,
             "order": order,
             "extra_column": extra,
+            "slots": stats_slots(config, role),
             "qualified": qualified,
             "qualify_rule": QUALIFY_RULES[role],
             "rows": rows,
@@ -146,25 +193,34 @@ class StatsMixin:
         """個人成績の「WAR」の表(③b。D-179)。列は WAR_COLUMNS。並び順は WAR の列だけ(既定は WAR の高い順)。"""
         columns = WAR_COLUMNS[role]
         default = "war" if role == "batter" else "war_ra"
-        sort = sort if sort in _WAR_SORT_KEYS[role] else default
-        info = next(c for c in columns if c["key"] == sort)
-        if order not in ("asc", "desc"):
-            order = "desc"
         lines = view.war
         rec = view.records
         owner = rec.batter_team if role == "batter" else rec.pitcher_team
+        pids = [pid for pid in self.select_players(role, qualified, league, team_id, view.key) if pid in lines]
+        cross = None
+        if sort and sort not in _WAR_SORT_KEYS[role]:  # 基本・セイバー・能力の列で並べたまま切り替えたとき(D-483)
+            cross = self._cross_sort(role, sort, pids, view)
+        if cross is None:
+            sort = sort if sort in _WAR_SORT_KEYS[role] else default
+            info = next(c for c in columns if c["key"] == sort)
+        else:
+            info = cross[0]
+        if order not in ("asc", "desc"):
+            order = "desc" if cross is None or info.get("better", "high") == "high" else "asc"
         rows = []
-        for pid in self.select_players(role, qualified, league, team_id, view.key):
-            line = lines.get(pid)
-            if line is None:
-                continue
-            values = _war_values(line)
+        for pid in pids:
+            values = _war_values(lines[pid])
             row = self._player_row(pid, owner[pid], view)
             row["values"] = {k: values[k][1] for k in values}
-            row["_sort"] = values[sort][0]
+            if cross is None:
+                row["_sort"] = values[sort][0]
+            else:
+                row["values"][sort] = cross[1][pid][1]
+                row["_sort"] = cross[1][pid][0]
             rows.append(row)
-        rows.sort(key=lambda r: r["player_id"])
-        rows.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+        present = sorted((r for r in rows if r["_sort"] is not None), key=lambda r: r["player_id"])
+        present.sort(key=lambda r: r["_sort"], reverse=order == "desc")
+        rows = present + sorted((r for r in rows if r["_sort"] is None), key=lambda r: r["player_id"])
         for i, r in enumerate(rows):
             r.pop("_sort")
             r["rank"] = i + 1
@@ -176,7 +232,8 @@ class StatsMixin:
             "columns": columns,
             "sort": info,
             "order": order,
-            "extra_column": None,
+            "extra_column": None if cross is None else info,
+            "slots": stats_slots(metrics_config(), role),
             "qualified": qualified,
             "qualify_rule": QUALIFY_RULES[role],
             "rows": rows,
@@ -270,6 +327,7 @@ class StatsMixin:
             "sort": info,
             "order": order,
             "extra_column": None,
+            "slots": FIELDING_SLOTS,
             "qualified": qualified,
             "qualify_rule": "守備の規定:そのポジション(すべては全ポジションを合わせて)で、チームの試合数の半分以上にスタメンで出た野手",
             "rows": rows,

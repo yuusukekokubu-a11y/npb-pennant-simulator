@@ -182,6 +182,11 @@ class DecisionMixin:
         if stage == "draft" and show == "all":
             base.append({**COL["status"]})
         columns = ([metric] if metric else []) + base + [c for c in kind_cols if not metric or c["key"] != metric["key"]]
+        slots = len(columns) + 1  # 列の枠の数(D-483):種類(基本・セイバー・WAR)を変えても足りる数と、表にない列で並べたときの固定列
+        if with_stats and role is not None:
+            usage = ("PA", "OUTS", "plate_appearances", "innings")
+            more = [list(WAR_COLUMNS[role]) if k == WAR_KIND else table_cols(config, role, k) for k in (*KIND_LABELS, WAR_KIND)]
+            slots = 1 + len(base) + max(len([c for c in cs if c["key"] not in usage and c["key"] != metric["key"]]) for cs in more) + 1
         keys = {c["key"]: c for c in columns}
         if not sort:
             sort = metric["key"] if metric else "ability"
@@ -279,6 +284,8 @@ class DecisionMixin:
             if stage not in ("draft", "foreign"):
                 cells["calc"] = (row["deal"]["calc_salary"], f"{row['deal']['calc_salary']:,}")
             row["values"] = {c["key"]: (cells.get(c["key"]) or (None, "—"))[1] for c in columns}
+            if sort not in keys:  # 表にない列で並べたときも、名前の隣の固定列に値を出す(D-483)
+                row["values"][sort] = (cells.get(sort) or (None, "—"))[1]
             row["_sort"] = (cells.get(sort) or (None, ""))[0]
             rows.append(row)
         present = sorted((r for r in rows if r["_sort"] is not None), key=lambda r: r["player_id"])
@@ -292,6 +299,6 @@ class DecisionMixin:
             "stage": stage, "group": group, "groups": [{"key": k, "label": v[0]} for k, v in CONTRACT_GROUPS.items()],
             "kind": kind if with_stats else None, "kinds": [] if role is None or not with_stats else [{"key": k, "label": v} for k, v in KIND_LABELS.items()] + [{"key": WAR_KIND, "label": "WAR"}],
             "show": show, "shows": [{"key": "open", "label": open_label}, {"key": "all", "label": all_label}],
-            "columns": columns, "sort": info, "order": order, "rows": rows, "thin": {pos: {"label": POSITION_LABELS[pos], "reasons": r} for pos, r in thin.items()},
+            "columns": columns, "slots": slots, "sort": info, "order": order, "rows": rows, "thin": {pos: {"label": POSITION_LABELS[pos], "reasons": r} for pos, r in thin.items()},
             "season": view.key, "season_label": view.label, "seasons": self.roster_seasons() if with_stats else [],
         }
