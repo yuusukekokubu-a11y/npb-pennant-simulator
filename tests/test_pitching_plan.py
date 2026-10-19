@@ -164,7 +164,7 @@ def test_save_load_continue_and_replay_are_the_same(mid):
     manifest_plan = json.loads(_state_json(data))["season"]["pitching_plans"]["T01"]
     assert manifest_plan["starters"] == order and manifest_plan["roles"] == roles2
     other = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 31 and other.state.season.pitching_plans["T01"]["roles"] == roles2
+    assert SAVE_FORMAT_VERSION == 32 and other.state.season.pitching_plans["T01"]["roles"] == roles2
     g.advance(6)
     other.advance(6)
     s1, s2 = g.state.season, other.state.season
