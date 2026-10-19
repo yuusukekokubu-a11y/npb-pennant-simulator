@@ -70,9 +70,9 @@ def test_funds_change_and_automatic_renewal(contract_game):
 def test_stages_and_contract_table(contract_game):
     g = _fresh(contract_game)
     v = g.offseason_view()
-    assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "FA", "外国人", "ドラフト", "市場", "トレード", "現役ドラフト", "完了"]
+    assert v["stage"] == "contract" and v["phase_label"] == "契約" and [x["label"] for x in v["phases"]] == ["契約", "職員", "FA", "外国人", "ドラフト", "市場", "トレード", "現役ドラフト", "完了"]
     rn = v["renewal"]
-    assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"] - team_upkeep(g._team("T01"))  # 年俸に使える額 = 資金 − 設備の維持費(D-383)
+    assert "note" not in rn and rn["can_next"] == (rn["over"] <= 0) and rn["cap"] == g.state.team_funds["T01"] - team_upkeep(g._team("T01")) - g.budget_info("T01")["staff"]  # 年俸に使える額 = 資金 − 設備の維持費(D-383)− 職員の年俸(D-474)
     for gone in ("none_max_ratio", "max_offers", "unoffered", "axes", "projected_total"):
         assert gone not in rn
     t = g.contract_table()
@@ -112,7 +112,7 @@ def test_overrun_gate_release_and_ai_at_the_end(contract_game):
     proc = g.state.procedure
     team = g._team("T01")
     # 資金を超えるようにして、関所を確かめる(D-361)
-    g.state.team_funds["T01"] = team_salary(team) + team_upkeep(team) - 1000  # 維持費を引いた額を 1,000 万円超える(D-383)
+    g.state.team_funds["T01"] = team_salary(team) + team_upkeep(team) + g.budget_info("T01")["staff"] - 1000  # 維持費と職員の年俸を引いた額を 1,000 万円超える(D-383、D-474)
     assert g.offseason_view()["renewal"]["over"] == 1000 and not g.offseason_view()["renewal"]["can_next"]
     with pytest.raises(ValueError, match="資金"):
         g.offseason_next()
@@ -126,7 +126,7 @@ def test_overrun_gate_release_and_ai_at_the_end(contract_game):
     _clear_overrun(g)
     assert g.offseason_view()["renewal"]["can_next"]
     v = g.offseason_next()
-    assert v["stage"] in ("fa", "draft") and proc.ai_release_done
+    assert v["stage"] == "staff" and proc.ai_release_done  # 契約の次は職員の段階(D-474)
     assert all(team_salary(t) <= g.state.team_funds[t.id] for t in g.state.league.teams)  # AI 球団は資金の中に収めた
     assert all(x["team_id"] != "T01" for x in proc.budget_releases)
     assert any(x["team_id"] != "T01" and x.get("note") != "budget" for x in proc.released)  # AI の自由契約
@@ -148,7 +148,9 @@ def test_stage_auto_and_next_semantics(contract_game):
     g = _fresh(contract_game)
     v = g.offseason_stage_auto()  # 契約の段階だけを AI の方針で(自球団の分も。超過の解消と自由契約)
     log = v["auto_log"]
-    assert log["stage"] == "contract" and v["stage"] in ("fa", "foreign")
+    assert log["stage"] == "contract" and v["stage"] == "staff"
+    v = g.offseason_stage_auto()  # 職員の段階(D-474)
+    assert v["auto_log"]["stage"] == "staff" and v["stage"] in ("fa", "foreign") and g.state.procedure.staff_done
     assert all(x["kind"] == "release" for x in log["items"])
     assert team_salary(g._team("T01")) <= g.state.team_funds["T01"]
     if v["stage"] == "fa":
@@ -172,6 +174,7 @@ def test_stage_auto_and_next_semantics(contract_game):
     # 同じ操作なら同じ結果
     g2 = _fresh(contract_game)
     g2.offseason_stage_auto()
+    g2.offseason_stage_auto()  # 職員
     if g2.offseason_view()["stage"] == "fa":
         g2.offseason_stage_auto()
     g2.offseason_stage_auto()  # 外国人市場

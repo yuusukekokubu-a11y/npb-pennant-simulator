@@ -57,9 +57,9 @@ def roster_rows(g):
 
 
 def skip_fa(g):
-    """FA の段階(F3-2c)と外国人市場(D-376)に入っていたら、自球団の分は何もせずに済ませてドラフトへ。戻り値は画面の情報。"""
+    """職員の段階(D-474)・FA の段階(F3-2c)・外国人市場(D-376)に入っていたら、自球団の分は何もせずに済ませてドラフトへ。戻り値は画面の情報。"""
     v = g.offseason_view()
-    while v["phase"] in ("fa", "foreign"):
+    while v["phase"] in ("staff", "fa", "foreign"):
         v = g.offseason_next()
     return v
 

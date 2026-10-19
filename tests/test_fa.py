@@ -27,6 +27,8 @@ def finish_contract(g):
         rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
         g.offseason_contract_release(rows[0]["player_id"])
     g.offseason_next()
+    if g.offseason_view()["phase"] == "staff":  # 職員の段階(D-474)は何もせずに締める
+        g.offseason_next()
 
 
 def to_fa(g):

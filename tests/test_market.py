@@ -141,7 +141,8 @@ def test_market_wish_needs_room_in_funds(season_end):
 @pytest.mark.slow
 def test_decision_tables_columns_depth_and_thin(season_end):
     g = _fresh(season_end)
-    g.offseason_stage_auto()  # 契約 → FA(宣言した選手がいなければドラフト)
+    g.offseason_stage_auto()  # 契約 → 職員(D-474)
+    g.offseason_stage_auto()  # 職員 → FA(宣言した選手がいなければドラフト)
     v = g.offseason_view()
     if v["stage"] == "fa":
         t = g.decision_table("fa")
