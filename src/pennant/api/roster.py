@@ -2,6 +2,7 @@
 
 - 一軍と二軍の選手を、調子・疲労・総合・今シーズンの成績と並べる。1 人ずつ入れ替える(投手は投手と、野手は野手と)。
 - 「AI に任せる」なら、7 日ごとの見直しで AI が一軍を選び直す(ほかの球団と同じ基準)。
+- 投手の起用(D-449〜D-451):先発ローテーションの順と救援の役割を決める。「AI に戻す」まで使い、抜けた枠だけ AI が組み直す。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from fractions import Fraction
 from .. import ability_model
 from ..abilities import POSITION_LABELS
 from ..condition import public as condition_public
+from ..manager import RELIEF_ROLE_LABELS, RELIEF_ROLES
 from .common import BATS_LABELS, THROWS_LABELS
 from .farm import farm_short
 
@@ -26,6 +28,9 @@ def _era(c) -> str:
     if not c or not c.get("OUTS"):
         return "-"
     return f"{float(Fraction(c.get('ER', 0) * 27, c['OUTS'])):.2f}"
+
+
+NOTICE_DAYS = 7  # 進行の画面で、起用を組み直した知らせを出す日数(D-450)
 
 
 class RosterMixin:
@@ -95,7 +100,41 @@ class RosterMixin:
             "starters": [by[p.id] for p in active.starters], "relievers": [by[p.id] for p in active.relievers], "batters": [by[p.id] for p in active.batters], "farm": farm,
             "counts": {"active": len(active.players), "foreign": sum(1 for p in active.players if p.foreign), "foreign_max": ar.get("foreign_max"), "catchers": sum(1 for p in active.batters if p.position == "C"), "catchers_min": int(ar["catchers"])},
             "recent": recent,
+            "pitching": self.pitching_view(),
         }
+
+    def pitching_view(self) -> dict | None:
+        """投手の起用(公開用。D-449〜D-451):自分で決めたか、次に投げる番手、役割の選択肢、組み直した知らせ。"""
+        my = self.state.my_team_id
+        if my is None:
+            return None
+        season = self.state.season
+        plan = season.pitching_plans.get(my)
+        n = len(season.actives[my].starters)
+        return {
+            "source": "user" if plan is not None else "ai",
+            "source_text": "自分で決めた起用(「AI に戻す」まで使います)" if plan is not None else "AI が決めた起用",
+            "next_index": season.rotation.get(my, 0) % n if n else 0,
+            "roles": [{"key": r, "label": RELIEF_ROLE_LABELS[r]} for r in RELIEF_ROLES],
+            "notice": self._pitching_notice_text(plan),
+        }
+
+    def _pitching_notice_text(self, plan: dict | None) -> str:
+        n = (plan or {}).get("notice")
+        if not n:
+            return ""
+        name = lambda pid: self.state.season.players[pid].name if pid in self.state.season.players else pid
+        return f"{int(n['day']) + 1}日目から、一軍から外れた投手の分を AI が組み直しました(抜けた:{'・'.join(map(name, n['out'])) or 'なし'} / 入った:{'・'.join(map(name, n['in'])) or 'なし'})。"
+
+    def pitching_notice(self) -> str:
+        """進行の画面に出す、起用を組み直した知らせ(直近 7 日。D-450)。"""
+        my = self.state.my_team_id
+        season = self.state.season
+        plan = season.pitching_plans.get(my) if my is not None else None
+        n = (plan or {}).get("notice")
+        if not n or self.state.procedure is not None or season.day - int(n["day"]) > NOTICE_DAYS:
+            return ""
+        return self._pitching_notice_text(plan)
 
     def roster_swap(self, out_id: str, in_id: str) -> dict:
         """一軍の選手と二軍の選手を入れ替える(D-425)。"""
@@ -108,5 +147,21 @@ class RosterMixin:
         """「AI に任せる」の切り替え(D-425)。"""
         season = self._roster_check()
         season.roster_auto[self.state.my_team_id] = bool(auto)
+        self.dirty = True
+        return self.roster_view()
+
+    def roster_set_pitching(self, starters: list, roles: dict) -> dict:
+        """先発ローテーションの順と救援の役割を決める(D-449)。starters は 1 番手からの選手 ID、roles は救援の選手 ID → 役割。"""
+        season = self._roster_check()
+        if not isinstance(starters, list) or not isinstance(roles, dict):
+            raise ValueError("先発の順と救援の役割の形が違います")
+        season.set_pitching_plan(self.state.my_team_id, [str(x) for x in starters], {str(k): str(v) for k, v in roles.items()})
+        self.dirty = True
+        return self.roster_view()
+
+    def roster_pitching_auto(self) -> dict:
+        """投手の起用を AI に戻す(D-449)。"""
+        season = self._roster_check()
+        season.clear_pitching_plan(self.state.my_team_id)
         self.dirty = True
         return self.roster_view()

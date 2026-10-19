@@ -83,7 +83,7 @@ def test_set_facility_in_contract_stage(season_end):
         g.set_facility("stadium", 3)
     # 保存して読み込んでも同じ(版 22)
     again = load_game(save_game(g.state))
-    assert SAVE_FORMAT_VERSION == 30 and next(t for t in again.league.teams if t.id == "T01").facilities["practice"] == 5
+    assert SAVE_FORMAT_VERSION == 31 and next(t for t in again.league.teams if t.id == "T01").facilities["practice"] == 5
     # 契約の段階を過ぎると変えられない
     while g.offseason_view()["stage"] == "contract":
         g.offseason_stage_auto()

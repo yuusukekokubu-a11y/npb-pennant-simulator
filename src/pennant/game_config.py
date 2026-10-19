@@ -145,7 +145,7 @@ def validate_game_config(data: Any, source: str = "(辞書)") -> GameConfig:
     for key in ("closer_count", "setup_count", "mopup_count"):
         counts[key] = c.integer(c.get(p, key, "pitching"), f"pitching.{key}", 0, 10)
     if relievers is not None and all(v is not None for v in counts.values()) and sum(counts.values()) > relievers:
-        c.add("pitching", f"抑え・中継ぎ(勝ち)・敗戦処理の人数の合計が、救援の人数({relievers})を超えています")
+        c.add("pitching", f"抑え・勝ちパターン・敗戦処理の人数の合計が、救援の人数({relievers})を超えています")
     c.integer(c.get(p, "close_game_max_lead", "pitching"), "pitching.close_game_max_lead", 0, 10)
     c.integer(c.get(p, "setup_from_inning", "pitching"), "pitching.setup_from_inning", 1, 15)
     c.integer(c.get(p, "mopup_deficit", "pitching"), "pitching.mopup_deficit", 1, 30)

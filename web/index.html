@@ -57,6 +57,8 @@
   input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   progress { width: 100%; height: 12px; accent-color: var(--gold); }
   .card { border-radius: var(--radius); padding: 14px; margin: 12px 0; background: var(--box); box-shadow: var(--shadow); }
+  .turn { white-space: nowrap; }
+  .turn .small-button { padding: 4px 10px; margin-left: 4px; min-height: 36px; font-size: 0.85rem; }
   .notice { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0; font-size: 0.92rem; }
   .error { color: var(--ng); font-size: 0.9rem; margin: 4px 0 0; white-space: pre-wrap; }
   .message { margin: 8px 0; white-space: pre-wrap; }
@@ -528,6 +530,7 @@
   </div>
   <div class="quick"><button id="open-lineup" class="secondary" type="button" hidden>スタメン</button><button id="open-roster" class="secondary" type="button" hidden>一軍登録</button><button id="open-trade" class="secondary" type="button" hidden>トレード</button><button id="open-review" class="secondary" type="button">補強</button></div>
 
+  <p class="notice" id="pitching-notice" hidden></p>
   <div id="injury-box" hidden>
     <h2>けが</h2>
     <div id="injury-list"></div>

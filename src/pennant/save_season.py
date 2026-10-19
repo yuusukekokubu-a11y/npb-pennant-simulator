@@ -1,4 +1,4 @@
-"""読み込みのうち、シーズンの状態を戻す部品(打順の計画・調子と一軍の入れ替え・二軍とけが・ポストシーズン)。
+"""読み込みのうち、シーズンの状態を戻す部品(打順の計画・調子と一軍の入れ替え・二軍とけが・投手の起用の計画・ポストシーズン)。
 
 savegame.py が 800 行を超えたので分けた(二軍とけが。D-288)。
 """
@@ -103,6 +103,34 @@ def _restore_farm_injuries(season: Season, season_d: dict, p) -> None:
             season.farm = Farm.from_dict(season, farm_d)
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             p.add("state.json.season.farm", f"二軍の試合の記録の形が違います({exc})")
+
+
+def _restore_pitching(season: Season, season_d: dict, p) -> None:
+    """自球団の投手の起用の計画(D-449、D-452。版 31。版 30 にはない = AI の起用)。一軍の先発の順と役割は、移り変わりの記録から戻っている。"""
+    from .manager import RELIEF_ROLES
+
+    plans = season_d.get("pitching_plans") or {}
+    if not isinstance(plans, dict):
+        p.add("state.json.season.pitching_plans", "投手の起用の計画の形が違います")
+        return
+    known = lambda x: isinstance(x, str) and (season.is_over or x in season.players)  # 終わったシーズンは、引退・退団した選手も残る
+    for tid, d in plans.items():
+        where = f"state.json.season.pitching_plans.{tid}"
+        if tid not in season.teams:
+            p.add(where, "知らない球団です")
+            continue
+        starters, roles = (d.get("starters"), d.get("roles")) if isinstance(d, dict) else (None, None)
+        if not (isinstance(starters, list) and all(known(x) for x in starters) and len(set(starters)) == len(starters)):
+            p.add(f"{where}.starters", "先発ローテーションの形が違います(別々の選手の ID の並び)")
+            continue
+        if not (isinstance(roles, dict) and all(known(k) and v in RELIEF_ROLES for k, v in roles.items())) or (roles and sum(1 for v in roles.values() if v == "closer") != 1):
+            p.add(f"{where}.roles", f"救援の役割の形が違います(選手の ID → {' / '.join(RELIEF_ROLES)}。抑えは 1 人)")
+            continue
+        plan = {"starters": list(starters), "roles": dict(roles), "set_day": d.get("set_day") if isinstance(d.get("set_day"), int) else None, "notice": None}
+        n = d.get("notice")
+        if isinstance(n, dict) and isinstance(n.get("day"), int) and all(isinstance(n.get(k, []), list) for k in ("out", "in")):
+            plan["notice"] = {"day": n["day"], "out": [str(x) for x in n.get("out", [])], "in": [str(x) for x in n.get("in", [])]}
+        season.pitching_plans[tid] = plan
 
 
 def _restore_postseason(season: Season, post_d, raw: bytes, year: int, p) -> None:

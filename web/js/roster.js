@@ -2,6 +2,7 @@
 // 一軍の選手の「外す」を押してから、二軍の同じ役割(投手・野手)の選手の「上げる」を押すと入れ替わる。
 // 「AI に任せる」なら、7 日ごとの見直しで AI が選び直す。外した選手は 10 日戻せない
 // 二軍の成績(D-446)と、けが(D-445。けが人は一軍に上げられない。一軍の選手がけがをしたら、自動で外れて代わりが上がる)
+// 投手の起用(D-449〜D-451):先発の表の「番手」(▲▼)と救援の表の「役割」を変え、「この起用にする」で決める。「AI に戻す」まで使う
 
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
@@ -16,7 +17,18 @@ async function rosterCall(name, args = {}) {
 }
 
 const COLUMNS = [{ key: "cond", label: "調子" }, { key: "overall", label: "総合" }, { key: "pos", label: "ポジション" }, { key: "stats", label: "成績" }, { key: "farm", label: "二軍成績" }, { key: "fatigue", label: "疲労" }, { key: "action", label: "入れ替え" }];
-const ROLE_LABELS = { closer: "抑え", setup: "勝ち継投", middle: "中継ぎ", mopup: "敗戦処理" };
+const STARTER_COLUMNS = [{ key: "turn", label: "番手" }, ...COLUMNS];
+const RELIEF_COLUMNS = [{ key: "role", label: "役割" }, ...COLUMNS];
+const ROLE_ORDER = ["closer", "setup", "middle", "mopup"];
+
+// 変えている途中の起用(「この起用にする」を押すまで画面だけ)。一軍の投手が変わったら捨てる
+function pitchDraft(rs, v) {
+  const ids = (xs) => xs.map((r) => r.player_id).sort().join();
+  const d = rs.pitch;
+  if (d && ids(v.starters) === [...d.starters].sort().join() && ids(v.relievers) === Object.keys(d.roles).sort().join()) return d;
+  rs.pitch = null;
+  return { starters: v.starters.map((r) => r.player_id), roles: Object.fromEntries(v.relievers.map((r) => [r.player_id, r.role_label])), changed: false };
+}
 
 export async function renderRoster(token) {
   const v = await rosterCall("view");
@@ -34,10 +46,28 @@ export async function renderRoster(token) {
   msg.className = rs.message ? `message ${rs.message.ok ? "ok" : "ng"}` : "message";
   msg.textContent = rs.message ? rs.message.text : out ? `${out.name} と入れ替える二軍の選手(${out.role === "pitcher" ? "投手" : "野手"})の「上げる」を押してください。` : "";
 
+  const pv = v.pitching;
+  const draft = pitchDraft(rs, v);
+  const edit = (fn) => { const d = rs.pitch || (rs.pitch = { starters: [...draft.starters], roles: { ...draft.roles } }); fn(d); d.changed = true; rs.message = null; renderCurrent(); };
+  const move = (i, k) => edit((d) => { [d.starters[i], d.starters[i + k]] = [d.starters[i + k], d.starters[i]]; });
+  const turnCell = (r) => {
+    const i = draft.starters.indexOf(r.player_id);
+    return el("span", { className: "turn" }, `${i + 1}${i === pv.next_index ? "(次)" : ""}`,
+      el("button", { type: "button", className: "secondary small-button", disabled: state.running || i === 0, "aria-label": "番手を上げる", dataset: { up: r.player_id }, onclick: () => move(i, -1) }, "▲"),
+      el("button", { type: "button", className: "secondary small-button", disabled: state.running || i === draft.starters.length - 1, "aria-label": "番手を下げる", dataset: { down: r.player_id }, onclick: () => move(i, 1) }, "▼"));
+  };
+  const roleCell = (r) => {
+    const sel = el("select", { className: "pitch-role", disabled: state.running, "aria-label": `${r.name} の役割`, dataset: { playerId: r.player_id }, onchange: (e) => edit((d) => { d.roles[r.player_id] = e.target.value; }) },
+      ...pv.roles.map((o) => el("option", { value: o.key }, o.label)));
+    sel.value = draft.roles[r.player_id];
+    return sel;
+  };
   const values = (r, action) => ({
+    turn: r.slot === "starter" ? turnCell(r) : "",
+    role: r.slot === "reliever" ? roleCell(r) : "",
     cond: conditionMark(r.condition),
     overall: r.overall_text,
-    pos: r.role_label ? `${r.position_label}(${ROLE_LABELS[r.role_label] || ""})` : r.position_label + (r.foreign ? "・外" : ""),
+    pos: r.position_label + (r.foreign ? "・外" : ""),
     stats: r.stats,
     farm: r.farm_stats,
     fatigue: r.fatigue === null ? "—" : String(r.fatigue),
@@ -50,19 +80,37 @@ export async function renderRoster(token) {
     const ok = out && out.role === r.role;
     return el("button", { type: "button", className: "secondary", disabled: state.running || !ok, dataset: { playerId: r.player_id }, onclick: () => run("swap", { out_id: out.player_id, in_id: r.player_id }, `${out.name} を二軍に下げ、${r.name} を一軍に上げました。`) }, "上げる");
   };
-  const block = (id, title, rows, action) => el("section", { id },
+  const block = (id, title, rows, action, columns = COLUMNS) => el("section", { id },
     el("h2", {}, `${title}(${rows.length} 人)`),
-    rows.length ? table({ firstLabel: "選手", columns: COLUMNS, rows: rows.map((r) => ({ ...r, values: values(r, action(r)) })), first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, `${r.age}歳${r.hand ? ` ${r.hand}` : ""}`)], rowClass: (r) => (rs.out === r.player_id ? "selected" : r.lock_days > 0 || r.injury ? "muted" : ""), fluid: true })
+    rows.length ? table({ firstLabel: "選手", columns, rows: rows.map((r) => ({ ...r, values: values(r, action(r)) })), first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, `${r.age}歳${r.hand ? ` ${r.hand}` : ""}`)], rowClass: (r) => (rs.out === r.player_id ? "selected" : r.lock_days > 0 || r.injury ? "muted" : ""), fluid: true })
       : el("p", { className: "muted small" }, "いません。"));
+  const starters = draft.starters.map((id) => v.starters.find((r) => r.player_id === id));
+  const rank = (r) => ROLE_ORDER.indexOf(r.role_label); // 救援は決まっている役割の順に並べる(選んでいる間は並べ替えない)
+  const relievers = [...v.relievers].sort((a, b) => rank(a) - rank(b));
+  const closers = Object.values(draft.roles).filter((x) => x === "closer").length;
+  const pitching = el("section", { id: "roster-pitching" },
+    el("h2", {}, "投手の起用"),
+    el("p", { className: "small", id: "roster-pitching-source" }, `${pv.source_text}${draft.changed ? "(変えた内容は「この起用にする」を押すまで使いません)" : ""}`),
+    pv.notice ? el("p", { className: "small notice", id: "roster-pitching-notice" }, pv.notice) : "",
+    el("div", { className: "row" },
+      el("button", { type: "button", id: "roster-pitching-save", disabled: state.running || !draft.changed, onclick: () => {
+        if (closers !== 1) { rs.message = { ok: false, text: `抑えは 1 人にしてください(今は ${closers} 人)。` }; renderCurrent(); return; }
+        run("pitching", { starters: draft.starters, roles: draft.roles }, "この起用で戦います(「AI に戻す」まで使います)。", true);
+      } }, "この起用にする"),
+      el("button", { type: "button", id: "roster-pitching-auto", className: "secondary", disabled: state.running || (pv.source === "ai" && !draft.changed), onclick: () => {
+        if (pv.source === "ai") { rs.pitch = null; rs.message = { ok: true, text: "変えた内容を取り消しました(AI の起用のままです)。" }; renderCurrent(); return; }
+        run("pitching_auto", {}, "投手の起用を AI に戻しました。", true);
+      } }, "AI に戻す")));
   $("roster-body").replaceChildren(
-    block("roster-starters", "一軍:先発", v.starters, outButton),
-    block("roster-relievers", "一軍:救援", v.relievers, outButton),
+    pitching,
+    block("roster-starters", "一軍:先発", starters, outButton, STARTER_COLUMNS),
+    block("roster-relievers", "一軍:救援", relievers, outButton, RELIEF_COLUMNS),
     block("roster-batters", "一軍:野手", v.batters, outButton),
     block("roster-farm", "二軍", v.farm, inButton),
   );
 }
 
-async function run(name, args, okText) {
+async function run(name, args, okText, pitching = false) {
   if (state.running) return;
   state.running = true;
   const rs = state.roster || (state.roster = {});
@@ -70,6 +118,7 @@ async function run(name, args, okText) {
     await rosterCall(name, args);
     rs.message = { ok: true, text: okText };
     rs.out = null;
+    if (pitching) rs.pitch = null;
     setDirty(true);
   } catch (err) {
     rs.message = { ok: false, text: err.message };

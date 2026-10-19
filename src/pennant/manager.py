@@ -26,7 +26,7 @@ DEFAULT_LINEUP_STYLE = "power"
 DEFAULT_STYLE_WEIGHTS = {"connector": {"contact": 0.5, "speed": 0.5}, "speed": {"speed": 0.7, "contact": 0.15, "eye": 0.15}}
 DEFAULT_REVIEW_DAYS = 7
 RELIEF_ROLES = ("closer", "setup", "middle", "mopup")
-RELIEF_ROLE_LABELS = {"closer": "抑え", "setup": "中継ぎ(勝ち)", "middle": "中継ぎ", "mopup": "敗戦処理"}
+RELIEF_ROLE_LABELS = {"closer": "抑え", "setup": "勝ちパターン", "middle": "中継ぎ", "mopup": "敗戦処理"}
 
 
 @dataclass
@@ -166,7 +166,7 @@ class SimpleManager:
         return ActiveRoster(starters=starters, relievers=relievers, relief_roles=roles, batters=squad)
 
     def _relief_roles(self, relievers: list[Player]) -> dict[str, str]:
-        """総合値の高い順に、抑え → 中継ぎ(勝ち)→ 中継ぎ、低い投手を敗戦処理にする。"""
+        """総合値の高い順に、抑え → 勝ちパターン → 中継ぎ、低い投手を敗戦処理にする。"""
         p = self.config["pitching"]
         ranked = sorted(relievers, key=overall, reverse=True)
         roles = {}

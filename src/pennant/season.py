@@ -28,10 +28,10 @@ from .condition import Conditions, level_at, settings as condition_settings
 from .fatigue import advance_day, apply_game_fatigue
 from .game import GameResult, simulate_game
 from .game_config import GameConfig, load_game_config
-from .manager import ActiveRoster, Manager, SimpleManager
+from .manager import RELIEF_ROLE_LABELS, RELIEF_ROLES, ActiveRoster, Manager, SimpleManager
 from .models import League, Team
 from .plate_appearance import PlateAppearanceModel, default_model
-from . import allstar
+from . import allstar, pitching_plan
 from .schedule import Schedule, ScheduledGame, ScheduleMaker, make_schedule_maker
 from .season_config import SeasonConfig, load_season_config
 
@@ -143,6 +143,7 @@ class Season:
         self.rotation: dict[str, int] = {t.id: 0 for t in league.teams}
         self.running_start = 0  # 盗塁・暴投・捕逸を始めた日(版 25 から読んだシーズンだけ 0 でない。D-433)
         self.lineup_plans: dict[str, dict] = {}  # 球団 → {style, slots([[選手 ID, 守備位置]] × 9 か None), set_day, notice}(D-373)
+        self.pitching_plans: dict[str, dict] = {}  # 球団 → {starters, roles, set_day, notice}(自分で決めた投手の起用。D-449)
         self.trades: list[dict] = []  # シーズン中のトレード(trade.execute の記録。D-378)
         self.trade_offers: list[dict] = []  # AI からあなたへのトレードの提案(まだ答えていないもの)
         self.active_history: dict[str, list[dict]] = {}  # 一軍を変えた球団 → 一軍の顔ぶれの移り変わり [{day, starters, relievers, batters, roles}](試合の再現と保存。D-378、D-426)
@@ -436,6 +437,7 @@ class Season:
 
     def set_active(self, team_id: str, active: ActiveRoster) -> None:
         """一軍を変える。外した選手の日を覚え、試合の再現と保存のため顔ぶれを記録する(この日の試合から新しい顔ぶれ)。"""
+        active = self._arranged(team_id, active)
         before = {p.id for p in self.actives[team_id].players}
         after = {p.id for p in active.players}
         if team_id not in self.active_history:
@@ -456,7 +458,7 @@ class Season:
         team = self.teams[team_id]
         if self.injuries:  # けが人は選ばない(D-445)
             team = dataclasses.replace(team, players=[p for p in team.players if not self.is_injured(p.id, day)])
-        new = self.manager.select_active(team, self._roster_score(team_id), frozenset(self.locked()))
+        new = self._arranged(team_id, self.manager.select_active(team, self._roster_score(team_id), frozenset(self.locked())))
         old = self.actives[team_id]
         if [p.id for p in new.starters] == [p.id for p in old.starters] and [p.id for p in new.relievers] == [p.id for p in old.relievers] and [p.id for p in new.batters] == [p.id for p in old.batters] and new.relief_roles == old.relief_roles:
             return  # 変わらなければ記録しない
@@ -493,6 +495,37 @@ class Season:
         starters, relievers, batters = rep(active.starters), rep(active.relievers), rep(active.batters)
         roles = self.manager._relief_roles(relievers) if hasattr(self.manager, "_relief_roles") else dict(active.relief_roles)
         self.set_active(team_id, ActiveRoster(starters=starters, relievers=relievers, relief_roles=roles, batters=batters))
+
+    # ---- 投手の起用(D-449、D-450) ----
+
+    def _arranged(self, team_id: str, active: ActiveRoster) -> ActiveRoster:
+        """自分で決めた投手の起用があれば、一軍に当てはめる(抜けた枠だけ AI が組み直す)。"""
+        plan = self.pitching_plans.get(team_id)
+        return active if plan is None else pitching_plan.arrange(plan, active, self.day)
+
+    def set_pitching_plan(self, team_id: str, starters: list[str], roles: dict[str, str]) -> None:
+        """先発ローテーションの順と救援の役割を決める(今の一軍の投手だけ。抑えは 1 人)。"""
+        active = self.actives[team_id]
+        if sorted(starters) != sorted(p.id for p in active.starters) or len(set(starters)) != len(starters):
+            raise ValueError(f"先発ローテーションは、一軍の先発 {len(active.starters)} 人を 1 回ずつ並べてください")
+        if sorted(roles) != sorted(p.id for p in active.relievers):
+            raise ValueError("救援の役割は、一軍の救援の投手全員に決めてください")
+        if any(r not in RELIEF_ROLES for r in roles.values()):
+            raise ValueError(f"救援の役割は {' / '.join(RELIEF_ROLE_LABELS[r] for r in RELIEF_ROLES)} のどれかにしてください")
+        closers = sum(1 for r in roles.values() if r == "closer")
+        if closers != 1:
+            raise ValueError(f"抑えは 1 人にしてください(今は {closers} 人)")
+        self.pitching_plans[team_id] = {"starters": list(starters), "roles": dict(roles), "set_day": self.day, "notice": None}
+        self.set_active(team_id, active)
+
+    def clear_pitching_plan(self, team_id: str) -> None:
+        """AI の起用に戻す:先発は総合 + 調子の順、役割は AI の決め方。"""
+        self.pitching_plans.pop(team_id, None)
+        active = self.actives[team_id]
+        score = self._roster_score(team_id, keep=False)
+        starters = sorted(active.starters, key=lambda p: -score(p))
+        roles = self.manager._relief_roles(active.relievers) if hasattr(self.manager, "_relief_roles") else dict(active.relief_roles)
+        self.set_active(team_id, ActiveRoster(starters=starters, relievers=list(active.relievers), relief_roles=roles, batters=list(active.batters)))
 
     def _review_rosters(self) -> None:
         """見直しの日(review_days ごと。打順の見直しと同じ日)に、AI に任せる球団の一軍を選び直す。"""

@@ -83,6 +83,8 @@ export function renderProgress() {
   $("next-day-text").textContent = nd ? `次の日(${s.day + 1}日目)は${nd.label}${nd.kind === "off" || nd.kind === "allstar" ? "(「1日すすめる」で次の公式戦の日まで進みます)" : ""}` : "";
   const ps = s.postseason; // ポストシーズン(D-440):シリーズの勝敗と次の試合
   $("post-box").hidden = !ps;
+  $("pitching-notice").hidden = !s.pitching_notice; // 投手の起用を AI が組み直した知らせ(直近 7 日。D-450)
+  $("pitching-notice").textContent = s.pitching_notice || "";
   const inj = s.injuries; // 自球団のけが(D-445):直前の日に起きたけがと、今けがをしている選手
   $("injury-box").hidden = !inj || (!inj.new.length && !inj.current.length);
   if (inj) $("injury-list").replaceChildren(

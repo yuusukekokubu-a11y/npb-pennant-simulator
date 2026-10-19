@@ -64,12 +64,12 @@ from .save_checks import (  # RATING_RANGE・GROWTH_TYPES は、分ける前と�
     _check_baselines,
 )
 from .injuries import default_settings as injury_default
-from .save_season import _check_plan, _restore_farm_injuries, _restore_postseason, _restore_roster
+from .save_season import _check_plan, _restore_farm_injuries, _restore_pitching, _restore_postseason, _restore_roster
 from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 30  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)
+SAVE_FORMAT_VERSION = 31  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -253,6 +253,7 @@ def build_state(state: GameState) -> dict:
             "day": s.day,
             "rotation": dict(s.rotation),
             "lineup_plans": {tid: _plain_plan(plan) for tid, plan in s.lineup_plans.items()},
+            "pitching_plans": {tid: _plain_pitching(plan) for tid, plan in s.pitching_plans.items()},  # 投手の起用の計画(D-452。版 31)
             "trades": [dict(x) for x in s.trades],  # シーズン中のトレード(D-378。版 20)
             "trade_offers": [dict(x) for x in s.trade_offers],
             "active_history": {tid: [dict(h) for h in hist] for tid, hist in s.active_history.items()},
@@ -291,6 +292,17 @@ def _post_game_state(p) -> dict:
         "starter_skipped": p.starter_skipped,
         **({"lineups": {tid: _plain_plan(x) for tid, x in p.context.lineups.items()}} if p.context.lineups else {}),
     }
+
+
+def _plain_pitching(plan: dict) -> dict:
+    """投手の起用の計画(D-449)を保存する形に。"""
+    out = {"starters": [str(x) for x in plan["starters"]], "roles": {str(k): str(v) for k, v in plan["roles"].items()}}
+    if plan.get("set_day") is not None:
+        out["set_day"] = int(plan["set_day"])
+    n = plan.get("notice")
+    if n:
+        out["notice"] = {"day": int(n["day"]), "out": [str(x) for x in n.get("out", [])], "in": [str(x) for x in n.get("in", [])]}
+    return out
 
 
 def _plain_plan(plan: dict) -> dict:
@@ -711,6 +723,7 @@ def load_game(data: bytes) -> GameState:
         raise SaveDataError(p.items)
     _restore_roster(season, season_d, p)
     _restore_farm_injuries(season, season_d, p)
+    _restore_pitching(season, season_d, p)
     history = _check_history(history_d, raws, team_ids, year + (1 if procedure_d else 0), p)  # 手続き中は、今シーズンの集計がすでに履歴にある
     offseasons = _check_offseasons(offseasons_d, p)
     procedure = _check_procedure(procedure_d, team_ids, {p_.id for p_ in season.players.values()}, p)
