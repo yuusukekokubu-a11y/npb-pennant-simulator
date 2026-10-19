@@ -224,11 +224,11 @@ def test_save_and_load_keep_the_staff(base):
     again = _fresh(g)
     assert [t.staff for t in again.state.league.teams] == [t.staff for t in g.state.league.teams]
     assert again._team("T08").staff_manual and again.state.league.staff_free == g.state.league.staff_free
-    assert SAVE_FORMAT_VERSION == 33
+    assert SAVE_FORMAT_VERSION == 34
 
 
 def _as_v32(data: bytes) -> bytes:
-    """版 33 のセーブデータから職員を消して、版 32 の形にする。"""
+    """今の版のセーブデータから職員を消して、版 32 の形にする。"""
     zin = zipfile.ZipFile(io.BytesIO(data))
     files = {n: zin.read(n) for n in zin.namelist()}
     state = json.loads(files["state.json"])

@@ -70,6 +70,9 @@ const handlers = {
   staff({ name, args }) {
     return parse(bridge.staff(name, JSON.stringify(args || {})));
   },
+  team_tier({ name, args }) {
+    return parse(bridge.team_tier(name, JSON.stringify(args || {})));
+  },
   team_policy({ name, args }) {
     return parse(bridge.team_policy(name, JSON.stringify(args || {})));
   },

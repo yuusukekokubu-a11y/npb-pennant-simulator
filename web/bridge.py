@@ -45,7 +45,7 @@ def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baseli
     progress は試運転の進み具合を知らせる関数((終わった日数, 全日数) を受け取る)。prerun_progress は事前運転の (終わった年数, 全年数)。
     rules_json は仕組みの選択肢({auto_fa, active_draft, trade, foreign_development}。D-381)。
     chronicle は事前運転の 1 年ごとの出来事を JSON の文字で受け取る関数(ロード画面の「歴史」。D-406)。
-    places_json は {leagues, stadiums, my_tier}(リーグ名・球場名と自球団の資金力。D-409、D-410)。"""
+    places_json は {leagues, stadiums, tiers}(リーグ名・球場名と 12 球団の資金力。D-409、D-490。前からの my_tier も読む)。"""
     global _game
     try:
         mine = None if my_team_index is None or int(my_team_index) < 0 else int(my_team_index)
@@ -53,7 +53,7 @@ def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baseli
         game = api.Game.new(
             int(seed), json.loads(names_json), mine, season_seed=int(season_seed), baselines=str(baselines), progress=progress, prerun_progress=prerun_progress, scout_level=str(scout_level), rules=json.loads(rules_json or "{}"),
             prerun_chronicle=None if chronicle is None else (lambda e: chronicle(json.dumps(e, ensure_ascii=False))),
-            league_names=places.get("leagues"), stadium_names=places.get("stadiums"), my_tier=places.get("my_tier"),
+            league_names=places.get("leagues"), stadium_names=places.get("stadiums"), my_tier=places.get("my_tier"), team_tiers=places.get("tiers"),
         )
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)
@@ -69,12 +69,12 @@ def template_info() -> str:
 
 
 def new_from_template(season_seed: int, names_json: str, my_team_index, rules_json: str = "{}", places_json: str = "{}") -> str:
-    """用意したリーグで始める(D-465)。places_json は {leagues, stadiums, my_tier}。"""
+    """用意したリーグで始める(D-465)。places_json は {leagues, stadiums, tiers}(12 球団の資金力。D-490)。"""
     global _game
     try:
         mine = None if my_team_index is None or int(my_team_index) < 0 else int(my_team_index)
         places = json.loads(places_json or "{}")
-        game = api.Game.from_template(json.loads(names_json), mine, int(season_seed), rules=json.loads(rules_json or "{}"), league_names=places.get("leagues"), stadium_names=places.get("stadiums"), my_tier=places.get("my_tier"))
+        game = api.Game.from_template(json.loads(names_json), mine, int(season_seed), rules=json.loads(rules_json or "{}"), league_names=places.get("leagues"), stadium_names=places.get("stadiums"), my_tier=places.get("my_tier"), team_tiers=places.get("tiers"))
     except api.TeamNameError as exc:
         return _ng("入力に問題があります。", exc.problems)
     except ValueError as exc:
@@ -189,6 +189,24 @@ _STAFF = {  # 職員の入れ替え・AI に戻す(どの球団でも。D-476)
     "swap": lambda a: _game.staff_swap(str(a["team_id"]), str(a["role"]), str(a["staff_id"])),
     "reset": lambda a: _game.staff_reset(str(a["team_id"])),
 }
+
+
+_TIER = {  # 資金力を変える・新規開始のときに戻す(どの球団でも。次のオフの契約から。D-493)
+    "set": lambda a: _game.set_team_tier(str(a["team_id"]), str(a["tier"])),
+    "reset": lambda a: _game.reset_team_tier(str(a["team_id"])),
+}
+
+
+def team_tier(name: str, args_json: str = "{}") -> str:
+    """球団の資金力(D-493)。戻り値はチームのページの資金力の欄の情報。"""
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in _TIER:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(_TIER[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"操作できませんでした({exc})")
 
 
 def staff(name: str, args_json: str = "{}") -> str:

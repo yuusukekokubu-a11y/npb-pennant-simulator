@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .. import policy as policymod
 from ..abilities import POSITION_LABELS
-from ..contracts import remaining_years
+from ..contracts import ALL_TIERS, TIER_LABELS, remaining_years
 from ..newgame import public_player
 from ..parkfactors import FACTOR_KEYS, FACTOR_LABELS, ParkTally, raw_ratio
 from ..war import war_totals
@@ -164,6 +164,7 @@ class TeamsMixin:
             "team_id": team_id,
             "name": team.name,
             "budget": self.budget_info(team_id),
+            "tier_choice": self.team_tier(team_id),  # 資金力を変える(次のオフの契約から。D-493)
             "salaries": salaries,
             "stadium": team.stadium,
             "league_name": self.state.league.league_names[team.league_index],
@@ -226,6 +227,54 @@ class TeamsMixin:
         team.policy = {**decided, "manual": False}
         self.dirty = True
         return self.team_policy(team_id)
+
+    # ---- 資金力(D-493) ----
+
+    def team_tier(self, team_id: str) -> dict | None:
+        """チームのページの資金力の欄:今の資金力・次のオフの契約から効く資金力・新規開始のときの資金力・あなたが決めたか。
+        どの球団でも、いつでも変えられる(資金の制限がない状態では None)。"""
+        state = self.state
+        self._team(team_id)
+        cur = state.budget_tiers.get(team_id)
+        if cur is None:
+            return None
+        nxt = state.tier_next.get(team_id)
+        start = state.tier_start.get(team_id, cur)
+        manual = (nxt or cur) != start
+        label = TIER_LABELS.get
+        if nxt:
+            pending = f"次のオフの契約から{label(nxt)}{'に戻ります' if not manual else ''}(今は{label(cur)})"
+        else:
+            pending = ""
+        source = f"あなたが決めた資金力(新規開始のときは{label(start)})" if manual else "新規開始のときの資金力"
+        return {
+            "team_id": team_id, "tier": cur, "tier_label": label(cur), "next": nxt, "next_label": label(nxt) if nxt else None,
+            "start": start, "start_label": label(start), "manual": manual,
+            "source_text": "。".join(x for x in (source, pending) if x),
+            "options": [{"key": t, "label": label(t)} for t in ("small", "medium", "large", "huge")],
+        }
+
+    def set_team_tier(self, team_id: str, tier: str) -> dict | None:
+        """資金力を変える(自球団も AI 球団も。D-493)。効くのは次のオフの契約の段階から(資金を新しい規模の基準額に置き直す)。
+        今の資金力と同じなら、まだ効いていない変更を取り消す。"""
+        state = self.state
+        self._team(team_id)
+        if tier not in ALL_TIERS:
+            raise ValueError(f"資金力は small / medium / large / huge です(値: {tier!r})")
+        cur = state.budget_tiers.get(team_id)
+        if cur is None:
+            raise ValueError("この球団には資金がありません")
+        if tier == cur:
+            state.tier_next.pop(team_id, None)
+        else:
+            state.tier_next[team_id] = tier
+        self.dirty = True
+        return self.team_tier(team_id)
+
+    def reset_team_tier(self, team_id: str) -> dict | None:
+        """新規開始のときの資金力に戻す(次のオフの契約から。まだ効いていない変更なら取り消す。D-493)。"""
+        cur = self.state.budget_tiers.get(team_id)
+        return self.set_team_tier(team_id, self.state.tier_start.get(team_id, cur))
 
     def _facilities_public(self, team) -> list[dict]:
         from .. import facilities as facmod

@@ -2,7 +2,7 @@
 
   - テンプレートは、事前運転と試運転を済ませた新規開始の直後(1 日目の前)の状態を、セーブデータと同じ形で
     `data/templates/standard.sav` に置いたもの。情報(版・シード・紹介)は `standard.json`(D-463)。
-  - 始めるときは、名前・自球団・資金力・仕組みの選択肢を当てはめ、シーズンをシーズンのシードから作り直す(D-465、D-466)。
+  - 始めるときは、名前・自球団・12 球団の資金力(D-490)・仕組みの選択肢を当てはめ、シーズンをシーズンのシードから作り直す(D-465、D-466)。
   - 作り直しは build_template(`scripts/make_template.py`)。選手の作り方・事前運転・契約・試合の計算・保存形式が
     変わったら作り直す(D-467)。
 """
@@ -13,7 +13,7 @@ import json
 from datetime import datetime, timezone
 
 from .ability_model import overall
-from .contracts import HUGE, initial_funds
+from .contracts import HUGE, TIERS, initial_funds
 from .abilities import BATTER, PITCHER, PITCHER_POSITIONS
 from .newgame import TeamNameError, apply_place_names, resolve_team_names
 from .savegame import SAVE_FORMAT_VERSION, GameState, load_game, save_game
@@ -112,15 +112,16 @@ def start_from_template(
     league_names=None,
     stadium_names=None,
     my_tier: str | None = None,
+    team_tiers=None,
 ) -> GameState:
     """テンプレートから新しいゲームの状態を作る(D-465、D-466)。名前に問題があれば TeamNameError、
-    仕組みの選択肢・資金力が正しくなければ ValueError。シーズンは season_seed で作り直す。"""
-    from .contracts import ALL_TIERS
+    仕組みの選択肢・資金力が正しくなければ ValueError。シーズンは season_seed で作り直す。
+    team_tiers は 12 球団の資金力(球団の順。auto・空欄は自動)、my_tier は自球団の資金力(前からの呼び方。D-490)。"""
+    from .contracts import fixed_tiers
     from .rules import rules_from
 
     game_rules = rules_from(rules)
-    if my_tier not in (None, "", "auto") and my_tier not in ALL_TIERS:
-        raise ValueError(f"自球団の資金力は auto / small / medium / large / huge です(値: {my_tier!r})")
+    picked = fixed_tiers(team_tiers, my_tier, my_team_index)
     _, data = template_files()
     state = load_game(data)
     league = state.league
@@ -131,9 +132,7 @@ def start_from_template(
         raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
     state.my_team_id = None if my_team_index is None else league.teams[my_team_index].id
     state.rules = game_rules
-    changed = False
-    if state.my_team_id is not None and my_tier not in (None, "", "auto"):
-        changed |= set_tier(state, state.my_team_id, my_tier)
+    changed = set_tiers(state, {league.teams[i].id: t for i, t in picked.items()})
     if not game_rules.foreign_development:
         changed |= remove_foreign(state)
     if changed:
@@ -145,24 +144,36 @@ def start_from_template(
     return state
 
 
-def set_tier(state: GameState, team_id: str, tier: str) -> bool:
-    """自球団の資金力を tier にする(D-466)。その規模の球団のうち総年俸が最も少ない球団と規模を入れ替え、大 3・中 6・小 3 を保つ
-    (超大量は大として数えるので、今が大なら入れ替えない)。資金は規模の基準額、設備は資金から AI と同じに決める。変えたら True。"""
+def set_tiers(state: GameState, fixed: dict[str, str]) -> bool:
+    """選んだ球団の資金力を当てはめる(D-466、D-491)。自動の球団はテンプレートの規模をできるだけ残し、いつもの数(大 3・中 6・小 3。
+    超大量は大として数え、選ばれた数を引く)を超える規模からは総年俸の少ない球団を外して、外した球団を総年俸の多い順に、足りない規模へ
+    大 → 中 → 小 の順で入れる(自球団だけを選んだときは、その規模の総年俸が最も少ない球団との入れ替えと同じ)。
+    規模が変わった球団の資金は規模の基準額、設備は資金から AI と同じに決める。変えたら True。"""
     from .facilities import default_settings
 
-    tiers = dict(state.budget_tiers)
-    cur = tiers[team_id]
-    if tier == cur:
-        return False
     base = lambda t: "large" if t == HUGE else t
-    changed = [team_id]
-    if base(tier) != base(cur):
-        teams = [t for t in state.league.teams if t.id != team_id and base(tiers[t.id]) == base(tier)]
-        partner = min(teams, key=lambda t: (_payroll(t), t.id))
-        tiers[partner.id] = base(cur)
-        changed.append(partner.id)
-    tiers[team_id] = tier
+    before = dict(state.budget_tiers)
+    tiers = {**before, **fixed}
+    target = dict(state.contract_settings.tier_counts)
+    for t in fixed.values():
+        target[base(t)] = max(0, target[base(t)] - 1)
+    auto = [t for t in state.league.teams if t.id not in fixed]
+    released = []
+    for k in TIERS:
+        group = sorted((t for t in auto if base(tiers[t.id]) == k), key=lambda t: (_payroll(t), t.id))
+        released += group[: max(0, len(group) - target[k])]
+    out = {t.id for t in released}
+    have = {k: sum(1 for t in auto if t.id not in out and base(tiers[t.id]) == k) for k in TIERS}
+    released.sort(key=lambda t: (-_payroll(t), t.id))
+    for k in TIERS:
+        for _ in range(max(0, target[k] - have[k])):
+            if released:
+                tiers[released.pop(0).id] = k
+    changed = [tid for tid in tiers if tiers[tid] != before[tid]]
+    if not changed:
+        return False
     state.budget_tiers = tiers
+    state.tier_start = dict(tiers)  # 新規開始のときの資金力(D-493)
     funds = initial_funds(tiers, state.contract_settings)
     fs = state.facility_settings or default_settings()
     for t in state.league.teams:
