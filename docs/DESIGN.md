@@ -368,6 +368,8 @@ web/dev/                             開発者向けの測定ページ(技術検
   - 年俸:`staff.team_cost(team, season)`(次のシーズンも契約している職員の年俸 + 解任した職員の残り)を、`staff.league_costs(league, facility_settings, season)` が設備の維持費と足して `ContractContext.upkeep` に入れる(`contract_stage` の 2 か所・`newgame`・`template`)。
   - 職員の段階:内部の段階 `PHASES` に `staff`(release の次、fa の前)を足し、画面の段階 `STAGES` も 9 つにする。`api/progress.year_end` が手続きを作った直後に `staff.start_stage`(契約切れ・AI の監督の解任・架空の候補・元選手の候補。乱数は derive_seed(手続きのシード, "staff:…"))を行い、`proc.staff_on` を真にする(事前運転の手続きでは偽なので段階を飛ばす)。締めるのは `staff.close_stage`(自由契約市場と同じ順番の方式)。`draft.complete` も職員の段階を AI の方針で締める。締めたら `proc._cache` を捨て(スカウトの腕で評価が変わるため。保存して読み込んでも同じ結果にする)、AI の球団のチーム方針を決め直す。
   - 担当の記録:`year_end` のはじめに `staff.record_season` が、その年の各球団・各役割の職員を `League.staff_log` に足す。記録室の監督の通算は、担当の記録と履歴(`SeasonArchive.standings`・`postseason`)から求める。
+  - 時間(実測。PC の Python、シード 3〜5、試運転あり):新規開始 10.6〜11.2 秒(前は 11.2〜12.5 秒)、年度の確定とオフの手続き(おまかせ)2.8〜3.3 秒(前は 2.7〜3.2 秒)。職員の段階はほとんど時間を使わない。
+  - 実装中の試し(観戦のみ・6 年):雇われているコーチの腕の平均は 60 から 65〜69 に上がった(腕のいい職員が残りやすい)。そのためコーチの効きの標準を 12 球団の平均にした(D-471)。職員の市場は、締めた後に数人まで減る年がある(空いた役割は最も安い候補か、新しく作った E の職員で埋まる)。
   - 新規開始:`newgame.new_league(prerun=True)` の校正の後、初期の契約の前に `staff.assign_initial(league, names, seed)`(乱数は derive_seed(リーグのシード, "staff"))。版 32 のセーブデータは、変換(`v32_to_v33`)で印を付け、`savegame.load_game` の最後に同じ関数で付ける。
 
 ## 5. 画面(入出力)

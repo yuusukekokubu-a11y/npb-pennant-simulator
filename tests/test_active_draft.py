@@ -123,7 +123,7 @@ def test_auto_fa_and_skipped_stages():
             break
     assert "trade" not in stages and "active_draft" not in stages
     stay = sum(1 for x in g.last_fa["results"] if x["team_id"] == x["former_team"])
-    assert stay > len(g.last_fa["info"]) * 0.5  # 半分以上は元の球団に残る
+    assert stay > len(g.last_fa["info"]) * 0.45  # 半分近くは元の球団に残る(職員の年俸の分、資金が少し減ったので 0.5 から下げた。D-474)
     assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)
 
 
