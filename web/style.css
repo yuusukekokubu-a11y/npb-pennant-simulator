@@ -295,12 +295,14 @@ th.sorted .arrow { font-size: 0.65rem; margin-right: 1px; }
 .offer-fields input[type=number] { width: 8em; }
 .offer-history { margin: var(--space-1) 0; padding-left: var(--space-3); font-size: var(--font-tiny); }
 tr.refused td { background: var(--warn-bg); }
-.salary-input { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
-.salary-input button.pct { padding: var(--space-1) var(--space-2); font-size: var(--font-tiny); min-width: 3.5em; min-height: 36px; }
+/* 年俸の欄を増減のボタンで挟んで 1 行に(−10%・−5%・欄・+5%・+10%。D-487) */
+.salary-input { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; gap: 4px; align-items: center; width: 100%; }
+.salary-input label { display: flex; align-items: center; gap: 2px; min-width: 0; white-space: nowrap; font-size: var(--font-tiny); }
+.salary-input button.pct { padding: 2px 6px; font-size: var(--font-tiny); min-width: 0; min-height: 36px; margin: 0; }
 /* 年俸の増減のボタン(D-487):増やすは緑、減らすは赤 */
 .salary-input button.pct.up { background: var(--up); color: var(--up-fg); box-shadow: 0 3px 0 var(--up-edge); }
 .salary-input button.pct.down { background: var(--down); color: var(--down-fg); box-shadow: 0 3px 0 var(--down-edge); }
-.salary-input input[type=number] { width: 7.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.salary-input input[type=number] { width: 100%; min-width: 0; padding: 6px 4px; text-align: right; font-variant-numeric: tabular-nums; }
 select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--bg-deep); color: var(--fg); min-height: 40px; max-width: 100%; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; min-height: 40px; }
 .check input { width: 20px; height: 20px; }
@@ -459,7 +461,8 @@ button.busy::before { content: ""; width: 16px; height: 16px; margin-right: 8px;
 .pcard-info { margin: 0; font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcard .ability-panel { background: none; box-shadow: none; padding: 0; margin: 10px 0; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; }
 .pcard .ability { min-width: 0; padding: 0 6px; gap: 4px; }
-.pcard .ability-label { font-size: 0.8rem; }
+.pcard .ability-label { font-size: 0.75rem; }
+.pcard { --abil-h: 26px; } /* 札の中は行を少し低く(狭い画面で札の下の操作まで見えるように) */
 .pcard .rank-badge { width: 24px; height: 24px; font-size: 0.85rem; }
 .pcard .ability-value { gap: 4px; }
 .pcard .estimate-note { margin: 8px 0 0; }

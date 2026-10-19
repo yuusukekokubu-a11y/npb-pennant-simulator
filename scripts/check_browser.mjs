@@ -819,6 +819,7 @@ await page.click("#stats-table th button.sort >> text=守備");
 screenRows = await waitStats("守備(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "war", sort: "fielding" })), "守備の得点で並べ替えても、計算本体と同じ");
 await page.click("#stats-kind button[data-value=basic]");
+await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent === "打率")); // 基本の表に描き直されるまで
 screenRows = await waitStats("守備(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "fielding" })) && (await headsOnScreen())[1] === "守備", "WAR の列(守備)で並べたまま「基本」に切り替えても、並び順(守備の高い順。名前の隣の固定列)が保たれる(D-483)");
 await page.click("#stats-kind button[data-value=war]");
@@ -1639,14 +1640,14 @@ await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "basic", season: "1" })), `1シーズン目を選ぶと、確定した1シーズン目の成績が出る(${screenRows.length}人。計算本体と同じ)`);
 await page.click("#stats-kind button[data-value=war]");
-await waitRows(pyStats2({ role: "batter", kind: "war", season: "1" }));
+await waitRows(pyStats2({ role: "batter", kind: "war", season: "1", sort: "avg" })); // 基本の並び順(打率)は WAR の表でも保たれる(D-483)
 check(!(await page.$("#stats-note")), "確定したシーズンには、注意書きの印が出ない");
 screenRows = await statsOnScreen();
-check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "1" })), `1シーズン目の WAR も、確定した値(${screenRows.length}人)`);
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "1", sort: "avg" })), `1シーズン目の WAR も、確定した値(${screenRows.length}人。打率の並び順のまま)`);
 await bandSelect("#stats-season", "career");
-await waitRows(pyStats2({ role: "batter", kind: "war", season: "career" }));
+await waitRows(pyStats2({ role: "batter", kind: "war", season: "career", sort: "avg" }));
 screenRows = await statsOnScreen();
-check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "career" })), `通算の WAR(各シーズンの合計)が、計算本体と同じ(${screenRows.length}人)`);
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "career", sort: "avg" })), `通算の WAR(各シーズンの合計)が、計算本体と同じ(${screenRows.length}人)`);
 await page.click("#stats-kind button[data-value=saber]");
 // 「基本」で使っていた並び順(打率)は、切り替えても保たれる(D-131)ので、名前の隣に打率の固定列が出る
 await waitRows(pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" }));
