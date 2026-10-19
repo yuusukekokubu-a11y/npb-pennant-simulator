@@ -41,6 +41,7 @@ export async function renderTeam(args, token) {
   renderPolicy(d.policy, args);
   renderTeamStaff(d.staff); // 職員(D-476)
   $("team-budget").replaceChildren(...budgetLines(d.budget, d.facilities));
+  renderTier(d.tier_choice); // 資金力を変える(次のオフの契約から。D-493)
   $("team-salaries").replaceChildren(
     d.salaries.length
       ? table({ firstLabel: "選手", columns: [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸(万円)" }, { key: "remaining", label: "残り" }], rows: d.salaries.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, salary: r.salary_text, remaining: `${r.remaining} 年` } })), first: (r) => nameCell(r.name), fluid: true, pick: "team", limit: d.salariesShown || 20, more: () => { d.salariesShown = (d.salariesShown || 20) + 50; renderCurrent(); } })
@@ -93,6 +94,38 @@ function renderPolicy(p, args) {
     el("div", { className: "row" },
       el("button", { id: "policy-save", type: "button", disabled: state.running || !changed, onclick: () => run("set", { values: ps.draft }, "この方針にしました。") }, "この方針にする"),
       el("button", { id: "policy-ai", className: "secondary", type: "button", disabled: state.running || !p.manual, onclick: () => run("ai", {}, "AI に戻しました。") }, "AI に戻す")),
+    msg,
+  );
+}
+
+// 資金力(D-493):どの球団でも、いつでも変えられる。効くのは次のオフの契約の段階から。新規開始のときと違えば「あなたが決めた」
+function renderTier(t) {
+  const box = $("team-tier");
+  if (!t) { box.replaceChildren(); return; }
+  const base = JSON.stringify([t.team_id, t.tier, t.next]); // 球団か今の資金力が変わったら、選びかけをやめる
+  const ts = state.teamTier && state.teamTier.base === base ? state.teamTier : (state.teamTier = { base, pick: t.next || t.tier, message: null });
+  const run = async (name, args, ok) => {
+    if (state.running) return;
+    const r = await call("team_tier", { name, args: { team_id: t.team_id, ...args } });
+    ts.message = r.ok ? { ok: true, text: ok } : { ok: false, text: r.message };
+    if (r.ok) {
+      state.cache.clear(); // チームのページの問い合わせを使い回さない
+      ts.base = JSON.stringify([r.value.team_id, r.value.tier, r.value.next]);
+      ts.pick = r.value.next || r.value.tier;
+      setDirty(true);
+    }
+    renderCurrent();
+  };
+  const target = t.next || t.tier;
+  const sel = el("select", { id: "tier-pick", "aria-label": "資金力", title: titleFor("球団の資金力"), disabled: state.running, onchange: (e) => { ts.pick = e.target.value; ts.message = null; renderCurrent(); } },
+    ...t.options.map((o) => el("option", { value: o.key, selected: o.key === ts.pick }, o.label)));
+  const msg = el("p", { className: `message ${ts.message ? (ts.message.ok ? "ok" : "ng") : ""}`, id: "tier-message" }, ts.message ? ts.message.text : "");
+  box.replaceChildren(
+    el("p", { className: "small", id: "tier-source" }, t.manual ? `★ ${t.source_text}` : t.source_text),
+    el("div", { className: "row policy-fields" },
+      el("label", { className: "policy-row" }, el("span", {}, "資金力"), " ", sel),
+      el("button", { id: "tier-save", type: "button", disabled: state.running || ts.pick === target, onclick: () => run("set", { tier: ts.pick }, "次のオフの契約から、この資金力にします。") }, "この資金力にする"),
+      el("button", { id: "tier-reset", className: "secondary", type: "button", disabled: state.running || !t.manual, onclick: () => run("reset", {}, "新規開始のときの資金力に戻します(次のオフの契約から)。") }, "新規開始のときの資金力に戻す")),
     msg,
   );
 }

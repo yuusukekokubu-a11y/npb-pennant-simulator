@@ -200,7 +200,7 @@ def test_save_load_continues_the_same_and_replays_bunts(mid):
     g = _fresh(mid)
     g.set_team_policy("T02", {"bunt": "many", "steal": "aggressive", "usage": "youth"})
     a, b = _fresh(g), _fresh(g)
-    assert policymod.policy_of(a._team("T02"))["manual"] and SAVE_FORMAT_VERSION == 33
+    assert policymod.policy_of(a._team("T02"))["manual"] and SAVE_FORMAT_VERSION == 34
     a.advance(10)
     b = _fresh(b)
     b.advance(10)

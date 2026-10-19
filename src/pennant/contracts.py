@@ -21,7 +21,7 @@ from .models import Player, Team
 from .season import derive_seed
 
 TIERS = ("large", "medium", "small")
-HUGE = "huge"  # 超大量(自球団だけが新規開始で選べる。数は「大」として数える。D-410)
+HUGE = "huge"  # 超大量(新規開始とチームのページで選べる。数は「大」として数える。D-410、D-490)
 ALL_TIERS = TIERS + (HUGE,)
 TIER_LABELS = {"large": "大", "medium": "中", "small": "小", HUGE: "超大量"}
 
@@ -269,7 +269,8 @@ def rate_for(expected_wars: list[float], total_funds: float, n_players: int, set
 
 def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings, fixed: dict[str, str] | None = None) -> dict[str, str]:
     """球団の規模(大・中・小)を、新規開始のシードから割り当てる(別の乱数系列。D-231、D-353)。
-    fixed は選んだ球団の規模(自球団の資金力。D-410)。その球団を除き、残りの球団で数を合わせる(超大量は大として数える)。"""
+    fixed は選んだ球団の規模(12 球団のどれでも。D-410、D-490)。その球団を除き、いつもの数から選ばれた数を引いた数を残りの球団に割り当てる
+    (超大量は大として数える。0 より下にはしない。残りの球団が足りなければ 大 → 中 → 小 の順に埋める。D-491)。"""
     rng = random.Random(derive_seed(seed, "budget-tiers"))
     fixed = {tid: t for tid, t in (fixed or {}).items() if tid in team_ids}
     ids = sorted(t for t in team_ids if t not in fixed)
@@ -289,6 +290,42 @@ def assign_tiers(team_ids: list[str], seed: int, settings: ContractSettings, fix
     for tid in ids[i:]:
         out[tid] = "medium"
     return out
+
+
+def fixed_tiers(team_tiers, my_tier=None, my_team_index=None, n: int = 12) -> dict[int, str]:
+    """新規開始で選んだ資金力(球団の順の n 個。auto・空欄・None は自動)を、球団の番号 → 規模にする(D-490)。
+    my_tier は前からの「自球団の資金力」(D-410):team_tiers で自球団の行が自動のときだけ使う。正しくなければ ValueError。"""
+    auto = (None, "", "auto")
+    out: dict[int, str] = {}
+    if team_tiers is not None:
+        if not isinstance(team_tiers, (list, tuple)) or len(team_tiers) != n:
+            raise ValueError(f"球団の資金力は {n} 球団の分が必要です(値: {team_tiers!r})")
+        for i, t in enumerate(team_tiers):
+            if t in auto:
+                continue
+            if t not in ALL_TIERS:
+                raise ValueError(f"{i + 1}番目の球団の資金力は auto / small / medium / large / huge です(値: {t!r})")
+            out[i] = t
+    if my_tier not in auto and my_tier not in ALL_TIERS:
+        raise ValueError(f"自球団の資金力は auto / small / medium / large / huge です(値: {my_tier!r})")
+    mine_ok = isinstance(my_team_index, int) and not isinstance(my_team_index, bool) and 0 <= my_team_index < n
+    if my_tier not in auto and mine_ok and my_team_index not in out:
+        out[my_team_index] = my_tier
+    return out
+
+
+def apply_tier_changes(tiers: dict, funds: dict, tier_next: dict, settings: ContractSettings) -> list[str]:
+    """始めた後に変えた資金力(次のオフから。D-493)を当てはめる:規模を移し、資金を新しい規模の基準額に置き直す
+    (その後の資金の増減が、前のシーズンの順位で増減する)。tier_next は空にする。戻り値は規模が変わった球団。"""
+    changed = []
+    for tid, t in sorted(tier_next.items()):
+        if tid in tiers and tiers[tid] != t:
+            tiers[tid] = t
+            if tid in funds:
+                funds[tid] = base_funds(t, settings)
+            changed.append(tid)
+    tier_next.clear()
+    return changed
 
 
 def base_funds(tier: str | None, settings: ContractSettings) -> int:

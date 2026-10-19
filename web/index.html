@@ -82,14 +82,6 @@
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)</span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong></span></label>
     </div>
-    <p class="small setting-head"><strong>自球団の資金力</strong>(観戦のみのときは使いません)</p>
-    <div class="tier-choices">
-      <label class="radio"><input type="radio" name="my-tier" value="auto" checked><span><strong>自動</strong></span></label>
-      <label class="radio"><input type="radio" name="my-tier" value="small"><span><strong>小</strong></span></label>
-      <label class="radio"><input type="radio" name="my-tier" value="medium"><span><strong>中</strong></span></label>
-      <label class="radio"><input type="radio" name="my-tier" value="large"><span><strong>大</strong></span></label>
-      <label class="radio"><input type="radio" name="my-tier" value="huge"><span><strong>超大量</strong></span></label>
-    </div>
     <p class="small setting-head"><strong>リーグ名と球場名</strong>(空欄なら薄く出ている名前)</p>
     <div id="place-fields"></div>
   </details>
@@ -104,6 +96,9 @@
     <label class="radio"><input type="checkbox" name="rules" value="trade" id="rule-trade" checked><span><strong>トレード</strong></span></label>
     <label class="radio"><input type="checkbox" name="rules" value="foreign_development" id="rule-foreign_development" checked><span><strong>外国人・育成</strong></span></label>
     <label class="radio"><input type="checkbox" name="rules" value="injuries" id="rule-injuries" checked><span><strong>けが</strong></span></label>
+    <!-- 球団の資金力(D-490):12 球団それぞれ 自動・小・中・大・超大量。自球団の行は ★ -->
+    <p class="small setting-head"><strong>球団の資金力</strong>(自動の球団で 大 3・中 6・小 3 に合わせる)</p>
+    <div id="tier-fields"></div>
   </div>
 
 
@@ -418,6 +413,7 @@
       <p class="muted small" id="team-war-note"></p>
       <h2>総年俸と契約</h2>
       <div id="team-budget" class="contract-box"></div>
+      <div id="team-tier"></div>
       <div id="team-salaries"></div>
       <p><button id="team-review" class="secondary" type="button">補強の記録(この球団に入った選手の当たり外れ)</button></p>
       <h2>チーム方針</h2>

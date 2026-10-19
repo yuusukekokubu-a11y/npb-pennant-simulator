@@ -6,6 +6,7 @@ import { showScreen } from "./screens.js";
 import { enterGame } from "./progress.js";
 import { termById } from "./glossary.js";
 import { busyButton, hideLoading, showLoading, updatePercent } from "./loading.js";
+import { el, table } from "./parts.js";
 
 // ---- 新規開始 ----
 
@@ -36,8 +37,24 @@ const leagueNameInputs = () => [...document.querySelectorAll("#place-fields inpu
 const stadiumInputs = () => [...document.querySelectorAll("#place-fields input[data-kind=stadium]")];
 
 function places() {
-  const tier = document.querySelector("input[name=my-tier]:checked");
-  return { leagues: leagueNameInputs().map((i) => i.value), stadiums: stadiumInputs().map((i) => i.value), my_tier: tier ? tier.value : "auto" };
+  return { leagues: leagueNameInputs().map((i) => i.value), stadiums: stadiumInputs().map((i) => i.value), tiers: state.newGame ? [...state.newGame.tiers] : null };
+}
+
+// 球団の資金力の表(設定の段。D-490):1 行に 1 球団(名前の段の球団名。空欄なら初期名)と選ぶ欄。自球団の行は ★
+const TIER_OPTIONS = [["auto", "自動"], ["small", "小"], ["medium", "中"], ["large", "大"], ["huge", "超大量"]];
+
+function buildTierFields() {
+  const ng = state.newGame;
+  const mine = myTeamIndex();
+  const teams = ng.preview.leagues.flatMap((lg) => lg.teams);
+  const inputs = teamInputs();
+  const rows = teams.map((t, i) => {
+    const name = (inputs[i] && inputs[i].value.trim()) || t.default_name;
+    const sel = el("select", { dataset: { team: String(i) }, "aria-label": `${name}の資金力`, onchange: (e) => { ng.tiers[i] = e.target.value; } },
+      ...TIER_OPTIONS.map(([v, label]) => el("option", { value: v, selected: ng.tiers[i] === v }, label)));
+    return { index: i, name, mine: i === mine, values: { tier: sel } };
+  });
+  $("tier-fields").replaceChildren(table({ firstLabel: "球団", columns: [{ key: "tier", label: "資金力" }], rows, first: (r) => [el("span", { className: "pname" }, r.mine ? `★ ${r.name}` : r.name), r.mine ? el("span", { className: "sub" }, "自球団") : null], rowClass: (r) => (r.mine ? "mine" : ""), fluid: true }));
 }
 
 function placeInput(kind, index, labelText, placeholder, value) {
@@ -109,7 +126,6 @@ export async function showNewGame() {
   $("new-help").hidden = true;
   $("new-message").textContent = "";
   $("my-team-none").checked = true; // 既定は観戦のみ(D-198)
-  document.querySelector("input[name=my-tier][value=auto]").checked = true; // 自球団の資金力は自動(D-410)
   $("league-seed").value = "";
   $("season-seed").value = "";
   $("league-seed-error").textContent = "";
@@ -141,7 +157,7 @@ async function preparePreview(seed, reset) {
   const pv = r.value;
   // 入力済みの名前と自球団の選択は、作り直す直前の状態を引き継ぐ
   const prev = reset ? null : { names: names(), mine: myTeamIndex(), ...places() };
-  state.newGame = { seed, preview: pv, template: Boolean(state.newGame && state.newGame.template) };
+  state.newGame = { seed, preview: pv, template: Boolean(state.newGame && state.newGame.template), tiers: reset || !state.newGame ? Array(12).fill("auto") : state.newGame.tiers }; // 資金力は全球団「自動」から(D-490)
   const box = $("league-fields");
   box.dataset.seed = String(seed);
   box.replaceChildren();
@@ -231,7 +247,9 @@ export function startNewGame() {
 
 // 「次へ(設定)」:入力を確かめてから、設定の段へ
 export async function nextNewGame() {
-  if (await checkNewGameInputs()) newGameStep(true);
+  if (!(await checkNewGameInputs())) return;
+  buildTierFields(); // 名前の段の球団名と自球団で作り直す(選んだ資金力は残す)
+  newGameStep(true);
 }
 
 async function checkNewGameInputs() {
@@ -334,7 +352,7 @@ export function helpIdFor(target) {
   if (target.matches("#league-fields input[type=text]")) return "setting.team_name";
   if (target.dataset && target.dataset.kind === "league") return "setting.league_name";
   if (target.dataset && target.dataset.kind === "stadium") return "setting.stadium_name";
-  if (target.name === "my-tier") return "setting.my_tier";
+  if (target.matches("#tier-fields select")) return "setting.team_tiers";
   if (target.name === "my-team") return target.value === "-1" ? "setting.watch" : "setting.my_team";
   if (target.id === "league-seed") return "setting.league_seed";
   if (target.id === "season-seed") return "setting.season_seed";

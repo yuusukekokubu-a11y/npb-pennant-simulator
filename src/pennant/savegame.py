@@ -70,7 +70,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 33  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)。32:チーム方針(球団の policy、設定のバント、作戦のバント、バントを始めた日。版 31 は全球団「標準・バランス・普通」。D-454〜D-461)。33:球団職員(球団の staff・staff_manual・staff_dead、リーグの staff_free・staff_log、打順の計画の監督の腕の段階、手続きの職員の段階。版 32 は読み込みで全球団に初期の職員を付ける。D-468〜D-480)
+SAVE_FORMAT_VERSION = 34  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)。32:チーム方針(球団の policy、設定のバント、作戦のバント、バントを始めた日。版 31 は全球団「標準・バランス・普通」。D-454〜D-461)。33:球団職員(球団の staff・staff_manual・staff_dead、リーグの staff_free・staff_log、打順の計画の監督の腕の段階、手続きの職員の段階。版 32 は読み込みで全球団に初期の職員を付ける。D-468〜D-480)。34:新規開始のときの資金力と、次のオフからの資金力(tier_start・tier_next。版 33 は変更なしとして読む。D-493、D-494)
 
 
 def _check_team_staff(td: dict, where: str, p) -> None:
@@ -175,6 +175,8 @@ class GameState:
     trade_settings: object | None = None  # トレードの設定(None は設定ファイル。D-378)
     rules: object | None = None  # 仕組みの選択肢(rules.GameRules。None は既定。新規開始のときだけ決める。D-381)
     facility_settings: object | None = None  # 設備の設定(None は設定ファイル。D-383)
+    tier_start: dict = field(default_factory=dict)  # 新規開始のときの資金力(球団 → 規模。空なら今の規模。D-493)
+    tier_next: dict = field(default_factory=dict)  # 始めた後に変えた、次のオフの契約から効く資金力(球団 → 規模。効いたら消す。D-493)
 
     def __post_init__(self) -> None:
         from .draft import load_draft_settings
@@ -193,6 +195,8 @@ class GameState:
             self.trade_settings = load_trade_settings()
         if self.facility_settings is None:
             self.facility_settings = load_facility_settings()
+        if not self.tier_start:
+            self.tier_start = dict(self.budget_tiers)  # 版 33 以前と、規模を後から入れる呼び出し:今の規模を新規開始のときの規模とする(D-494)
         if self.rules is None:
             from .rules import DEFAULT_RULES
 
@@ -296,6 +300,8 @@ def build_state(state: GameState) -> dict:
         "procedure": None if state.procedure is None else state.procedure.to_dict(_plain),
         "transactions": [dict(x) for x in state.transactions],
         "budget_tiers": {tid: str(t) for tid, t in state.budget_tiers.items()},
+        "tier_start": {tid: str(t) for tid, t in state.tier_start.items()},  # 新規開始のときの資金力(版 34。D-494)
+        "tier_next": {tid: str(t) for tid, t in state.tier_next.items()},  # 次のオフからの資金力(版 34。D-493)
         "team_funds": {tid: int(v) for tid, v in state.team_funds.items()},
         "contract_rates": {str(k): round(float(v), 4) for k, v in state.contract_rates.items()},
         "history": [a.to_dict() for a in state.history],
@@ -645,6 +651,13 @@ def load_game(data: bytes) -> GameState:
     if not isinstance(tiers_d, dict) or any(v not in ALL_TIERS for v in tiers_d.values()):
         p.add("state.json.budget_tiers", "球団 → large / medium / small / huge のまとまりが必要です")
         tiers_d = {}
+    tier_maps = {}
+    for key in ("tier_start", "tier_next"):  # 版 34(D-494)。版 33 以前にはない(変更なし)
+        d = state.get(key, {})
+        if not isinstance(d, dict) or any(v not in ALL_TIERS for v in d.values()):
+            p.add(f"state.json.{key}", "球団 → large / medium / small / huge のまとまりが必要です")
+            d = {}
+        tier_maps[key] = d
     funds_d = state.get("team_funds", {})
     if not isinstance(funds_d, dict) or any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in funds_d.values()):
         p.add("state.json.team_funds", "球団 → 資金(0 以上の整数。万円)のまとまりが必要です")
@@ -805,6 +818,10 @@ def load_game(data: bytes) -> GameState:
     for tid in funds_d:
         if tid not in team_ids:
             p.add(f"state.json.team_funds.{tid}", "球団の一覧にない ID です")
+    for key, d in tier_maps.items():
+        for tid in d:
+            if tid not in team_ids:
+                p.add(f"state.json.{key}.{tid}", "球団の一覧にない ID です")
     if funds_d or tiers_d:  # 資金は、全球団に規模と資金の両方がそろっているか、どちらもない(資金の制限なし:試験用の状態)か
         for tid in team_ids:
             if tid not in funds_d or tid not in tiers_d:
@@ -819,7 +836,7 @@ def load_game(data: bytes) -> GameState:
     if p.items:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
-    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"], trade_settings=cfg["trade"], rules=rules, facility_settings=cfg["facilities"])
+    out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"], trade_settings=cfg["trade"], rules=rules, facility_settings=cfg["facilities"], tier_start={tid: str(v) for tid, v in tier_maps["tier_start"].items()}, tier_next={tid: str(v) for tid, v in tier_maps["tier_next"].items()})
     if league_d.get("staff_init"):  # 版 32 以前:全球団に初期の職員を付ける(リーグのシードから。同じセーブデータなら同じ職員。D-479)
         from .staff import assign_initial
 
