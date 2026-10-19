@@ -292,12 +292,14 @@ _QUERIES = {
     "record_moves": lambda a: _game.record_moves(a.get("year"), a.get("team_id")),
     "budget_info": lambda a: _game.budget_info(a["team_id"]),
     "player": lambda a: _game.player(a["player_id"]),
+    "player_card": lambda a: _game.player_card(a["player_id"]),  # 選手の札(D-486)
     "games_on": lambda a: _game.games_on(int(a["day"])),
     "game": lambda a: _game.game(int(a["game_no"])),
     "team": lambda a: _game.team(a["team_id"]),
     "teams": lambda a: _game.teams(),
     "baseline_info": lambda a: _game.baseline_info(),
     "sortable_keys": lambda a: api.sortable_keys(a.get("role", "batter")),
+    "war_columns": lambda a: api.war_columns(a.get("role", "batter")),  # 帯の「並び」の WAR の列(D-483)
     "stadium": lambda a: _game.stadium(a["team_id"]),
     "ability_table": lambda a: _game.ability_table(a.get("role", "batter"), a.get("sort"), a.get("order", "desc"), bool(a.get("qualified", True)), a.get("league"), a.get("team_id")),
     "ability_columns": lambda a: _game.ability_columns(a.get("role", "batter")),

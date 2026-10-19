@@ -141,11 +141,11 @@ scripts/check_browser.mjs            ブラウザでの通しの確認(開発者
 scripts/ci_needs_slow.py             PR で重いテストを回すかの判定(計算本体の範囲。D-280、D-287)
 scripts/ci_groups.py                 GitHub のテストを同時に走らせるジョブへの分け方(D-285)
 scripts/inspect_parks.py             球場の倍率と、複数シーズンでの本拠地・アウェイの結果を比べる確認用スクリプト(第2弾②a)
-web/                                 遊ぶための画面(index.html・app.js・worker.js・bridge.py・js/。D-107。web/README.md)
+web/                                 遊ぶための画面(index.html・style.css・app.js・worker.js・bridge.py・js/。D-107。web/README.md)
 web/app.js                           画面の入口(閉じる前の警告・ボタンのつなぎ・起動)。保守②で画面ごとに js/ へ分けた(D-291)
 web/js/                              画面の処理(ES モジュール:import と export でつなぐ JavaScript のファイル。準備の作業なしでそのまま公開できる):
   core.js 定数・画面の状態(state)・$ / backend.js 裏の Python とのやり取り・問い合わせの使い回し・待ち時間の表示 /
-  screens.js 画面の切り替え / parts.js 共通の部品(表・リンク・試合のカード)/ glossary.js 用語集の引き当て(見出しの解説・注意書き。②)/ progress.js 進行・順位表・進める /
+  screens.js 画面の切り替え / parts.js 共通の部品(表・操作の帯・名札・試合のカード)/ card.js 選手の札(二画面。D-485、D-486)/ glossary.js 用語集の引き当て(見出しの解説・注意書き。②)/ progress.js 進行・順位表・進める /
   stats.js 成績 / games.js 試合 / player.js 選手のページ / team.js チームと球場 / review.js ドラフトの振り返り /
   procedure.js オフの手続きの枠(段階・状態バー・おまかせ)/ decision.js 判断の画面の共通の部品(①b)/ contract.js 契約 / fa.js FA /
   draft.js ドラフト / market.js 市場(①b で draft.js と分けた)/
@@ -383,7 +383,7 @@ web/dev/                             開発者向けの測定ページ(技術検
   - 公開用の関数は、能力値・隠し情報を返さない(D-108)。
   - 答え合わせモードと `answers.py` は作り直し①でなくした(D-338)。能力の表・1 人分の能力・オフの能力の増減は、公開用の関数(`api/abilities.py` の `ability_table`・`ability_columns`・`offseason_changes`、選手のページの `abilities`)で返す。隠し情報(成長タイプ・伸びやすさ・弾道の傾き・生成時の型)と内部の能力は返さない。
   - 自球団は、セーブデータの状態に保存する(形式の版 2。版 1 は変換して読む)。指紋の元には入れない。
-- **画面**(`web/index.html`・`app.js`・`js/`・`worker.js`・`bridge.py`。`js/` の分け方は 2 章):
+- **画面**(`web/index.html`・`style.css`・`app.js`・`js/`・`worker.js`・`bridge.py`。`js/` の分け方は 2 章):
   - 裏の計算(Web Worker)で `pennant.api` を呼ぶ。画面のスクリプトは表示と操作だけ。
   - `bridge.py` は、裏の計算と `pennant.api` の取り次ぎ役(JSON の文字でやり取りする)。遊んでいるゲームを1つ持ち、新規開始・読み込みに失敗したときは今のゲームを残す。
   - 新規開始の「詳しい設定」で、リーグとシーズンのシードを入れられる(D-113)。
@@ -401,14 +401,14 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **開発者向けの測定ページ**(`web/dev/`。D-111):技術検証の測定ページ。計算本体などは一つ上(`../pennant.zip`)から読む。指紋の確認は別のボタン。
 
 ### 5.1.1 画面の仕上げ(作り直し④。D-399〜D-404)
-- **色と形**:`web/index.html` の `:root` の変数(`--bg`・`--box`・`--box2`・`--fg`・`--muted`・`--line`・`--accent`(水色)・`--gold`(金)・`--mine`・ランクの色・メダル・角丸・余白)で決める。ボタンは押せそうに見える立体(下に影)。ふつうは金色、`secondary` は紺。
+- **色と形**:`web/style.css`(デザインの見直しで `index.html` から分けた。D-288)の `:root` の変数(`--bg`・`--box`・`--box2`・`--fg`・`--muted`・`--line`・`--accent`(水色)・`--gold`(金)・`--mine`・ランクの色・メダル・角丸・余白)で決める。ボタンは押せそうに見える立体(下に影)。ふつうは金色、`secondary` は紺。
 - **球団のマーク**:`parts.js` の `emblem(team_id, name, size)`。頭文字は `data-initial` に入れて CSS の `::before` で出す(表の文字や通し確認の比べる文字に入らない)。色は `core.js` の `teamColor`(球団の番号ごとの 12 色)。
 - **メダル**:`parts.js` の `rankBadge(rank)`。1〜3 位は `medal-1〜3` の印。順位表・個人成績・進行の画面で使う。
 - **進行の画面**:`Game.status()` の `my_team` に `next_game`(次の相手。シーズンが終わったら最後の相手で `finished`)・`streak`(連勝・連敗)・`last10`(直近 10 試合)を足した(`api/progress.py` の `_my_form`。試合の結果と日程から作る公開の情報で、指紋には関係しない)。得点板・大きな「1日すすめる」・順位/勝率/ゲーム差の大きな数字を `progress.js` で描く。
 - **上の帯とタブ**:保存とメニューはアイコンのボタン(`.icon-btn`)。未保存は `#save.unsaved` の点(読み上げ用に `#dirty` の文字も残す)。「開く」はメニューの「セーブデータを開く」。タブは `core.js` の `TABS`(絵は SVG)。自球団のタブは `screen: "team"` の印で、`current()` が自球団のチームのページを返す(観戦のみのときは出さない)。
 - **広い画面の 2 列**:`screens.js` の `showScreen` が、幅 900px 以上で、タブの画面(順位表・成績・試合・自球団)を左(`left-pane`)、開いたページ(選手・チーム・試合・球場)を右(`right-pane`)に並べる。`<body>` に `dual` の印を付け、CSS の格子で 2 列にする。何も開いていないときは右に `#side-hint`。タブは左の縦の列(`--nav-w`)。
 - **表**:数字は `font-variant-numeric: tabular-nums`。縦線なし。並べ替えた列は見出しを水色にし、▲▼(`.arrow`)を見出しの文字の左に置く。右の余白はほかの列と同じ(以前の `--table-sort-mark-w` はなくした)。
-- **個人成績**:絞り込みは `<details id="stats-filter-box">` にまとめ、閉じているときは `#stats-filter-text` に今の絞り込みを 1 行で出す。表の上の `#stats-leader` に、並べている指標の 1 位の選手のカード。
+- **個人成績**:表の上の `#stats-leader` に、並べている指標の 1 位の選手のカード。絞り込み・並び順は操作の帯(5.1.5)。
 - **選手のページ**:上の `#player-card`(マーク・名前・所属など。背景のポジションの 1 文字は `data-pos`)。能力は `.ability-panel` の左に能力(ランクの札 `.rank-badge` と数字。合わせた文字は計算本体の `text` と同じ)、右に特殊能力。
 
 ### 5.1.2 ロード画面(D-405〜D-408)
@@ -432,6 +432,27 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **画面**:`#new-step-choice`(2 つのボタンと紹介)→ 今までの名前の段 → 設定の段。用意したリーグのときは「詳しい設定」のリーグのシード・基準値・スカウトの欄を隠す(`#new-template-hide`)。
 - **作り直しが必要な場合**:選手の生成・名前の部品・事前運転(加齢・引退・オフの手続き)・契約・試合の計算(試運転の基準値)・チーム方針の AI・保存形式のどれかを変えたとき。`python scripts/make_template.py` で作り直してコミットする。速いテスト `tests/test_template.py` は、保存形式の版(`SAVE_FORMAT_VERSION`)と指紋の版(`FINGERPRINT_VERSION`)が `standard.json` と同じことを確かめるので、どちらかを上げると作り直すまで落ちる。重いテストが「作り直したものと同じ」を確かめる(state.json を JSON として比べる。ZIP のバイト列は zlib の版で変わりうるので比べない)。
 - **時間**(実測。通し確認、GitHub の Actions の e2e、幅 412・1280):用意したリーグで始める 0.8 秒(押してから進行の画面まで)。新しくリーグを作ると、試運転ありで 20.0〜20.3 秒、既定値で 8.2 秒。Python では、始める処理が約 0.12 秒、作り直し(`make_template.py`)が約 12 秒。テンプレートの大きさは 195 KB。
+
+### 5.1.5 表の統一(デザインの見直し。D-481〜D-489)
+- **表**:`parts.js` の `table({ ... })` 1 つ。今までの引数に加えて:
+  - `pick`(札の置き場の名前。例 `"stats"`):行が `player_id` を持てば、行全体を押せる(`tabindex=0`。Enter・スペースでも)。押すと `card.js` の `selectRow` が札を描く。行の中のボタン・選ぶ欄・入力欄を押したときは札を開かない。
+  - `onRow(row)`:選手でない行(順位表のチームの行など)を押したときの動き。
+  - `slots`:列の枠の数。これがあると列の幅を決めた表(`table-layout: fixed`。`<colgroup>` で名前の列 `--table-name-w`、ほかの列 `colW`)にし、足りない分は空の列で埋める(表示を切り替えても列の数と幅が変わらない。D-483)。
+  - `keep`:横のスクロールの位置を覚える名前(描き直しても同じ位置に戻す)。
+  - 名前の列は `nameCell(名前, 2 行目)`(`span.pname` と `span.sub`。下線のリンクにしない。D-484)。並べた列は `extra` で名前のすぐ右に固定する(`sticky2`)。
+  - 能力の値(「C 63」の形の文字)は、表の中でもランクの色札と数字にする(D-488)。
+- **操作の帯**:`parts.js` の `band({ id, views, view, onView, filters, filterText, sort, note })`。左に表示の切り替え(`.seg`)、右寄せで「絞り込み」(`details.chip#<id>-filter`)と「並び」(`details.chip#<id>-sort`。指標の選ぶ欄と高い順/低い順)。開いているかは画面の状態(`state.bands`)に覚え、描き直しても閉じない。注意書きは `note`(`span.tnote`:短い文字と、`title` に全文)。帯の外を押すと開いている小さなボタンは閉じる。
+- **選手の札**:`card.js`。札の置き場は画面ごとの `<aside class="pcard-box" id="pcard-<名前>">`(`index.html` の `.pick-split` の中。成績 `stats`・オフの手続き `proc`・一軍登録 `roster`・スタメン `lineup`・トレード `trade`・チーム `team`・記録室 `records`・オフの結果 `offseason`・試合 `game`)。
+  - 選んだ選手は `state.pick[置き場]`(画面を描き直しても保つ。保存はしない)。表を作るときに行を `registerRow` で覚え、選んだ選手の行には `sel` の印を付け、札を描き直す。
+  - 札の中身:頭 2 行(`.pcard-head`)、能力と特殊能力の 2 列(`abilityPanel`。左右とも `.col-head` の見出しと同じ高さの行)、操作(`cardActions(置き場, 関数)` で画面が渡す。関数は行を受け取り、操作の要素を返す)、「選手のページを開く」(`.pcard-open`)。行が能力(`shown`・`scouting`・`abilities`)を持たなければ、計算本体の `player_card` を問い合わせる(日が進むまで使い回す)。
+  - 並べ方:`.pick-split` を CSS のコンテナ(`container-type: inline-size`)にし、幅 720px 以上なら 2 列(表・札。札は `position: sticky`)、狭ければ札が上(上の帯の下に貼り付き、`max-height: 40vh`)。
+- **広い画面の 2 列**:`screens.js` の `showScreen` は、`.pick-split` のある画面(成績・チーム)では、ページを開いているときだけ 2 列にする(D-485)。札のある画面は `.wide .screen.has-split` で幅を広げる。
+- **計算本体**(画面から呼ぶ関数だけ。計算は変えない):
+  - `player_card(player_id)`(`api/players.py`):札の中身(公開用。名前・所属・守備位置・年齢・投打・外国人・育成・調子・見せる能力・特殊能力)。
+  - 並び順:`stats`(基本・セイバー)・`stats`(WAR)・`ability_table` は、どの表示の列(元の数・指標・WAR の列・能力)でも並べられ、表示にない列で並べたときは `extra_column` に値を入れて返す(`api/stats.py` の `_cross_sort`)。FA・ドラフト・市場・契約の表も、並べた列の値をいつも返す。
+  - 列の枠の数 `slots`:その表のどの表示(個人成績は基本・セイバー・WAR・能力、守備はどのポジション、FA・市場・契約は全員・投手・野手 × 基本・セイバー・WAR)でも足りる数。
+- **色**:`--up`(増やす。緑)・`--down`(減らす。赤)、選んだ行 `--sel-row`・`--sel-line`(水色の帯)、行の高さ `--row-h`。
+- **通し確認**:行を押すと札が出て、能力・特殊能力が計算本体と同じ。表示を切り替えても列の数・幅・並び・選んだ選手が同じ。表の名前に下線のリンクがない。増減のボタンの色。札と帯の位置(広い画面は表の右、狭い画面は上)。
 
 ### 5.2 ブラウザの中で完結する方式(段階③。D-081)
 - Python をブラウザ上で実行する仕組み(Pyodide)で、計算本体のコードをそのまま動かす。

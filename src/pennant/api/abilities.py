@@ -9,13 +9,19 @@ from __future__ import annotations
 from .. import ability_model
 from ..skills import public_skills
 from ..abilities import ABILITY_LABELS, BATTER, abilities_for
-from .common import _values, column_info, is_sortable, metrics_config
+from .common import KIND_LABELS, WAR_COLUMNS, metrics_config
 
 
 def ability_columns(role: str) -> list[dict]:
     """能力の表の列(野手:弾道・ミート・パワー・走力・肩力・守備力・捕球、投手:球速・コントロール・スタミナ・変化球)。"""
     keys = (("trajectory",) if role == BATTER else ()) + abilities_for(role)
     return [{"key": k, "label": ABILITY_LABELS[k], "type": "ability"} for k in keys] + [{"key": "skills", "label": "特殊能力", "type": "ability"}]
+
+
+def stats_slots(config, role: str) -> int:
+    """個人成績の表の列の枠の数(D-483):基本・セイバー・WAR・能力のどの表示でも足りる数(表示にない列で並べたときの固定列の 1 つを含む)。"""
+    counts = [len(config["tables"][role][k]["columns"]) for k in KIND_LABELS] + [len(WAR_COLUMNS[role]), len(ability_columns(role))]
+    return max(counts) + 1
 
 
 def skills_text(player) -> str:
@@ -42,34 +48,32 @@ class AbilitiesMixin:
 
     def ability_table(self, role: str = "batter", sort: str | None = None, order: str = "desc", qualified: bool = True, league: int | None = None, team_id: str | None = None) -> dict:
         """能力の表(成績の「能力」。D-115 の形を引き継ぐ)。選手の選び方は個人成績と同じ。並べ替えは内部の値(丸める前)。
-        sort には成績の列(元の数・指標)も使える(D-132)。そのときは extra_column にその列を返す。値なしの選手は最後。"""
+        sort には成績の列(元の数・指標・WAR の列)も使える(D-132、D-483)。そのときは extra_column にその列を返す。値なしの選手は最後。"""
         cfg = self.state.gen_config
         cols = ability_columns(role)
         keys = [c["key"] for c in cols]
-        config = metrics_config()
-        extra = None
+        pids = self.select_players(role, qualified, league, team_id)
+        cross = None
         if sort not in keys:
-            if sort and is_sortable(config, role, sort):
-                extra = column_info(config, role, sort)
-            else:
+            cross = self._cross_sort(role, sort, pids, self._season_view(None)) if sort else None
+            if cross is None:
                 sort = keys[0]
+        extra = cross[0] if cross else None
         if order not in ("asc", "desc"):
-            order = ("desc" if extra["better"] == "high" else "asc") if extra else "desc"
+            order = ("desc" if extra.get("better", "high") == "high" else "asc") if extra else "desc"
         rec = self.records.total
-        group, owner = (rec.batters, rec.batter_team) if role == "batter" else (rec.pitchers, rec.pitcher_team)
-        base = self.baselines()[0] if extra else None
+        owner = rec.batter_team if role == "batter" else rec.pitcher_team
         rows = []
-        for pid in self.select_players(role, qualified, league, team_id):
+        for pid in pids:
             p = self.state.season.players[pid]
             row = self._player_row(pid, owner[pid])
             shown = {a["key"]: a["text"] for a in ability_model.public_abilities(cfg, p)}
             row["values"] = {**shown, "skills": skills_text(p)}
-            key: object = None if extra else _sort_value(cfg, p, sort)
-            if extra:
-                value = _values(config, role, group[pid], base)[sort]
-                row["values"][sort] = value[1]
-                key = value[0]
-            row["_sort"] = key
+            if cross:
+                row["values"][sort] = cross[1][pid][1]
+                row["_sort"] = cross[1][pid][0]
+            else:
+                row["_sort"] = _sort_value(cfg, p, sort)
             rows.append(row)
         present = [r for r in rows if r["_sort"] is not None]
         missing = [r for r in rows if r["_sort"] is None]
@@ -81,7 +85,7 @@ class AbilitiesMixin:
             r.pop("_sort")
             r["rank"] = i + 1
         sort_col = extra or next(c for c in cols if c["key"] == sort)
-        return {"role": role, "columns": cols, "sort": sort_col, "order": order, "extra_column": extra, "qualified": qualified, "rows": rows}
+        return {"role": role, "columns": cols, "sort": sort_col, "order": order, "extra_column": extra, "slots": stats_slots(metrics_config(), role), "qualified": qualified, "rows": rows}
 
     def offseason_changes(self, year: int | None = None) -> dict:
         """オフの能力の増減(年度の確定の前後。見せる能力の目盛り(1〜100)での差。球速は km/h)。"""

@@ -3,7 +3,7 @@
 import { $, STATS_PAGE, freshProc, state } from "./core.js";
 import { call, query } from "./backend.js";
 import { current, openPage, renderCurrent, showScreen } from "./screens.js";
-import { el, playerLink, table } from "./parts.js";
+import { el, nameCell, table } from "./parts.js";
 import { renderProgress, setDirty } from "./progress.js";
 import { buildStatsFilters } from "./stats.js";
 import { awardTables } from "./records.js";
@@ -68,8 +68,9 @@ function playerTable(rows, withOrigin) {
     firstLabel: "選手",
     columns,
     rows: rows.map((r) => ({ ...r, values: { position: r.position, age: `${r.age}歳`, origin: r.origin || "" } })),
-    first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+    first: (r) => nameCell(r.name, r.team_name),
     rowClass: (r) => (r.is_mine ? "mine" : ""),
+    pick: "offseason",
   });
 }
 
@@ -95,8 +96,9 @@ export async function renderOffseason(args, token) {
       firstLabel: "選手",
       columns,
       rows: a.players.map((r) => ({ ...r, values: { age: `${r.age}歳`, mean_change: r.mean_change, items: r.items.map((i) => `${i.label}${i.change}`).join(" ") } })),
-      first: (r) => [playerLink(r.name, r.player_id), el("span", { className: "sub" }, r.team_name)],
+      first: (r) => nameCell(r.name, r.team_name),
       rowClass: (r) => (r.is_mine ? "mine" : ""),
+      pick: "offseason",
       limit: args.changesShown || STATS_PAGE,
       more: () => { args.changesShown = (args.changesShown || STATS_PAGE) + STATS_PAGE; renderCurrent(); },
     }),

@@ -2,8 +2,8 @@
 
 import { $, state } from "./core.js";
 import { call, delayedShow, ready } from "./backend.js";
-import { current, renderCurrent, showScreen } from "./screens.js";
-import { allstarCard, el, emblem, gameCard, playerLink, rankBadge, seriesCard, teamLink } from "./parts.js";
+import { current, openPage, renderCurrent, showScreen } from "./screens.js";
+import { allstarCard, clickableRow, el, emblem, gameCard, playerChip, rankBadge, seriesCard } from "./parts.js";
 import { buildStatsFilters } from "./stats.js";
 import { titleFor } from "./glossary.js";
 
@@ -88,8 +88,8 @@ export function renderProgress() {
   const inj = s.injuries; // 自球団のけが(D-445):直前の日に起きたけがと、今けがをしている選手
   $("injury-box").hidden = !inj || (!inj.new.length && !inj.current.length);
   if (inj) $("injury-list").replaceChildren(
-    ...inj.new.map((x) => el("p", { className: "small injury-new" }, "けが:", playerLink(x.name, x.player_id), `(${x.where})${x.text}`)),
-    ...(inj.current.length ? [el("p", { className: "small muted" }, `けがで離脱中 ${inj.current.length} 人:`, ...inj.current.flatMap((x, i) => [i ? "・" : "", playerLink(x.name, x.player_id), `(${x.text})`]))] : []),
+    ...inj.new.map((x) => el("p", { className: "small injury-new" }, "けが:", playerChip(x.name, x.player_id), `(${x.where})${x.text}`)),
+    ...(inj.current.length ? [el("p", { className: "small muted" }, `けがで離脱中 ${inj.current.length} 人:`, ...inj.current.flatMap((x, i) => [i ? "・" : "", playerChip(x.name, x.player_id), `(${x.text})`]))] : []),
   );
   if (ps) $("post-list").replaceChildren(...(ps.next_label ? [el("p", { className: "small" }, `次(${ps.next_day - s.total_days}日目):${ps.next_label}`)] : []), ...ps.series.map((x) => seriesCard(x, false)));
   $("allstar-box").hidden = !s.allstar.length;
@@ -142,8 +142,8 @@ export function renderStandings() {
     const head = el("tr", {}, ...["順位・チーム", "試合", "勝", "敗", "分", "勝率", "差"].map((x, i) => el("th", { scope: "col", className: i ? "" : "sticky", title: i ? titleFor(x) : "" }, x)));
     $("standings-post").replaceChildren(...fm.leagues.map((lg) => el("section", { className: "farm-league" }, el("h2", {}, `${lg.league_name}(二軍)`),
       el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head.cloneNode(true)), el("tbody", {}, ...lg.rows.map((r) =>
-        el("tr", { className: r.mine ? "mine" : "" }, el("td", { className: "sticky" }, el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.team_name), teamLink(r.team_name, r.team_id))),
-          ...[r.wins + r.losses + r.ties, r.wins, r.losses, r.ties, r.pct, r.games_behind].map((v) => el("td", {}, String(v)))))))))));
+        teamRow(el("tr", { className: r.mine ? "mine" : "" }, el("td", { className: "sticky" }, el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.team_name), el("span", { className: "tname" }, r.team_name))),
+          ...[r.wins + r.losses + r.ties, r.wins, r.losses, r.ties, r.pct, r.games_behind].map((v) => el("td", {}, String(v)))), r.team_id))))))));
     return;
   }
   if (post) {
@@ -159,14 +159,21 @@ export function renderStandings() {
   const body = $("standings-body");
   body.replaceChildren();
   for (const r of lg.rows) {
-    const cell = el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.name), teamLink(r.name, r.team_id));
+    const cell = el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.name), el("span", { className: "tname" }, r.name));
     if (r.league_name) cell.append(el("span", { className: "sub" }, r.league_name));
     if (r.is_mine) cell.append(el("span", { className: "you", "aria-label": "自球団" }, "★"));
     const name = el("td", { className: "sticky" }, cell);
     const tr = el("tr", { className: r.is_mine ? "mine" : "" }, name);
     for (const v of [r.games, r.wins, r.losses, r.ties, r.pct, r.games_behind]) tr.append(el("td", {}, String(v)));
-    body.appendChild(tr);
+    body.appendChild(teamRow(tr, r.team_id));
   }
+}
+
+// 順位表のチームの行は、行全体を押すとチームのページ(選手の行と同じ形。D-481、D-484)
+function teamRow(tr, teamId) {
+  clickableRow(tr, () => openPage("team", { id: teamId }));
+  tr.dataset.team = teamId;
+  return tr;
 }
 
 export function enterGame(view, dirty) {

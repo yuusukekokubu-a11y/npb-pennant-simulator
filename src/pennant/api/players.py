@@ -47,6 +47,27 @@ class PlayersMixin:
         out.update(year=int(sc["year"]), route=route["phase"], route_label=ENTRY_ROUTES[route["phase"]], team_name=self._team_names().get(sc["team_id"], ""))
         return out
 
+    def player_card(self, player_id: str) -> dict:
+        """選手の札(D-486):名前・所属・守備位置・年齢・投打・外国人・育成・今日の調子と、見せる能力・特殊能力(公開用。隠し情報は返さない)。
+        引退した選手は能力なし(abilities は None)。"""
+        season = self.state.season
+        p = season.players.get(player_id) or next((x for t in self.state.league.teams for x in t.players + t.development if x.id == player_id), None)
+        if p is None:
+            past = next((a.players[player_id] for a in reversed(self.state.history) if player_id in a.players), None)
+            if past is None:
+                raise ValueError(f"選手 '{player_id}' はいません")
+            team = self._team(past["team_id"])
+            return {"player_id": player_id, "name": past["name"], "team_id": team.id, "team_name": f"{team.name}(引退)", "position_label": POSITION_LABELS[past["position"]], "age": past["age"], "hand": None,
+                    "foreign": False, "development": None, "condition": None, "is_mine": team.id == self.state.my_team_id, "abilities": None, "skills": None}
+        team = self._team(p.team_id) if p.team_id is not None else None
+        return {
+            "player_id": p.id, "name": p.name, "team_id": team.id if team is not None else None, "team_name": team.name if team is not None else self._unattached_label(p.id),
+            "position_label": POSITION_LABELS[p.position], "age": p.age, "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws),
+            "foreign": p.foreign, "development": None if p.dev_seasons is None else f"育成 {int(p.dev_seasons) + 1} 年目",
+            "condition": self.player_condition(p.id), "is_mine": team is not None and team.id == self.state.my_team_id,
+            "abilities": self.player_abilities(p), "skills": public_skills(p),
+        }
+
     def player(self, player_id: str) -> dict:
         """選手のページ:基本情報(公開用)、シーズン通算の成績(基本・セイバー)、試合ごとの成績(新しい順)。"""
         season = self.state.season

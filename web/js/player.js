@@ -3,7 +3,7 @@
 import { $, GAMES_PAGE, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
-import { abilityPanel, conditionMark, el, emblem, kvTable, link, setPressed, table, teamLink } from "./parts.js";
+import { abilityPanel, conditionMark, el, emblem, kvTable, nameCell, setPressed, table, teamLink } from "./parts.js";
 import { seasonCaution } from "./glossary.js";
 
 export async function renderPlayer(args, token) {
@@ -70,7 +70,8 @@ export async function renderPlayer(args, token) {
       firstLabel: "日・相手",
       columns: cols,
       rows,
-      first: (g) => [link(`${g.day}日目`, () => openPage("game", { game_no: g.game_no })), el("span", { className: "sub" }, `${g.home ? "対" : "@"} ${g.opponent}`)],
+      first: (g) => nameCell(`${g.day}日目`, `${g.home ? "対" : "@"} ${g.opponent}`),
+      onRow: (g) => openPage("game", { game_no: g.game_no }), // 行を押すと試合のページ(D-484)
       limit,
       more: () => { args.gamesShown = limit + GAMES_PAGE; renderCurrent(); },
     }),

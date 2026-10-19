@@ -16,8 +16,8 @@ from pennant.metrics import load_metrics_config
 ROOT = Path(__file__).resolve().parents[1]
 DATA = json.loads((ROOT / "src" / "pennant" / "data" / "glossary.json").read_text(encoding="utf-8"))
 CATEGORIES = ["指標:打撃", "指標:投球", "指標:守備と走塁", "指標:WAR", "契約とお金", "ドラフトとスカウト", "試合と球場", "画面の見方"]
-# 列ではない選択肢(絞り込みの「全部」、シーズンの「今シーズン」「通算」)は、key で見分けて除く
-_NOT_COLUMNS = {"all", "current", "career"}
+# 列ではない選択肢(絞り込みの「全部」「全チーム」、シーズンの「今シーズン」「通算」)は、key で見分けて除く
+_NOT_COLUMNS = {"all", "current", "career", ""}  # "" は帯の絞り込みの「全チーム」(D-482)
 
 
 def _strip_template(text: str) -> str:

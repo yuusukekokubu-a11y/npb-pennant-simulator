@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
 import { openPage } from "./screens.js";
-import { allstarCard, el, gameCard, link, playerLink, table, teamLink } from "./parts.js";
+import { allstarCard, el, gameCard, link, nameCell, playerChip, table } from "./parts.js";
 
 // ---- 試合(日付ごとの一覧) ----
 
@@ -53,7 +53,8 @@ export async function renderGame(args, token) {
       firstLabel: "チーム",
       columns: lineCols,
       rows: st.line.rows.map((r) => ({ ...r, values: { ...Object.fromEntries(st.line.innings.map((i, k) => [i, r.cells[k]])), total: String(r.total) } })),
-      first: (r) => [teamLink(r.name, r.team_id)],
+      first: (r) => nameCell(r.name),
+      onRow: (r) => openPage("team", { id: r.team_id }),
     }),
   );
   const pcols = [
@@ -70,8 +71,9 @@ export async function renderGame(args, token) {
     table({
       firstLabel: "投手",
       columns: pcols,
-      rows: st.pitchers.map((p) => ({ ...p, values: Object.fromEntries(pcols.map((c) => [c.key, String(p[c.key] ?? "")])) })),
-      first: (p) => [playerLink(p.name, p.id), el("span", { className: "sub" }, p.team)],
+      rows: st.pitchers.map((p) => ({ ...p, player_id: p.id, values: Object.fromEntries(pcols.map((c) => [c.key, String(p[c.key] ?? "")])) })),
+      first: (p) => nameCell(p.name, p.team),
+      pick: "game",
     }),
   );
   $("game-lineups").replaceChildren(
@@ -80,8 +82,8 @@ export async function renderGame(args, token) {
         "div",
         {},
         el("h3", {}, `${t.name}(${t.side})`),
-        el("p", {}, "先発投手:", playerLink(t.starter.name, t.starter.id)),
-        el("ol", {}, ...t.lineup.map((x) => el("li", {}, playerLink(x.name, x.id), `(${x.position})${x.rest_sub ? "※休養の代わり" : ""}`))),
+        el("p", {}, "先発投手:", playerChip(t.starter.name, t.starter.id)),
+        el("ol", {}, ...t.lineup.map((x) => el("li", {}, playerChip(x.name, x.id), `(${x.position})${x.rest_sub ? "※休養の代わり" : ""}`))),
       ),
     ),
   );

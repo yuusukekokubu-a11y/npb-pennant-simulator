@@ -150,6 +150,9 @@ def test_decision_tables_columns_depth_and_thin(season_end):
         assert t["sort"]["key"] == "war_all" and t["order"] == "desc" and not t["kinds"]
         p = g.decision_table("fa", "pitcher", "saber")
         assert p["kinds"] and all(r["position"] in ("SP", "RP") for r in p["rows"]) and p["columns"][0]["key"] == "war_ra"
+        # 列の枠の数は種類を変えても同じ(D-483)。表にない列で並べても、その値を返す(名前の隣の固定列)
+        assert len({g.decision_table("fa", "pitcher", k)["slots"] for k in ("basic", "saber", "war")}) == 1 and t["slots"] == len(t["columns"]) + 1
+        assert all("era" in r["values"] for r in g.decision_table("fa", "pitcher", "war", sort="era")["rows"])
         # 加入後の序列は、FA の点数の出場機会と同じ計算(D-297、D-365)
         ctx = g._contract_ctx()
         team = g._my_team()

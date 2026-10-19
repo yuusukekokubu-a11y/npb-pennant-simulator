@@ -1,10 +1,11 @@
 // トレードの画面(D-378):AI からの提案(受ける・断る)・自分から持ちかける(相手の球団・出す選手・欲しい選手を 1〜3 人ずつ選ぶ)・トレードの記録。
-// シーズン中は期限(全日程の 3 分の 2)まで、オフはトレードの段階でできる。そのオフ・シーズンに入った選手は出せない(印「新」)
+// シーズン中は期限(全日程の 3 分の 2)まで、オフはトレードの段階でできる。そのオフ・シーズンに入った選手は出せない(印「新」)。
+// 行を押すと選手の札、その下に「出す選手に入れる」「欲しい選手に入れる」(D-486)
 
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, playerLink, table } from "./parts.js";
+import { el, nameCell, table } from "./parts.js";
 import { setDirty } from "./progress.js";
 
 async function tradeCall(name, args = {}) {
@@ -40,14 +41,19 @@ export async function renderTrade(token) {
   $("trade-partner").replaceChildren(...v.teams.map((x) => el("option", { value: x.team_id, selected: x.team_id === v.partner }, x.team_name)));
   $("trade-partner").disabled = state.running;
   $("trade-partner").onchange = (e) => { t.partner = e.target.value; t.gets = []; t.message = null; renderCurrent(); };
-  const pick = (list, ids, max) => (p) => el("input", { type: "checkbox", "aria-label": `${p.name}を選ぶ`, checked: ids.includes(p.player_id), disabled: state.running || !open || p.locked || (!ids.includes(p.player_id) && ids.length >= max), onchange: (e) => { if (e.target.checked) ids.push(p.player_id); else ids.splice(ids.indexOf(p.player_id), 1); t.message = null; renderCurrent(); } });
-  const columns = [{ key: "pos", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合" }, { key: "salary", label: "年俸" }];
-  const rows = (list, ids) => list.map((p) => ({ ...p, values: { pos: p.position_label, age: `${p.age}歳`, overall: p.overall, salary: p.salary_text } }));
-  const first = (ids, max) => (p) => [pick(null, ids, max)(p), playerLink(p.name, p.player_id), p.locked ? el("span", { className: "sub", title: "このオフ(シーズン)に入った選手は出せません" }, "新") : "", p.foreign ? el("span", { className: "badge-foreign" }, "外") : ""];
+  // 札の下の操作:出す選手・欲しい選手に入れる/外す(1〜max 人ずつ)
+  const actions = (ids, max, word) => (p) => {
+    const on = ids.includes(p.player_id);
+    if (p.locked) return el("p", { className: "muted small" }, "このオフ(シーズン)に入った選手は出せません。");
+    return el("div", { className: "row" }, el("button", { type: "button", className: on ? "secondary trade-toggle" : "trade-toggle", disabled: state.running || !open || (!on && ids.length >= max), onclick: () => { if (on) ids.splice(ids.indexOf(p.player_id), 1); else ids.push(p.player_id); t.message = null; renderCurrent(); } }, on ? `${word}から外す` : `${word}に入れる`));
+  };
+  const columns = [{ key: "state", label: "状態" }, { key: "pos", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "overall", label: "総合" }, { key: "salary", label: "年俸" }];
+  const rows = (list, ids, word) => list.map((p) => ({ ...p, values: { state: ids.includes(p.player_id) ? word : p.locked ? "新(出せない)" : "", pos: p.position_label, age: `${p.age}歳`, overall: p.overall, salary: p.salary_text } }));
+  const first = (p) => nameCell(p.name, "", p.foreign ? el("span", { className: "badge-foreign" }, "外") : "");
   t.gives = t.gives.filter((id) => v.mine.some((p) => p.player_id === id && !p.locked));
   t.gets = t.gets.filter((id) => v.theirs.some((p) => p.player_id === id && !p.locked));
-  $("trade-mine").replaceChildren(table({ firstLabel: "出す選手", columns, rows: rows(v.mine, t.gives), first: first(t.gives, v.max_players), rowClass: (p) => (t.gives.includes(p.player_id) ? "selected" : p.locked ? "muted" : ""), fluid: true }));
-  $("trade-theirs").replaceChildren(table({ firstLabel: "欲しい選手", columns, rows: rows(v.theirs, t.gets), first: first(t.gets, v.max_players), rowClass: (p) => (t.gets.includes(p.player_id) ? "selected" : p.locked ? "muted" : ""), fluid: true }));
+  $("trade-mine").replaceChildren(table({ firstLabel: "出す選手", columns, rows: rows(v.mine, t.gives, "出す"), first, rowClass: (p) => (t.gives.includes(p.player_id) ? "selected" : p.locked ? "muted" : ""), fluid: true, pick: "trade", actions: actions(t.gives, v.max_players, "出す選手") }));
+  $("trade-theirs").replaceChildren(table({ firstLabel: "欲しい選手", columns, rows: rows(v.theirs, t.gets, "欲しい"), first, rowClass: (p) => (t.gets.includes(p.player_id) ? "selected" : p.locked ? "muted" : ""), fluid: true, pick: "trade", actions: actions(t.gets, v.max_players, "欲しい選手") }));
   const name = (list, id) => (list.find((p) => p.player_id === id) || {}).name || "";
   $("trade-summary").textContent = `出す:${t.gives.map((id) => name(v.mine, id)).join("・") || "なし"} ⇔ 欲しい:${t.gets.map((id) => name(v.theirs, id)).join("・") || "なし"}`;
   $("trade-propose").disabled = state.running || !open || !t.gives.length || !t.gets.length;

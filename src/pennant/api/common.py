@@ -179,6 +179,13 @@ def sortable_keys(role: str) -> list[dict]:
     return [column_info(config, role, k) for k in keys]
 
 
+def war_columns(role: str) -> list[dict]:
+    """WAR の表の列(個人成績の帯の「並び」で、どの表示でも選べるように。D-483)。"""
+    if role not in ROLE_LABELS:
+        raise ValueError(f"打者か投手を選んでください(値: {role!r})")
+    return [dict(c) for c in WAR_COLUMNS[role]]
+
+
 def is_sortable(config: MetricsConfig, role: str, key: str) -> bool:
     return key in config["counts"][role] or (key in config.metrics and role in config.metrics[key]["formulas"])
 

@@ -3,7 +3,7 @@
 import { $, state } from "./core.js";
 import { call } from "./backend.js";
 import { back, current, openPage, renderCurrent, showScreen } from "./screens.js";
-import { el, playerLink, table } from "./parts.js";
+import { el, nameCell, table } from "./parts.js";
 import { renderProgress, setDirty } from "./progress.js";
 import { buildStatsFilters } from "./stats.js";
 import { contractSection } from "./contract.js";
@@ -31,6 +31,7 @@ export async function renderProcedure(token) {
   if (token !== state.token) return;
   const v = r.value;
   const ps = state.proc;
+  if (ps.phase !== v.phase && state.pick) state.pick.proc = null; // 段階が変わったら、選手の札を閉じる(D-485)
   ps.phase = v.phase;
   ps.stage = v.stage;
   // 段階のタブは 9 つ(契約・職員・FA・外国人・ドラフト・市場・トレード・現役ドラフト・完了。D-376、D-378、D-380、D-474)。今の段階の名前を大きく出す(D-271)
@@ -182,8 +183,8 @@ function renderProcedureContracts(v) {
     const renewCols = [{ key: "team", label: "球団" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "old", label: "前の年俸" }, { key: "salary", label: "新しい年俸" }, { key: "change", label: "増減" }, { key: "years", label: "年数" }];
     const renewRows = mineFirst(c.renewals).map((r) => ({ ...r, values: { team: r.team_name, position: r.position_label, age: `${r.age}歳`, old: r.old_text || "-", salary: r.salary_text, change: r.change === null ? "-" : `${r.change >= 0 ? "+" : ""}${r.change.toLocaleString()}`, years: `${r.years} 年` } }));
     const det = el("details", { id: "renewal-results" }, el("summary", {}, `全球団の更改の結果(更改 ${c.renewals.length} 人${c.budget_releases.length ? `・資金超過 ${c.budget_releases.length} 人` : ""}・単価 ${c.rate_text})`));
-    if (c.renewals.length) det.append(table({ firstLabel: "選手", columns: renewCols, rows: renewRows, first: (r) => [playerLink(r.name, r.player_id)], rowClass: (r) => (r.is_mine ? "mine" : ""), fluid: true, limit: state.proc.renewalsShown || 20, more: () => { state.proc.renewalsShown = (state.proc.renewalsShown || 20) + 50; renderCurrent(); } }));
-    if (c.budget_releases.length) det.append(el("h3", {}, "資金の超過で自由契約(AI 球団)"), table({ firstLabel: "選手", columns: [{ key: "team", label: "球団" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸" }], rows: c.budget_releases.map((r) => ({ ...r, values: { team: r.team_name, position: r.position_label, age: `${r.age}歳`, salary: r.salary_text } })), first: (r) => [el("span", {}, r.name)], fluid: true }));
+    if (c.renewals.length) det.append(table({ firstLabel: "選手", columns: renewCols, rows: renewRows, first: (r) => nameCell(r.name), rowClass: (r) => (r.is_mine ? "mine" : ""), fluid: true, pick: "proc", limit: state.proc.renewalsShown || 20, more: () => { state.proc.renewalsShown = (state.proc.renewalsShown || 20) + 50; renderCurrent(); } }));
+    if (c.budget_releases.length) det.append(el("h3", {}, "資金の超過で自由契約(AI 球団)"), table({ firstLabel: "選手", columns: [{ key: "team", label: "球団" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "salary", label: "年俸" }], rows: c.budget_releases.map((r) => ({ ...r, values: { team: r.team_name, position: r.position_label, age: `${r.age}歳`, salary: r.salary_text } })), first: (r) => nameCell(r.name), fluid: true, pick: "proc" }));
     parts.push(det);
   }
   box.replaceChildren(...parts);
@@ -256,12 +257,13 @@ export async function procNext() {
 // 指名・自由契約・市場の履歴(閉じた形で、表の下に置く)
 function historyTable(picks, released) {
   const rows = [];
-  for (const x of released) rows.push({ k: "自由契約", team: x.team_name, name: x.name, pos: x.position_label, age: x.age, mine: x.is_mine });
+  for (const x of released) rows.push({ k: "自由契約", team: x.team_name, name: x.name, player_id: x.player_id, pos: x.position_label, age: x.age, mine: x.is_mine });
   const kind = (x) => (x.phase === "draft" ? `ドラフト ${x.round} 巡${x.lottery ? "(抽選)" : ""}` : x.phase === "dev_draft" ? `育成ドラフト ${x.round} 巡` : x.phase === "foreign" ? "外国人市場" : "市場");
-  for (const x of picks) rows.push({ k: kind(x), team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : x.note === "budget" ? "資金不足" : x.phase === "draft" ? "指名を終える" : "見送り"})`, pos: x.position_label, age: x.age, mine: x.is_mine });
+  for (const x of picks) rows.push({ k: kind(x), team: x.team_name, name: x.player_id ? x.name : `(${x.note === "full" ? "空き枠なし" : x.note === "budget" ? "資金不足" : x.phase === "draft" ? "指名を終える" : "見送り"})`, player_id: x.player_id || null, pos: x.position_label, age: x.age, mine: x.is_mine });
   if (!rows.length) return el("p", { className: "muted small" }, "まだありません。");
-  const body = el("tbody", {}, ...rows.map((r) => el("tr", { className: r.mine ? "mine" : "" }, el("td", {}, r.k), el("td", {}, r.team), el("td", {}, r.name), el("td", {}, r.pos || ""), el("td", {}, r.age ? `${r.age}歳` : ""))));
-  return el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "手続き"), el("th", {}, "球団"), el("th", {}, "選手"), el("th", {}, "ポジション"), el("th", {}, "年齢"))), body));
+  // 表の部品は 1 つ(D-481):選手の行を押すと選手の札
+  const columns = [{ key: "k", label: "手続き" }, { key: "team", label: "球団" }, { key: "pos", label: "ポジション" }, { key: "age", label: "年齢" }];
+  return table({ firstLabel: "選手", columns, rows: rows.map((r) => ({ ...r, values: { k: r.k, team: r.team, pos: r.pos || "", age: r.age ? `${r.age}歳` : "" } })), first: (r) => nameCell(r.name), rowClass: (r) => (r.mine ? "mine" : ""), fluid: true, pick: "proc" });
 }
 
 // オフのトレードの段階(D-378):このオフのトレードと、提案の件数。交換はトレードの画面で

@@ -95,6 +95,10 @@ def test_stages_and_contract_table(contract_game):
     assert c["rows"] and all(r["position"] == "C" for r in c["rows"]) and c["columns"][0]["key"] == "war"
     ages = [r["age"] for r in g.contract_table("all", sort="age", order="desc")["rows"]]
     assert ages == sorted(ages, reverse=True)
+    # 列の枠の数(D-483):種類(基本・セイバー・WAR)を変えても同じで、どの種類の列も収まる
+    slots = {k: g.contract_table("pitcher", k)["slots"] for k in ("basic", "saber", "war")}
+    assert len(set(slots.values())) == 1 and all(len(g.contract_table("pitcher", k)["columns"]) < slots[k] for k in slots)
+    assert t["slots"] == len(t["columns"]) + 1
     with pytest.raises(ValueError):
         g.contract_table("bench")
     with pytest.raises(ValueError):

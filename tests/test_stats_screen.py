@@ -85,7 +85,7 @@ def test_sort_by_any_metric_with_extra_column(game):
     p = game.stats("pitcher", "saber")  # 投手のセイバーの既定(防御率)は表にないので、固定列になる
     assert p["extra_column"]["key"] == "era" and p["order"] == "asc"
     with pytest.raises(ValueError):
-        game.stats("batter", "basic", sort="stamina")  # 能力の項目は、公開用の関数では使えない
+        game.stats("batter", "basic", sort="stamina")  # 投手の能力の項目は、打者の表では使えない
     with pytest.raises(ValueError):
         api.sortable_keys("coach")
 
@@ -275,3 +275,46 @@ def test_tables_validation(change, message):
     change(data)
     with pytest.raises(ConfigError, match=re.escape(message)):
         validate_metrics_config(data)
+
+
+# ---- 表の統一(デザインの見直し。D-483、D-486) ----
+
+def test_sort_is_kept_across_every_view(game):
+    """どの表示(基本・セイバー・WAR・能力)でも、ほかの表示の列で並べられる。表示にない列は extra_column で、並びは同じ(D-483)。"""
+    orders = {}
+    for kind, call in (("basic", lambda s, o: game.stats("batter", "basic", sort=s, order=o)), ("saber", lambda s, o: game.stats("batter", "saber", sort=s, order=o)),
+                       ("war", lambda s, o: game.stats("batter", "war", sort=s, order=o)), ("ability", lambda s, o: game.ability_table("batter", sort=s, order=o))):
+        for sort in ("avg", "woba", "war", "meet"):
+            t = call(sort, "desc")
+            assert t["sort"]["key"] == sort and all(sort in r["values"] for r in t["rows"]), (kind, sort)
+            assert (t["extra_column"] is None) == (sort in [c["key"] for c in t["columns"]]), (kind, sort)
+            orders.setdefault(sort, []).append([r["player_id"] for r in t["rows"]])
+    for sort, lists in orders.items():
+        assert all(x == lists[0] for x in lists), sort  # どの表示でも同じ並び
+    with pytest.raises(ValueError):
+        game.stats("batter", "basic", sort="no_such_column")
+    t = game.ability_table("pitcher", sort="war_ra", qualified=False)
+    assert t["extra_column"]["key"] == "war_ra" and t["order"] == "desc"
+
+
+def test_slots_are_the_same_in_every_view(game):
+    """列の枠の数(D-483):基本・セイバー・WAR・能力で同じで、どの表示の列と固定列も収まる。"""
+    for role in ("batter", "pitcher"):
+        tables = [game.stats(role, "basic"), game.stats(role, "saber"), game.stats(role, "war"), game.ability_table(role)]
+        assert len({t["slots"] for t in tables}) == 1
+        assert all(len(t["columns"]) + 1 <= t["slots"] for t in tables)
+    f = [game.fielding_stats(p)["slots"] for p in ("all", "C", "SS")]
+    assert len(set(f)) == 1 and f[0] >= len(game.fielding_stats("C")["columns"]) + 1
+
+
+def test_player_card_is_public(game):
+    """選手の札(D-486):名前・所属・守備位置・年齢・投打・見せる能力・特殊能力。隠し情報は返さない。"""
+    pid = game.stats("pitcher", qualified=False)["rows"][0]["player_id"]
+    c = game.player_card(pid)
+    page = game.player(pid)["player"]
+    assert c["name"] == page["name"] and c["team_name"] == page["team_name"] and c["position_label"] == page["position_label"] and c["hand"] == page["hand"]
+    assert c["abilities"] == page["abilities"] and c["skills"] == page["skills"] and c["condition"] == page["condition"]
+    assert not (_keys(c) & {"ratings", "potential", "growth_type", "archetype", "ease", "trajectory_bias"})
+    with pytest.raises(ValueError):
+        game.player_card("nobody")
+    assert [x["key"] for x in api.war_columns("pitcher")] == ["innings", "war_ra", "war_fip"]
