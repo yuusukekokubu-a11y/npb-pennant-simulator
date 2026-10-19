@@ -117,10 +117,11 @@ def test_plus_metrics_average_about_100(game):
                 den += counts["PA"]
         avg = num / den
         assert 97 < avg < 103, (key, float(avg))
-    # 今シーズンの値だけを使えば、wRC+ の平均はちょうど100
+    # 今シーズンの値だけを使えば、wRC+ の平均(wOBA の分母 = 打数 + 四球 + 死球 + 犠牲フライで重みづけ)はちょうど100。犠打は分母に入らない(D-459)
     current = compute_baselines(game.records.tally, league_totals(rec, "batter"), league_totals(rec, "pitcher"), SETTINGS, base)
-    num = sum(compute(config, "batter", c, current.values)["wrc_plus"] * c["PA"] for c in rec.batters.values())
-    assert num / sum(c["PA"] for c in rec.batters.values()) == 100
+    denom = lambda c: c["AB"] + c["BB"] + c["HBP"] + c["SF"]
+    num = sum(compute(config, "batter", c, current.values)["wrc_plus"] * denom(c) for c in rec.batters.values() if denom(c))
+    assert num / sum(denom(c) for c in rec.batters.values()) == 100
 
 
 # ---- 受け入れ条件4:小さな手計算の例 ----
