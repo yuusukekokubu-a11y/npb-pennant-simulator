@@ -130,7 +130,14 @@ page.click = async (sel, opts) => {
 };
 async function openChip(sel) {
   await page.waitForSelector(sel, { state: "attached" });
-  await page.$eval(sel, (e) => { const d = e.closest("details.chip"); if (d && !d.open) d.open = true; });
+  // 開いた直後に画面が描き直されると、閉じた帯に作り直されるので、見えるまで開き直しながら待つ
+  await page.waitForFunction((s) => {
+    const e = document.querySelector(s);
+    if (!e) return false;
+    const d = e.closest("details.chip");
+    if (d && !d.open) d.open = true;
+    return e.checkVisibility ? e.checkVisibility() : e.offsetParent !== null;
+  }, sel);
 }
 async function bandSelect(sel, value) {
   await openChip(sel);
