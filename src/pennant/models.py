@@ -97,6 +97,7 @@ class Team:
     park: ParkFactors = field(default_factory=ParkFactors)  # 本拠地の球場の真の倍率(隠し情報。D-138)
     development: list[Player] = field(default_factory=list)  # 育成選手(支配下 70 人とは別の枠。試合に出ない。D-375)
     facilities: dict = field(default_factory=dict)  # 設備の段階(practice / medical / development → 1〜5。D-383)。ない設備は標準
+    policy: dict = field(default_factory=dict)  # チーム方針(練習の重点・起用の方針・作戦・あなたが決めたか。D-454)。ない項目は既定
 
     @property
     def name(self) -> str:

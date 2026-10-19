@@ -49,7 +49,7 @@ class OffseasonMixin:
         from ..injuries import default_settings as injury_settings
 
         state.season = Season(state.league, derive_seed(season.seed, "next-season"), _next_season_config(season.season_config), season.game_config, season.model, season.manager, year=state.year, farm=True, injuries=injury_settings() if state.rules.injuries else None)  # 版 29 の続きも、次のシーズンから二軍・けが(D-448)
-        state.season.lineup_plans = {tid: {"style": plan["style"], "slots": None, **({"steal": plan["steal"]} if plan.get("steal") else {})} for tid, plan in season.lineup_plans.items()}  # 打順の型と盗塁の作戦は引き継ぎ、スタメンは AI が組み直す(D-373、D-429)
+        state.season.lineup_plans = {tid: {"style": plan["style"], "slots": None} for tid, plan in season.lineup_plans.items()}  # 打順の型は引き継ぎ、スタメンは AI が組み直す(D-373。作戦はチーム方針で球団に残る。D-457)
         for tid, plan in season.pitching_plans.items():  # 投手の起用は引き継ぎ、新しい一軍に当てはめる(抜けた枠は AI。D-449、D-450)
             state.season.pitching_plans[tid] = {"starters": list(plan["starters"]), "roles": dict(plan["roles"]), "set_day": None, "notice": None}
             state.season.set_active(tid, state.season.actives[tid])

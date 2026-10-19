@@ -7,7 +7,7 @@ from datetime import date, datetime
 from fractions import Fraction
 from typing import Sequence
 
-from .. import draft as draftmod, fa as famod
+from .. import draft as draftmod, fa as famod, policy as policymod
 from ..baselines import Baselines, load_baseline_settings, trial_baselines
 from ..config import load_generation_config, load_name_parts
 from ..contracts import assign_tiers, initial_funds, load_contract_settings
@@ -421,7 +421,8 @@ class ProgressMixin:
 
         everyone = [p for t in state.league.teams for p in list(t.players) + list(t.development)]
         playing = playing_growth(everyone, self.records.total, archive.farm_records) if season.farm is not None else None  # 出場と若手の成長(D-447。二軍の試合があるシーズンだけ)
-        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons, state.facility_settings, playing)
+        policymod.refresh_ai(state.league)  # あなたが決めていない球団のチーム方針を、その年の顔ぶれで AI が決め直す(D-454)
+        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons, state.facility_settings, playing, practice=True)  # 練習の重点(D-455)
         state.offseasons.append(result)
         state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records, rules=state.rules)
         state.procedure.ranks = {s.team_id: int(s.rank) for s in archive.standings}  # 勝利軸は公式の順位(D-250)

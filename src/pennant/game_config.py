@@ -30,6 +30,10 @@ EFFECT_GROUPS = {"runner": ("speed", "baserunning"), "batter": ("speed", "baseru
 
 
 STEAL_STRATEGIES = ("aggressive", "normal", "cautious")  # 盗塁の作戦(D-429)
+BUNT_STRATEGIES = ("many", "normal", "few")  # バントの作戦(D-457)
+BUNT_KINDS = ("sacrifice", "popup", "lead_out", "hit", "error")  # 送りバントの結果(D-458)
+BUNT_BASES = ("0_1", "0_2", "0_12", "1_1", "1_2", "1_12")  # アウト数_走者(一塁・二塁・一二塁)
+BUNT_FIELDERS = ("P", "C", "1B", "3B")
 
 
 @dataclass(frozen=True)
@@ -230,6 +234,51 @@ def validate_game_config(data: Any, source: str = "(辞書)") -> GameConfig:
         if bt is not None:
             for key in ("wild_pitch", "passed_ball"):
                 _event(c.get(bt, key, "battery"), f"battery.{key}")
+    if "bunt" in root:  # 送りバント(D-458)
+        bu = c.section(root["bunt"], "bunt")
+        if bu is not None:
+            base = c.section(c.get(bu, "base", "bunt"), "bunt.base") or {}
+            for key in BUNT_BASES:
+                c.number(c.get(base, key, "bunt.base"), f"bunt.base.{key}", 0, 1)
+            order = c.get(bu, "order", "bunt")
+            if not (isinstance(order, list) and len(order) == 9):
+                c.add("bunt.order", "打順 1〜9 番の倍率(9 つの数)にしてください")
+            else:
+                for i, v in enumerate(order):
+                    c.number(v, f"bunt.order[{i}]", 0, 10)
+            c.number(c.get(bu, "batter_ratio", "bunt"), "bunt.batter_ratio", RATIO_LOW, RATIO_HIGH)
+            c.integer(c.get(bu, "late_inning", "bunt"), "bunt.late_inning", 1, 30)
+            c.integer(c.get(bu, "close_margin", "bunt"), "bunt.close_margin", 0, 30)
+            c.number(c.get(bu, "close_factor", "bunt"), "bunt.close_factor", 0, 10)
+            c.integer(c.get(bu, "blowout_margin", "bunt"), "bunt.blowout_margin", 1, 30)
+            c.number(c.get(bu, "blowout_factor", "bunt"), "bunt.blowout_factor", 0, 10)
+            c.number(c.get(bu, "max_probability", "bunt"), "bunt.max_probability", 0, 1)
+            strategies = c.section(c.get(bu, "strategies", "bunt"), "bunt.strategies") or {}
+            for key in BUNT_STRATEGIES:
+                c.number(c.get(strategies, key, "bunt.strategies"), f"bunt.strategies.{key}", 0, 10)
+            outcomes = c.section(c.get(bu, "outcomes", "bunt"), "bunt.outcomes") or {}
+            for key in BUNT_KINDS:
+                c.number(c.get(outcomes, key, "bunt.outcomes"), f"bunt.outcomes.{key}", 0, 1)
+            if outcomes and all(isinstance(outcomes.get(k), (int, float)) for k in BUNT_KINDS) and abs(sum(outcomes[k] for k in BUNT_KINDS) - 1) > 1e-6:
+                c.add("bunt.outcomes", "結果の割合の合計を 1 にしてください")
+            effects = c.section(c.get(bu, "effects", "bunt"), "bunt.effects") or {}
+            for kind, table in effects.items():
+                if kind not in BUNT_KINDS:
+                    c.add(f"bunt.effects.{kind}", f"使えない結果です(使えるもの: {', '.join(BUNT_KINDS)})")
+                    continue
+                for item, ratio in (c.section(table, f"bunt.effects.{kind}") or {}).items():
+                    if item not in BATTER_ITEMS:
+                        c.add(f"bunt.effects.{kind}.{item}", f"使えない能力です(使えるもの: {', '.join(BATTER_ITEMS)})")
+                        continue
+                    c.number(ratio, f"bunt.effects.{kind}.{item}", RATIO_LOW, RATIO_HIGH)
+            fielders = c.section(c.get(bu, "fielders", "bunt"), "bunt.fielders") or {}
+            for key, v in fielders.items():
+                if key not in BUNT_FIELDERS:
+                    c.add(f"bunt.fielders.{key}", f"使えない守備位置です(使えるもの: {', '.join(BUNT_FIELDERS)})")
+                else:
+                    c.number(v, f"bunt.fielders.{key}", 0, 1)
+            if fielders and not any(isinstance(v, (int, float)) and v > 0 for v in fielders.values()):
+                c.add("bunt.fielders", "担当の割合を 1 つ以上、0 より大きくしてください")
     if "roster" in root:
         ro = c.section(root["roster"], "roster")
         if ro is not None:

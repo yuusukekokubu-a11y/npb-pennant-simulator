@@ -272,13 +272,8 @@ await page.selectOption("#lineup-style", "power");
 await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("長打重視"));
 const luAfter = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 check(JSON.stringify(luAfter) === JSON.stringify(luBefore) && (await page.textContent("#lineup-source")).includes("AI"), "長打重視に戻すと、最初の AI の打順に戻る");
-// 盗塁の作戦(D-429):選ぶと保存され、普通に戻す(この後の結果を Python で同じ新規開始を進めた結果と比べるため)
-await page.selectOption("#lineup-steal", "aggressive");
-await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("積極的"));
-const stealPy = ["積極的", "普通", "慎重"];
-check(JSON.stringify(await page.$$eval("#lineup-steal option", (os) => os.map((o) => o.textContent))) === JSON.stringify(stealPy), `スタメンの画面に盗塁の作戦(${stealPy.join("・")})があり、選ぶと知らせが出る(「${await page.textContent("#lineup-message")}」)`);
-await page.selectOption("#lineup-steal", "normal");
-await page.waitForFunction(() => document.querySelector("#lineup-message").textContent.includes("普通"));
+// 盗塁の作戦はチーム方針へ移した(D-457):スタメンと打順の画面にはない
+check((await page.$("#lineup-steal")) === null && !(await page.textContent("#screen-lineup .row")).includes("盗塁"), "スタメンと打順の画面に盗塁の作戦がない(チーム方針へ移した)");
 await page.click("#screen-lineup .back");
 // 一軍登録(D-425):一軍 29 人と二軍が、調子のマーク付きで出る。「外す」を押すと、同じ役割の二軍の選手だけ「上げる」が押せる。
 // ここでは入れ替えない(この後の結果を Python で同じ新規開始を進めた結果と比べるため)。実際の入れ替えは 2シーズン目で確かめる
@@ -349,6 +344,37 @@ await page.waitForFunction(() => document.querySelector("#roster-pitching-source
 check((await page.textContent("#roster-pitching-source")).includes("自分で決めた") && JSON.stringify(await starterNames()) === JSON.stringify(savedStarters) && JSON.stringify((await reliefRoles()).sort()) === JSON.stringify([...savedRoles].sort()), "保存して開き直しても、自分で決めた投手の起用(先発の順と役割)が続く");
 await pitchAiBack("開き直した後");
 await page.click("#screen-roster .back");
+// チーム方針(D-454〜D-457):どの球団のチームのページにも欄がある(ここでは順位表の首位の球団)。変えると「あなたが決めた」になり、
+// 保存して開き直しても続く。「AI に戻す」で AI の方針(最初と同じ)に戻す(この後の結果を Python で同じ新規開始を進めた結果と比べるため)
+const POLICY_KEYS = ["practice_batter", "practice_pitcher", "usage", "steal", "bunt"];
+const policyValues = () => page.evaluate((keys) => keys.map((k) => document.querySelector(`#policy-${k}`).value), POLICY_KEYS);
+const openPolicyTeam = async () => {
+  await page.click("#tabs button[data-tab=standings]");
+  await page.click("#standings-body tr:first-child .link");
+  await page.waitForFunction(() => !document.querySelector("#screen-team").hidden && document.querySelector("#policy-source"));
+};
+await openPolicyTeam();
+const policyTeam = await page.textContent("#team-name");
+const policyAi = await policyValues();
+const optLabels = (k) => page.$$eval(`#policy-${k} option`, (os) => os.map((o) => o.textContent));
+check((await page.textContent("#policy-source")).includes("AI が決めた") && JSON.stringify(await optLabels("bunt")) === JSON.stringify(["多い", "普通", "少ない"]) && JSON.stringify(await optLabels("steal")) === JSON.stringify(["積極的", "普通", "慎重"]) && (await optLabels("practice_batter")).includes("守備と走塁") && (await page.isDisabled("#policy-save")) && (await page.isDisabled("#policy-ai")), `チームのページにチーム方針の欄(${policyTeam}:${policyAi.join("・")}。「${await page.textContent("#policy-source")}」)`);
+const policyNew = [policyAi[0] === "power" ? "meet" : "power", policyAi[1], policyAi[2] === "youth" ? "win" : "youth", policyAi[3], policyAi[4] === "many" ? "few" : "many"];
+for (const [i, k] of POLICY_KEYS.entries()) if (policyNew[i] !== policyAi[i]) await page.selectOption(`#policy-${k}`, policyNew[i]);
+await page.click("#policy-save");
+await page.waitForFunction(() => document.querySelector("#policy-source").textContent.includes("あなたが決めた"));
+check(JSON.stringify(await policyValues()) === JSON.stringify(policyNew) && (await page.textContent("#policy-message")).includes("この方針にしました"), `方針を変えて「この方針にする」と、「あなたが決めた」になる(${policyNew.join("・")})`);
+const policyFile = await saveFile("policy");
+page.once("dialog", (d) => d.accept().catch(() => {}));
+await page.setInputFiles("#open-file-top", policyFile.path);
+await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("開きました"), null, { timeout: 60000 });
+await openPolicyTeam();
+await page.waitForFunction(() => document.querySelector("#policy-source").textContent.includes("あなたが決めた"), null, { timeout: 30000 }).catch(() => {});
+check((await page.textContent("#team-name")) === policyTeam && (await page.textContent("#policy-source")).includes("あなたが決めた") && JSON.stringify(await policyValues()) === JSON.stringify(policyNew), "保存して開き直しても、あなたが決めたチーム方針が続く");
+await page.click("#policy-ai");
+await page.waitForFunction(() => document.querySelector("#policy-source").textContent.includes("AI が決めた"));
+check(JSON.stringify(await policyValues()) === JSON.stringify(policyAi), `「AI に戻す」で、AI の方針(最初と同じ ${policyAi.join("・")})に戻る`);
+await page.click("#screen-team .back");
+await page.click("#tabs button[data-tab=progress]");
 // トレード(D-378):画面を開き、釣り合わない交換を持ちかけると断られて、何も変わらない
 await page.waitForSelector("#open-trade:not([hidden])");
 await page.click("#open-trade");
@@ -490,7 +516,7 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 20 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
+check(sortOptions.length === 21 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
@@ -568,7 +594,7 @@ await page.click("#stats-role button[data-value=batter]");
 await page.waitForFunction(() => !document.querySelector("#stats-kind").hidden && document.querySelector("#stats-position-row").hidden);
 await waitStats("打率(高い順)");
 heads = await headsOnScreen();
-check(heads.includes("盗塁"), `打撃の基本の表に盗塁がある(列: ${heads.slice(1).join("・")})`);
+check(heads.includes("盗塁") && heads.includes("犠打"), `打撃の基本の表に盗塁と犠打がある(列: ${heads.slice(1).join("・")})`);
 // 投手・セイバー。指標名の解説が、定義データと同じ
 await page.click("#stats-role button[data-value=pitcher]");
 await page.click("#stats-kind button[data-value=saber]");

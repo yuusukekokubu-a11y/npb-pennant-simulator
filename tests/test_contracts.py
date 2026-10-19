@@ -178,7 +178,7 @@ def test_contract_pages_are_public_and_without_hidden_info(game):
 def test_save_has_funds_and_old_versions_are_rejected(game):
     data = save_game(game.state)
     again = load_game(data)
-    assert SAVE_FORMAT_VERSION == 31 and again.budget_tiers == game.state.budget_tiers and again.team_funds == game.state.team_funds and again.contract_rates == game.state.contract_rates
+    assert SAVE_FORMAT_VERSION == 32 and again.budget_tiers == game.state.budget_tiers and again.team_funds == game.state.team_funds and again.contract_rates == game.state.contract_rates
     assert all(p.contract == q.contract for p, q in zip(game.state.league.all_players(), again.league.all_players()))
     zin = zipfile.ZipFile(io.BytesIO(data))
     files = {n: zin.read(n) for n in zin.namelist()}

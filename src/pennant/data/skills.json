@@ -22,6 +22,8 @@
     "steal_minus": {"label": "盗塁×", "role": "batter", "good": false, "pair": "steal", "when": "steal", "effects": {"speed": -15}, "probability": 0.06},
     "catcher_plus": {"label": "キャッチャー◯", "role": "batter", "good": true, "pair": "catcher", "when": "catching", "effects": {"arm": 10, "fielding": 10}, "lead": 2, "positions": ["C"], "probability": 0.20},
     "catcher_minus": {"label": "キャッチャー×", "role": "batter", "good": false, "pair": "catcher", "when": "catching", "effects": {"arm": -10, "fielding": -10}, "lead": -2, "positions": ["C"], "probability": 0.12},
+    "bunt_plus": {"label": "バント◯", "role": "batter", "good": true, "pair": "bunt", "when": "bunt", "effects": {"contact": 15}, "probability": 0.10},
+    "bunt_minus": {"label": "バント×", "role": "batter", "good": false, "pair": "bunt", "when": "bunt", "effects": {"contact": -15}, "probability": 0.08},
     "durable_plus": {"label": "ケガしにくさ◯", "role": "batter", "good": true, "pair": "durable", "when": "injury", "effects": {}, "probability": 0.08},
     "durable_minus": {"label": "ケガしにくさ×", "role": "batter", "good": false, "pair": "durable", "when": "injury", "effects": {}, "probability": 0.06},
     "pitcher_durable_plus": {"label": "ケガしにくさ◯", "role": "pitcher", "good": true, "pair": "pitcher_durable", "when": "injury", "effects": {}, "probability": 0.08},

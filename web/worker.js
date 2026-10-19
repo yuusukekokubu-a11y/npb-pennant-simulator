@@ -59,6 +59,9 @@ const handlers = {
   offseason({ name, args }) {
     return parse(bridge.offseason(name, JSON.stringify(args || {})));
   },
+  team_policy({ name, args }) {
+    return parse(bridge.team_policy(name, JSON.stringify(args || {})));
+  },
   lineup({ name, args }) {
     return parse(bridge.lineup(name, JSON.stringify(args || {})));
   },

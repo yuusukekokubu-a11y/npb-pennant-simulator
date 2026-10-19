@@ -12,7 +12,7 @@ from .season import GameContext, PlayedGame, Season
 
 def _check_plan(d, where: str, team_players: set, p) -> dict | None:
     """打順の計画の点検(D-373):型は決まったもの、スタメンは 9 つの枠に 1 人ずつ、そのチームの選手。"""
-    from .game_config import STEAL_STRATEGIES
+    from .game_config import BUNT_STRATEGIES, STEAL_STRATEGIES
     from .manager import LINEUP_POSITIONS, LINEUP_STYLES
 
     if not isinstance(d, dict) or d.get("style") not in LINEUP_STYLES:
@@ -25,12 +25,13 @@ def _check_plan(d, where: str, team_players: set, p) -> dict | None:
             p.add(f"{where}.slots", "スタメンの形が違います(9 つの守備位置に 1 人ずつ、そのチームの別々の選手)")
             return None
     out = {"style": d["style"], "slots": None if slots is None else [[pid, pos] for pid, pos in slots]}
-    steal = d.get("steal", "normal")
-    if steal not in STEAL_STRATEGIES:
-        p.add(f"{where}.steal", f"盗塁の作戦が正しくありません(使えるもの: {' / '.join(STEAL_STRATEGIES)})")
-        return None
-    if steal != "normal":
-        out["steal"] = steal
+    for key, allowed, label in (("steal", STEAL_STRATEGIES, "盗塁"), ("bunt", BUNT_STRATEGIES, "バント")):  # 試合の作戦(D-457)
+        v = d.get(key, "normal")
+        if v not in allowed:
+            p.add(f"{where}.{key}", f"{label}の作戦が正しくありません(使えるもの: {' / '.join(allowed)})")
+            return None
+        if v != "normal":
+            out[key] = v
     if isinstance(d.get("set_day"), int):
         out["set_day"] = d["set_day"]
     n = d.get("notice")
@@ -71,6 +72,11 @@ def _restore_roster(season: Season, season_d: dict, p) -> None:
         p.add("state.json.season.running_start", f"盗塁などを始めた日は 0 以上の整数にしてください(値: {running!r})")
         return
     season.running_start = running
+    bunt = season_d.get("bunt_start", 0)  # 版 31 は変換で入る(D-461)
+    if isinstance(bunt, bool) or not isinstance(bunt, int) or bunt < 0:
+        p.add("state.json.season.bunt_start", f"送りバントを始めた日は 0 以上の整数にしてください(値: {bunt!r})")
+        return
+    season.bunt_start = bunt
     stars = season_d.get("allstar", [])
     held = sum(1 for d in season.schedule.allstar_days if d < season.day)
     if not (isinstance(stars, list) and all(isinstance(x, dict) and x.get("number") == i for i, x in enumerate(stars))) or len(stars) != held:

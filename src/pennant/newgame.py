@@ -170,6 +170,9 @@ def new_league(
         rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config), upkeep=league_upkeep(league)), settings.prerun_years)
         if contract_info is not None:
             contract_info["rate"] = rate
+        from .policy import refresh_ai
+
+        refresh_ai(league)  # チーム方針は AI が球団の状況から決める(D-454)
     return league
 
 

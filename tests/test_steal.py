@@ -70,16 +70,17 @@ def test_strategy_changes_attempts():
     counts = {}
     for steal in ("aggressive", "cautious"):
         g = api.Game(load_game(save_game(base.state)), dirty=False)
-        assert g.set_steal(steal)["steal"] == steal
+        view = g.set_team_policy("T01", {"steal": steal})  # 盗塁の作戦はチーム方針で選ぶ(D-457)
+        assert next(f for f in view["fields"] if f["key"] == "steal")["value"] == steal and view["manual"]
         g.advance(50)
         rec = season_records([p.result for p in g.state.season.played])
         mine = {p.id for p in g._team("T01").players}
         counts[steal] = sum(c["SB"] + c["CS"] for pid, c in rec.batters.items() if pid in mine)
         again = api.Game(load_game(save_game(g.state)), dirty=False)
-        assert again.lineup_view()["steal"] == steal  # 作戦は保存される
+        assert next(f for f in again.team_policy("T01")["fields"] if f["key"] == "steal")["value"] == steal  # 作戦は保存される
     assert counts["aggressive"] > counts["cautious"] * 1.5
     with pytest.raises(ValueError):
-        base.set_steal("always")
+        base.set_team_policy("T01", {"steal": "always"})
 
 
 def test_skills_for_steal_and_catcher():
@@ -130,6 +131,6 @@ def test_version_25_save_starts_running_at_load_day(mid):
             z.writestr(name, b)
     state = load_game(buf.getvalue())
     s = state.season
-    assert SAVE_FORMAT_VERSION == 31 and s.running_start == 40 and s.game_config.get("steal") == load_game_config().get("steal")
+    assert SAVE_FORMAT_VERSION == 32 and s.running_start == 40 and s.game_config.get("steal") == load_game_config().get("steal")
     s.play_days(5)
     assert any(x.events for p in s.played[-30:] for x in p.result.log)

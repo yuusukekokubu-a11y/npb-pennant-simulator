@@ -31,6 +31,7 @@ from .negotiation import load_negotiation_settings, validate_negotiation_setting
 from .draft import load_draft_settings, validate_draft_settings
 from .trade import load_trade_settings, validate_trade_settings
 from .facilities import load_facility_settings, set_initial, validate_facility_settings
+from .policy import check_policy, plain as policy_plain, policy_of
 from .config import (
     ConfigError,
     GenerationConfig,
@@ -69,7 +70,7 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 31  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)
+SAVE_FORMAT_VERSION = 32  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)。32:チーム方針(球団の policy、設定のバント、作戦のバント、バントを始めた日。版 31 は全球団「標準・バランス・普通」。D-454〜D-461)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -232,7 +233,7 @@ def build_state(state: GameState) -> dict:
         "league": {
             "seed": s.league.seed,
             "league_names": list(s.league.league_names),
-            "teams": [_plain(t) for t in s.league.teams],
+            "teams": [{**_plain(t), "policy": policy_plain(policy_of(t))} for t in s.league.teams],  # チーム方針は既定でない項目だけ(D-461。版 32)
         },
         "user": {"my_team_id": state.my_team_id},
         "rules": state.rules.to_dict(),  # 仕組みの選択肢(D-381。版 21)
@@ -261,6 +262,7 @@ def build_state(state: GameState) -> dict:
             "demoted": {pid: int(d) for pid, d in s.demoted.items()},  # 一軍から外した日(D-425)
             "roster_auto": {tid: bool(v) for tid, v in s.roster_auto.items()},
             "running_start": int(s.running_start),  # 盗塁などを始めた日(D-433。版 26)
+            "bunt_start": int(s.bunt_start),  # 送りバントを始めた日(D-461。版 32)
             "allstar": [dict(x) for x in s.allstar],  # オールスターの結果(D-436。版 27)
             "injury_on": s.injury_settings is not None,  # けが(D-445。版 30)
             "injury_log": [dict(x) for x in s.injury_log],
@@ -310,8 +312,9 @@ def _plain_pitching(plan: dict) -> dict:
 def _plain_plan(plan: dict) -> dict:
     """打順の計画(D-373)を保存する形に。"""
     out = {"style": str(plan.get("style") or "power"), "slots": None if plan.get("slots") is None else [[str(pid), str(pos)] for pid, pos in plan["slots"]]}
-    if plan.get("steal") and plan["steal"] != "normal":
-        out["steal"] = str(plan["steal"])  # 盗塁の作戦(D-429)
+    for key in ("steal", "bunt"):  # 試合の作戦(D-457)。普通のときは書かない
+        if plan.get(key) and plan[key] != "normal":
+            out[key] = str(plan[key])
     if plan.get("set_day") is not None:
         out["set_day"] = int(plan["set_day"])
     if plan.get("notice"):
@@ -520,6 +523,9 @@ def load_game(data: bytes) -> GameState:
             if pid in player_ids:
                 p.add(f"{pw}.id", f"選手の ID {pid!r} が重複しています")
             player_ids.add(pid)
+        _, problem = check_policy(td.get("policy", {}))  # チーム方針(D-461。版 31 以前はない = 既定)
+        if problem:
+            p.add(f"{where}.policy", problem)
         fac = td.get("facilities", {})  # 設備の段階(D-383。版 22)
         if not (isinstance(fac, dict) and all(k in ("practice", "medical", "development") and isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5 for k, v in fac.items())):
             p.add(f"{where}.facilities", "設備の段階の形が違います(practice / medical / development → 1〜5 の整数)")
@@ -617,6 +623,7 @@ def load_game(data: bytes) -> GameState:
         team.players = [_player_from(pd) for pd in td["players"]]
         team.development = [_player_from(pd) for pd in td.get("development", [])]  # 版 18 以前はない(D-377)
         team.facilities = {str(k): int(v) for k, v in (td.get("facilities") or {}).items()}  # 版 21 以前はない(読み込みの最後に規模から補う。D-385)
+        team.policy = check_policy(td.get("policy", {}))[0] or {}  # チーム方針(D-461)
         teams.append(team)
     league = League(league_d.get("seed", seed), list(league_d["league_names"]), teams)
     try:

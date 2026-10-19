@@ -67,7 +67,7 @@ def game_counts(result: GameResult) -> Counter:
         c["R"] += x.all_runs
         if r == "home_run":
             c["HR"] += 1
-        at_bat = r not in ("walk", "hit_by_pitch") and not x.sac_fly
+        at_bat = r not in ("walk", "hit_by_pitch") and not x.sac_fly and not getattr(x, "sac_bunt", False)  # 犠打は打数に入れない(D-459)
         if at_bat and r not in ("strikeout", "home_run"):
             c["BIP"] += 1  # 打数 − 三振 − 本塁打 + 犠牲フライ と同じ数え方(犠牲フライもインプレー)
         if x.sac_fly:

@@ -45,7 +45,7 @@ def consistency_checks(rec: Records, results: list[GameResult], season: SeasonRe
         ("チームの勝利の合計 = 投手の勝利の合計", t["W"] == p["W"], f"{t['W']} / {p['W']}"),
         ("すべての投手で 自責点 ≦ 失点", all(c["ER"] <= c["R"] for c in rec.pitchers.values()), f"自責点 {p['ER']} / 失点 {p['R']}"),
         ("すべての打者で 打数 ≧ 安打", all(c["AB"] >= c["H"] for c in rec.batters.values()), f"打数 {b['AB']} / 安打 {b['H']}"),
-        ("打数 = 打席 − 四球 − 死球 − 犠牲フライ", b["AB"] == b["PA"] - b["BB"] - b["HBP"] - b["SF"], f"{b['AB']}"),
+        ("打数 = 打席 − 四球 − 死球 − 犠牲フライ − 犠打", b["AB"] == b["PA"] - b["BB"] - b["HBP"] - b["SF"] - b["SH"], f"{b['AB']}"),
         ("安打 = 単打 + 二塁打 + 三塁打 + 本塁打", b["H"] == b["B1"] + b["B2"] + b["B3"] + b["HR"], f"{b['H']}"),
     ]
     if season is not None:

@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "practice": {
+    "boost": 1.2,
+    "min_other": 0.5,
+    "batter": {
+      "meet": ["meet"],
+      "power": ["power"],
+      "defense_running": ["speed", "arm", "defense", "catch"]
+    },
+    "pitcher": {
+      "velocity": ["velocity"],
+      "control_breaking": ["control", "breaking"],
+      "stamina": ["stamina"]
+    }
+  },
+  "usage": {
+    "youth_age": 25,
+    "youth_bonus": 3,
+    "farm_youth_bonus": 8
+  },
+  "ai": {
+    "strength_top": 25,
+    "win_teams": 4,
+    "youth_teams": 4,
+    "young_share": 0.5,
+    "batters": 15,
+    "pitchers": 14,
+    "practice_gap": 1.0,
+    "style_teams": 3
+  }
+}

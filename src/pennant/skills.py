@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import ConfigError, _Checker, _read_json
 from .models import Player
 
-WHEN = ("always", "risp", "vs_left", "steal", "catching", "injury")  # steal:盗塁のときだけ / catching:捕手として出ているとき(D-428) / injury:けがの起こりやすさ(試合の計算には効かない。D-445)
+WHEN = ("always", "risp", "vs_left", "steal", "catching", "injury", "bunt")  # steal:盗塁のときだけ / catching:捕手として出ているとき(D-428) / injury:けがの起こりやすさ(試合の計算には効かない。D-445) / bunt:送りバントのときだけ(D-460)
 
 
 @dataclass(frozen=True)
@@ -147,6 +147,11 @@ def _when_effects(player: Player, when: str, settings: SkillSettings | None) -> 
 def steal_effects(player: Player, settings: SkillSettings | None = None) -> dict[str, float]:
     """盗塁を走るか・成功するかを決めるときだけ効く値(盗塁◯/×。D-428)。"""
     return _when_effects(player, "steal", settings)
+
+
+def bunt_effects(player: Player, settings: SkillSettings | None = None) -> dict[str, float]:
+    """送りバントのときだけ効く値(バント◯/×。D-460)。"""
+    return _when_effects(player, "bunt", settings)
 
 
 def catching_effects(player: Player, settings: SkillSettings | None = None) -> dict[str, float]:

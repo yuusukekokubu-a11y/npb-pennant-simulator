@@ -32,6 +32,7 @@ from .manager import RELIEF_ROLE_LABELS, RELIEF_ROLES, ActiveRoster, Manager, Si
 from .models import League, Team
 from .plate_appearance import PlateAppearanceModel, default_model
 from . import allstar, pitching_plan
+from .policy import keeps_current, policy_of, youth_bonus
 from .schedule import Schedule, ScheduledGame, ScheduleMaker, make_schedule_maker
 from .season_config import SeasonConfig, load_season_config
 
@@ -51,7 +52,7 @@ class GameContext:
 
     rotation: dict[str, int]
     fatigue: dict[str, float]
-    lineups: dict[str, dict] = field(default_factory=dict)  # 球団 → {style, slots}(型か自分のスタメンを決めた球団だけ)
+    lineups: dict[str, dict] = field(default_factory=dict)  # 球団 → {style, slots, steal, bunt}(打順の計画があるか、作戦が普通でない球団だけ。D-373、D-457)
 
 
 @dataclass
@@ -142,6 +143,7 @@ class Season:
         self.actives: dict[str, ActiveRoster] = {t.id: self.manager.select_active(t, self._roster_score(t.id, keep=False)) for t in league.teams}
         self.rotation: dict[str, int] = {t.id: 0 for t in league.teams}
         self.running_start = 0  # 盗塁・暴投・捕逸を始めた日(版 25 から読んだシーズンだけ 0 でない。D-433)
+        self.bunt_start = 0  # 送りバントを始めた日(版 31 から読んだシーズンだけ 0 でない。D-461)
         self.lineup_plans: dict[str, dict] = {}  # 球団 → {style, slots([[選手 ID, 守備位置]] × 9 か None), set_day, notice}(D-373)
         self.pitching_plans: dict[str, dict] = {}  # 球団 → {starters, roles, set_day, notice}(自分で決めた投手の起用。D-449)
         self.trades: list[dict] = []  # シーズン中のトレード(trade.execute の記録。D-378)
@@ -274,21 +276,32 @@ class Season:
         setups = {}
         for team in (home, away):
             active = self.actives[team.id]
-            plan = self._lineup_plan(team.id)
+            plan = self._game_plan(team.id)
             if plan is not None:
-                context.lineups[team.id] = {"style": plan["style"], "slots": None if plan.get("slots") is None else [list(x) for x in plan["slots"]]}
-                if plan.get("steal", "normal") != "normal":
-                    context.lineups[team.id]["steal"] = plan["steal"]  # 盗塁の作戦(D-429)
+                context.lineups[team.id] = plan
             expected = active.starters[self.rotation[team.id] % len(active.starters)]
             setup, self.rotation[team.id] = self.manager.prepare(team, rng, self.rotation[team.id], active, plan)
             skipped[team.id] = setup.starter is not expected
             setups[team.id] = setup
-        result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park, running=g.day >= self.running_start)
+        result = simulate_game(setups[home.id], setups[away.id], rng, model=self.model, config=self.game_config, manager=self.manager, park=home.park, running=g.day >= self.running_start, bunting=g.day >= self.bunt_start)
         apply_game_fatigue(result.batters_faced(), self.players, self.game_config)
         if record:  # ポストシーズンは順位に入れない(D-440)
             self._record(result)
         self.check_injuries(result, context.fatigue, "first" if record else "post", g.number, g.day)
         return PlayedGame(g, result, context, skipped)
+
+    def _game_plan(self, team_id: str) -> dict | None:
+        """この試合の打順の計画と作戦(試合の前の状態に記録する形)。打順の計画がなく、作戦が普通なら None(AI の長打重視・普通)。
+        作戦はチーム方針から(D-457)。"""
+        plan = self._lineup_plan(team_id)
+        pol = policy_of(self.teams[team_id])
+        if plan is None and pol["steal"] == "normal" and pol["bunt"] == "normal":
+            return None
+        out = {"style": (plan or {}).get("style") or "power", "slots": None if not plan or plan.get("slots") is None else [list(x) for x in plan["slots"]]}
+        for key in ("steal", "bunt"):
+            if pol[key] != "normal":
+                out[key] = pol[key]
+        return out
 
     def _lineup_plan(self, team_id: str) -> dict | None:
         """球団の打順の計画(D-373)。自分で組んだスタメンに一軍でない選手がいれば、AI が組み直す(知らせを残す)。"""
@@ -430,10 +443,12 @@ class Season:
         return {pid for pid, d in self.demoted.items() if self.day - d < days}
 
     def _roster_score(self, team_id: str, keep: bool = True):
+        """AI が一軍を選ぶ基準:総合 + 調子 + 今の一軍の有利。起用の方針で、勝ちにいくは有利を足さず、若手を使うは 25 歳以下に点を足す(D-456)。"""
         step = float(self.conditions.cfg["step"])
-        current = {p.id for p in self.actives[team_id].players} if keep else set()
+        pol = policy_of(self.teams[team_id])
+        current = {p.id for p in self.actives[team_id].players} if keep and keeps_current(pol) else set()
         bonus = float(self.roster_settings()["keep_bonus"])
-        return lambda p: overall(p) + step * self.conditions.level(p.id, self.day) + (bonus if p.id in current else 0.0)
+        return lambda p: overall(p) + step * self.conditions.level(p.id, self.day) + (bonus if p.id in current else 0.0) + youth_bonus(pol, p)
 
     def set_active(self, team_id: str, active: ActiveRoster, arranged: bool = False) -> None:
         """一軍を変える。外した選手の日を覚え、試合の再現と保存のため顔ぶれを記録する(この日の試合から新しい顔ぶれ)。"""
@@ -587,7 +602,7 @@ class Season:
         setups = [
             self.manager.prepare(t, rng, played.context.rotation[t.id], a, played.context.lineups.get(t.id))[0] for t, a in zip(copied_teams, copied_actives)
         ]
-        return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager, park=copied_teams[0].park, running=g.day >= self.running_start)
+        return simulate_game(setups[0], setups[1], rng, model=self.model, config=self.game_config, manager=self.manager, park=copied_teams[0].park, running=g.day >= self.running_start, bunting=g.day >= self.bunt_start)
 
     # ---- 順位表 ----
 
