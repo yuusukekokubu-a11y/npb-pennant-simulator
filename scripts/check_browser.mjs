@@ -1781,7 +1781,7 @@ await page.click("#new-build");
 await page.waitForSelector("#new-step-names:not([hidden])");
 await page.click("details summary");
 await page.check("input[name=baseline-mode][value=default]");
-// リーグ名・球場名の入力(D-409)と、自球団の資金力(D-410)。重なったリーグ名は理由を出して止める
+// リーグ名・球場名の入力(D-409)と、12 球団の資金力(D-490)。重なったリーグ名は理由を出して止める
 const lg0 = await page.getAttribute("#league-name-0", "placeholder");
 await page.fill("#league-name-1", lg0);
 await page.waitForFunction(() => document.querySelector("#league-name-1-error").textContent.includes("同じ名前"));
@@ -1790,10 +1790,22 @@ await page.fill("#league-name-1", "");
 await page.fill("#league-name-0", "テスト連盟");
 await page.fill("#stadium-name-0", "テスト球場");
 await page.check("input[name=my-team][value='0']");
-await page.check("input[name=my-tier][value=huge]");
+check(await page.$$eval("input[name=my-tier]", (es) => es.length === 0), "「詳しい設定」に自球団の資金力の欄はない(設定の段の表にまとめた。D-490)");
 const fastStart = Date.now();
 await page.click("#new-next");
 await page.waitForSelector("#new-step-settings:not([hidden])");
+// 設定の段の「球団の資金力」の表(D-490):12 球団、既定は全部「自動」、自球団の行は ★
+const tierRows = await page.$$eval("#tier-fields tbody tr", (trs) => trs.map((tr) => ({ name: tr.querySelector(".name-cell").textContent, mine: tr.classList.contains("mine"), value: tr.querySelector("select").value })));
+check(tierRows.length === 12 && tierRows.every((r) => r.value === "auto") && tierRows[0].mine && tierRows[0].name.includes("★") && tierRows.filter((r) => r.mine).length === 1, `設定の段に 12 球団の資金力の表があり、既定は全部「自動」、自球団の行は ★(「${tierRows[0].name}」)`);
+await page.selectOption("#tier-fields select[data-team='0']", "huge");
+await page.selectOption("#tier-fields select[data-team='1']", "small");
+await page.waitForSelector("#new-help:not([hidden])");
+check((await page.textContent("#new-help-name")) === "球団の資金力", `資金力を選ぶと説明バーに用語集の文が出る(「${await page.textContent("#new-help")}」)`);
+await page.click("#new-settings-back");
+await page.waitForSelector("#new-step-names:not([hidden])");
+await page.click("#new-next");
+await page.waitForSelector("#new-step-settings:not([hidden])");
+check((await page.$eval("#tier-fields select[data-team='0']", (e) => e.value)) === "huge" && (await page.$eval("#tier-fields select[data-team='1']", (e) => e.value)) === "small", "名前の段に戻って進み直しても、選んだ資金力は残る");
 await page.click("#new-start");
 await page.waitForSelector("#screen-progress:not([hidden])");
 const fastSeconds = (Date.now() - fastStart) / 1000;
@@ -1801,7 +1813,26 @@ await page.click("#tabs button[data-tab=standings]");
 check((await page.textContent("#league-switch button:first-child")) === "テスト連盟", "入力したリーグ名が順位表に出る(D-409)");
 await page.click("#tabs button[data-tab=myteam]");
 await page.waitForFunction(() => document.querySelector("#team-info").textContent.includes("テスト球場") && document.querySelector("#team-budget").textContent.includes("超大量"));
-check(true, "入力した球場名と、選んだ資金力(超大量)が自球団のページに出る(D-409、D-410)");
+check(true, "入力した球場名と、選んだ資金力(超大量)が自球団のページに出る(D-409、D-490)");
+// 始めた後に資金力を変える(D-493):効くのは次のオフの契約から。新規開始のときと違えば「あなたが決めた」、戻すこともできる
+check((await page.textContent("#tier-source")) === "新規開始のときの資金力" && (await page.isDisabled("#tier-save")) && (await page.isDisabled("#tier-reset")), `チームのページに資金力の欄がある(「${await page.textContent("#tier-source")}」)`);
+await page.selectOption("#tier-pick", "small");
+await page.click("#tier-save");
+await page.waitForFunction(() => document.querySelector("#tier-source").textContent.startsWith("★ あなたが決めた"));
+const tierText = await page.textContent("#tier-source");
+check(tierText.includes("次のオフの契約から小") && (await page.textContent("#team-budget")).includes("超大量") && !(await page.isDisabled("#tier-reset")), `資金力を変えると「あなたが決めた」になり、次のオフの契約から効く(今は超大量のまま。「${tierText}」)`);
+const tierSave = await saveFile("tier");
+const tierPy = python(`
+import sys
+from pennant import api
+g = api.Game.load(open(sys.argv[1], "rb").read())
+my = g.state.my_team_id
+print(g.state.tier_next.get(my), g.state.budget_tiers[my], g.state.tier_start[my], g.state.budget_tiers["T02"])
+`, tierSave.path).trim().split(" ");
+check(tierPy.join(" ") === "small huge huge small", `変えた資金力は保存され、計算本体でも次のオフからの変更になっている(${tierPy.join(" ")}。2 番目の球団は新規開始で選んだ小)`);
+await page.click("#tier-reset");
+await page.waitForFunction(() => document.querySelector("#tier-source").textContent === "新規開始のときの資金力");
+check((await page.$eval("#tier-pick", (e) => e.value)) === "huge", "「新規開始のときの資金力に戻す」で、まだ効いていない変更を取り消せる");
 await page.click("#tabs button[data-tab=progress]");
 await page.click(".adv[data-days='1']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 1日目"));
@@ -1822,10 +1853,10 @@ async function startTemplate({ name = null, mine = null, tier = null, seasonSeed
   if (name !== null) await page.fill(`#team-${mine}`, name);
   if (mine !== null) await page.check(`input[name=my-team][value='${mine}']`);
   await page.click("details summary");
-  if (tier !== null) await page.check(`input[name=my-tier][value=${tier}]`);
   await page.fill("#season-seed", seasonSeed);
   await page.click("#new-next");
   await page.waitForSelector("#new-step-settings:not([hidden])");
+  if (tier !== null) await page.selectOption(`#tier-fields select[data-team='${mine}']`, tier); // 球団の資金力の表(D-490)
   if (noForeign) await page.uncheck("#rule-foreign_development");
   const s = Date.now();
   await page.click("#new-start");
@@ -1842,7 +1873,7 @@ check((await page.textContent("#new-help-name")) === "用意したリーグ", `�
 await page.click("#new-use-template");
 await page.waitForSelector("#new-step-names:not([hidden])");
 await page.click("details summary");
-check((await page.$eval("#league-fields", (b) => b.dataset.seed)) === String(tplPy.league_seed) && (await page.$$eval("#screen-new .new-build-only", (es) => es.every((e) => e.hidden))) && (await page.isVisible("#season-seed")) && (await page.isVisible("input[name=my-tier][value=large]")), "用意したリーグでは、名前の欄はテンプレートの初期名で、詳しい設定にリーグのシード・基準値・スカウトの欄がない(シーズンのシードと資金力はある)");
+check((await page.$eval("#league-fields", (b) => b.dataset.seed)) === String(tplPy.league_seed) && (await page.$$eval("#screen-new .new-build-only", (es) => es.every((e) => e.hidden))) && (await page.isVisible("#season-seed")), "用意したリーグでは、名前の欄はテンプレートの初期名で、詳しい設定にリーグのシード・基準値・スカウトの欄がない(シーズンのシードはある)");
 await grab();
 await page.click("#new-back");
 await page.waitForSelector("#new-step-choice:not([hidden])");
@@ -1868,7 +1899,7 @@ from pennant.savegame import build_state
 ui = api.Game.load(open(sys.argv[1], "rb").read())
 names = [None] * 12
 names[3] = sys.argv[2]
-py = api.Game.from_template(names, 3, 21, my_tier="large")
+py = api.Game.from_template(names, 3, 21, team_tiers=[None] * 3 + ["large"] + [None] * 8)
 py.advance(ui.state.season.day)
 print(build_state(ui.state) == build_state(py.state), ui.state.season.day, ui.state.budget_tiers[ui.state.my_team_id])
 `, tplSave.path, TNAME).trim().split(" ");
