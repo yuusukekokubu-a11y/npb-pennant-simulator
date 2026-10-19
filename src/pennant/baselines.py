@@ -366,15 +366,19 @@ def trial_baselines(
     league: League,
     settings: BaselineSettings,
     progress: Callable[[int, int], None] | None = None,
+    keep: list | None = None,
 ) -> Baselines:
     """見えない試運転のシーズンを1回回して、初年度の基準値を求める。
 
     リーグは複製して回すので、渡したリーグ(疲労などの状態)には触れない。試運転の成績・打席ログは捨てる。
-    progress には (終わった日数, 全日数) を知らせる。
+    progress には (終わった日数, 全日数) を知らせる。keep(リスト)を渡すと、終えたシーズンを入れる
+    (テンプレートの紹介の「前の年の優勝」に使う。D-462)。
     """
     from .season import Season
 
     copied = copy.deepcopy(league)
     season = Season(copied, trial_seed(league.seed))
     season.play_to_end(None if progress is None else (lambda day, days, _g, _n: progress(day, days)))
+    if keep is not None:
+        keep.append(season)
     return season_baselines([p.result for p in season.played], settings, settings.default_baselines(), "trial")

@@ -1,0 +1,29 @@
+{
+  "template_format": 1,
+  "id": "standard",
+  "title": "用意したリーグ",
+  "save_format_version": 32,
+  "fingerprint_version": 37,
+  "league_seed": 20261019,
+  "season_seed": 1019,
+  "intro": {
+    "champions": [
+      {
+        "league_index": 0,
+        "team_id": "T04",
+        "wins": 82,
+        "losses": 57,
+        "ties": 4
+      },
+      {
+        "league_index": 1,
+        "team_id": "T07",
+        "wins": 81,
+        "losses": 60,
+        "ties": 2
+      }
+    ],
+    "strongest": "T07",
+    "weakest": "T06"
+  }
+}

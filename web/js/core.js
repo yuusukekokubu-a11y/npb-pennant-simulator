@@ -40,7 +40,9 @@ export const state = {
   league: 0, // 順位表で見ているリーグ
   tab: "progress",
   pages: [], // 開いているページ({ name, args })。空ならタブの画面
-  newGame: null, // 新規開始の画面の情報(シードと初期名)
+  newGame: null, // 新規開始の画面の情報(シードと初期名、用意したリーグか)
+  template: null, // 用意したリーグの名前と紹介(D-462)
+  templateSeconds: null, // 用意したリーグで始めるのにかかった秒(通し確認で測る)
   cache: new Map(), // 見る画面の結果(日が進むまで使い回す)
   cacheStamp: null,
   stats: { role: "batter", kind: "basic", qualified: true, league: "", team: "", season: "current", shown: STATS_PAGE, position: "all" }, // league は "" のとき自球団のリーグ(両リーグの表はない。D-431) // season は "current"・シーズン番号・"career"(F2)

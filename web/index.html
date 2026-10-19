@@ -57,6 +57,10 @@
   input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   progress { width: 100%; height: 12px; accent-color: var(--gold); }
   .card { border-radius: var(--radius); padding: 14px; margin: 12px 0; background: var(--box); box-shadow: var(--shadow); }
+  .choice-card { border-radius: var(--radius); padding: 14px; margin: 12px 0; background: var(--box); box-shadow: var(--shadow); }
+  .choice-card button { width: 100%; }
+  .template-intro { margin: 10px 0 0; padding-left: 1.2em; }
+  .template-intro li { margin: 2px 0; }
   .turn { white-space: nowrap; }
   .turn .small-button { padding: 4px 10px; margin-left: 4px; min-height: 36px; font-size: 0.85rem; }
   .notice { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0; font-size: 0.92rem; }
@@ -433,19 +437,34 @@
   <div class="notice" id="real-name-notice">
     <strong>ご注意</strong>:実在の名前を入れたセーブデータは、ほかの人と共有しないでください。
   </div>
-  <div id="new-step-names">
+  <!-- 最初の段(D-464):用意したリーグで始めるか、新しくリーグを作るか -->
+  <div id="new-step-choice">
+    <div class="choice-card">
+      <button id="new-use-template" type="button">用意したリーグで始める(すぐ)</button>
+      <ul class="small template-intro" id="template-intro"></ul>
+    </div>
+    <div class="choice-card">
+      <button id="new-build" type="button" class="secondary">新しくリーグを作る(20 秒ほど)</button>
+    </div>
+  </div>
+
+  <div id="new-step-names" hidden>
+  <p class="small" id="new-mode-text"></p>
   <label class="pick"><input type="radio" name="my-team" value="-1" id="my-team-none" checked>観戦のみ(球団を操作しない)</label>
 
   <div id="league-fields"></div>
 
   <details>
     <summary>詳しい設定</summary>
+    <div class="new-build-only">
     <label class="small" for="league-seed">リーグのシード</label>
     <input id="league-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
     <p class="error" id="league-seed-error"></p>
+    </div>
     <label class="small" for="season-seed">シーズンのシード</label>
     <input id="season-seed" type="number" inputmode="numeric" min="0" max="4294967295" autocomplete="off">
     <p class="error" id="season-seed-error"></p>
+    <div class="new-build-only">
     <p class="small setting-head"><strong>指標の基準値の求め方</strong></p>
     <label class="radio"><input type="radio" name="baseline-mode" value="trial" checked><span><strong>試運転で求める</strong>(おすすめ)</span></label>
     <label class="radio"><input type="radio" name="baseline-mode" value="default"><span><strong>既定値を使う</strong>(速い)</span></label>
@@ -453,6 +472,7 @@
     <label class="radio"><input type="radio" name="scout-level" value="small"><span><strong>小</strong></span></label>
     <label class="radio"><input type="radio" name="scout-level" value="medium" checked><span><strong>中</strong>(おすすめ)</span></label>
     <label class="radio"><input type="radio" name="scout-level" value="large"><span><strong>大</strong></span></label>
+    </div>
     <p class="small setting-head"><strong>自球団の資金力</strong>(観戦のみのときは使いません)</p>
     <div class="tier-choices">
       <label class="radio"><input type="radio" name="my-tier" value="auto" checked><span><strong>自動</strong></span></label>
@@ -481,7 +501,10 @@
   <!-- 説明バー(D-313):設定の項目を選んでいる間だけ、その項目の説明を 1〜2 行で出す。下に貼り付くが、ボタンの行より前に置くので「始める」を隠さない -->
   <div class="help-bar" id="new-help" role="status" aria-live="polite" hidden><strong id="new-help-name"></strong> <span id="new-help-text"></span></div>
   <p class="message ng" id="new-message" role="alert"></p>
-  <div class="row" id="new-row-names">
+  <div class="row" id="new-row-choice">
+    <button id="new-choice-back" class="secondary">戻る</button>
+  </div>
+  <div class="row" id="new-row-names" hidden>
     <button id="new-back" class="secondary">戻る</button>
     <button id="new-next">次へ(設定)</button>
   </div>

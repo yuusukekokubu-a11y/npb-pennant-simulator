@@ -55,6 +55,14 @@ const handlers = {
     return parse(bridge.new_game(seed, seasonSeed, JSON.stringify(names), myTeamIndex, baselines || "trial", progress, prerun, scoutLevel || "medium", JSON.stringify(rules || {}), chronicle, JSON.stringify(places || {})));
   },
 
+  // 用意したリーグ(テンプレート。D-464、D-465)
+  templateInfo() {
+    return parse(bridge.template_info());
+  },
+  newFromTemplate({ seasonSeed, names, myTeamIndex, rules, places }) {
+    return parse(bridge.new_from_template(seasonSeed, JSON.stringify(names), myTeamIndex, JSON.stringify(rules || {}), JSON.stringify(places || {})));
+  },
+
   // オフの手続き(F3-1):自由契約・ドラフト・市場の操作
   offseason({ name, args }) {
     return parse(bridge.offseason(name, JSON.stringify(args || {})));

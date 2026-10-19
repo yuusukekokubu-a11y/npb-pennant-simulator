@@ -11,7 +11,7 @@ import { advance } from "./js/progress.js";
 import { buildStatsFilters, commitSort, currentSort, isAbilityKey } from "./js/stats.js";
 import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
 import { yearEnd } from "./js/yearend.js";
-import { leagueSeedChanged, newGameStep, nextNewGame, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
+import { chooseNewGame, leagueSeedChanged, newGameStep, nextNewGame, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
 import { openFile, save } from "./js/files.js";
 import { busyButton, setLoadingStyle } from "./js/loading.js";
 
@@ -27,7 +27,10 @@ window.addEventListener("beforeunload", (event) => {
 
 buildTabs();
 $("go-new").addEventListener("click", () => busyButton($("go-new"), showNewGame()).catch((err) => ($("start-message").textContent = err.message))); // 押した瞬間に「準備中」(D-411)
-$("new-back").addEventListener("click", () => {
+$("new-back").addEventListener("click", () => newGameStep("choice")); // 名前の段の「戻る」は最初の 2 つのボタンの段へ(D-464)
+$("new-use-template").addEventListener("click", () => chooseNewGame(true).catch((err) => ($("new-message").textContent = err.message)));
+$("new-build").addEventListener("click", () => chooseNewGame(false).catch((err) => ($("new-message").textContent = err.message)));
+$("new-choice-back").addEventListener("click", () => {
   for (const input of teamInputs()) input.value = "";
   state.newGame = null;
   if (state.view) {

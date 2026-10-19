@@ -12,7 +12,7 @@
 ファイルの分け方(保守②。D-291):
     common.py     共通の部品(表示用の名前・指標の列・成績の集計の使い回し・シーズンのまとまり)
     base.py       ゲームの土台(状態・集計・基準値・球場補正・WAR・シーズンの選び方)
-    progress.py   新規開始・開く・保存・進める・状態・年度の確定(preview_teams・check_team_names も)
+    progress.py   新規開始・開く・保存・進める・状態・年度の確定(preview_teams・check_team_names・テンプレートの template_info も)
     stats.py      成績の表(個人成績・WAR・成績つきの選手の表)
     teams.py      順位表・チーム・球場
     games.py      試合
@@ -119,7 +119,7 @@ from .offseason import OffseasonMixin
 from .players import PlayersMixin
 from .postseason import PostseasonMixin
 from .roster import RosterMixin
-from .progress import ProgressMixin, check_place_names, check_team_names, preview_teams
+from .progress import ProgressMixin, check_place_names, check_team_names, preview_teams, template_info
 from .stats import StatsMixin
 from .teams import TeamsMixin
 from .trade import TradeMixin
@@ -129,4 +129,4 @@ class Game(AbilitiesMixin, ProgressMixin, LineupMixin, RosterMixin, FarmMixin, S
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 
-__all__ = ["Game", "SaveDataError", "TeamNameError", "check_place_names", "check_team_names", "preview_teams"]
+__all__ = ["Game", "SaveDataError", "TeamNameError", "check_place_names", "check_team_names", "preview_teams", "template_info"]

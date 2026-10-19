@@ -46,3 +46,14 @@ def test_generated_names_have_no_banned_words(config, names):
             assert not [w for w in words if w in team.name or w in team.stadium]
         for p in league.all_players():
             assert p.name.replace(" ", "") not in words and p.name not in words
+
+
+def test_template_names_have_no_banned_words():
+    """新規開始のテンプレート(ZIP のセーブデータの形。D-463)の名前にも、禁止語がない。"""
+    import io
+    import zipfile
+
+    words = _banned_words()
+    for f in (ROOT / "src" / "pennant" / "data" / "templates").glob("*.sav"):
+        text = zipfile.ZipFile(io.BytesIO(f.read_bytes())).read("state.json").decode("utf-8")
+        assert not [w for w in words if w in text], f.name

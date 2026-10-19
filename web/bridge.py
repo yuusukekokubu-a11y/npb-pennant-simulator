@@ -63,6 +63,26 @@ def new_game(seed: int, season_seed: int, names_json: str, my_team_index, baseli
     return _ok(_view())
 
 
+def template_info() -> str:
+    """用意したリーグ(テンプレート)の名前・紹介とリーグのシード(D-464)。"""
+    return _ok(api.template_info())
+
+
+def new_from_template(season_seed: int, names_json: str, my_team_index, rules_json: str = "{}", places_json: str = "{}") -> str:
+    """用意したリーグで始める(D-465)。places_json は {leagues, stadiums, my_tier}。"""
+    global _game
+    try:
+        mine = None if my_team_index is None or int(my_team_index) < 0 else int(my_team_index)
+        places = json.loads(places_json or "{}")
+        game = api.Game.from_template(json.loads(names_json), mine, int(season_seed), rules=json.loads(rules_json or "{}"), league_names=places.get("leagues"), stadium_names=places.get("stadiums"), my_tier=places.get("my_tier"))
+    except api.TeamNameError as exc:
+        return _ng("入力に問題があります。", exc.problems)
+    except ValueError as exc:
+        return _ng(f"始められませんでした({exc})")
+    _game = game
+    return _ok(_view())
+
+
 def load(data) -> str:
     global _game
     try:
