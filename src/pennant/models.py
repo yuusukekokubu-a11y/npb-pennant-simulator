@@ -98,6 +98,9 @@ class Team:
     development: list[Player] = field(default_factory=list)  # 育成選手(支配下 70 人とは別の枠。試合に出ない。D-375)
     facilities: dict = field(default_factory=dict)  # 設備の段階(practice / medical / development → 1〜5。D-383)。ない設備は標準
     policy: dict = field(default_factory=dict)  # チーム方針(練習の重点・起用の方針・作戦・あなたが決めたか。D-454)。ない項目は既定
+    staff: dict = field(default_factory=dict)  # 職員(役割 → 職員の辞書。staff.py。D-469)。空なら職員なし(標準の効き・年俸 0)
+    staff_manual: bool = False  # 他球団の職員をあなたが入れ替えたか(「あなたが決めた」。D-476)
+    staff_dead: list = field(default_factory=list)  # 解任した職員の残りの年俸([{salary, until, name, role}]。D-475)
 
     @property
     def name(self) -> str:
@@ -117,6 +120,8 @@ class League:
     seed: int
     league_names: list[str]
     teams: list[Team]
+    staff_free: list = field(default_factory=list)  # 職員の市場(雇われていない職員の辞書。D-474)
+    staff_log: list = field(default_factory=list)  # 職員の担当の記録([{year, team_id, role, staff_id, name, player_id}]。D-477)
 
     def all_players(self) -> list[Player]:
         """支配下の選手(育成選手は含まない。D-375)。"""

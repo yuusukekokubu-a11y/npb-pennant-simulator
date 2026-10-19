@@ -6,7 +6,7 @@ import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
 import { allstarCard, el, playerLink, seriesCard, setPressed, table, teamLink } from "./parts.js";
 
-const SECTIONS = [["standings", "順位と優勝"], ["titles", "タイトル"], ["awards", "表彰"], ["leaders", "通算記録"], ["entries", "補強"]];
+const SECTIONS = [["standings", "順位と優勝"], ["titles", "タイトル"], ["awards", "表彰"], ["leaders", "通算記録"], ["entries", "補強"], ["managers", "監督"]];
 const ENTRY_KINDS = [["draft", "ドラフト"], ["foreign", "外国人"], ["moves", "出入り"]];
 
 // 記録室を、補強の記録のドラフト(球団を選んだ状態)で開く(進行の画面の「ドラフト」・チームのページのボタン)
@@ -36,7 +36,7 @@ export async function renderRecords(token) {
   segButtons("records-section", SECTIONS, r.section, (v) => { r.section = v; r.year = null; renderCurrent(); });
   $("records-kind").hidden = r.section !== "entries";
   if (r.section === "entries") segButtons("records-kind", ENTRY_KINDS, r.kind, (v) => { r.kind = v; r.year = null; renderCurrent(); });
-  const render = { standings: renderStandingsHistory, titles: renderTitles, awards: renderAwards, leaders: renderLeaders, entries: r.kind === "moves" ? renderMoves : renderEntries }[r.section];
+  const render = { standings: renderStandingsHistory, titles: renderTitles, awards: renderAwards, leaders: renderLeaders, entries: r.kind === "moves" ? renderMoves : renderEntries, managers: renderManagers }[r.section];
   await render(token);
 }
 
@@ -177,5 +177,25 @@ async function renderMoves(token) {
       ? table({ firstLabel: "選手", columns: cols, rows: d.rows.map((x) => ({ ...x, values: { label: x.label, from: x.from_team_name, to: x.to_team_name, position: x.position_label, age: x.age ? `${x.age}歳` : "" } })),
         first: (x) => [x.linkable ? playerLink(x.name, x.player_id) : el("span", {}, x.name)], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })
       : el("p", { className: "info" }, "この条件の出入りはありません。"),
+  );
+}
+
+// ---- 監督(D-477):監督ごとの通算の勝敗・優勝・日本一と、コーチ・スカウトの所属の履歴 ----
+
+async function renderManagers(token) {
+  const d = await query("record_managers", {});
+  if (token !== state.token) return;
+  $("records-controls").replaceChildren();
+  if (!d.years.length) return $("records-body").replaceChildren(el("p", { className: "info" }, NO_SEASON));
+  const cols = [{ key: "team", label: "球団" }, { key: "seasons", label: "シーズン" }, { key: "wins", label: "勝" }, { key: "losses", label: "敗" }, { key: "ties", label: "分" }, { key: "pct", label: "勝率" }, { key: "pennants", label: "優勝" }, { key: "japan", label: "日本一" }];
+  const rows = d.managers.map((x) => ({ ...x, values: { team: x.team_text, seasons: String(x.seasons), wins: String(x.wins), losses: String(x.losses), ties: String(x.ties), pct: x.pct, pennants: `${x.pennants} 回`, japan: `${x.japan} 回` } }));
+  const ocols = [{ key: "year", label: "シーズン" }, { key: "team", label: "球団" }, { key: "role", label: "担当" }];
+  const orows = d.others.map((x) => ({ ...x, values: { year: `${x.year}シーズン目`, team: x.team_name, role: x.role_label } }));
+  $("records-body").replaceChildren(
+    el("h2", {}, "監督の通算"),
+    el("div", { id: "records-managers" }, table({ firstLabel: "監督", columns: cols, rows, first: (x) => [el("span", {}, x.name + (x.former ? "(元選手)" : ""))], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true })),
+    el("p", { className: "muted small" }, "年度の確定のときにその球団の監督だった人の、そのシーズンの成績。"),
+    el("h2", {}, "コーチ・スカウトの所属"),
+    orows.length ? table({ firstLabel: "職員", columns: ocols, rows: orows, first: (x) => [el("span", {}, x.name + (x.former ? "(元選手)" : ""))], rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true, limit: state.records.othersShown || 30, more: () => { state.records.othersShown = (state.records.othersShown || 30) + 60; renderCurrent(); } }) : el("p", { className: "muted small" }, "まだありません。"),
   );
 }

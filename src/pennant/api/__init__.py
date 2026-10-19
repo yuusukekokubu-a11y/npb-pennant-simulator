@@ -24,6 +24,7 @@
     market.py     自由契約市場の提示(FA と同じ提示の方式。①b)
     offseason.py  オフの手続きの流れ(段階・次の手続きへ・おまかせ・オフの結果)
     abilities.py  能力の表・オフの能力の増減(作り直し①)
+    staff.py      球団職員(職員の段階・チームのページの職員と入れ替え・記録室の監督。D-474〜D-477)
 Game は、これらの部品(Mixin:機能ごとに分けたクラスの部品)を合わせた 1 つのクラス。画面から呼ぶ名前は分ける前と同じ。
 新しい関数は、分野の合うファイルに足す(どこにも合わないときは、ファイルを足して、ここの一覧に書く)。
 """
@@ -119,13 +120,14 @@ from .offseason import OffseasonMixin
 from .players import PlayersMixin
 from .postseason import PostseasonMixin
 from .roster import RosterMixin
+from .staff import StaffMixin
 from .progress import ProgressMixin, check_place_names, check_team_names, preview_teams, template_info
 from .stats import StatsMixin
 from .teams import TeamsMixin
 from .trade import TradeMixin
 
 
-class Game(AbilitiesMixin, ProgressMixin, LineupMixin, RosterMixin, FarmMixin, StatsMixin, TeamsMixin, GamesMixin, PostseasonMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, TradeMixin, ActiveDraftMixin, FacilitiesMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, ArchiveMixin, GameBase):
+class Game(AbilitiesMixin, ProgressMixin, LineupMixin, RosterMixin, FarmMixin, StatsMixin, TeamsMixin, GamesMixin, PostseasonMixin, PlayersMixin, ContractMixin, FaMixin, ForeignMixin, TradeMixin, ActiveDraftMixin, FacilitiesMixin, StaffMixin, DraftMixin, MarketMixin, DecisionMixin, OffseasonMixin, ArchiveMixin, GameBase):
     """遊んでいる1つのゲーム(画面は、これを1つ持って操作する)。"""
 
 

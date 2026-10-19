@@ -355,11 +355,24 @@ def finish_fa_market(proc: OffseasonProcedure) -> None:
         finish_market(proc)
 
 
-def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y", ctx: ContractContext | None = None) -> list[PlayerNote]:
-    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。資金の超過の解消も AI と同じ)。戻り値は安全策で作って入れた選手。"""
+def complete(league: League, proc: OffseasonProcedure, config: GenerationConfig, parts: NameParts, settings: DraftSettings, scout_sd: dict[str, dict], calibration, my_team_id: str | None, mins, min_batters, fill_prefix: str = "Y", ctx: ContractContext | None = None, sd_of=None) -> list[PlayerNote]:
+    """残りの手続きを AI の方針で最後まで進める(「おまかせ」。自分の球団も AI と同じ方針。資金の超過の解消も AI と同じ)。戻り値は安全策で作って入れた選手。
+    sd_of は球団 → 見立てのずれ(職員の段階でスカウトが代わったら、それで scout_sd を作り直す。D-472)。"""
     while proc.phase != "done":
         if proc.phase in CONTRACT_PHASES:  # 「おまかせ」:残りの交渉・超過の解消・自由契約を AI と同じ方針で(D-251、D-272)
             finish_contract_stage(league, proc, ctx, scout_sd, settings, my_team_id, mins, min_batters, my_ai=True)
+        elif proc.phase == "staff":  # 職員の市場(D-474):あなたの球団も AI と同じ方針で
+            if not proc.staff_done:
+                from .staff import close_stage
+
+                close_stage(league, proc, ctx.funds if ctx is not None else None, None, my_team_id, True, parts)
+                if ctx is not None and ctx.funds:  # 職員の年俸の分、年俸に使える額が変わる
+                    from .staff import league_costs
+
+                    ctx.upkeep = league_costs(league, None, proc.year + 1)
+                if sd_of is not None:  # スカウトが代わると見立てのずれが変わる(D-472)
+                    scout_sd = {t.id: sd_of(t.id) for t in league.teams}
+            next_phase(proc)
         elif proc.phase == "fa":
             if ctx is not None:
                 from .fa import run_all_rounds

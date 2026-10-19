@@ -4,7 +4,7 @@
 import { $, state } from "./core.js";
 import { query } from "./backend.js";
 import { renderCurrent } from "./screens.js";
-import { el, link, playerLink, sortToggle, table } from "./parts.js";
+import { abilityPanel, el, estimateBlock, link, playerLink, sortToggle, table } from "./parts.js";
 import { salaryInput } from "./contract.js";
 
 // 段階ごとの表の状態(絞り込み・種類・並び順・表示する選手・シーズン)。手続きの画面を行き来しても保つ
@@ -76,10 +76,16 @@ export async function outlookPanel(token) {
     table({ firstLabel: "ポジション", columns, rows, first: (r) => [el("span", {}, r.label)], fluid: true }));
 }
 
-// 提示のパネル(FA。年数・年俸と ±% のボタン・提示する・取り消す。D-257)
+// 名前を押したパネルの上に出す能力(画面の小さな直し。D-416):プロの選手は本当の能力、新しく入る候補はスカウトの見立て
+export function shownBlock(p) {
+  if (p.scouting) return estimateBlock(p.scouting);
+  return p.shown ? [abilityPanel(p.shown.abilities, p.shown.skills)] : [];
+}
+
+// 提示のパネル(FA。能力が上、操作が下。年数・年俸と ±% のボタン・提示する・取り消す。D-257)
 export function dealPanel(p, info, { prefix, onSend, onCancel }) {
   const d = p.deal;
-  const box = el("div", { className: "offer-panel", id: `${prefix}-panel`, dataset: { playerId: p.player_id } });
+  const box = el("div", { className: "offer-panel", id: `${prefix}-panel`, dataset: { playerId: p.player_id } }, ...shownBlock(p));
   box.append(el("p", {}, `${d.former_team_name ? `前の所属 ${d.former_team_name}。` : ""}算定年俸 ${d.calc_text}。見込みの WAR ${Number(d.expected).toFixed(2)}。`));
   if (p.offer) box.append(el("p", { className: "small" }, `提示中:${p.offer.years} 年・${Number(p.offer.salary).toLocaleString()} 万円(出し直すと上書き)`));
   const years = el("select", { id: `${prefix}-years`, "aria-label": "契約年数" }, ...Array.from({ length: info.max_years - info.min_years + 1 }, (_, i) => info.min_years + i).map((y) => el("option", { value: String(y), selected: p.offer ? p.offer.years === y : y === 1 }, `${y} 年`)));

@@ -5,7 +5,7 @@ import { state } from "./core.js";
 import { renderCurrent } from "./screens.js";
 import { el } from "./parts.js";
 import { runProc } from "./procedure.js";
-import { dealPanel, decisionFilters, decisionTable, fetchDecision, resultsTable } from "./decision.js";
+import { dealPanel, decisionFilters, decisionTable, fetchDecision, resultsTable, shownBlock } from "./decision.js";
 
 export async function faSection(v, token) {
   const ps = state.proc;
@@ -17,7 +17,7 @@ export async function faSection(v, token) {
   const { data, truth } = got;
   const canOffer = (p) => v.my_team && !fa.done && p.open && p.deal && p.deal.status === "open";
   const onName = (p) => { ps.faOpen = ps.faOpen === p.player_id ? null : p.player_id; renderCurrent(); };
-  const detail = (p) => (ps.faOpen === p.player_id && canOffer(p) ? dealPanel(p, fa, { prefix: "fa", onSend: faSend, onCancel: (pid) => runProc("fa_cancel", { player_id: pid }) }) : null);
+  const detail = (p) => (ps.faOpen !== p.player_id ? null : canOffer(p) ? dealPanel(p, fa, { prefix: "fa", onSend: faSend, onCancel: (pid) => runProc("fa_cancel", { player_id: pid }) }) : el("div", { className: "offer-panel", id: "fa-panel", dataset: { playerId: p.player_id } }, ...shownBlock(p)));
   const out = [
     decisionFilters("fa", data),
     decisionTable("fa", data, truth, { onName, detail, rowClass: (p) => (p.offer ? "selected" : !p.open ? "muted" : "") }),

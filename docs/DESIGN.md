@@ -149,7 +149,7 @@ web/js/                              画面の処理(ES モジュール:import �
   stats.js 成績 / games.js 試合 / player.js 選手のページ / team.js チームと球場 / review.js ドラフトの振り返り /
   procedure.js オフの手続きの枠(段階・状態バー・おまかせ)/ decision.js 判断の画面の共通の部品(①b)/ contract.js 契約 / fa.js FA /
   draft.js ドラフト / market.js 市場(①b で draft.js と分けた)/
-  yearend.js 年度の確定とオフの結果 / menu.js メニュー(用語集のページ・全部おまかせ)/ newgame.js 新規開始(説明バーを含む)/ files.js 保存と読み込み
+  staff.js 球団職員(職員の段階・チームのページの職員。D-474〜D-477)/ yearend.js 年度の確定とオフの結果 / menu.js メニュー(用語集のページ・全部おまかせ)/ newgame.js 新規開始(説明バーを含む)/ files.js 保存と読み込み
 web/dev/                             開発者向けの測定ページ(技術検証。index.html・app.js・worker.js・bench.py。D-111)
 .github/workflows/pages.yml          _site/ を GitHub Pages に公開する自動処理
 ```
@@ -364,7 +364,7 @@ web/dev/                             開発者向けの測定ページ(技術検
 
 - **球団職員(D-468〜D-480。`staff.py`・`data/staff.json`・`api/staff.py`・`web/js/staff.js`)**:
   - 職員は辞書(`{id, family_name, given_name, age, role, skill, trait, salary, until, years, player_id?, origin}`)で、`Team.staff`(役割 → 職員)・`Team.staff_manual`(あなたが決めた)・`Team.staff_dead`(解任した職員の残りの年俸 `[{salary, until, ...}]`)、`League.staff_free`(職員の市場)・`League.staff_log`(担当の記録 `[{year, team_id, role, staff_id, name, player_id?}]`)に持つ。リーグに持つのは、オフの手続き・試合・年度の確定のどこからでも引けるようにするため。職員がいない球団(試験用・事前運転)は、すべて標準の効きで年俸 0。
-  - 効き:`staff.coach_factors(team)` が項目 → (伸びの倍率, 衰えの倍率) を返し、`offseason.age_and_update(..., coach=...)` が年齢による増減に掛ける(設備・練習の重点と掛け合わせ。揺れには掛けない。乱数の使い方は変わらない)。スカウトは `GameState.scout_sd_of` が段階の値(または球団ごとの値)に `staff.scout_factor(team)` を掛ける。監督の腕の段階 `staff.manager_level(team)` は `Season._game_plan` が打順の計画の `manager` に入れ(0 は書かない。試合の再現のため)、`SimpleManager.prepare` が `TeamSetup.manager_level` に写し、`game.py` の先発の降板と `choose_reliever` が使う。監督の好みは `SimplePolicyMaker.decide` の最後に当てる(`staff.manager_pref`)。
+  - 効き:`staff.coach_factors(team, means)`(means は `staff.coach_means(league)`:12 球団の役割ごとの腕の平均)が項目 → (伸びの倍率, 衰えの倍率) を返し、`offseason.age_and_update(..., coach=...)` が年齢による増減に掛ける(設備・練習の重点と掛け合わせ。揺れには掛けない。乱数の使い方は変わらない)。スカウトは `GameState.scout_sd_of` が段階の値(または球団ごとの値)に `staff.scout_factor(team)` を掛ける。監督の腕の段階 `staff.manager_level(team)` は `Season._game_plan` が打順の計画の `manager` に入れ(0 は書かない。試合の再現のため)、`SimpleManager.prepare` が `TeamSetup.manager_level` に写し、`game.py` の先発の降板と `choose_reliever` が使う。監督の好みは `SimplePolicyMaker.decide` の最後に当てる(`staff.manager_pref`)。
   - 年俸:`staff.team_cost(team, season)`(次のシーズンも契約している職員の年俸 + 解任した職員の残り)を、`staff.league_costs(league, facility_settings, season)` が設備の維持費と足して `ContractContext.upkeep` に入れる(`contract_stage` の 2 か所・`newgame`・`template`)。
   - 職員の段階:内部の段階 `PHASES` に `staff`(release の次、fa の前)を足し、画面の段階 `STAGES` も 9 つにする。`api/progress.year_end` が手続きを作った直後に `staff.start_stage`(契約切れ・AI の監督の解任・架空の候補・元選手の候補。乱数は derive_seed(手続きのシード, "staff:…"))を行い、`proc.staff_on` を真にする(事前運転の手続きでは偽なので段階を飛ばす)。締めるのは `staff.close_stage`(自由契約市場と同じ順番の方式)。`draft.complete` も職員の段階を AI の方針で締める。締めたら `proc._cache` を捨て(スカウトの腕で評価が変わるため。保存して読み込んでも同じ結果にする)、AI の球団のチーム方針を決め直す。
   - 担当の記録:`year_end` のはじめに `staff.record_season` が、その年の各球団・各役割の職員を `League.staff_log` に足す。記録室の監督の通算は、担当の記録と履歴(`SeasonArchive.standings`・`postseason`)から求める。
@@ -831,7 +831,7 @@ UI の整理②の実測(D-306〜D-321):
 | 項目 | 仮置きの値 | 理由 |
 | --- | --- | --- |
 | 腕のランク | S 90〜・A 80〜・B 70〜・C 60〜・D 50〜・E 〜49(内部は 30〜99) | 能力のランク(D-347)と同じ区切り。標準は 60(C の入口) |
-| コーチの効き | 伸び 1 点あたり +0.5%、衰え 1 点あたり −0.25%(腕 60 で標準) | S(90)で伸び +15%。設備の練習の 1 段階(15%)と同じくらい(D-473) |
+| コーチの効き | 伸び 1 点あたり +0.5%、衰え 1 点あたり −0.25%(12 球団の同じ役割の平均で標準) | 平均より 30 点上で伸び +15%。設備の練習の 1 段階(15%)と同じくらい(D-473)。標準を平均にして、リーグの水準を動かさない |
 | スカウトの効き | ずれ × (1 − 0.007 ×(腕 − 60))、0.6〜1.4 | S で約 0.8 倍。ずれの「中」と「小」の間くらい |
 | 監督の腕の段階 | (腕 − 60)÷ 15 を四捨五入、−2〜+2 | S の上の方だけ +2。差は小さく |
 | 年俸 | S 6000 万・A 4000 万・B 2500 万・C 1500 万・D 1000 万・E 600 万円、監督は 2 倍 | 1 球団でおよそ 1 億円(設備 1 つの段階 3 の維持費より少し少ない) |

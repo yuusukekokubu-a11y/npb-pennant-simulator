@@ -82,7 +82,7 @@ class OffseasonMixin:
             "phase": proc.phase,
             "phase_label": STAGE_LABELS[stage_of(proc.phase)],
             "stage": stage_of(proc.phase),
-            "phases": [{"key": k, "label": STAGE_LABELS[k], "short": {"active_draft": "現役"}.get(k, STAGE_LABELS[k])} for k in STAGES],  # タブは短い名前(8 つ並べるため。D-380)
+            "phases": [{"key": k, "label": STAGE_LABELS[k], "short": {"active_draft": "現役"}.get(k, STAGE_LABELS[k])} for k in STAGES],  # タブは短い名前(9 つ並べるため。D-380、D-474)
             "order": [{"team_id": t, "team_name": names[t], "is_mine": t == my} for t in proc.order],
             "round": proc.round,
             "total_rounds": proc.total_rounds() if proc.phase in ("draft", "dev_draft") else 0,
@@ -92,7 +92,7 @@ class OffseasonMixin:
             "bidding": proc.bidding(),
             "bid_step": proc.bid_step,
             "lottery": [{**x, "team_names": [names.get(t, "") for t in x["teams"]], "winner_name": names.get(x["winner"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": my in x["teams"], "won": x["winner"] == my} for x in proc.lottery],
-            "phase_finished": draftmod.phase_finished(proc) if proc.phase in ("draft", "dev_draft") else proc.market_done if proc.phase == "market" else proc.foreign_done if proc.phase == "foreign" else (proc.active_offers_done and current_picker(proc) is None) if proc.phase == "active_draft" else proc.phase == "done",
+            "phase_finished": proc.staff_done if proc.phase == "staff" else draftmod.phase_finished(proc) if proc.phase in ("draft", "dev_draft") else proc.market_done if proc.phase == "market" else proc.foreign_done if proc.phase == "foreign" else (proc.active_offers_done and current_picker(proc) is None) if proc.phase == "active_draft" else proc.phase == "done",
             "my_team": None if my is None else {"team_id": my, "team_name": names[my], "players": len(self._team(my).players), "max": draftmod.MAX_ROSTER, "shortages": self._shortage_text(self._team(my).players, mins, min_batters)},
             "my_release_done": proc.my_release_done,
             "contracts": self._procedure_contracts(proc),
@@ -104,10 +104,12 @@ class OffseasonMixin:
             "released": [{**x, "team_name": names.get(x["team_id"], ""), "position_label": POSITION_LABELS.get(x["position"], ""), "is_mine": x["team_id"] == my} for x in proc.released],
             "counts": {"candidates": len(proc.candidates), "market": len(proc.market), "released": len(proc.released), "picked": sum(1 for x in proc.picks if x["player_id"])},
             "rosters": [{"team_id": t.id, "team_name": t.name, "players": len(t.players), "is_mine": t.id == my} for t in state.league.teams],
-            "note": "手続きは 契約 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → トレード → 現役ドラフト → 完了(最低人数の補充)の順です(新規開始の設定で、ない段階は飛ばします)。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
+            "note": "手続きは 契約 → 職員 → FA → 外国人市場 → ドラフト(育成ドラフトを含む)→ 自由契約市場 → トレード → 現役ドラフト → 完了(最低人数の補充)の順です(新規開始の設定で、ない段階は飛ばします)。途中で保存して、あとで続きから再開できます。「おまかせ」を押すと、残りを自動(AI と同じ方針)で進めます。",
         }
         if my is not None and stage_of(proc.phase) == "contract":
             view["renewal"] = self._renewal_info(proc)
+        if proc.phase == "staff":
+            view["staff"] = self._staff_info(proc)  # 職員の段階(D-474)
         if proc.phase == "fa":
             view["fa"] = self._fa_info(proc)
         if proc.phase == "foreign":
@@ -150,6 +152,9 @@ class OffseasonMixin:
             if my is not None and ctx.hard() and draftmod.over_cap(self._my_team(), ctx) > 0:
                 raise ValueError(f"総年俸が資金を {draftmod.over_cap(self._my_team(), ctx):,} 万円超えています。自由契約で減らしてから進めてください")
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=False)
+        elif stage == "staff":  # 今の希望で職員の市場を締めて(まだなら)、FA へ(空いた役割は最も安い候補で埋まる。D-474)
+            self._close_staff(my_ai=False)
+            draftmod.next_phase(proc)
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=False)
             draftmod.next_phase(proc)
@@ -218,9 +223,12 @@ class OffseasonMixin:
         ctx = self._contract_ctx()
         stage = stage_of(proc.phase)
         names = self._team_names()
-        n_released, n_picks, n_fa, n_prom, n_active = len(proc.released), len(proc.picks), len(proc.fa_results), len(proc.promotions), len(proc.active_picks)
+        n_released, n_picks, n_fa, n_prom, n_active, n_staff = len(proc.released), len(proc.picks), len(proc.fa_results), len(proc.promotions), len(proc.active_picks), len(proc.staff_results)
         if stage == "contract":
             draftmod.finish_contract_stage(state.league, proc, ctx, sd, state.draft_settings, my, mins, min_batters, my_ai=True)
+        elif stage == "staff":  # 職員の市場を、あなたの球団も AI の方針で締める(D-474)
+            self._close_staff(my_ai=True)
+            draftmod.next_phase(proc)
         elif stage == "fa":
             famod.run_all_rounds(state.league, proc, ctx, my, my_ai=True)
             draftmod.next_phase(proc)
@@ -248,6 +256,11 @@ class OffseasonMixin:
         else:
             raise ValueError("この段階には、おまかせできる操作がありません")
         log = []
+        from ..staff import default_settings as staff_settings
+
+        for x in proc.staff_results[n_staff:]:
+            if x["team_id"] == my:
+                log.append({"kind": "staff", "player_id": None, "name": x["name"], "text": f"職員を雇った:{staff_settings().label(x['role'])} {x['name']}({staff_settings().rank(int(x['skill']))}・{x['years']} 年・{int(x['salary']):,} 万円)"})
         for x in proc.released[n_released:]:
             if x["team_id"] == my and x.get("note") != "negotiation":
                 why = "資金超過" if x.get("note") == "budget" else "自由契約"
@@ -278,7 +291,7 @@ class OffseasonMixin:
         state = self.state
         proc = self._proc()
         mins, min_batters = self._mins()
-        filled = draftmod.complete(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, state.my_team_id, mins, min_batters, ctx=self._contract_ctx())
+        filled = draftmod.complete(state.league, proc, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, state.my_team_id, mins, min_batters, ctx=self._contract_ctx(), sd_of=state.scout_sd_of)
         self._finish_offseason(filled)
         return {"finished": True, "summary": self.offseason_summary(), "status": self.status()}
 

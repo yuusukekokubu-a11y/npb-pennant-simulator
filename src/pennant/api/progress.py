@@ -420,6 +420,16 @@ class ProgressMixin:
             x["after_items"] = apply_aftereffect(p, x["after"], derive_seed(seed, f"after:{i}"))
             ability_model.refresh(self.state.gen_config, p)
 
+    def _career_war(self, player_ids) -> dict[str, float]:
+        """選手の通算の WAR(履歴の各シーズンの合計。投手は失点版。元選手の職員の候補を選ぶため。D-474)。"""
+        out = {pid: 0.0 for pid in player_ids}
+        for a in self.state.history:
+            for pid in out:
+                line = a.war.get(pid)
+                if line is not None:
+                    out[pid] += float(line.war if line.role == "batter" else line.war_ra)
+        return out
+
     def year_end(self) -> dict:
         """年度の確定(F2。D-185、D-186):今シーズンの集計を履歴へ → 球場補正の履歴と基準値の出発点を更新 →
         加齢・能力の更新・引退・補充(offseason.run_offseason)→ 次のシーズンを作る。戻り値はオフの結果の要約。"""
@@ -429,6 +439,9 @@ class ProgressMixin:
             raise ValueError("シーズンがまだ終わっていません(最後まで進めてから、年度を確定してください)")
         if state.procedure is not None:
             raise ValueError("オフの手続きが進行中です(手続きを終えると、次のシーズンが始まります)")
+        from .. import staff as staffmod
+
+        staffmod.record_season(state.league, state.year)  # このシーズンの職員の担当(記録室の監督。D-477)
         prior_registered = {p.id: famod.seasons_of(p) for p in season.players.values()}  # 表彰の新人王の対象(今シーズンの前までの一軍登録。D-443)
         famod.count_active_seasons(state.league, season.actives)  # このシーズンの一軍に入っていた選手の FA 権の年数(D-258)
         archive = self._archive_current_season(prior_registered)
@@ -451,14 +464,18 @@ class ProgressMixin:
         policymod.refresh_ai(state.league)  # あなたが決めていない球団のチーム方針を、その年の顔ぶれで AI が決め直す(D-454)
         result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons, state.facility_settings, playing, practice=True)  # 練習の重点(D-455)
         state.offseasons.append(result)
+        staffmod.age_staff(state.league)  # 職員も 1 歳年を取る(D-469)
         state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records, rules=state.rules)
         state.procedure.ranks = {s.team_id: int(s.rank) for s in archive.standings}  # 勝利軸は公式の順位(D-250)
         state.procedure.season_actives = sorted(p.id for a in season.actives.values() for p in a.starters + a.relievers + a.batters)  # 現役ドラフトで出せない選手(D-380)
+        dev_gone = set(result.dev_released)
+        retired = [{"player_id": n.player_id, "family_name": season.players[n.player_id].family_name, "given_name": season.players[n.player_id].given_name, "role": n.role, "age": n.age, "team_id": n.team_id, "foreign": season.players[n.player_id].foreign} for n in result.retired if n.player_id not in dev_gone and n.player_id in season.players]
+        staffmod.start_stage(state.league, state.procedure, state.name_parts, retired, self._career_war([x["player_id"] for x in retired]), state.my_team_id)  # 職員の段階の始め:契約切れ・AI の監督の交代・新しい候補(D-474、D-475)
         ctx = self._contract_ctx()
         draftmod.apply_contracts_start(state.league, state.procedure, ctx, state.my_team_id, *self._mins())  # 資金の増減と、全球団の査定の更改・FA 宣言(D-354、D-358、D-359)
         state.contract_rates[str(state.year + 1)] = state.procedure.rate
         self.dirty = True
         if state.my_team_id is None:  # 観戦のみ:手続きはすべて自動(D-198)
-            filled = draftmod.complete(state.league, state.procedure, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, None, *self._mins(), ctx=ctx)
+            filled = draftmod.complete(state.league, state.procedure, state.gen_config, state.name_parts, state.draft_settings, state.scout_sd_map(), state.calibration, None, *self._mins(), ctx=ctx, sd_of=state.scout_sd_of)
             self._finish_offseason(filled)
         return self.offseason_summary(result.year)

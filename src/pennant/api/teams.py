@@ -193,6 +193,7 @@ class TeamsMixin:
             "foreign_max": self.state.season.game_config["active_roster"].get("foreign_max"),
             "facilities": self._facilities_public(team),  # 設備の段階(D-383)
             "policy": self.team_policy(team_id),  # チーム方針(D-454)
+            "staff": self.team_staff(team_id),  # 職員(D-476)
         }
 
     # ---- チーム方針(D-454〜D-457) ----

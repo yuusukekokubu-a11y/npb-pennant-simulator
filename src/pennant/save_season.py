@@ -32,6 +32,12 @@ def _check_plan(d, where: str, team_players: set, p) -> dict | None:
             return None
         if v != "normal":
             out[key] = v
+    level = d.get("manager", 0)  # 監督の采配の腕の段階(D-470。版 33)
+    if isinstance(level, bool) or not isinstance(level, int) or not -5 <= level <= 5:
+        p.add(f"{where}.manager", f"監督の腕の段階は −5〜5 の整数にしてください(値: {level!r})")
+        return None
+    if level:
+        out["manager"] = level
     if isinstance(d.get("set_day"), int):
         out["set_day"] = d["set_day"]
     n = d.get("notice")

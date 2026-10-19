@@ -72,6 +72,7 @@ class TeamSetup:
     starter: Player
     steal: str = "normal"  # 盗塁の作戦(積極的・普通・慎重。D-457)
     bunt: str = "normal"  # バントの作戦(多い・普通・少ない。D-457)
+    manager_level: int = 0  # 監督の采配の腕の段階(−2〜+2。D-470)。試合の前の状態の打順の計画から
 
 
 @dataclass
@@ -81,6 +82,7 @@ class PitchingSituation:
     inning: int
     lead: int  # 守っているチームのリード(負けていればマイナス)
     used_ids: set[str]  # この試合ですでに投げた投手
+    prefer_overall: bool = False  # 役割の中で、疲労より総合を先に見て選ぶ(腕のいい監督。D-470)
 
 
 @dataclass
@@ -361,6 +363,8 @@ class SimpleManager:
                 and can_relieve(r, self.config)
             ]
             if cands:
+                if situation.prefer_overall:
+                    return min(cands, key=lambda r: (-overall(r), r.state.fatigue, r.id))
                 return min(cands, key=lambda r: (r.state.fatigue, -overall(r)))
         # 救援が使い切られた・疲れているときは、疲労の少ない先発を救援に回す(今日の先発・登板済みは除く)
         spare = [p for p in active.starters if p.id not in situation.used_ids and can_relieve(p, self.config)]
@@ -391,10 +395,11 @@ class SimpleManager:
     # ---- まとめ ----
 
     def prepare(self, team: Team, rng: random.Random, rotation_index: int, active: ActiveRoster | None = None, plan: Mapping | None = None):
-        """1試合分の編成を作る。戻り値:(TeamSetup, 次のローテーションの位置)。plan は打順の計画(D-373)と作戦(steal・bunt。D-457)。"""
+        """1試合分の編成を作る。戻り値:(TeamSetup, 次のローテーションの位置)。plan は打順の計画(D-373)と作戦(steal・bunt。D-457)と監督の腕の段階(manager。D-470)。"""
         active = active or self.select_active(team)
         lineup = self.starting_lineup(active, rng, plan)
         starter, nxt = self.choose_starter(active, rotation_index)
         steal = str((plan or {}).get("steal") or "normal")
         bunt = str((plan or {}).get("bunt") or "normal")
-        return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter, steal=steal, bunt=bunt), nxt
+        level = int((plan or {}).get("manager") or 0)  # 監督の采配の腕(D-470)
+        return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter, steal=steal, bunt=bunt, manager_level=level), nxt

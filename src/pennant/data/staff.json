@@ -1,0 +1,31 @@
+{
+  "format_version": 1,
+  "roles": ["manager", "batting", "pitching", "fielding", "scout"],
+  "labels": {"manager": "監督", "batting": "打撃コーチ", "pitching": "投手コーチ", "fielding": "守備走塁コーチ", "scout": "スカウト"},
+  "skill": {"min": 30, "max": 99, "neutral": 60, "ranks": {"S": 90, "A": 80, "B": 70, "C": 60, "D": 50, "E": 0}},
+  "coach": {
+    "items": {"batting": ["meet", "power"], "pitching": ["velocity", "control", "stamina", "breaking"], "fielding": ["speed", "arm", "defense", "catch"]},
+    "growth_per_point": 0.005,
+    "decline_per_point": 0.0025
+  },
+  "scout": {"per_point": 0.007, "min": 0.6, "max": 1.4},
+  "manager": {
+    "level_step": 15,
+    "max_level": 2,
+    "pull_from_inning": 6,
+    "pull_close_margin": 2,
+    "pull_share_per_level": 0.08,
+    "stay_share_per_level": 0.05,
+    "traits": {"none": 40, "youth": 15, "win": 15, "bunt": 10, "steal": 10, "power": 10},
+    "trait_labels": {"none": "", "youth": "若手を使う", "win": "勝ちにいく", "bunt": "バント多め", "steal": "盗塁積極的", "power": "打って勝つ"}
+  },
+  "salary": {"ranks": {"S": 6000, "A": 4000, "B": 2500, "C": 1500, "D": 1000, "E": 600}, "manager_factor": 2},
+  "years": {"min": 1, "max": 3},
+  "age": {"min": 35, "max": 60, "retire": 70},
+  "generate": {
+    "initial_mean": 60, "market_mean": 56, "former_mean": 58, "sd": 12,
+    "per_role": 3, "former_max": 6, "former_min_war": 5.0, "former_war_bonus": 0.1, "former_bonus_max": 6,
+    "pool_max": 40
+  },
+  "ai": {"wishes": 3, "fire": {"6": 0.4, "5": 0.15}}
+}

@@ -2,24 +2,24 @@
   "template_format": 1,
   "id": "standard",
   "title": "用意したリーグ",
-  "save_format_version": 32,
-  "fingerprint_version": 37,
+  "save_format_version": 33,
+  "fingerprint_version": 38,
   "league_seed": 20261019,
   "season_seed": 1019,
   "intro": {
     "champions": [
       {
         "league_index": 0,
-        "team_id": "T04",
-        "wins": 82,
-        "losses": 57,
-        "ties": 4
+        "team_id": "T02",
+        "wins": 78,
+        "losses": 63,
+        "ties": 2
       },
       {
         "league_index": 1,
-        "team_id": "T07",
-        "wins": 81,
-        "losses": 60,
+        "team_id": "T09",
+        "wins": 85,
+        "losses": 56,
         "ties": 2
       }
     ],

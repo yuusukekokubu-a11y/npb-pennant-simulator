@@ -174,13 +174,15 @@ class PolicyMaker(Protocol):
 
 
 class SimplePolicyMaker:
-    """簡易な決め方(D-454):戦力・若手の割合・能力のまとまりを 12 球団で比べる。使うのは見せる能力と年齢だけ。"""
+    """簡易な決め方(D-454):戦力・若手の割合・能力のまとまりを 12 球団で比べる。使うのは見せる能力と年齢だけ。
+    最後に監督の方針の好み(D-470)を当てる。"""
 
     def __init__(self, settings: PolicySettings | None = None):
         self.settings = settings or default_settings()
 
     def decide(self, league: League) -> dict[str, dict]:
         from .ability_model import overall
+        from .staff import manager_pref
 
         ai = self.settings.data["ai"]
         teams = list(league.teams)
@@ -226,6 +228,9 @@ class SimplePolicyMaker:
             steal = "aggressive" if t.id in speed[:k] else "cautious" if k and t.id in speed[n - k:] else "normal"
             bunt = "many" if k and t.id in power[n - k:] else "few" if t.id in power[:k] else "normal"
             out[t.id] = {"practice_batter": pb[t.id], "practice_pitcher": pp[t.id], "usage": usage, "steal": steal, "bunt": bunt}
+            pref = manager_pref(t)  # 監督の方針の好み(D-470):その項目は好みの値にする
+            if pref is not None:
+                out[t.id][pref[0]] = pref[1]
         return out
 
 

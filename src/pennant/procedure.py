@@ -28,17 +28,17 @@ from .season import derive_seed
 SUPPORTED_FORMAT_VERSION = 1
 
 
-PHASES = ("renewal", "release", "fa", "foreign", "draft", "dev_draft", "market", "trade", "active_draft", "done")
+PHASES = ("renewal", "release", "staff", "fa", "foreign", "draft", "dev_draft", "market", "trade", "active_draft", "done")
 
 
-PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "trade": "トレード", "active_draft": "現役ドラフト", "done": "完了", "promote": "支配下登録"}
+PHASE_LABELS = {"renewal": "契約更改", "release": "自由契約", "staff": "職員", "fa": "FA", "foreign": "外国人市場", "draft": "ドラフト", "dev_draft": "育成ドラフト", "market": "自由契約市場", "trade": "トレード", "active_draft": "現役ドラフト", "done": "完了", "promote": "支配下登録"}
 
 
-# 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ。育成ドラフトはドラフトの段階の中(D-375)
-STAGES = ("contract", "fa", "foreign", "draft", "market", "trade", "active_draft", "done")
+# 画面の段階(D-271・D-272):契約更改と自由契約は「契約」の 1 つ。育成ドラフトはドラフトの段階の中(D-375)。職員は契約の次(D-474)
+STAGES = ("contract", "staff", "fa", "foreign", "draft", "market", "trade", "active_draft", "done")
 
 
-STAGE_LABELS = {"contract": "契約", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "trade": "トレード", "active_draft": "現役ドラフト", "done": "完了"}
+STAGE_LABELS = {"contract": "契約", "staff": "職員", "fa": "FA", "foreign": "外国人", "draft": "ドラフト", "market": "市場", "trade": "トレード", "active_draft": "現役ドラフト", "done": "完了"}
 
 
 def stage_of(phase: str) -> str:
@@ -332,6 +332,11 @@ class OffseasonProcedure:
     active_offers: dict = field(default_factory=dict)  # 現役ドラフトの候補(球団 → 選手 ID 2 人。D-380)
     active_offers_done: bool = False  # 候補を決め終えたか(あなたの候補もこの時に決まる)
     active_picks: list[dict] = field(default_factory=list)  # 現役ドラフトの指名({team_id, from_team, player_id, name, ...})
+    staff_on: bool = False  # 職員の段階があるか(年度の確定で staff.start_stage が始めた手続き。事前運転・版 32 の手続きは偽。D-474)
+    staff_events: list[dict] = field(default_factory=list)  # 段階の始めの出来事(契約切れ・監督の解任・元選手の候補。{kind, team_id, role, staff_id, name})
+    staff_offers: list[str] = field(default_factory=list)  # あなたの雇う希望(職員の ID。入れた順が優先)
+    staff_results: list[dict] = field(default_factory=list)  # 雇った記録({round, team_id, role, staff_id, name, skill, salary, years, by})
+    staff_done: bool = False  # 職員の市場を締めたか
     _cache: dict = field(default_factory=dict, repr=False, compare=False)  # (球団, 選手) → (総合の推定値, 評価)。保存しない
 
     def bidding(self) -> bool:
@@ -382,6 +387,8 @@ class OffseasonProcedure:
             "trades": copy.deepcopy(self.trades), "trade_offers": copy.deepcopy(self.trade_offers), "trade_started": self.trade_started,
             "rules": dict(self.rules), "season_actives": list(self.season_actives), "active_offers": copy.deepcopy(self.active_offers),
             "active_offers_done": self.active_offers_done, "active_picks": copy.deepcopy(self.active_picks),
+            "staff_on": self.staff_on, "staff_events": copy.deepcopy(self.staff_events), "staff_offers": list(self.staff_offers),
+            "staff_results": copy.deepcopy(self.staff_results), "staff_done": self.staff_done,
         }
 
     @classmethod
@@ -437,6 +444,11 @@ class OffseasonProcedure:
         proc.active_offers = {str(k): [str(x) for x in v] for k, v in d.get("active_offers", {}).items()}
         proc.active_offers_done = bool(d.get("active_offers_done", False))
         proc.active_picks = copy.deepcopy(d.get("active_picks", []))
+        proc.staff_on = bool(d.get("staff_on", False))  # 版 32 以前の手続き:職員の段階はない(D-479)
+        proc.staff_events = copy.deepcopy(d.get("staff_events", []))
+        proc.staff_offers = [str(x) for x in d.get("staff_offers", [])]
+        proc.staff_results = copy.deepcopy(d.get("staff_results", []))
+        proc.staff_done = bool(d.get("staff_done", False))
         return proc
 
     def game_rules(self):
@@ -688,6 +700,8 @@ def phase_finished(proc: OffseasonProcedure) -> bool:
 def next_phase(proc: OffseasonProcedure) -> None:
     i = PHASES.index(proc.phase)
     proc.phase = PHASES[min(i + 1, len(PHASES) - 1)]
+    if proc.phase == "staff" and not proc.staff_on:  # 職員の段階がない手続き(事前運転・版 32 の手続き。D-474)
+        proc.phase = "fa"
     if proc.phase == "fa" and (proc.fa_done or not proc.fa_pool):  # 宣言した選手がいなければ FA は飛ばす
         proc.fa_done = True
         proc.phase = "foreign"
