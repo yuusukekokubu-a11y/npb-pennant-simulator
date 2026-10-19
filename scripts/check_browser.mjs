@@ -345,6 +345,7 @@ page.once("dialog", (d) => d.accept().catch(() => {})); // 「AI に戻す」で
 await page.setInputFiles("#open-file-top", pitchFile.path);
 await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("開きました"), null, { timeout: 60000 });
 await openRosterAgain();
+await page.waitForFunction(() => document.querySelector("#roster-pitching-source").textContent.includes("自分で決めた"), null, { timeout: 30000 }).catch(() => {}); // 前に開いたときの表が描き直されるまで待つ
 check((await page.textContent("#roster-pitching-source")).includes("自分で決めた") && JSON.stringify(await starterNames()) === JSON.stringify(savedStarters) && JSON.stringify((await reliefRoles()).sort()) === JSON.stringify([...savedRoles].sort()), "保存して開き直しても、自分で決めた投手の起用(先発の順と役割)が続く");
 await pitchAiBack("開き直した後");
 await page.click("#screen-roster .back");
