@@ -72,6 +72,7 @@ function renderPolicy(p, args) {
     const r = await call("team_policy", { name, args: { team_id: p.team_id, ...args2 } });
     ps.message = r.ok ? { ok: true, text: ok } : { ok: false, text: r.message };
     if (r.ok) {
+      state.cache.clear(); // 見る画面の問い合わせは日が進むまで使い回すので、方針を変えたら捨てる
       ps.draft = Object.fromEntries(r.value.fields.map((f) => [f.key, f.value]));
       ps.base = JSON.stringify([r.value.team_id, r.value.manual, r.value.fields.map((f) => f.value)]);
       setDirty(true);

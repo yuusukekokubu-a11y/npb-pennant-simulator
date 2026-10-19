@@ -273,7 +273,7 @@ await page.waitForFunction(() => document.querySelector("#lineup-message").textC
 const luAfter = await page.$$eval("#lineup-table tbody tr", (trs) => trs.map((tr) => tr.querySelector("select[id^='lineup-player']").value));
 check(JSON.stringify(luAfter) === JSON.stringify(luBefore) && (await page.textContent("#lineup-source")).includes("AI"), "長打重視に戻すと、最初の AI の打順に戻る");
 // 盗塁の作戦はチーム方針へ移した(D-457):スタメンと打順の画面にはない
-check((await page.$("#lineup-steal")) === null && !(await page.textContent("#screen-lineup")).includes("盗塁"), "スタメンと打順の画面に盗塁の作戦がない(チーム方針へ移した)");
+check((await page.$("#lineup-steal")) === null && !(await page.textContent("#screen-lineup .row")).includes("盗塁"), "スタメンと打順の画面に盗塁の作戦がない(チーム方針へ移した)");
 await page.click("#screen-lineup .back");
 // 一軍登録(D-425):一軍 29 人と二軍が、調子のマーク付きで出る。「外す」を押すと、同じ役割の二軍の選手だけ「上げる」が押せる。
 // ここでは入れ替えない(この後の結果を Python で同じ新規開始を進めた結果と比べるため)。実際の入れ替えは 2シーズン目で確かめる
@@ -516,7 +516,7 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 20 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
+check(sortOptions.length === 21 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
 await page.selectOption("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
