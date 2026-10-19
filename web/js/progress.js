@@ -5,6 +5,7 @@ import { call, delayedShow, ready } from "./backend.js";
 import { current, renderCurrent, showScreen } from "./screens.js";
 import { allstarCard, el, emblem, gameCard, playerLink, rankBadge, seriesCard, teamLink } from "./parts.js";
 import { buildStatsFilters } from "./stats.js";
+import { titleFor } from "./glossary.js";
 
 // ---- 進行・順位表 ----
 
@@ -134,13 +135,13 @@ export function renderStandings() {
   $("standings-post").hidden = !post;
   $("standings-table").hidden = post;
   if (state.league === "farm") {
-    $("standings-day").textContent = `二軍の試合 ${fm.games} 試合・${fm.note}`;
+    $("standings-day").textContent = `二軍の試合 ${fm.games} 試合`;
     $("standings-champion").hidden = true;
-    const head = el("tr", {}, ...["順位・チーム", "勝", "敗", "分", "勝率", "差"].map((x, i) => el("th", { scope: "col", className: i ? "" : "sticky" }, x)));
+    const head = el("tr", {}, ...["順位・チーム", "試合", "勝", "敗", "分", "勝率", "差"].map((x, i) => el("th", { scope: "col", className: i ? "" : "sticky", title: i ? titleFor(x) : "" }, x)));
     $("standings-post").replaceChildren(...fm.leagues.map((lg) => el("section", { className: "farm-league" }, el("h2", {}, `${lg.league_name}(二軍)`),
       el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head.cloneNode(true)), el("tbody", {}, ...lg.rows.map((r) =>
         el("tr", { className: r.mine ? "mine" : "" }, el("td", { className: "sticky" }, el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.team_name), teamLink(r.team_name, r.team_id))),
-          ...[r.wins, r.losses, r.ties, r.pct, r.games_behind].map((v) => el("td", {}, String(v)))))))))));
+          ...[r.wins + r.losses + r.ties, r.wins, r.losses, r.ties, r.pct, r.games_behind].map((v) => el("td", {}, String(v)))))))))));
     return;
   }
   if (post) {
