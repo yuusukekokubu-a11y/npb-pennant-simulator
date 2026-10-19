@@ -27,6 +27,8 @@ def finish_contract(g):
         rows = [r for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]]
         g.offseason_contract_release(rows[0]["player_id"])
     g.offseason_next()
+    if g.offseason_view()["phase"] == "staff":  # 職員の段階(D-474)は何もせずに締める
+        g.offseason_next()
 
 
 def to_fa(g):
@@ -202,7 +204,7 @@ def test_fa_hidden_info_is_not_shown(season_end):
 def test_save_round_trip(season_end):
     g = _fresh(season_end)
     data = save_game(g.state)
-    assert SAVE_FORMAT_VERSION == 32
+    assert SAVE_FORMAT_VERSION == 33
     again = load_game(data)
     assert [p.fa_seasons for p in again.league.all_players()] == [p.fa_seasons for p in g.state.league.all_players()]
     assert again.procedure.fa_info == g.state.procedure.fa_info and [p.id for p in again.procedure.fa_pool] == [p.id for p in g.state.procedure.fa_pool]

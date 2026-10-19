@@ -224,12 +224,12 @@ def remove_foreign(state: GameState) -> bool:
 def refit_contracts(state: GameState) -> None:
     """資金力・顔ぶれを変えた後に、初期の契約の年俸を新規開始と同じ方法で求め直す(年数は変えない。D-466)。"""
     from .contract_stage import ContractContext, fit_initial_salaries
-    from .facilities import league_upkeep
     from .negotiation import depth_slots
+    from .staff import league_costs
 
     league = state.league
     sd = state.draft_settings.level_sd(state.scout_level)
-    ctx = ContractContext(state.contract_settings, dict(state.team_funds), dict(state.budget_tiers), lambda pid, role: [], lambda tid: sd, negotiation=state.negotiation_settings, league_seed=league.seed, slots=depth_slots(state.gen_config), upkeep=league_upkeep(league))
+    ctx = ContractContext(state.contract_settings, dict(state.team_funds), dict(state.budget_tiers), lambda pid, role: [], lambda tid: sd, negotiation=state.negotiation_settings, league_seed=league.seed, slots=depth_slots(state.gen_config), upkeep=league_costs(league, state.facility_settings, state.year))  # 職員の年俸も引く(D-478)
     rate, salaries = fit_initial_salaries(league, ctx)
     for team in league.teams:
         for p in team.players:

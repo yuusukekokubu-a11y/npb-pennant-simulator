@@ -382,6 +382,32 @@ check((await page.textContent("#team-name")) === policyTeam && (await page.textC
 await page.click("#policy-ai");
 await page.waitForFunction(() => document.querySelector("#policy-source").textContent.includes("AI が決めた"));
 check(JSON.stringify(await policyValues()) === JSON.stringify(policyAi), `「AI に戻す」で、AI の方針(最初と同じ ${policyAi.join("・")})に戻る`);
+// 職員(D-476):どの球団のチームのページにも職員の表。他球団の監督を入れ替えると「あなたが決めた」、「AI に戻す」で印が消える。
+// 入れ替える前の状態を保存し、確かめた後に開き直す(この後の結果を Python で同じ新規開始を進めた結果と比べるため)
+const staffBase = await saveFile("staff-base");
+await openPolicyTeam();
+await page.waitForSelector("#team-staff-table tbody tr");
+const teamStaffRows = () => page.$$eval("#team-staff-table tbody tr", (trs) => trs.map((tr) => [tr.children[0].textContent, tr.children[1].textContent, tr.children[2].textContent]));
+const staffRows0 = await teamStaffRows();
+check(staffRows0.length === 5 && staffRows0.map((r) => r[0]).join("・") === "監督・打撃コーチ・投手コーチ・守備走塁コーチ・スカウト" && staffRows0.every((r) => /^[SABCDE]$/.test(r[2])) && (await page.textContent("#staff-source")).includes("AI が雇った") && (await page.isDisabled("#staff-ai")), `チームのページに職員の表(${policyTeam}:${staffRows0.map((r) => `${r[0]} ${r[1]} ${r[2]}`).join("・")})`);
+const pickOpt = await page.$eval("#staff-swap-pick", (s) => [...s.options].find((o) => o.value.startsWith("manager:"))?.value || "");
+if (pickOpt) {
+  const pickText = await page.$eval("#staff-swap-pick", (s, v) => [...s.options].find((o) => o.value === v).textContent, pickOpt);
+  await page.selectOption("#staff-swap-pick", pickOpt);
+  await page.click("#staff-swap");
+  await page.waitForFunction(() => document.querySelector("#staff-source").textContent.includes("あなたが決めた"), null, { timeout: 30000 });
+  const swapped = await teamStaffRows();
+  check(pickText.includes(swapped[0][1]) && swapped[0][1] !== staffRows0[0][1] && !(await page.isDisabled("#staff-ai")), `他球団の監督を入れ替えると「あなたが決めた」になる(${staffRows0[0][1]} → ${swapped[0][1]})`);
+  await page.click("#staff-ai");
+  await page.waitForFunction(() => document.querySelector("#staff-source").textContent.includes("AI が雇った"), null, { timeout: 30000 });
+  check((await teamStaffRows())[0][1] === swapped[0][1], "「AI に戻す」で印が消える(今の職員はそのまま。次のオフから AI が雇う)");
+}
+await page.click("#screen-team .back");
+await page.click("#tabs button[data-tab=progress]");
+page.once("dialog", (d) => d.accept().catch(() => {}));
+await page.setInputFiles("#open-file-top", staffBase.path);
+await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("開きました"), null, { timeout: 60000 });
+await openPolicyTeam(); // 元の流れ(チームのページから戻る)に合わせる
 await page.click("#screen-team .back");
 await page.click("#tabs button[data-tab=progress]");
 // トレード(D-378):画面を開き、釣り合わない交換を持ちかけると断られて、何も変わらない
@@ -958,7 +984,7 @@ const yeSeconds = (Date.now() - ye0) / 1000;
 const tabTexts = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => l.textContent));
 const tabBoxes = await page.$$eval("#proc-steps li", (ls) => ls.map((l) => { const r = l.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height), l.scrollWidth <= l.clientWidth + 1]; }));
 const overAtStart = pyAfter(`print(json.dumps(g.offseason_view()["renewal"]["over"]))`);
-check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・FA・外国人・ドラフト・市場・トレード・現役・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 8 つ(外国人・トレード・現役ドラフトを含む。D-376、D-378、D-380)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
+check((await page.textContent("#proc-title")) === "契約" && tabTexts.join("・") === "契約・職員・FA・外国人・ドラフト・市場・トレード・現役・完了" && (await page.isDisabled("#proc-next")) === (overAtStart > 0), `年度を確定すると、オフの手続きの「契約」の段階になる。段階のタブは 9 つ(職員・外国人・トレード・現役ドラフトを含む。D-376、D-378、D-380、D-474)。「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(overAtStart).toLocaleString()} 万円。${yeSeconds.toFixed(1)} 秒。D-271、D-361)`);
 check(tabBoxes.every((b) => b[0] === tabBoxes[0][0] && b[1] === tabBoxes[0][1] && b[1] < 48 && b[2]), `段階のタブは 1 行で、折り返さない(高さ ${tabBoxes[0][1]}px)`);
 // 設備(D-383):契約の段階の「設備」の欄で段階を変えると、年俸に使える額が変わる(Python と同じ)。元に戻す
 await page.waitForSelector("#facility-box");
@@ -1086,6 +1112,42 @@ procOps.push(["offseason_next", []]);
 const faStart = pyAfter(`v = g.offseason_view()
 print(json.dumps([v["stage"], v["fa"]["counts"] if v.get("fa") else None, g.state.procedure.ai_release_done, len([x for x in g.state.procedure.released if x["team_id"] != g.state.my_team_id])], ensure_ascii=False))`);
 check(faStart[2] === true && faStart[3] > aiBefore[1], `「次の手続きへ」で、AI 球団の自由契約(${faStart[3] - aiBefore[1]} 人)を行って次の段階へ`);
+// 職員の段階(D-474、D-475、D-477):自球団の職員と職員の市場が計算本体と同じ。解任 → 希望 → 締める → 次の手続きへ
+const staffPy = () => pyAfter(`v = g.offseason_view()
+s = v.get("staff")
+print(json.dumps([v["stage"], None if s is None else [[m["role_label"], m["name"], m["rank"]] for m in s["mine"]], None if s is None else [[m["name"], m["role_label"], m["rank"], m["staff_id"], m["open"]] for m in s["pool"]], None if s is None else s["counts"], None if s is None else s["done"]], ensure_ascii=False))`);
+let staffNow = staffPy();
+const staffMineUi = () => page.$$eval("#staff-mine tbody tr", (trs) => trs.map((tr) => [tr.children[0].textContent, tr.children[1].textContent, tr.children[2].textContent]));
+const staffPoolUi = () => page.$$eval("#staff-pool tbody tr", (trs) => trs.map((tr) => [tr.children[0].textContent, tr.children[1].textContent, tr.children[2].textContent]));
+check(faStart[0] === "staff" && staffNow[0] === "staff" && (await page.textContent("#proc-title")) === "職員", `契約の次は「職員」の段階(D-474。状態バー「${await page.textContent("#proc-info")}」)`);
+await page.waitForSelector("#staff-pool tbody tr");
+check(JSON.stringify(await staffMineUi()) === JSON.stringify(staffNow[1]) && JSON.stringify(await staffPoolUi()) === JSON.stringify(staffNow[2].map((m) => m.slice(0, 3))) && !(await page.textContent("#proc-body")).match(/腕 \d/), `自球団の職員(${staffNow[1].length} 人)と職員の市場(${staffNow[2].length} 人)が計算本体と同じ。腕はランクだけ`);
+const dismissRole = staffNow[1].length ? (await page.$eval("#staff-mine tbody tr:last-child button", (b) => b.dataset.role)) : null;
+if (dismissRole) {
+  await page.click(`#staff-dismiss-${dismissRole}`);
+  await page.waitForFunction((n) => document.querySelectorAll("#staff-mine tbody tr").length === n, staffNow[1].length - 1, { timeout: 30000 });
+  procOps.push(["offseason_staff_dismiss", [dismissRole]]);
+  staffNow = staffPy();
+  check(JSON.stringify(await staffMineUi()) === JSON.stringify(staffNow[1]) && staffNow[2].some((m) => m[3] && m[1] && true), `職員を解任すると、自球団の表から外れて市場に戻る(残り ${staffNow[1].length} 人)`);
+}
+const openStaff = staffNow[2].find((m) => m[4]);
+if (openStaff) {
+  await page.click(`#staff-pool button.staff-offer[data-staff-id="${openStaff[3]}"]`);
+  await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("希望 1"), null, { timeout: 30000 });
+  procOps.push(["offseason_staff_offer", [openStaff[3]]]);
+}
+check(!openStaff || (await page.textContent("#proc-info")).includes("希望 1"), `空いている役割の候補に希望を出せる(${openStaff ? `${openStaff[1]} ${openStaff[0]} ${openStaff[2]}` : "希望できる候補なし"})`);
+await page.click("#staff-close");
+await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("終了"), null, { timeout: 60000 });
+procOps.push(["offseason_staff_close", []]);
+staffNow = staffPy();
+const gotWish = Boolean(openStaff) && staffNow[1].some((m) => m[1] === openStaff[0]);
+check(staffNow[4] === true && JSON.stringify(await staffMineUi()) === JSON.stringify(staffNow[1]) && staffNow[1].length === 5, `「職員の市場を締める」で空きが埋まり、自球団の職員(5 人)が計算本体と同じ(希望した ${openStaff ? openStaff[0] : "—"} は${gotWish ? "雇えた" : "前年の順位が低い球団が先に雇った"})`);
+await page.click("#proc-next");
+await page.waitForFunction(() => document.querySelector("#proc-title").textContent !== "職員", null, { timeout: 60000 });
+procOps.push(["offseason_next", []]);
+faStart[0] = pyAfter(`print(json.dumps(g.offseason_view()["stage"]))`);
+faStart[1] = pyAfter(`v = g.offseason_view()\nprint(json.dumps(v["fa"]["counts"] if v.get("fa") else None))`);
 // 判断の画面の表(①b):計算本体の decision_table と同じ行・列か(画面は並べ替えた列を名前のすぐ右に固定する)
 const decisionPy = (args, n = 12) => pyAfter(`t = g.decision_table(**a)
 print(json.dumps([[c["label"] for c in t["columns"]], t["sort"]["label"], [[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"][:${n}]]], ensure_ascii=False))`, JSON.stringify(args));
@@ -1132,6 +1194,11 @@ print(json.dumps(next(([r["name"]] for r in sorted(t["rows"], key=lambda r: r["d
   await page.waitForSelector("#fa-panel");
   const faPid = await page.getAttribute("#fa-panel", "data-player-id");
   check(Boolean(await page.$("#offer-plus10")) && !(await page.textContent("#fa-panel")).includes("志望"), "FA の提示のパネル:年俸と ±% のボタンが出る。志望の重みは出ない");
+  // 名前を押したパネルの上に、その選手の本当の能力(見せる能力と特殊能力)、その下に提示の操作(画面の小さな直し。D-416)
+  const faAbPy = pyAfter(`p = g.state.season.players[a["id"]]\nprint(json.dumps([x["label"] for x in g.player_abilities(p)], ensure_ascii=False))`, JSON.stringify({ id: faPid }));
+  const faAbUi = await page.$$eval("#fa-panel .ability-panel .ability", (ds) => ds.map((d) => d.textContent));
+  const faOrder = await page.evaluate(() => { const a = document.querySelector("#fa-panel .ability-panel"); const b = document.querySelector("#fa-panel #fa-send"); return Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)); });
+  check(faAbUi.length === faAbPy.length && faAbUi.every((x, i) => x.startsWith(faAbPy[i]) && /\d/.test(x)) && faOrder && (await page.$("#fa-panel .skills")), `FA の提示のパネルの上に、その選手の能力(${faAbUi.length} 項目と特殊能力)が出て、その下に提示の操作がある`);
   await page.selectOption("#fa-years", "2");
   const faSalary = Number(await page.inputValue("#offer-salary"));
   await page.click("#fa-send");
@@ -1402,6 +1469,12 @@ await page.waitForFunction(() => document.querySelector('#records-controls selec
 const ldPy = pyYear2(`v = g.record_leaders("pitcher", "W")\nprint(json.dumps([[r["name"], r["value_text"]] for r in v["rows"]], ensure_ascii=False))`);
 const ldUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, tr.children[1].textContent]));
 check(JSON.stringify(ldUi) === JSON.stringify(ldPy), `通算記録(投手・勝利):上位 ${ldUi.length} 人が計算本体と同じ(1 位 ${ldUi[0] ? ldUi[0].join(" ") : ""})`);
+// 記録室の「監督」(D-477):監督ごとの通算の勝敗・優勝が計算本体と同じ。コーチ・スカウトの所属の履歴
+await page.click("#records-section button[data-value=managers]");
+await page.waitForFunction(() => document.querySelectorAll("#records-managers tbody tr").length > 0, null, { timeout: 30000 });
+const mgPy = pyYear2(`v = g.record_managers()\nprint(json.dumps([[r["name"] + ("(元選手)" if r["former"] else ""), r["team_text"], str(r["wins"]), str(r["losses"]), f'{r["pennants"]} 回'] for r in v["managers"]] + [[len(v["others"])]], ensure_ascii=False))`);
+const mgUi = await page.$$eval("#records-managers tbody tr", (trs) => trs.map((tr) => [tr.children[0].textContent, tr.children[1].textContent, tr.children[3].textContent, tr.children[4].textContent, tr.children[7].textContent]));
+check(mgUi.length === 12 && JSON.stringify(mgUi) === JSON.stringify(mgPy.slice(0, -1)) && mgPy.at(-1)[0] === 48, `記録室の「監督」:12 人の監督の通算(1 位 ${mgUi[0] ? mgUi[0].join(" ") : ""})と、コーチ・スカウトの所属 ${mgPy.at(-1)[0]} 件が計算本体と同じ`);
 await grab();
 // 成績:シーズンの選択(今シーズン・1シーズン目・通算)
 await page.click("#tabs button[data-tab=stats]");

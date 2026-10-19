@@ -62,7 +62,7 @@ def test_new_game_levels_and_cap():
     for t in state.league.teams:
         assert t.facilities == {k: FS.initial(state.budget_tiers[t.id]) for k in FS.kinds}
         info = g.budget_info(t.id)
-        assert info["upkeep"] == facmod.team_upkeep(t) and info["cap"] == state.team_funds[t.id] - info["upkeep"]
+        assert info["upkeep"] == facmod.team_upkeep(t) and info["cap"] == state.team_funds[t.id] - info["upkeep"] - info["staff"]
         assert facmod.team_upkeep(t) + sum(int(p.contract["salary"]) for p in t.players + t.development) <= state.team_funds[t.id]  # 開始時は維持費を引いた額の中
     view = g.team("T01")
     assert [x["level"] for x in view["facilities"]] == [state.league.teams[0].facilities[k] for k in FS.kinds]
@@ -75,7 +75,7 @@ def test_set_facility_in_contract_stage(season_end):
     cap0 = v["mine"]["budget"]["cap"]
     v = g.set_facility("practice", 5)
     lv = v["mine"]["levels"]
-    assert lv["practice"] == 5 and v["mine"]["budget"]["cap"] == g.state.team_funds["T01"] - facmod.team_upkeep(g._team("T01"))
+    assert lv["practice"] == 5 and v["mine"]["budget"]["cap"] == g.state.team_funds["T01"] - facmod.team_upkeep(g._team("T01")) - v["mine"]["budget"]["staff"]
     assert v["mine"]["budget"]["cap"] < cap0
     with pytest.raises(ValueError, match="段階"):
         g.set_facility("practice", 6)
@@ -83,7 +83,7 @@ def test_set_facility_in_contract_stage(season_end):
         g.set_facility("stadium", 3)
     # 保存して読み込んでも同じ(版 22)
     again = load_game(save_game(g.state))
-    assert SAVE_FORMAT_VERSION == 32 and next(t for t in again.league.teams if t.id == "T01").facilities["practice"] == 5
+    assert SAVE_FORMAT_VERSION == 33 and next(t for t in again.league.teams if t.id == "T01").facilities["practice"] == 5
     # 契約の段階を過ぎると変えられない
     while g.offseason_view()["stage"] == "contract":
         g.offseason_stage_auto()

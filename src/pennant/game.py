@@ -169,6 +169,7 @@ class _Side:
     pitcher_line: PitcherLine | None = None
     used_ids: set[str] = field(default_factory=set)
     needs_new_pitcher: bool = False
+    pull: dict | None = None  # 監督の采配の腕による先発の代え方(staff.pull_rules。D-470)。None は標準
 
 
 class _Game:
@@ -180,6 +181,12 @@ class _Game:
         self._lead_cache: dict[tuple[str, str], Player] = {}
         self.home = _Side(home)
         self.away = _Side(away)
+        for side in (self.home, self.away):  # 監督の采配の腕(D-470)。0 なら今までと同じ
+            level = int(getattr(side.setup, "manager_level", 0) or 0)
+            if level:
+                from .staff import pull_rules
+
+                side.pull = pull_rules(level)
         self.rng = rng
         self.model = model
         self.config = config
@@ -204,8 +211,12 @@ class _Game:
         self.lines_by_pitcher[pitcher.id] = line
         side.needs_new_pitcher = False
 
+    def _situation(self, fielding: _Side, batting: _Side, inning: int) -> PitchingSituation:
+        prefer = bool(fielding.pull and fielding.pull["prefer_overall"])  # 腕のいい監督は救援を総合で選ぶ(D-470)
+        return PitchingSituation(inning=inning, lead=fielding.runs - batting.runs, used_ids=set(fielding.used_ids), prefer_overall=prefer)
+
     def _bring_reliever(self, fielding: _Side, batting: _Side, inning: int) -> bool:
-        situation = PitchingSituation(inning=inning, lead=fielding.runs - batting.runs, used_ids=set(fielding.used_ids))
+        situation = self._situation(fielding, batting, inning)
         reliever = self.manager.choose_reliever(fielding.setup.active, situation)
         if reliever is None:
             return False  # 登板できる救援がいなければ、今の投手が続投する
@@ -332,7 +343,7 @@ class _Game:
                 break
             # 失点の上限に達した先発は、イニングの途中でも降板する(引き継いだ走者の責任は先発に残る)
             starter_line = fielding.pitcher_line
-            if outs < 3 and starter_line.role == "starter" and starter_line.runs >= self.manager.run_limit():
+            if outs < 3 and starter_line.role == "starter" and starter_line.runs >= self.manager.run_limit() + (fielding.pull["run_shift"] if fielding.pull else 0):
                 starter_line.exit_reason = "run_limit"
                 self._bring_reliever(fielding, batting, inning)
         batting.line.append(runs_this_inning)
@@ -340,11 +351,31 @@ class _Game:
         # イニングの終わり:先発は打者数の上限で降板、救援は1イニングで交代
         line = fielding.pitcher_line
         if line.role == "starter":
-            if line.batters_faced >= self.manager.starter_limit(fielding.pitcher):
+            limit = self.manager.starter_limit(fielding.pitcher)
+            pull = fielding.pull
+            if pull and not pull["early"]:
+                limit *= pull["share"]  # 腕の低い監督は先発を引っ張る(D-470)
+            if line.batters_faced >= limit:
                 line.exit_reason = "batters_limit"
+                fielding.needs_new_pitcher = True
+            elif pull and pull["early"] and self._pull_early(fielding, batting, inning, limit * pull["share"]):
+                line.exit_reason = "batters_limit"  # 腕のいい監督は、終盤の接戦で疲れた先発を引っ張らない(D-470)
                 fielding.needs_new_pitcher = True
         else:
             fielding.needs_new_pitcher = True
+
+    def _pull_early(self, fielding: _Side, batting: _Side, inning: int, share_limit: float) -> bool:
+        """終盤(6 回から)の接戦(2 点差以内)で、先発の打者数が上限の決まった割合を超え、次に出せる救援の総合が先発以上なら代える(D-470)。"""
+        pull = fielding.pull
+        line = fielding.pitcher_line
+        if inning < pull["from_inning"] or abs(fielding.runs - batting.runs) > pull["margin"] or line.batters_faced < share_limit:
+            return False
+        nxt = self.manager.choose_reliever(fielding.setup.active, self._situation(fielding, batting, inning + 1))
+        if nxt is None:
+            return False
+        from .stats import overall
+
+        return overall(nxt) >= overall(fielding.pitcher)
 
 
     def _wants_bunt(self, inning: int, batting: _Side, base_out: BaseOutState, lead: int, order: int, batter: Player) -> bool:

@@ -6,7 +6,7 @@ import { state } from "./core.js";
 import { renderCurrent } from "./screens.js";
 import { el, estimateBlock, playerLink, table } from "./parts.js";
 import { runProc } from "./procedure.js";
-import { decisionFilters, decisionTable, fetchDecision, resultsTable } from "./decision.js";
+import { decisionFilters, decisionTable, fetchDecision, resultsTable, shownBlock } from "./decision.js";
 
 export async function marketSection(v, token) {
   const ps = state.proc;
@@ -23,7 +23,7 @@ export async function marketSection(v, token) {
     const d = p.deal || {};
     const box = el("div", { className: "offer-panel", id: "market-panel", dataset: { playerId: p.player_id } });
     if (p.amateur && p.scouting) box.append(...estimateBlock(p.scouting), el("p", {}, `指名されなかった候補。年俸 ${d.calc_text}(自動・1 年)。`));
-    else box.append(el("p", {}, `${d.former_team_name ? `前の所属 ${d.former_team_name}。` : ""}見込みの WAR ${Number(d.expected).toFixed(2)}。年俸 ${d.calc_text}(自動・1 年)。`));
+    else box.append(...shownBlock(p), el("p", {}, `${d.former_team_name ? `前の所属 ${d.former_team_name}。` : ""}見込みの WAR ${Number(d.expected).toFixed(2)}。年俸 ${d.calc_text}(自動・1 年)。`));
     if (!canWish(p)) return box;
     const rank = p.offer ? m.offers.findIndex((o) => o.player_id === p.player_id) + 1 : 0;
     if (p.offer) box.append(el("p", { className: "small" }, `獲得の希望 ${rank} 番目(希望は入れた順に優先します)`));

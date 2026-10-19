@@ -291,16 +291,21 @@ class Season:
         return PlayedGame(g, result, context, skipped)
 
     def _game_plan(self, team_id: str) -> dict | None:
-        """この試合の打順の計画と作戦(試合の前の状態に記録する形)。打順の計画がなく、作戦が普通なら None(AI の長打重視・普通)。
-        作戦はチーム方針から(D-457)。"""
+        """この試合の打順の計画と作戦(試合の前の状態に記録する形)。打順の計画がなく、作戦が普通で、監督の腕の段階が 0 なら None(AI の長打重視・普通)。
+        作戦はチーム方針から(D-457)、監督の腕の段階は職員から(D-470)。"""
+        from .staff import manager_level
+
         plan = self._lineup_plan(team_id)
         pol = policy_of(self.teams[team_id])
-        if plan is None and pol["steal"] == "normal" and pol["bunt"] == "normal":
+        level = manager_level(self.teams[team_id])  # 監督の采配の腕(D-470)。試合の再現のため記録する(0 は書かない)
+        if plan is None and pol["steal"] == "normal" and pol["bunt"] == "normal" and not level:
             return None
         out = {"style": (plan or {}).get("style") or "power", "slots": None if not plan or plan.get("slots") is None else [list(x) for x in plan["slots"]]}
         for key in ("steal", "bunt"):
             if pol[key] != "normal":
                 out[key] = pol[key]
+        if level:
+            out["manager"] = level
         return out
 
     def _lineup_plan(self, team_id: str) -> dict | None:

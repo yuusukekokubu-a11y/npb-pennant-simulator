@@ -70,7 +70,52 @@ from .save_migrations import MIGRATIONS
 
 SAVE_FORMAT = "npb-pennant-simulator-save"
 FIRST_REBUILT_VERSION = 16  # 作り直しの途中の版。これより前は変換せずに読まない(D-344、D-362、D-371)
-SAVE_FORMAT_VERSION = 32  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)。32:チーム方針(球団の policy、設定のバント、作戦のバント、バントを始めた日。版 31 は全球団「標準・バランス・普通」。D-454〜D-461)
+SAVE_FORMAT_VERSION = 33  # 2:自球団(画面①)。3:指標の基準値(第2弾①)。4:球場の倍率(②a)。5:球場 × シーズンの集計の履歴(②b)。6:複数年(年・シーズンの履歴・オフの結果。F2)。7:校正の定数(D-197)。8:オフの手続き・スカウト評価・指名の履歴(F3-1)。9:評価の 2 層化(ずれの値が共通と項目ごとの 2 つ。方式の版。D-212、D-215)。10:契約・お金のルール・予算の格差・単価の推移(F3-2a。D-230〜D-235)。11:志望の重み・更改の交渉の状態・更改の履歴の提示回数・前年の順位・交渉の設定(F3-2b。D-253)。12:FA 権の年数・FA 市場の状態・FA の設定(F3-2c。D-263)。13:市場の提示の状態(①b。D-300)。14:見せる能力・球種・伸びやすさ(作り直し①。D-344、D-349〜D-352。13 以前は読まない)。15:お金のルールをなくし、球団の規模と資金(作り直し②。D-353、D-362。14 以前は読まない)。16:作り直し③(志望をなくし、ドラフトの入札と A〜E の評価。D-371)。17:自球団の打順の型と自分で組んだスタメン(D-373)。18:特殊能力(D-374)。19:育成選手と外国人の区分・外国人市場(D-375〜D-377)。20:トレード(D-378、D-379)。21:仕組みの選択肢と現役ドラフト(D-380〜D-382)。22:設備(D-383、D-385)。23:FA 権を取ったことがある印(自動 FA。D-390、D-393)。24:球団の規模に超大量(自球団の資金力。D-410)。25:調子と一軍の入れ替え(調子を始めた日・外した日・AI に任せる。一軍の顔ぶれは移り変わりの記録から。D-424〜D-426)。26:盗塁・暴投・捕逸(試合の記録の events、盗塁などを始めた日、打順の計画の盗塁の作戦。D-427〜D-433)。27:143 試合の日程(オールスターの結果、履歴の交流戦とオールスター。版 26 のシーズンは 125 試合のまま。D-435〜D-438)。28:ポストシーズン(シリーズの状態と試合、logs/post-<年>.jsonl。D-439〜D-441)。29:履歴の表彰(D-442、D-443。版 28 までのシーズンは記録なし)。30:二軍の試合とけが(シーズンの farm・injury_on・injury_log、履歴の二軍の成績とけが。版 29 のシーズンは二軍・けがなし。D-445〜D-448)。31:自球団の投手の起用の計画(シーズンの pitching_plans。版 30 は AI の起用。D-449〜D-452)。32:チーム方針(球団の policy、設定のバント、作戦のバント、バントを始めた日。版 31 は全球団「標準・バランス・普通」。D-454〜D-461)。33:球団職員(球団の staff・staff_manual・staff_dead、リーグの staff_free・staff_log、打順の計画の監督の腕の段階、手続きの職員の段階。版 32 は読み込みで全球団に初期の職員を付ける。D-468〜D-480)
+
+
+def _check_team_staff(td: dict, where: str, p) -> None:
+    """球団の職員の点検(D-479):役割 → 職員(契約あり)、あなたが決めたか、解任した職員の残りの年俸。"""
+    from .staff import ROLES, check_member
+
+    staff = td.get("staff", {})
+    if not isinstance(staff, dict) or any(k not in ROLES for k in staff):
+        p.add(f"{where}.staff", f"職員は 役割({' / '.join(ROLES)})→ 職員 のまとまりが必要です")
+        return
+    found: list[str] = []
+    for role, m in staff.items():
+        check_member(m, f"{where}.staff.{role}", found, hired=True)
+        if isinstance(m, dict) and m.get("role") != role:
+            found.append(f"{where}.staff.{role}.role: 役割が合いません(値: {m.get('role')!r})")
+    if not isinstance(td.get("staff_manual", False), bool):
+        found.append(f"{where}.staff_manual: true / false が必要です")
+    dead = td.get("staff_dead", [])
+    if not isinstance(dead, list) or not all(isinstance(d, dict) and isinstance(d.get("salary"), int) and not isinstance(d.get("salary"), bool) and d["salary"] >= 0 and isinstance(d.get("until"), int) and not isinstance(d.get("until"), bool) for d in dead):
+        found.append(f"{where}.staff_dead: 解任した職員の残りの年俸({{salary, until}} の一覧)が必要です")
+    for x in found:
+        p.items.append(x)
+
+
+def _check_league_staff(league_d: dict, team_ids: set, p) -> None:
+    """職員の市場と担当の記録の点検(D-479)。職員の ID は全体で重ならないこと。"""
+    from .staff import check_member
+
+    free = league_d.get("staff_free", [])
+    found: list[str] = []
+    if not isinstance(free, list):
+        found.append("state.json.league.staff_free: 職員の一覧が必要です")
+        free = []
+    for i, m in enumerate(free):
+        check_member(m, f"state.json.league.staff_free[{i}]", found, hired=False)
+    ids = [m.get("id") for td in (league_d.get("teams") or []) if isinstance(td, dict) and isinstance(td.get("staff"), dict) for m in td["staff"].values() if isinstance(m, dict)]
+    ids += [m.get("id") for m in free if isinstance(m, dict)]
+    dup = sorted({str(x) for x in ids if ids.count(x) > 1})
+    if dup:
+        found.append(f"state.json.league: 職員の ID が重複しています({', '.join(dup[:5])})")
+    log = league_d.get("staff_log", [])
+    if not isinstance(log, list) or not all(isinstance(x, dict) and isinstance(x.get("year"), int) and x.get("team_id") in team_ids and isinstance(x.get("role"), str) and isinstance(x.get("staff_id"), str) and isinstance(x.get("name"), str) for x in log):
+        found.append("state.json.league.staff_log: 職員の担当の記録の形が違います({year, team_id, role, staff_id, name} の一覧)")
+    for x in found:
+        p.items.append(x)
 
 
 def _saved_name_problem(value) -> str | None:
@@ -162,10 +207,13 @@ class GameState:
             self.calibration = self.offseason_settings.calibration(self.scout_level)
 
     def scout_sd_of(self, team_id: str) -> dict[str, float]:
-        """球団のスカウト評価のずれの標準偏差(球団ごとの値があればそれ、なければ段階の設定値)。"""
-        if team_id in self.scout_sd:
-            return {k: float(v) for k, v in self.scout_sd[team_id].items()}
-        return self.draft_settings.level_sd(self.scout_level)
+        """球団のスカウト評価のずれの標準偏差(球団ごとの値があればそれ、なければ段階の設定値)に、スカウトの腕の倍率を掛けたもの(D-472)。"""
+        from .staff import scout_factor
+
+        base = {k: float(v) for k, v in self.scout_sd[team_id].items()} if team_id in self.scout_sd else self.draft_settings.level_sd(self.scout_level)
+        team = next((t for t in self.league.teams if t.id == team_id), None)
+        f = 1.0 if team is None else scout_factor(team)
+        return base if f == 1.0 else {k: v * f for k, v in base.items()}
 
     def scout_sd_map(self) -> dict[str, dict]:
         return {t.id: self.scout_sd_of(t.id) for t in self.league.teams}
@@ -233,7 +281,9 @@ def build_state(state: GameState) -> dict:
         "league": {
             "seed": s.league.seed,
             "league_names": list(s.league.league_names),
-            "teams": [{**_plain(t), "policy": policy_plain(policy_of(t))} for t in s.league.teams],  # チーム方針は既定でない項目だけ(D-461。版 32)
+            "teams": [{**_plain(t), "policy": policy_plain(policy_of(t))} for t in s.league.teams],  # チーム方針は既定でない項目だけ(D-461。版 32)。職員(staff・staff_manual・staff_dead。D-479。版 33)
+            "staff_free": copy.deepcopy(s.league.staff_free),  # 職員の市場(D-474)
+            "staff_log": copy.deepcopy(s.league.staff_log),  # 職員の担当の記録(D-477)
         },
         "user": {"my_team_id": state.my_team_id},
         "rules": state.rules.to_dict(),  # 仕組みの選択肢(D-381。版 21)
@@ -315,6 +365,8 @@ def _plain_plan(plan: dict) -> dict:
     for key in ("steal", "bunt"):  # 試合の作戦(D-457)。普通のときは書かない
         if plan.get(key) and plan[key] != "normal":
             out[key] = str(plan[key])
+    if plan.get("manager"):  # 監督の采配の腕の段階(D-470)。0 のときは書かない
+        out["manager"] = int(plan["manager"])
     if plan.get("set_day") is not None:
         out["set_day"] = int(plan["set_day"])
     if plan.get("notice"):
@@ -526,6 +578,7 @@ def load_game(data: bytes) -> GameState:
         _, problem = check_policy(td.get("policy", {}))  # チーム方針(D-461。版 31 以前はない = 既定)
         if problem:
             p.add(f"{where}.policy", problem)
+        _check_team_staff(td, where, p)  # 職員(D-479。版 32 以前はない = 読み込みの最後に付ける)
         fac = td.get("facilities", {})  # 設備の段階(D-383。版 22)
         if not (isinstance(fac, dict) and all(k in ("practice", "medical", "development") and isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5 for k, v in fac.items())):
             p.add(f"{where}.facilities", "設備の段階の形が違います(practice / medical / development → 1〜5 の整数)")
@@ -544,6 +597,7 @@ def load_game(data: bytes) -> GameState:
             player_ids.add(pid)
     if len(teams_d) < 2:
         p.add("state.json.league.teams", "球団が2つ以上必要です")
+    _check_league_staff(league_d, team_ids, p)
     user = state.get("user", {"my_team_id": None})
     my_team_id = user.get("my_team_id") if isinstance(user, dict) else None
     if not isinstance(user, dict):
@@ -624,8 +678,11 @@ def load_game(data: bytes) -> GameState:
         team.development = [_player_from(pd) for pd in td.get("development", [])]  # 版 18 以前はない(D-377)
         team.facilities = {str(k): int(v) for k, v in (td.get("facilities") or {}).items()}  # 版 21 以前はない(読み込みの最後に規模から補う。D-385)
         team.policy = check_policy(td.get("policy", {}))[0] or {}  # チーム方針(D-461)
+        team.staff = copy.deepcopy(td.get("staff") or {})  # 職員(D-479)
+        team.staff_manual = bool(td.get("staff_manual", False))
+        team.staff_dead = copy.deepcopy(td.get("staff_dead") or [])
         teams.append(team)
-    league = League(league_d.get("seed", seed), list(league_d["league_names"]), teams)
+    league = League(league_d.get("seed", seed), list(league_d["league_names"]), teams, staff_free=copy.deepcopy(league_d.get("staff_free") or []), staff_log=copy.deepcopy(league_d.get("staff_log") or []))
     try:
         season = Season(
             league,
@@ -763,6 +820,10 @@ def load_game(data: bytes) -> GameState:
         raise SaveDataError(p.items)
     name = manifest.get("name", "")
     out = GameState(season, cfg["generation"], cfg["names"], name if isinstance(name, str) else "", my_team_id, baselines, baseline_settings, park_history, year, history, offseasons, cfg["offseason"], calibration, str(scout_level), {tid: {k: float(x) for k, x in v.items()} for tid, v in scout_sd_d.items()}, procedure, [dict(x) for x in transactions_d], cfg["draft"], budget_tiers={tid: str(v) for tid, v in tiers_d.items()}, team_funds={tid: int(v) for tid, v in funds_d.items()}, contract_rates={str(k): float(v) for k, v in rates_d.items()}, contract_settings=cfg["contracts"], negotiation_settings=cfg["negotiation"], trade_settings=cfg["trade"], rules=rules, facility_settings=cfg["facilities"])
+    if league_d.get("staff_init"):  # 版 32 以前:全球団に初期の職員を付ける(リーグのシードから。同じセーブデータなら同じ職員。D-479)
+        from .staff import assign_initial
+
+        assign_initial(out.league, out.name_parts, out.league.seed, year + (1 if procedure is not None else 0))
     missing = {t.id for t in out.league.teams if not t.facilities}
     if missing:  # 版 21 以前:設備は規模に応じた初めの段階(D-385)
         keep = {t.id: t.facilities for t in out.league.teams}

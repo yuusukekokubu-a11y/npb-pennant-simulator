@@ -9,6 +9,7 @@ from ..abilities import POSITION_LABELS
 from ..draft import stage_of
 from ..market import market_terms
 from ..scouting import estimated_player, public_estimate
+from ..skills import public_skills
 from .abilities import _sort_value, ability_columns, skills_text
 from .common import (
     BATS_LABELS,
@@ -232,7 +233,8 @@ class DecisionMixin:
             cells["origin"] = (p.origin or "", ORIGIN_LABELS.get(p.origin, "") if p.origin else "—")
             row = {"player_id": p.id, "name": p.name, "role": p.role, "position": p.position, "position_label": POSITION_LABELS[p.position], "age": p.age,
                    "hand": BATS_LABELS.get(p.bats) if p.role == "batter" else THROWS_LABELS.get(p.throws), "thin": p.position in thin, "in_slots": in_slots,
-                   "scouting": sc, "amateur": amateur, "open": holder is None}
+                   "scouting": sc, "amateur": amateur, "open": holder is None,
+                   "shown": None if amateur else {"abilities": self.player_abilities(p), "skills": public_skills(p)}}  # 名前を押したパネルの能力(プロは本当の能力。見せる能力だけ)
             if stage == "fa":
                 info_fa = proc.fa_info[p.id]
                 calc = int(info_fa["calc_salary"])

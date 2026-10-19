@@ -6,6 +6,7 @@ import { openPage, renderCurrent } from "./screens.js";
 import { el, emblem, kvTable, link, playerLink, table, teamLink } from "./parts.js";
 import { seasonCaution, titleFor } from "./glossary.js";
 import { setDirty } from "./progress.js";
+import { renderTeamStaff } from "./staff.js";
 
 // ---- チームのページ ----
 
@@ -38,6 +39,7 @@ export async function renderTeam(args, token) {
   );
   $("team-war-note").textContent = seasonCaution("current");
   renderPolicy(d.policy, args);
+  renderTeamStaff(d.staff); // 職員(D-476)
   $("team-budget").replaceChildren(...budgetLines(d.budget, d.facilities));
   $("team-salaries").replaceChildren(
     d.salaries.length
@@ -101,7 +103,7 @@ function budgetLines(b, facilities = []) {
   if (b.cap) {
     const over = b.over > 0;
     lines.push(
-      el("div", {}, b.upkeep ? `資金 ${b.funds_text} − 設備の維持費 ${b.upkeep_text} = 年俸に使える額 ${b.cap_text}(使用率 ${b.usage}%)` : `資金 ${b.cap_text}(使用率 ${b.usage}%)`),
+      el("div", {}, b.upkeep || b.staff ? `資金 ${b.funds_text} − 設備の維持費 ${b.upkeep_text}${b.staff ? ` − 職員の年俸 ${b.staff_text}` : ""} = 年俸に使える額 ${b.cap_text}(使用率 ${b.usage}%)` : `資金 ${b.cap_text}(使用率 ${b.usage}%)`),
       el("div", { className: over ? "budget-bar over" : "budget-bar" }, el("span", { style: `width: ${Math.min(100, b.usage)}%` })),
       over ? el("div", { className: "warn" }, `資金を ${b.over.toLocaleString()} 万円超えています`) : null,
     );

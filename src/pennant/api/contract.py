@@ -48,11 +48,15 @@ class ContractMixin:
         total = team_salary(team)
         tier = state.budget_tiers.get(team_id)
         funds = state.team_funds.get(team_id)
+        from ..staff import staff_active, team_cost
+
         upkeep = facmod.team_upkeep(team, state.facility_settings)
-        cap = None if funds is None else int(funds) - upkeep  # 年俸に使える額 = 資金 − 設備の維持費(D-383)
+        staff = team_cost(team, state.procedure.year + 1 if state.procedure is not None else state.year, reserve=True) if staff_active(state.league) else 0  # 職員の年俸(手続きの間は次のシーズンの分。空いている役割の見込みを含む。D-474)
+        cap = None if funds is None else int(funds) - upkeep - staff  # 年俸に使える額 = 資金 − 設備の維持費 − 職員の年俸(D-383、D-474)
         return {
             "team_id": team_id, "total": total, "total_text": f"{total:,} 万円",
             "funds": None if funds is None else int(funds), "funds_text": None if funds is None else f"{int(funds):,} 万円", "upkeep": upkeep, "upkeep_text": f"{upkeep:,} 万円",
+            "staff": staff, "staff_text": f"{staff:,} 万円",
             "budget": base_funds(tier, state.contract_settings) if tier else None, "cap": cap, "cap_text": None if cap is None else f"{cap:,} 万円", "tier": tier, "tier_label": TIER_LABELS.get(tier) if tier else None,
             "usage": None if not cap else round(100.0 * total / cap, 1), "over": None if cap is None else max(0, total - cap), "hard": cap is not None,
             "rate": state.contract_rates.get(str(state.year)) or (max(state.contract_rates.values()) if state.contract_rates else None),

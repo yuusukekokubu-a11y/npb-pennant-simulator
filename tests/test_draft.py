@@ -57,9 +57,9 @@ def roster_rows(g):
 
 
 def skip_fa(g):
-    """FA の段階(F3-2c)と外国人市場(D-376)に入っていたら、自球団の分は何もせずに済ませてドラフトへ。戻り値は画面の情報。"""
+    """職員の段階(D-474)・FA の段階(F3-2c)・外国人市場(D-376)に入っていたら、自球団の分は何もせずに済ませてドラフトへ。戻り値は画面の情報。"""
     v = g.offseason_view()
-    while v["phase"] in ("fa", "foreign"):
+    while v["phase"] in ("staff", "fa", "foreign"):
         v = g.offseason_next()
     return v
 
@@ -304,7 +304,7 @@ def test_operated_team_goes_through_phases_and_can_resume(operated):
     # 保存して読み込むと、途中から再開できる
     data = save_game(g.state)
     again = api.Game(load_game(data), dirty=False)
-    assert SAVE_FORMAT_VERSION == 32
+    assert SAVE_FORMAT_VERSION == 33
     v2 = again.offseason_view()
     t2 = again.decision_table("draft")
     assert v2["phase"] == "draft" and v2["bidding"] and v2["is_my_turn"] and [r["player_id"] for r in t2["rows"]] == [r["player_id"] for r in table["rows"]]

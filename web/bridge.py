@@ -142,6 +142,10 @@ _OFFSEASON = {
     "foreign_close": lambda a: _game.offseason_foreign_close(),
     "promote": lambda a: _game.offseason_promote(str(a["player_id"])),
     "facility_set": lambda a: _game.set_facility(str(a.get("kind", "")), a.get("level")),
+    "staff_offer": lambda a: _game.offseason_staff_offer(str(a["staff_id"])),  # 職員の段階(D-474)
+    "staff_cancel": lambda a: _game.offseason_staff_cancel(str(a["staff_id"])),
+    "staff_dismiss": lambda a: _game.offseason_staff_dismiss(str(a["role"])),
+    "staff_close": lambda a: _game.offseason_staff_close(),
     "active_offer": lambda a: _game.active_draft_offer([str(x) for x in a.get("player_ids", [])]),
     "active_pick": lambda a: _game.active_draft_pick(str(a["player_id"])),
     "next": lambda a: _game.offseason_next(),
@@ -179,6 +183,24 @@ _POLICY = {
     "set": lambda a: _game.set_team_policy(str(a["team_id"]), dict(a.get("values") or {})),
     "ai": lambda a: _game.reset_team_policy(str(a["team_id"])),
 }
+
+
+_STAFF = {  # 職員の入れ替え・AI に戻す(どの球団でも。D-476)
+    "swap": lambda a: _game.staff_swap(str(a["team_id"]), str(a["role"]), str(a["staff_id"])),
+    "reset": lambda a: _game.staff_reset(str(a["team_id"])),
+}
+
+
+def staff(name: str, args_json: str = "{}") -> str:
+    """球団職員(D-476)。どの球団でも入れ替えられる。戻り値はチームのページの職員の欄の情報。"""
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in _STAFF:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(_STAFF[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"操作できませんでした({exc})")
 
 
 def team_policy(name: str, args_json: str = "{}") -> str:
@@ -262,6 +284,8 @@ _QUERIES = {
     "record_standings": lambda a: _game.record_standings(a.get("year")),  # 記録室(D-422、D-423)
     "record_titles": lambda a: _game.record_titles(a.get("year")),
     "record_awards": lambda a: _game.record_awards(a.get("year")),  # 表彰(D-442)
+    "record_managers": lambda a: _game.record_managers(),  # 監督の成績と職員の所属(D-477)
+    "team_staff": lambda a: _game.team_staff(a["team_id"]),
     "farm_standings": lambda a: _game.farm_standings(),  # 二軍の順位表(D-446)
     "record_leaders": lambda a: _game.record_leaders(a.get("role", "batter"), a.get("key")),
     "record_entries": lambda a: _game.record_entries(a.get("kind", "draft"), a.get("team_id"), a.get("year")),

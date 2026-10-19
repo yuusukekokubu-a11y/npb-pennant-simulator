@@ -46,6 +46,7 @@ COLUMNS = [
     ("age_33_37", "33〜37", "{:.1%}"),
     ("age_38_99", "38+", "{:.1%}"),
     ("players", "選手", "{:.0f}"),
+    ("coach_skill", "コーチの腕の平均", "{:.1f}"),
     ("retired", "引退", "{:.1f}"),
     ("year_end_seconds", "確定(秒)", "{:.2f}"),
 ]
@@ -78,6 +79,7 @@ def measure(g: api.Game, config, war_settings) -> dict:
         "age_mean": statistics.fmean(ages),
         "age_sd": statistics.pstdev(ages),
         "players": len(players),
+        "coach_skill": statistics.fmean([int(m["skill"]) for t_ in g.state.league.teams for r, m in t_.staff.items() if r in ("batting", "pitching", "fielding")] or [60]),  # 球団職員(D-471)
     }
     for lo, hi in AGE_BINS:
         out[f"age_{lo}_{hi}"] = sum(1 for a in ages if lo <= a <= hi) / len(ages)

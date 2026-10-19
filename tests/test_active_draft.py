@@ -87,7 +87,7 @@ def test_stage_auto_and_save(season_end):
     g = fresh(season_end)
     to_active(g)
     again = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 32 and again.state.rules == g.state.rules
+    assert SAVE_FORMAT_VERSION == 33 and again.state.rules == g.state.rules
     r = g.offseason_stage_auto()
     assert r["finished"]
     log = r["auto_log"]["items"]
@@ -123,7 +123,7 @@ def test_auto_fa_and_skipped_stages():
             break
     assert "trade" not in stages and "active_draft" not in stages
     stay = sum(1 for x in g.last_fa["results"] if x["team_id"] == x["former_team"])
-    assert stay > len(g.last_fa["info"]) * 0.5  # 半分以上は元の球団に残る
+    assert stay > len(g.last_fa["info"]) * 0.45  # 半分近くは元の球団に残る(職員の年俸の分、資金が少し減ったので 0.5 から下げた。D-474)
     assert all(60 <= len(t.players) <= 70 for t in g.state.league.teams)
 
 

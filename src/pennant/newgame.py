@@ -147,7 +147,7 @@ def new_league(
         from .contracts import assign_tiers, load_contract_settings
 
         tiers = assign_tiers([t.id for t in league.teams], seed, contract_settings or load_contract_settings())
-    from .facilities import league_upkeep, set_initial
+    from .facilities import set_initial
 
     set_initial(league, tiers)  # 設備は規模に応じた段階から(D-383)
     if prerun:
@@ -157,6 +157,9 @@ def new_league(
         draft_settings = draft_settings or load_draft_settings()
         run_prerun(league, seed, gen_config, name_parts, settings, progress=progress, draft_settings=draft_settings, scout_sd=scout_sd, tiers=tiers, contract_settings=contract_settings, rules=rules, chronicle=chronicle)
         apply_calibration(league, calibration if calibration is not None else settings.calibration(draft_settings.default_level), gen_config)
+        from .staff import assign_initial, league_costs
+
+        assign_initial(league, name_parts, league.seed)  # 初期の職員と最初の職員の市場(リーグのシードから。事前運転では職員の市場を回さない。D-478)
         # 初期選手の契約(校正の後の見せる能力から算定。残りの年数は事前運転から。D-232、D-356)
         from .contracts import initial_funds, load_contract_settings
         from .draft import ContractContext, initialize_contracts, load_draft_settings
@@ -167,7 +170,7 @@ def new_league(
         neg = negotiation_settings or load_negotiation_settings()
         cs = contract_settings or load_contract_settings()
         t = dict(tiers) if tiers else {team.id: "medium" for team in league.teams}
-        rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config), upkeep=league_upkeep(league)), settings.prerun_years)
+        rate = initialize_contracts(league, seed, ContractContext(cs, initial_funds(t, cs), t, lambda pid, role: [], lambda tid: sd, negotiation=neg, league_seed=league.seed, slots=depth_slots(gen_config), upkeep=league_costs(league, None, 1)), settings.prerun_years)  # 職員の年俸も年俸に使える額から引く(D-474)
         if contract_info is not None:
             contract_info["rate"] = rate
         from .policy import refresh_ai
