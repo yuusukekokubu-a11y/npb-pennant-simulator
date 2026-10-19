@@ -15,7 +15,9 @@ import random
 from .abilities import BATTER, PITCHER
 from .fatigue import apply_game_fatigue
 from .game import simulate_game
+from .policy import policy_of, youth_bonus
 from .records import Records, game_records
+from .stats import overall
 
 MIN_PITCHERS = 7
 MIN_BATTERS = 10
@@ -55,7 +57,8 @@ class Farm:
                     setups = None
                     break
                 farm_team = dataclasses.replace(team, players=players, development=[])
-                active = s.manager.select_active(farm_team)
+                pol = policy_of(team)  # 若手を使う方針なら、二軍の顔ぶれも 25 歳以下を優先する(D-456)
+                active = s.manager.select_active(farm_team, (lambda p, pol=pol: overall(p) + youth_bonus(pol, p, farm=True)) if pol["usage"] == "youth" else None)
                 setups[tid], self.rotation[tid] = s.manager.prepare(farm_team, rng, self.rotation[tid], active, None)
             if setups is None:
                 continue

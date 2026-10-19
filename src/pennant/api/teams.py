@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .. import policy as policymod
 from ..abilities import POSITION_LABELS
 from ..contracts import remaining_years
 from ..newgame import public_player
@@ -191,7 +192,39 @@ class TeamsMixin:
             "foreign_count": sum(1 for p in team.players if p.foreign),
             "foreign_max": self.state.season.game_config["active_roster"].get("foreign_max"),
             "facilities": self._facilities_public(team),  # 設備の段階(D-383)
+            "policy": self.team_policy(team_id),  # チーム方針(D-454)
         }
+
+    # ---- チーム方針(D-454〜D-457) ----
+
+    def team_policy(self, team_id: str) -> dict:
+        """チーム方針の欄:今の方針(5 つの項目と選べる値)・あなたが決めたか。どの球団でも、いつでも変えられる。"""
+        pol = policymod.policy_of(self._team(team_id))
+        return {
+            "team_id": team_id,
+            "fields": [{"key": k, "label": label, "value": pol[k], "value_label": values[pol[k]], "options": [{"key": v, "label": t} for v, t in values.items()]} for k, (label, values) in policymod.FIELDS.items()],
+            "manual": pol["manual"],
+            "source_text": "あなたが決めた方針(「AI に戻す」まで続きます)" if pol["manual"] else "AI が決めた方針(年度の確定のときに AI が決め直します)",
+        }
+
+    def set_team_policy(self, team_id: str, values: dict) -> dict:
+        """チーム方針を変える(自球団も AI 球団も)。変えた方針は「あなたが決めた」になり、AI に戻すまで続く。"""
+        team = self._team(team_id)
+        merged = {**policymod.policy_of(team), **{k: v for k, v in (values or {}).items() if k in policymod.FIELDS}, "manual": True}
+        checked, problem = policymod.check_policy(merged)
+        if problem:
+            raise ValueError(problem)
+        team.policy = checked
+        self.dirty = True
+        return self.team_policy(team_id)
+
+    def reset_team_policy(self, team_id: str) -> dict:
+        """AI に戻す:その場で AI が今の状況から決め直し、次からは年度の確定で AI が決める。"""
+        team = self._team(team_id)
+        decided = policymod.SimplePolicyMaker().decide(self.state.league)[team_id]
+        team.policy = {**decided, "manual": False}
+        self.dirty = True
+        return self.team_policy(team_id)
 
     def _facilities_public(self, team) -> list[dict]:
         from .. import facilities as facmod

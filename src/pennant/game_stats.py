@@ -183,8 +183,15 @@ BASE_TEXT = {1: "一塁", 2: "二塁", 3: "三塁"}
 LINE_TEXT = {"1B": "一塁線", "3B": "三塁線"}
 
 
+BUNT_TEXT = {"ground_out": "バント野選", "fly_out": "バント飛", "single": "バント安", "error": "バント失策"}  # 送りバントの失敗・安打(D-458)
+
+
 def describe(x) -> str:
     r = x.pa.result
+    if getattr(x, "sac_bunt", False):
+        return f"{POS_SHORT[x.pa.fielder]}犠打"
+    if getattr(x, "bunt", False):
+        return f"{POS_SHORT[x.pa.fielder]}{BUNT_TEXT[r]}"
     if x.double_play:
         return f"{POS_SHORT[x.pa.fielder]}ゴロ併殺打"
     if x.sac_fly:

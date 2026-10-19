@@ -70,7 +70,8 @@ class TeamSetup:
     active: ActiveRoster
     lineup: Lineup
     starter: Player
-    steal: str = "normal"  # 盗塁の作戦(積極的・普通・慎重。D-429)
+    steal: str = "normal"  # 盗塁の作戦(積極的・普通・慎重。D-457)
+    bunt: str = "normal"  # バントの作戦(多い・普通・少ない。D-457)
 
 
 @dataclass
@@ -80,6 +81,18 @@ class PitchingSituation:
     inning: int
     lead: int  # 守っているチームのリード(負けていればマイナス)
     used_ids: set[str]  # この試合ですでに投げた投手
+
+
+@dataclass
+class BuntSituation:
+    """送りバントを考える場面(攻撃しているチームから見た値。D-458)。"""
+
+    inning: int
+    outs: int
+    first: bool
+    second: bool
+    lead: int  # 攻撃しているチームのリード(負けていればマイナス)
+    order: int  # 打順(1〜9)
 
 
 class Manager(Protocol):
@@ -96,6 +109,8 @@ class Manager(Protocol):
     def run_limit(self) -> int: ...
 
     def choose_reliever(self, active: ActiveRoster, situation: PitchingSituation) -> Player | None: ...
+
+    # 送りバントの判断 bunt_probability(situation, batter, strategy) -> float は任意(D-458)。持たない監督はバントをしない。
 
 
 def weighted_score(player: Player, weights: Mapping[str, float]) -> float:
@@ -353,12 +368,33 @@ class SimpleManager:
             return min(spare, key=lambda p: (p.state.fatigue, -overall(p)))
         return None  # だれもいなければ、今の投手が続投する
 
+    # ---- 送りバント(D-458) ----
+
+    def bunt_probability(self, situation: BuntSituation, batter: Player, strategy: str = "normal") -> float:
+        """送りバントをする確率:基本の率(アウト数と走者)× 打順 × 打者の打撃(弱いほど多い)× 場面(終盤の接戦・大差)× 作戦。"""
+        b = self.config.get("bunt")
+        if not b or situation.outs > 1 or not (situation.first or situation.second):
+            return 0.0
+        runners = "12" if situation.first and situation.second else "1" if situation.first else "2"
+        p = float(b["base"][f"{situation.outs}_{runners}"])
+        p *= float(b["order"][(situation.order - 1) % 9])
+        offense = weighted_score(batter, self.config["lineup"]["offense"])
+        p *= float(b["batter_ratio"]) ** ((50.0 - offense) / 10.0)
+        margin = abs(situation.lead)
+        if situation.inning >= int(b["late_inning"]) and margin <= int(b["close_margin"]):
+            p *= float(b["close_factor"])
+        elif margin >= int(b["blowout_margin"]):
+            p *= float(b["blowout_factor"])
+        p *= float(b["strategies"].get(strategy, 1.0))
+        return min(p, float(b["max_probability"]))
+
     # ---- まとめ ----
 
     def prepare(self, team: Team, rng: random.Random, rotation_index: int, active: ActiveRoster | None = None, plan: Mapping | None = None):
-        """1試合分の編成を作る。戻り値:(TeamSetup, 次のローテーションの位置)。plan は自球団の打順(D-373)。"""
+        """1試合分の編成を作る。戻り値:(TeamSetup, 次のローテーションの位置)。plan は打順の計画(D-373)と作戦(steal・bunt。D-457)。"""
         active = active or self.select_active(team)
         lineup = self.starting_lineup(active, rng, plan)
         starter, nxt = self.choose_starter(active, rotation_index)
         steal = str((plan or {}).get("steal") or "normal")
-        return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter, steal=steal), nxt
+        bunt = str((plan or {}).get("bunt") or "normal")
+        return TeamSetup(team_id=team.id, name=team.name, active=active, lineup=lineup, starter=starter, steal=steal, bunt=bunt), nxt

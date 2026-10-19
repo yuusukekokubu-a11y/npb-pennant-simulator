@@ -19,7 +19,7 @@ from .game import CAUGHT, PASSED_BALL, STEAL, WILD_PITCH, GameResult, steps
 
 HITS = {"single": "B1", "double": "B2", "triple": "B3", "home_run": "HR"}
 BASES = {"single": 1, "double": 2, "triple": 3, "home_run": 4}
-BATTER_COUNTS = ("G", "PA", "AB", "H", "B1", "B2", "B3", "HR", "TB", "BB", "HBP", "SO", "SF", "GDP", "RBI", "R", "SB", "CS")
+BATTER_COUNTS = ("G", "PA", "AB", "H", "B1", "B2", "B3", "HR", "TB", "BB", "HBP", "SO", "SF", "SH", "GDP", "RBI", "R", "SB", "CS")
 PITCHER_COUNTS = ("G", "GS", "OUTS", "BF", "H", "HR", "BB", "HBP", "SO", "R", "ER", "W", "L", "SV", "HLD", "CG", "WP")
 FIELDER_COUNTS = ("G", "OUTS", "E", "SBA", "CSC", "PB")  # ポジションごと:スタメンの試合・守備アウト・失策・盗塁企図・盗塁阻止・捕逸(D-431)
 DH = "DH"
@@ -113,9 +113,12 @@ def _count_pa(rec: Records, x, earned_row: list[bool], pitcher_team: dict[str, s
         p["SO"] += 1
     if x.sac_fly:
         b["SF"] += 1
+    sac_bunt = getattr(x, "sac_bunt", False)
+    if sac_bunt:
+        b["SH"] += 1  # 犠打は打数に入れない(D-459)
     if x.double_play:
         b["GDP"] += 1
-    if r not in ("walk", "hit_by_pitch") and not x.sac_fly:
+    if r not in ("walk", "hit_by_pitch") and not x.sac_fly and not sac_bunt:
         b["AB"] += 1
     scored = [m for m in x.moves if m.scored]
     if not x.double_play:

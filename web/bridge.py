@@ -152,8 +152,25 @@ _LINEUP = {
     "set": lambda a: _game.set_lineup(list(a.get("slots", []))),
     "style": lambda a: _game.set_lineup_style(str(a.get("style", ""))),
     "auto": lambda a: _game.lineup_auto(),
-    "steal": lambda a: _game.set_steal(str(a.get("steal", ""))),
 }
+
+
+_POLICY = {
+    "set": lambda a: _game.set_team_policy(str(a["team_id"]), dict(a.get("values") or {})),
+    "ai": lambda a: _game.reset_team_policy(str(a["team_id"])),
+}
+
+
+def team_policy(name: str, args_json: str = "{}") -> str:
+    """チーム方針(D-454)。どの球団でも変えられる。戻り値はチーム方針の欄の情報。"""
+    if _game is None:
+        return _ng("ゲームが始まっていません。")
+    if name not in _POLICY:
+        return _ng(f"知らない操作です({name})")
+    try:
+        return _ok(_POLICY[name](json.loads(args_json or "{}")))
+    except (KeyError, ValueError) as exc:
+        return _ng(f"操作できませんでした({exc})")
 
 
 def lineup(name: str, args_json: str = "{}") -> str:

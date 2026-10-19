@@ -6,6 +6,7 @@
   - 走者の進塁は baserunning.py、打席の結果は plate_appearance.py、采配は manager.py。
   - 投手は打席に立たない(指名打者制。D-046)。
   - 打席の前に、暴投・捕逸・盗塁が起きることがある(D-427)。打席の後の出来事として、その前の打席の記録(events)に残す。
+  - 無死か一死で走者が一塁・二塁にいれば、監督の判断で送りバントをすることがある(D-458)。打席の記録に bunt・sac_bunt の印を付ける。
 
 試合は入力の選手を書き換えない(疲労の加算は、試合後に fatigue.apply_game_fatigue で行う)。
 """
@@ -19,7 +20,7 @@ from . import skills as skill_mod
 from .abilities import PITCHER_ITEMS
 from .baserunning import HOME, Baserunning, Runner, RunnerMove, adjust_probability
 from .game_config import GameConfig, load_game_config
-from .manager import Manager, PitchingSituation, SimpleManager, TeamSetup
+from .manager import BuntSituation, Manager, PitchingSituation, SimpleManager, TeamSetup
 from .models import NEUTRAL_PARK, ParkFactors, Player
 from .plate_appearance import BaseOutState, PlateAppearance, PlateAppearanceModel, default_model, ratio_multiplier
 
@@ -71,6 +72,8 @@ class GamePlateAppearance:
     walkoff_truncated: bool = False
     fielder_id: str | None = None  # 打球を担当した野手の選手 ID(投手が担当なら投手。第3弾の守備の計算用)  # サヨナラで、勝ち越しに必要な分を超えた得点を打ち切った打席(D-087。公式記録の数え直しは実装⑤)
     events: list[RunEvent] = field(default_factory=list)  # この打席の後、次の打席の前に起きた盗塁・暴投・捕逸(D-427)
+    bunt: bool = False  # 送りバントの打席(D-458)
+    sac_bunt: bool = False  # 犠打(成功した送りバント。D-459)
 
     @property
     def all_runs(self) -> int:
@@ -169,8 +172,9 @@ class _Side:
 
 
 class _Game:
-    def __init__(self, home, away, rng, model, config, manager, baserunning, park=None, running=True):
+    def __init__(self, home, away, rng, model, config, manager, baserunning, park=None, running=True, bunting=True):
         self.park = park or NEUTRAL_PARK  # その試合の球場(ホームチームの本拠地)の倍率(D-136)
+        self.bunt = config.get("bunt") if bunting and hasattr(model, "resolve_bunt") and hasattr(manager, "bunt_probability") else None  # 送りバント(D-458)
         self.steal = config.get("steal") if running else None  # 盗塁(D-427)。設定がなければ起きない
         self.battery = config.get("battery") if running else None  # 暴投・捕逸
         self._lead_cache: dict[tuple[str, str], Player] = {}
@@ -271,9 +275,15 @@ class _Game:
             batter, pitcher = slot.player, fielding.pitcher
             base_out = BaseOutState(outs, bases[0] is not None, bases[1] is not None, bases[2] is not None)
             diff_before = batting.runs - fielding.runs
-            pa = self.model.resolve(batter, self._with_lead(pitcher, defense), defense, base_out, self.rng, home=half == BOTTOM, park=self.park)
-            fielding_ratings = self.model.fielding(pa.fielder, pitcher, defense) if pa.fielder else None
-            play = self.baserunning.advance(pa, batter, pitcher.id, bases, outs, fielding_ratings, self.rng)
+            bunt = self._wants_bunt(inning, batting, base_out, diff_before, slot.order, batter)
+            if bunt:
+                bp = self.model.resolve_bunt(batter, pitcher, base_out, self.rng, self.bunt)
+                pa = bp.pa
+                play = self.baserunning.bunt(bp.kind, batter, pitcher.id, bases)
+            else:
+                pa = self.model.resolve(batter, self._with_lead(pitcher, defense), defense, base_out, self.rng, home=half == BOTTOM, park=self.park)
+                fielding_ratings = self.model.fielding(pa.fielder, pitcher, defense) if pa.fielder else None
+                play = self.baserunning.advance(pa, batter, pitcher.id, bases, outs, fielding_ratings, self.rng)
 
             # サヨナラ:勝ち越した時点で試合終了。本塁打以外は、勝ち越しに必要な分だけ得点を数える
             walkoff = half == BOTTOM and inning >= rules["innings"] and diff_before + play.runs > 0
@@ -313,6 +323,8 @@ class _Game:
                     walkoff=walkoff,
                     walkoff_truncated=truncated,
                     fielder_id=None if not pa.fielder else pitcher.id if pa.fielder == "P" else defense[pa.fielder].id,
+                    bunt=bunt,
+                    sac_bunt=bunt and bp.kind == "sacrifice",
                 )
             )
             if walkoff:
@@ -334,6 +346,14 @@ class _Game:
         else:
             fielding.needs_new_pitcher = True
 
+
+    def _wants_bunt(self, inning: int, batting: _Side, base_out: BaseOutState, lead: int, order: int, batter: Player) -> bool:
+        """送りバントをするか(D-458)。三塁に走者がいない・無死か一死・一塁か二塁に走者がいるときだけ、監督の確率で決める(乱数はそのときだけ使う)。"""
+        if self.bunt is None or base_out.outs > 1 or base_out.third or not (base_out.first or base_out.second):
+            return False
+        situation = BuntSituation(inning, base_out.outs, base_out.first, base_out.second, lead, order)
+        p = self.manager.bunt_probability(situation, batter, getattr(batting.setup, "bunt", "normal"))
+        return p > 0 and self.rng.random() < p
 
     # ---- 盗塁・暴投・捕逸(D-427、D-428) ----
 
@@ -468,12 +488,14 @@ def simulate_game(
     manager: Manager | None = None,
     park: ParkFactors | None = None,
     running: bool = True,
+    bunting: bool = True,
 ) -> GameResult:
     """1試合を進める。rng は random.Random(シード)。同じシード・同じ入力なら同じ結果になる。
     park はその試合の球場(ホームチームの本拠地)の倍率(省略時は 1.0。D-136)。
-    running が False なら、盗塁・暴投・捕逸を起こさない(それらを入れる前の試合の再現。D-433)。"""
+    running が False なら、盗塁・暴投・捕逸を起こさない(それらを入れる前の試合の再現。D-433)。
+    bunting が False なら、送りバントをしない(入れる前の試合の再現。D-461)。"""
     config = config or load_game_config()
     model = model or default_model()
     manager = manager or SimpleManager(config)
     baserunning = Baserunning(config, model.rating)
-    return _Game(home, away, rng, model, config, manager, baserunning, park, running).play()
+    return _Game(home, away, rng, model, config, manager, baserunning, park, running, bunting).play()

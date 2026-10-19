@@ -1,4 +1,4 @@
-"""走者の進塁・併殺・犠牲フライ(D-045、D-059)。
+"""走者の進塁・併殺・犠牲フライ・送りバント(D-045、D-059、D-458)。
 
 固定ルール:四球・死球は押し出し、本塁打・三塁打は全員生還、三振・ライナーアウトは進塁なし。
 確率で決めるもの:単打・二塁打での余分な進塁、ゴロでの併殺と進塁、フライでの犠牲フライ、失策での進塁。
@@ -133,6 +133,39 @@ class Baserunning:
 
     def _chance(self, rng: random.Random, key: str, **kwargs) -> bool:
         return rng.random() < self.probability(key, **kwargs)
+
+    def bunt(self, kind: str, batter: Player, pitcher_id: str, bases) -> PlayOutcome:
+        """送りバントの走者・打者の動き(D-458)。三塁に走者がいない場面だけで行うので、得点は入らない。
+        sacrifice:打者アウト・走者は 1 つ進む / popup:打者アウト・走者はそのまま / lead_out:いちばん前の走者がアウト、ほかは 1 つ進み打者は一塁 /
+        hit:全員 1 つ進み打者は一塁 / error:hit と同じ動きを失策で。"""
+        play = _Play(bases, batter, pitcher_id)
+        if play.before[2] is not None:
+            raise ValueError("三塁に走者がいるときは送りバントをしません")
+        starts = [s for s in (2, 1) if play.before[s - 1] is not None]  # 前の走者から
+        outs = 0
+        if kind == "popup":
+            for s in starts:
+                play.move(s, s)
+            play.move(0, None)
+            outs = 1
+        elif kind == "sacrifice":
+            for s in starts:
+                play.move(s, s + 1)
+            play.move(0, None)
+            outs = 1
+        elif kind == "lead_out":
+            for i, s in enumerate(starts):
+                play.move(s, None if i == 0 else s + 1)
+            play.move(0, 1)
+            outs = 1
+        elif kind in ("hit", "error"):
+            err = kind == "error"
+            for s in starts:
+                play.move(s, s + 1, on_error=err)
+            play.move(0, 1, on_error=err, batter_on_error=err)
+        else:
+            raise ValueError(f"知らない送りバントの結果です: {kind}")
+        return PlayOutcome(bases=tuple(play.after), outs=outs, moves=play.moves)
 
     def advance(
         self,

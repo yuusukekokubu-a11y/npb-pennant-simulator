@@ -153,17 +153,23 @@ def retirement_probability(settings: OffseasonSettings, age: int, overall_value:
     return min(max(p, 0.0), r("cap"))
 
 
-def age_and_update(player: Player, config: GenerationConfig, rng: random.Random, growth: float = 1.0, decline: float = 1.0) -> dict[str, float]:
+def age_and_update(player: Player, config: GenerationConfig, rng: random.Random, growth: float = 1.0, decline: float = 1.0, policy: dict | None = None) -> dict[str, float]:
     """1人分の加齢と能力の更新(D-186、D-350)。見せる能力に「年齢による増減 × 伸びやすさ + 揺れ」を足す。戻り値は項目ごとの増減。
-    growth・decline は設備の効き(D-383):年齢による増減が増える分に growth、減る分に decline を掛ける(揺れには掛けない)。"""
+    growth・decline は設備の効き(D-383):年齢による増減が増える分に growth、減る分に decline を掛ける(揺れには掛けない)。
+    policy はチーム方針(練習の重点。D-455):増える分を選んだ項目に寄せる(伸びの合計は変えない)。"""
+    from .policy import practice_weights
+
     var = config["variation"]
     player.age += 1
-    changes: dict[str, float] = {}
-    for item in abilities_for(player.role):
-        if aging.group_of(config, item) == aging.FIXED_GROUP:
-            continue
+    items = [item for item in abilities_for(player.role) if aging.group_of(config, item) != aging.FIXED_GROUP]
+    base: dict[str, float] = {}
+    for item in items:
         delta = aging.yearly_change(config, item, player.age - 1, player.hidden.growth_type, player.hidden.ease)
-        delta *= growth if delta > 0 else decline
+        base[item] = delta * (growth if delta > 0 else decline)
+    weights = practice_weights(policy, player.role, {k: v for k, v in base.items() if v > 0}) if policy else {}
+    changes: dict[str, float] = {}
+    for item in items:
+        delta = base[item] * weights.get(item, 1.0)
         if var["ability_drift_sd_per_year"] > 0:
             delta += rng.gauss(0, var["ability_drift_sd_per_year"])
         player.abilities[item] += delta
@@ -187,12 +193,14 @@ def replenish(team: Team, slots: list[tuple[str, str]], config: GenerationConfig
     return rookies
 
 
-def age_update_retire(league: League, seed: int, config: GenerationConfig, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None, dev_limit: int = 3, facility_settings=None, playing: dict[str, float] | None = None) -> tuple[OffseasonResult, dict[str, list[tuple[str, str]]]]:
+def age_update_retire(league: League, seed: int, config: GenerationConfig, settings: OffseasonSettings, year: int, calibration: dict[str, float] | None = None, dev_limit: int = 3, facility_settings=None, playing: dict[str, float] | None = None, practice: bool = False) -> tuple[OffseasonResult, dict[str, list[tuple[str, str]]]]:
     """年度の確定の前半(加齢 → 能力の更新 → 引退)。league を書き換える。戻り値は結果と、球団ごとに空いた枠(役割, ポジション)。
     引退の判定は校正前の目盛りで行う(校正の定数を引く。事前運転と同じ基準にするため。D-197)。
     育成選手(D-375)は別の乱数の系列で加齢・能力の更新をし、育成で dev_limit シーズン過ごしたら自由契約(リーグを去る。引退の一覧に入れる)。
-    能力の伸びと下がり方には、球団の設備の効きを掛ける(D-383)。playing は選手 → 出場による伸びの倍率(若手。D-447)。"""
+    能力の伸びと下がり方には、球団の設備の効きを掛ける(D-383)。playing は選手 → 出場による伸びの倍率(若手。D-447)。
+    practice なら、球団のチーム方針の練習の重点で伸びを寄せる(D-455。事前運転では使わない)。"""
     from .facilities import growth_factors
+    from .policy import policy_of
 
     rng = random.Random(seed)
     result = OffseasonResult(year, seed)
@@ -201,8 +209,9 @@ def age_update_retire(league: League, seed: int, config: GenerationConfig, setti
         kept: list[Player] = []
         vacated: list[tuple[str, str]] = []
         growth, decline, _ = growth_factors(team, facility_settings)
+        focus = policy_of(team) if practice else None
         for p in list(team.players):
-            changes = age_and_update(p, config, rng, growth * (playing or {}).get(p.id, 1.0), decline)
+            changes = age_and_update(p, config, rng, growth * (playing or {}).get(p.id, 1.0), decline, focus)
             retire = rng.random() < retirement_probability(settings, p.age, overall(p) - (calibration or {}).get(p.role, 0.0))
             if retire:
                 result.retired.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))
@@ -221,8 +230,9 @@ def age_update_retire(league: League, seed: int, config: GenerationConfig, setti
     for team in league.teams:
         kept = []
         _, decline, dev_growth = growth_factors(team, facility_settings)
+        focus = policy_of(team) if practice else None
         for p in list(team.development):
-            changes = age_and_update(p, config, dev_rng, dev_growth * (playing or {}).get(p.id, 1.0), decline)
+            changes = age_and_update(p, config, dev_rng, dev_growth * (playing or {}).get(p.id, 1.0), decline, focus)
             p.dev_seasons = int(p.dev_seasons or 0) + 1
             if p.dev_seasons >= dev_limit:
                 result.retired.append(PlayerNote(p.id, p.name, team.id, p.role, p.position, p.age, p.origin))

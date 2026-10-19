@@ -1,10 +1,11 @@
 // チームのページと球場のページ(web/app.js から分けた。保守②。D-291)
 
 import { $, state } from "./core.js";
-import { query } from "./backend.js";
+import { call, query } from "./backend.js";
 import { openPage, renderCurrent } from "./screens.js";
 import { el, emblem, kvTable, link, playerLink, table, teamLink } from "./parts.js";
-import { seasonCaution } from "./glossary.js";
+import { seasonCaution, titleFor } from "./glossary.js";
+import { setDirty } from "./progress.js";
 
 // ---- チームのページ ----
 
@@ -36,6 +37,7 @@ export async function renderTeam(args, token) {
     ]),
   );
   $("team-war-note").textContent = seasonCaution("current");
+  renderPolicy(d.policy, args);
   $("team-budget").replaceChildren(...budgetLines(d.budget, d.facilities));
   $("team-salaries").replaceChildren(
     d.salaries.length
@@ -59,6 +61,37 @@ export async function renderTeam(args, token) {
   $("team-development-box").hidden = !dev.length;
   const devCols = [{ key: "position", label: "ポジション" }, { key: "age", label: "年齢" }, { key: "hand", label: "投打" }, { key: "year", label: "育成" }];
   $("team-development").replaceChildren(dev.length ? table({ firstLabel: "選手", columns: devCols, rows: dev.map((p) => ({ ...p, values: { position: p.position, age: `${p.age}歳`, hand: p.hand || "", year: `${p.dev_seasons + 1} 年目` } })), first, fluid: true }) : "");
+}
+
+// チーム方針(D-454〜D-457):練習の重点・起用の方針・盗塁・バント。どの球団でも、いつでも変えられ、「AI に戻す」まで続く
+function renderPolicy(p, args) {
+  const base = JSON.stringify([p.team_id, p.manual, p.fields.map((f) => f.value)]); // 球団か今の方針が変わったら(開き直し・別の球団)、選びかけをやめる
+  const ps = state.teamPolicy && state.teamPolicy.base === base ? state.teamPolicy : (state.teamPolicy = { base, draft: Object.fromEntries(p.fields.map((f) => [f.key, f.value])), message: null });
+  const changed = p.fields.some((f) => ps.draft[f.key] !== f.value);
+  const run = async (name, args2, ok) => {
+    const r = await call("team_policy", { name, args: { team_id: p.team_id, ...args2 } });
+    ps.message = r.ok ? { ok: true, text: ok } : { ok: false, text: r.message };
+    if (r.ok) {
+      ps.draft = Object.fromEntries(r.value.fields.map((f) => [f.key, f.value]));
+      ps.base = JSON.stringify([r.value.team_id, r.value.manual, r.value.fields.map((f) => f.value)]);
+      setDirty(true);
+    }
+    renderCurrent();
+  };
+  const rows = p.fields.map((f) =>
+    el("label", { className: "policy-row", title: titleFor(f.label) }, el("span", {}, f.label), " ",
+      el("select", { id: `policy-${f.key}`, "aria-label": f.label, disabled: state.running, onchange: (e) => { ps.draft[f.key] = e.target.value; ps.message = null; renderCurrent(); } },
+        ...f.options.map((o) => el("option", { value: o.key, selected: o.key === ps.draft[f.key] }, o.label)))),
+  );
+  const msg = ps.message ? el("p", { className: `message ${ps.message.ok ? "ok" : "ng"}`, id: "policy-message" }, ps.message.text) : el("p", { className: "message", id: "policy-message" }, "");
+  $("team-policy").replaceChildren(
+    el("p", { className: "small", id: "policy-source" }, p.manual ? `★ ${p.source_text}` : p.source_text),
+    el("div", { className: "row policy-fields" }, ...rows),
+    el("div", { className: "row" },
+      el("button", { id: "policy-save", type: "button", disabled: state.running || !changed, onclick: () => run("set", { values: ps.draft }, "この方針にしました。") }, "この方針にする"),
+      el("button", { id: "policy-ai", className: "secondary", type: "button", disabled: state.running || !p.manual, onclick: () => run("ai", {}, "AI に戻しました。") }, "AI に戻す")),
+    msg,
+  );
 }
 
 // 総年俸と資金の表示(作り直し②。D-353):資金は年俸の合計の上限。球団の規模(大・中・小)と使用率

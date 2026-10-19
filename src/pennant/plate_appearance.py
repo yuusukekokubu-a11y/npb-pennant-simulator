@@ -22,7 +22,7 @@ from typing import Mapping, Protocol
 from .abilities import BATTER, FIELDER_POSITIONS, PITCHER
 from .models import NEUTRAL_PARK, ParkFactors, Player
 from .pa_config import BATTED_BALL_TYPES, HIT_TYPES, STAGE1_EVENTS, PlateAppearanceConfig, load_pa_config
-from .skills import shifted, situational
+from .skills import bunt_effects, shifted, situational
 
 IN_PLAY = "in_play"
 
@@ -99,6 +99,18 @@ class PlateAppearance:
     pitch_type: str | None = None  # 決着球の球種(予約欄。今は空欄。D-025)
 
 
+@dataclass(frozen=True)
+class BuntPlay:
+    """送りバントの結果(D-458)。kind は sacrifice(成功)/ popup(小飛球)/ lead_out(先の塁で走者がアウト)/ hit(内野安打)/ error(失策)。
+    pa は打席の記録(結果は今までの種類に当てはめる:成功・野選は ground_out、小飛球は fly_out、安打は single、失策は error)。"""
+
+    kind: str
+    pa: PlateAppearance
+
+
+BUNT_RESULTS = {"sacrifice": ("ground_out", "ground"), "popup": ("fly_out", "fly"), "lead_out": ("ground_out", "ground"), "hit": ("single", "ground"), "error": ("error", "ground")}
+
+
 def ratio_multiplier(rating: float, ratio_per_10: float) -> float:
     """能力値から倍率へ:50 で 1 倍、10 点上がるごとに ratio_per_10 倍。"""
     return ratio_per_10 ** ((rating - 50.0) / 10.0)
@@ -171,6 +183,9 @@ class PlateAppearanceModel(Protocol):
     ) -> PlateAppearance:
         """home は、打者がホームチームかどうか(ホームの有利に使う。D-073)。park はその試合の球場の倍率(D-136)。"""
         ...
+
+    # 送りバントの結果を決める resolve_bunt(batter, pitcher, base_out, rng, settings) -> BuntPlay は任意(D-458)。
+    # 持たない計算方法に差し替えたときは、試合でバントをしない。
 
 
 def check_participants(batter: Player, pitcher: Player, defense: Defense) -> None:
@@ -360,6 +375,26 @@ class OddsRatioModel:
         if result == "out":
             result = f"{t}_out"
         return PlateAppearance(result=result, batted_ball=t, fielder=pos, unfieldable=unfieldable, **common)
+
+
+    def bunt_probabilities(self, batter: Player, settings: Mapping) -> dict[str, float]:
+        """送りバントの結果の確率(D-458)。成功と内野安打は、打者の能力(バント◯/× を足す)の倍率をオッズ比法で掛ける。"""
+        extra = bunt_effects(batter)
+        mult = {}
+        for kind, table in (settings.get("effects") or {}).items():
+            m = 1.0
+            for item, ratio in table.items():
+                m *= ratio_multiplier(self.rating(batter, item) + extra.get(item, 0.0), ratio)
+            mult[kind] = m
+        return combine(settings["outcomes"], mult)
+
+    def resolve_bunt(self, batter: Player, pitcher: Player, base_out: BaseOutState, rng: random.Random, settings: Mapping) -> BuntPlay:
+        """送りバントの結果を乱数で決める(D-458)。担当は投手・捕手・一塁手・三塁手。"""
+        kind = _choose(rng, self.bunt_probabilities(batter, settings))
+        pos = _choose(rng, settings["fielders"])
+        result, ball = BUNT_RESULTS[kind]
+        pa = PlateAppearance(result=result, batter_id=batter.id, pitcher_id=pitcher.id, batter_side=batter_side(batter, pitcher), base_out=base_out, batted_ball=ball, fielder=pos)
+        return BuntPlay(kind, pa)
 
 
 _default_model: OddsRatioModel | None = None

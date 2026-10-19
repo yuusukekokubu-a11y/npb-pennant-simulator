@@ -66,7 +66,9 @@ class PlayerRuns:
 # ---- 打席ごとの見方 ----
 
 def discretionary_runners(x) -> list[str]:
-    """選択の余地があった走者(確率で進塁が決まった走者)の選手 ID(D-163)。打者は含めない。"""
+    """選択の余地があった走者(確率で進塁が決まった走者)の選手 ID(D-163)。打者は含めない。送りバントは進み方が決まっているので入れない(D-459)。"""
+    if getattr(x, "bunt", False):
+        return []
     result = x.pa.result
     outs = x.base_out.outs
     on = {m.start: m.player_id for m in x.moves if m.start > 0}
@@ -205,7 +207,7 @@ def season_context(results: Iterable[GameResult], baselines: Baselines) -> Seaso
                         ctx.passed_ball_total += d
         for x in result.log:
             pa = x.pa
-            if pa.fielder and not pa.unfieldable and x.fielder_id and pa.batted_ball:
+            if pa.fielder and not pa.unfieldable and x.fielder_id and pa.batted_ball and not getattr(x, "bunt", False):  # バントの打球は比べない(D-459)
                 key = (pa.fielder, pa.batted_ball)
                 ctx.fielding_chances[key] += 1
                 if pa.result in FIELDED_OUTS:
@@ -304,7 +306,7 @@ def season_player_runs(
         # 守備(担当した打球)
         for x in result.log:
             pa = x.pa
-            if not (pa.fielder and not pa.unfieldable and x.fielder_id and pa.batted_ball):
+            if not (pa.fielder and not pa.unfieldable and x.fielder_id and pa.batted_ball) or getattr(x, "bunt", False):  # バントの打球は比べない(D-459)
                 continue
             rate = ctx.out_rate(pa.fielder, pa.batted_ball)
             if rate is None:
