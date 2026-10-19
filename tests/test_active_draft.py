@@ -87,7 +87,7 @@ def test_stage_auto_and_save(season_end):
     g = fresh(season_end)
     to_active(g)
     again = api.Game(load_game(save_game(g.state)), dirty=False)
-    assert SAVE_FORMAT_VERSION == 29 and again.state.rules == g.state.rules
+    assert SAVE_FORMAT_VERSION == 30 and again.state.rules == g.state.rules
     r = g.offseason_stage_auto()
     assert r["finished"]
     log = r["auto_log"]["items"]

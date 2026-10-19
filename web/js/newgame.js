@@ -91,7 +91,18 @@ async function checkPlaces() {
   return [...(r.value.leagues || []), ...(r.value.stadiums || [])].filter(Boolean);
 }
 
+// 新規開始の 2 つの段(D-448):球団名などの段と、設定(仕組みの選択肢)の段
+export function newGameStep(settings) {
+  $("new-step-names").hidden = settings;
+  $("new-row-names").hidden = settings;
+  $("new-step-settings").hidden = !settings;
+  $("new-row-settings").hidden = !settings;
+  $("new-help").hidden = true;
+  window.scrollTo(0, 0);
+}
+
 export async function showNewGame() {
+  newGameStep(false);
   $("new-help").hidden = true;
   $("new-message").textContent = "";
   $("my-team-none").checked = true; // 既定は観戦のみ(D-198)
@@ -196,7 +207,12 @@ export function startNewGame() {
   return busyButton($("new-start"), startNewGameInner()); // 押した瞬間に「準備中」(D-411)
 }
 
-async function startNewGameInner() {
+// 「次へ(設定)」:入力を確かめてから、設定の段へ
+export async function nextNewGame() {
+  if (await checkNewGameInputs()) newGameStep(true);
+}
+
+async function checkNewGameInputs() {
   $("new-message").textContent = "";
   const ls = parseSeed("league-seed");
   const ss = parseSeed("season-seed");
@@ -212,8 +228,18 @@ async function startNewGameInner() {
       document.querySelector("#screen-new details").open = true; // 詳しい設定の中の欄を見せる
       [...leagueNameInputs(), ...stadiumInputs()].find((i) => i.getAttribute("aria-invalid") === "true")?.focus();
     }
+    return false;
+  }
+  return true;
+}
+
+async function startNewGameInner() {
+  if (!(await checkNewGameInputs())) {
+    newGameStep(false);
+    $("new-message").textContent = "入力に問題があります。赤い字の説明を見て、直してください。";
     return;
   }
+  const ss = parseSeed("season-seed");
   const mine = myTeamIndex(); // -1 は観戦のみ(球団を操作しない。D-198)
   if (state.dirty && !confirm("今のゲームに、未保存の変更があります。新しく始めると失われます。始めますか?")) return;
   $("new-start").disabled = true;

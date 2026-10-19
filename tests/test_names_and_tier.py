@@ -25,7 +25,7 @@ def test_names_are_applied_and_saved(huge_game):
     assert g.state.league.teams[0].stadium == "夢球場" and g.state.league.teams[1].stadium
     again = load_game(save_game(g.state))
     assert again.league.league_names[0] == "北の連盟" and again.league.teams[0].stadium == "夢球場"
-    assert SAVE_FORMAT_VERSION == 29 and again.budget_tiers["T01"] == "huge"
+    assert SAVE_FORMAT_VERSION == 30 and again.budget_tiers["T01"] == "huge"
     bad = copy.deepcopy(g.state)
     bad.league.teams[2].stadium = " "
     with pytest.raises(SaveDataError, match="stadium"):

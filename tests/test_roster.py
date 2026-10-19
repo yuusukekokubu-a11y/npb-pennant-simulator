@@ -38,10 +38,12 @@ def test_condition_is_deterministic_and_mean_reverting():
 def test_ai_review_changes_the_roster_and_keeps_the_lock(mid):
     s = mid.state.season
     hist = s.active_history["T02"]
-    assert len(hist) >= 2 and {h["day"] for h in hist[1:]} <= {7, 14}  # 7 日ごとの見直しで変わる
-    for tid, h in s.active_history.items():  # 外して 10 日たたない選手は、一軍に戻らない
+    hurt_days = {(x["team_id"], x["start"] + 1) for x in s.injury_log}  # けがの次の日にも入れ替わる(D-445)
+    hurt = {x["player_id"] for x in s.injury_log}
+    assert len(hist) >= 2 and {h["day"] for h in hist[1:] if ("T02", h["day"]) not in hurt_days} <= {7, 14}  # 7 日ごとの見直しで変わる
+    for tid, h in s.active_history.items():  # 外して 10 日たたない選手は、一軍に戻らない(けがで外れた選手は、治ればすぐ戻れる)
         for a, b in zip(h, h[1:]):
-            out = set(a["starters"] + a["relievers"] + a["batters"]) - set(b["starters"] + b["relievers"] + b["batters"])
+            out = set(a["starters"] + a["relievers"] + a["batters"]) - set(b["starters"] + b["relievers"] + b["batters"]) - hurt
             for later in h:
                 if b["day"] < later["day"] < b["day"] + 10:
                     assert not out & set(later["starters"] + later["relievers"] + later["batters"])
@@ -102,7 +104,7 @@ def test_version_24_save_is_read_with_the_old_roster(mid):
             z.writestr(name, b)
     state = load_game(buf.getvalue())
     s = state.season
-    assert SAVE_FORMAT_VERSION == 29 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form and s.running_start == 20  # 版 25 への変換で、盗塁なども読んだ日から(D-433)
+    assert SAVE_FORMAT_VERSION == 30 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form and s.running_start == 20  # 版 25 への変換で、盗塁なども読んだ日から(D-433)
     s.play_days(6)
     assert s.day == 26
 

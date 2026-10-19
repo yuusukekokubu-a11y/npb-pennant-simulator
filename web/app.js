@@ -11,7 +11,7 @@ import { advance } from "./js/progress.js";
 import { buildStatsFilters, commitSort, currentSort, isAbilityKey } from "./js/stats.js";
 import { procAuto, procNext, procStageAuto } from "./js/procedure.js";
 import { yearEnd } from "./js/yearend.js";
-import { leagueSeedChanged, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
+import { leagueSeedChanged, newGameStep, nextNewGame, parseSeed, showNewGame, startNewGame, teamInputs } from "./js/newgame.js";
 import { openFile, save } from "./js/files.js";
 import { busyButton, setLoadingStyle } from "./js/loading.js";
 
@@ -38,6 +38,8 @@ $("new-back").addEventListener("click", () => {
   }
 });
 $("new-start").addEventListener("click", startNewGame);
+$("new-next").addEventListener("click", nextNewGame); // 設定の段へ(D-448)
+$("new-settings-back").addEventListener("click", () => newGameStep(false));
 $("league-seed").addEventListener("change", leagueSeedChanged);
 $("season-seed").addEventListener("change", () => ($("season-seed-error").textContent = parseSeed("season-seed").error || ""));
 for (const b of document.querySelectorAll(".adv")) b.addEventListener("click", () => advance(Number(b.dataset.days)));

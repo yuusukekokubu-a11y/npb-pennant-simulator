@@ -4,15 +4,16 @@
 - active_draft:現役ドラフト(D-380。既定はあり)
 - trade:トレード(D-378。既定はあり)
 - foreign_development:外国人・育成(D-375、D-376。既定はあり)
+- injuries:けが(D-445。既定はあり。版 29 までのセーブデータの続きは、次のシーズンから)
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-RULE_KEYS = ("auto_fa", "active_draft", "trade", "foreign_development")
+RULE_KEYS = ("auto_fa", "active_draft", "trade", "foreign_development", "injuries")
 
-RULE_LABELS = {"auto_fa": "自動 FA", "active_draft": "現役ドラフト", "trade": "トレード", "foreign_development": "外国人・育成"}
+RULE_LABELS = {"auto_fa": "自動 FA", "active_draft": "現役ドラフト", "trade": "トレード", "foreign_development": "外国人・育成", "injuries": "けが"}
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class GameRules:
     active_draft: bool = True
     trade: bool = True
     foreign_development: bool = True
+    injuries: bool = True
 
     def to_dict(self) -> dict:
         return asdict(self)

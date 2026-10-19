@@ -23,6 +23,15 @@ export async function renderPlayer(args, token) {
   const aw = data.awards || []; // 受賞歴(D-442)
   $("player-awards-box").hidden = !aw.length;
   $("player-awards").replaceChildren(...(aw.length ? [table({ firstLabel: "シーズン", columns: [{ key: "label", label: "賞" }, { key: "value", label: "理由" }], rows: aw.map((x) => ({ ...x, values: { label: x.label, value: x.value } })), first: (x) => [el("span", {}, `${x.year}シーズン目`)] })] : []));
+  const fm = data.farm; // 二軍の成績(D-446)
+  $("player-farm-box").hidden = !fm;
+  $("player-farm").replaceChildren(...(fm ? [table({ firstLabel: "シーズン", columns: fm.columns, rows: fm.rows, first: (x) => [el("span", {}, x.label)] })] : []));
+  const inj = data.injuries || []; // けが(D-445):今の状態と記録
+  $("player-injury-box").hidden = !p.injury && !inj.length;
+  $("player-injury").replaceChildren(
+    ...(p.injury ? [el("p", { className: "injury" }, `けがで離脱中:${p.injury.text}`)] : []),
+    ...(inj.length ? [table({ firstLabel: "シーズン", columns: [{ key: "label", label: "けが" }, { key: "days", label: "離脱" }, { key: "after", label: "後遺症" }], rows: inj.map((x) => ({ ...x, values: { label: x.label, days: x.days, after: x.after ? x.after_text : "—" } })), first: (x) => [el("span", {}, `${x.year}シーズン目`), el("span", { className: "sub" }, `${x.day}日目・${x.where}`)] })] : []),
+  );
   renderPlayerContract(data);
   renderPlayerAbilities(data);
   if (state.playerKind === "ability") state.playerKind = "basic"; // 能力は上に常に出すので、成績の切り替えからは外した(作り直し①)

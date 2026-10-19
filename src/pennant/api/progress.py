@@ -124,7 +124,9 @@ class ProgressMixin:
             raise TeamNameError([f"自球団の選び方が正しくありません(値: {my_team_index!r})"])
         settings = load_baseline_settings()
         prior = trial_baselines(league, settings, progress) if baselines == "trial" else settings.default_baselines()
-        season = Season(league, seed if season_seed is None else season_seed)
+        from ..injuries import default_settings as injury_settings
+
+        season = Season(league, seed if season_seed is None else season_seed, farm=True, injuries=injury_settings() if game_rules.injuries else None)  # 二軍の試合とけが(D-445、D-446)
         famod.initialize_seasons(league, season.actives, league.seed, negotiation_settings)  # 初期選手の FA 権の年数(D-264)
         my_team_id = None if my_team_index is None else league.teams[my_team_index].id
         state = GameState(season, gen, parts, "", my_team_id, prior, settings, offseason_settings=offseason_settings, calibration=offseason_settings.calibration(level), scout_level=level, draft_settings=draft_settings, budget_tiers=tiers, team_funds=initial_funds(tiers, contract_settings), contract_settings=contract_settings, negotiation_settings=negotiation_settings, rules=game_rules)
@@ -213,6 +215,8 @@ class ProgressMixin:
             "regular_over": season.is_over,
             "postseason": self.postseason_view(),
             "post_days_max": 30,  # ポストシーズンの日数の目安(進み具合のバー用)
+            "injuries": self.my_injuries(),  # 自球団のけが(D-445)
+            "farm": season.farm is not None,
         }
 
     def _day_kind(self, day: int) -> dict:
@@ -358,6 +362,8 @@ class ProgressMixin:
             interleague=self._interleague_archive(season),
             allstar=[dict(x) for x in season.allstar],
             postseason=None if season.postseason is None else season.postseason.summary(),
+            farm_records=None if season.farm is None else copy.deepcopy(season.farm.records),  # 二軍の成績(D-446)
+            injuries=[dict(x) for x in season.injury_log],  # けが(D-445)
         )
         if prior_registered is not None:  # 表彰(D-442)
             from .. import awards as awardsmod
@@ -372,6 +378,19 @@ class ProgressMixin:
             return None
         rows = season.interleague_standings()
         return {"champion": rows[0].team_id, "rows": [{"team_id": x.team_id, "wins": x.wins, "losses": x.losses, "ties": x.ties} for x in rows]}
+
+    def _apply_aftereffects(self, archive, seed: int) -> None:
+        """けがの後遺症(D-445):重い・全休のけがのうち、決まった選手の能力を少し下げる(年度の確定のとき)。"""
+        from .. import ability_model
+        from ..injuries import apply_aftereffect
+
+        everyone = {p.id: p for t in self.state.league.teams for p in list(t.players) + list(t.development)}
+        for i, x in enumerate(archive.injuries):
+            p = everyone.get(x["player_id"])
+            if not x.get("after") or p is None:
+                continue
+            x["after_items"] = apply_aftereffect(p, x["after"], derive_seed(seed, f"after:{i}"))
+            ability_model.refresh(self.state.gen_config, p)
 
     def year_end(self) -> dict:
         """年度の確定(F2。D-185、D-186):今シーズンの集計を履歴へ → 球場補正の履歴と基準値の出発点を更新 →
@@ -396,7 +415,12 @@ class ProgressMixin:
         final, _ = self.baselines()
         state.baselines = Baselines(dict(final.values), list(final.re24), dict(final.linear_weights), final.plate_appearances, "season")  # 次の出発点(D-121)
         off_seed = derive_seed(season.seed, "offseason")
-        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons, state.facility_settings)
+        self._apply_aftereffects(archive, off_seed)
+        from ..farm import playing_growth
+
+        everyone = [p for t in state.league.teams for p in list(t.players) + list(t.development)]
+        playing = playing_growth(everyone, self.records.total, archive.farm_records) if season.farm is not None else None  # 出場と若手の成長(D-447。二軍の試合があるシーズンだけ)
+        result, _ = age_update_retire(state.league, off_seed, state.gen_config, state.offseason_settings, state.year, state.calibration, state.draft_settings.dev_seasons, state.facility_settings, playing)
         state.offseasons.append(result)
         state.procedure = draftmod.start_procedure(state.league, off_seed, state.gen_config, state.name_parts, state.draft_settings, state.year, state.calibration, records, rules=state.rules)
         state.procedure.ranks = {s.team_id: int(s.rank) for s in archive.standings}  # 勝利軸は公式の順位(D-250)

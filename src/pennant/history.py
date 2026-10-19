@@ -56,6 +56,8 @@ class SeasonArchive:
     allstar: list[dict] = field(default_factory=list)  # オールスターの結果(allstar.play の辞書。D-436)
     postseason: dict | None = None  # ポストシーズン {champion, series: [...]}(Postseason.summary。D-440。版 28)
     awards: list | None = None  # 表彰(awards.compute の一覧。D-442。版 29。版 28 までのシーズンは None)
+    farm_records: Records | None = None  # 二軍の成績(D-446。版 30。二軍の試合がないシーズンは None)
+    injuries: list = field(default_factory=list)  # そのシーズンのけが(D-445)
 
     def to_dict(self) -> dict:
         return {
@@ -65,14 +67,7 @@ class SeasonArchive:
             "total_days": self.total_days,
             "standings": [s.to_dict() for s in self.standings],
             "champions": {str(k): list(v) for k, v in self.champions.items()},
-            "records": {
-                "batters": {pid: dict(c) for pid, c in self.records.batters.items()},
-                "pitchers": {pid: dict(c) for pid, c in self.records.pitchers.items()},
-                "teams": {tid: dict(c) for tid, c in self.records.teams.items()},
-                "batter_team": dict(self.records.batter_team),
-                "pitcher_team": dict(self.records.pitcher_team),
-                "fielders": {pid: {pos: dict(c) for pos, c in by_pos.items()} for pid, by_pos in self.records.fielders.items()},  # 守備の数(D-431。版 26)
-            },
+            "records": records_to_dict(self.records),
             "players": {pid: dict(info) for pid, info in self.players.items()},
             "park_factors": {pid: str(v) for pid, v in self.park_factors.items()},
             "war": {pid: _war_to_dict(v) for pid, v in self.war.items()},
@@ -82,18 +77,13 @@ class SeasonArchive:
             "allstar": [dict(x) for x in self.allstar],
             "postseason": self.postseason,
             "awards": None if self.awards is None else [dict(x) for x in self.awards],
+            "farm_records": None if self.farm_records is None else records_to_dict(self.farm_records),
+            "injuries": [dict(x) for x in self.injuries],
         }
 
     @classmethod
     def from_dict(cls, d: Mapping, games: list | None = None) -> "SeasonArchive":
-        rec = Records()
-        r = d["records"]
-        rec.batters = {pid: Counter({k: int(v) for k, v in c.items()}) for pid, c in r["batters"].items()}
-        rec.pitchers = {pid: Counter({k: int(v) for k, v in c.items()}) for pid, c in r["pitchers"].items()}
-        rec.teams = {tid: Counter({k: int(v) for k, v in c.items()}) for tid, c in r["teams"].items()}
-        rec.batter_team = {k: str(v) for k, v in r["batter_team"].items()}
-        rec.pitcher_team = {k: str(v) for k, v in r["pitcher_team"].items()}
-        rec.fielders = {pid: {pos: Counter({k: int(v) for k, v in c.items()}) for pos, c in by_pos.items()} for pid, by_pos in (r.get("fielders") or {}).items()}
+        rec = records_from_dict(d["records"])
         return cls(
             year=int(d["year"]),
             seed=int(d["seed"]),
@@ -111,7 +101,32 @@ class SeasonArchive:
             allstar=[dict(x) for x in (d.get("allstar") or [])],
             postseason=None if d.get("postseason") is None else dict(d["postseason"]),
             awards=None if d.get("awards") is None else [dict(x) for x in d["awards"]],
+            farm_records=None if d.get("farm_records") is None else records_from_dict(d["farm_records"]),
+            injuries=[dict(x) for x in (d.get("injuries") or [])],
         )
+
+
+def records_to_dict(rec: Records) -> dict:
+    """元の数を保存できる形に(履歴・二軍の成績で共通)。"""
+    return {
+        "batters": {pid: dict(c) for pid, c in rec.batters.items()},
+        "pitchers": {pid: dict(c) for pid, c in rec.pitchers.items()},
+        "teams": {tid: dict(c) for tid, c in rec.teams.items()},
+        "batter_team": dict(rec.batter_team),
+        "pitcher_team": dict(rec.pitcher_team),
+        "fielders": {pid: {pos: dict(c) for pos, c in by_pos.items()} for pid, by_pos in rec.fielders.items()},  # 守備の数(D-431。版 26)
+    }
+
+
+def records_from_dict(r: Mapping) -> Records:
+    rec = Records()
+    rec.batters = {pid: Counter({k: int(v) for k, v in c.items()}) for pid, c in r["batters"].items()}
+    rec.pitchers = {pid: Counter({k: int(v) for k, v in c.items()}) for pid, c in r["pitchers"].items()}
+    rec.teams = {tid: Counter({k: int(v) for k, v in c.items()}) for tid, c in r["teams"].items()}
+    rec.batter_team = {k: str(v) for k, v in r["batter_team"].items()}
+    rec.pitcher_team = {k: str(v) for k, v in r["pitcher_team"].items()}
+    rec.fielders = {pid: {pos: Counter({k: int(v) for k, v in c.items()}) for pos, c in by_pos.items()} for pid, by_pos in (r.get("fielders") or {}).items()}
+    return rec
 
 
 def _interleague_from(d) -> dict | None:

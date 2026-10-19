@@ -223,6 +223,7 @@ _QUERIES = {
     "record_standings": lambda a: _game.record_standings(a.get("year")),  # 記録室(D-422、D-423)
     "record_titles": lambda a: _game.record_titles(a.get("year")),
     "record_awards": lambda a: _game.record_awards(a.get("year")),  # 表彰(D-442)
+    "farm_standings": lambda a: _game.farm_standings(),  # 二軍の順位表(D-446)
     "record_leaders": lambda a: _game.record_leaders(a.get("role", "batter"), a.get("key")),
     "record_entries": lambda a: _game.record_entries(a.get("kind", "draft"), a.get("team_id"), a.get("year")),
     "record_moves": lambda a: _game.record_moves(a.get("year"), a.get("team_id")),

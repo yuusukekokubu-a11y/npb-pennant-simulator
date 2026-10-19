@@ -3,8 +3,9 @@
 import { $, state } from "./core.js";
 import { call, delayedShow, ready } from "./backend.js";
 import { current, renderCurrent, showScreen } from "./screens.js";
-import { allstarCard, el, emblem, gameCard, rankBadge, seriesCard, teamLink } from "./parts.js";
+import { allstarCard, el, emblem, gameCard, playerLink, rankBadge, seriesCard, teamLink } from "./parts.js";
 import { buildStatsFilters } from "./stats.js";
+import { titleFor } from "./glossary.js";
 
 // ---- 進行・順位表 ----
 
@@ -82,6 +83,12 @@ export function renderProgress() {
   $("next-day-text").textContent = nd ? `次の日(${s.day + 1}日目)は${nd.label}${nd.kind === "off" || nd.kind === "allstar" ? "(「1日すすめる」で次の公式戦の日まで進みます)" : ""}` : "";
   const ps = s.postseason; // ポストシーズン(D-440):シリーズの勝敗と次の試合
   $("post-box").hidden = !ps;
+  const inj = s.injuries; // 自球団のけが(D-445):直前の日に起きたけがと、今けがをしている選手
+  $("injury-box").hidden = !inj || (!inj.new.length && !inj.current.length);
+  if (inj) $("injury-list").replaceChildren(
+    ...inj.new.map((x) => el("p", { className: "small injury-new" }, "けが:", playerLink(x.name, x.player_id), `(${x.where})${x.text}`)),
+    ...(inj.current.length ? [el("p", { className: "small muted" }, `けがで離脱中 ${inj.current.length} 人:`, ...inj.current.flatMap((x, i) => [i ? "・" : "", playerLink(x.name, x.player_id), `(${x.text})`]))] : []),
+  );
   if (ps) $("post-list").replaceChildren(...(ps.next_label ? [el("p", { className: "small" }, `次(${ps.next_day - s.total_days}日目):${ps.next_label}`)] : []), ...ps.series.map((x) => seriesCard(x, false)));
   $("allstar-box").hidden = !s.allstar.length;
   $("allstar-list").replaceChildren(...s.allstar.map(allstarCard));
@@ -109,8 +116,9 @@ export function renderStandings() {
   const sw = $("league-switch");
   const il = table.interleague; // 交流戦の表(交流戦が始まってから。D-437)
   const ps = table.postseason; // ポストシーズンの組み合わせ表(D-440)
-  const tabs = [...table.leagues.map((lg) => ({ index: lg.index, name: lg.name })), ...(il ? [{ index: "il", name: "交流戦" }] : []), ...(ps ? [{ index: "ps", name: "ポストシーズン" }] : [])];
-  if ((!il && state.league === "il") || (!ps && state.league === "ps")) state.league = 0;
+  const fm = table.farm; // 二軍の順位表(D-446)
+  const tabs = [...table.leagues.map((lg) => ({ index: lg.index, name: lg.name })), ...(il ? [{ index: "il", name: "交流戦" }] : []), ...(ps ? [{ index: "ps", name: "ポストシーズン" }] : []), ...(fm ? [{ index: "farm", name: "二軍" }] : [])];
+  if ((!il && state.league === "il") || (!ps && state.league === "ps") || (!fm && state.league === "farm")) state.league = 0;
   if (sw.children.length !== tabs.length) {
     sw.replaceChildren();
     for (const t of tabs) {
@@ -123,9 +131,19 @@ export function renderStandings() {
     b.textContent = tabs[i].name;
     b.setAttribute("aria-pressed", String(tabs[i].index === state.league));
   });
-  const post = state.league === "ps";
+  const post = state.league === "ps" || state.league === "farm";
   $("standings-post").hidden = !post;
   $("standings-table").hidden = post;
+  if (state.league === "farm") {
+    $("standings-day").textContent = `二軍の試合 ${fm.games} 試合`;
+    $("standings-champion").hidden = true;
+    const head = el("tr", {}, ...["順位・チーム", "試合", "勝", "敗", "分", "勝率", "差"].map((x, i) => el("th", { scope: "col", className: i ? "" : "sticky", title: i ? titleFor(x) : "" }, x)));
+    $("standings-post").replaceChildren(...fm.leagues.map((lg) => el("section", { className: "farm-league" }, el("h2", {}, `${lg.league_name}(二軍)`),
+      el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head.cloneNode(true)), el("tbody", {}, ...lg.rows.map((r) =>
+        el("tr", { className: r.mine ? "mine" : "" }, el("td", { className: "sticky" }, el("span", { className: "team-cell" }, rankBadge(r.rank), emblem(r.team_id, r.team_name), teamLink(r.team_name, r.team_id))),
+          ...[r.wins + r.losses + r.ties, r.wins, r.losses, r.ties, r.pct, r.games_behind].map((v) => el("td", {}, String(v)))))))))));
+    return;
+  }
   if (post) {
     $("standings-day").textContent = ps.champion ? `日本一:${ps.champion}` : "ポストシーズン(クライマックスシリーズ・日本シリーズ)";
     $("standings-champion").hidden = true;

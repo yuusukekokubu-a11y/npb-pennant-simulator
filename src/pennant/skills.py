@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import ConfigError, _Checker, _read_json
 from .models import Player
 
-WHEN = ("always", "risp", "vs_left", "steal", "catching")  # steal:盗塁のときだけ / catching:捕手として出ているとき(D-428)
+WHEN = ("always", "risp", "vs_left", "steal", "catching", "injury")  # steal:盗塁のときだけ / catching:捕手として出ているとき(D-428) / injury:けがの起こりやすさ(試合の計算には効かない。D-445)
 
 
 @dataclass(frozen=True)
