@@ -299,6 +299,8 @@ def _plain_pitching(plan: dict) -> dict:
     out = {"starters": [str(x) for x in plan["starters"]], "roles": {str(k): str(v) for k, v in plan["roles"].items()}}
     if plan.get("set_day") is not None:
         out["set_day"] = int(plan["set_day"])
+    if plan.get("ai"):  # AI ならこう並べる(AI に戻すとき用)
+        out["ai"] = {"starters": [str(x) for x in plan["ai"]["starters"]], "roles": {str(k): str(v) for k, v in plan["ai"]["roles"].items()}}
     n = plan.get("notice")
     if n:
         out["notice"] = {"day": int(n["day"]), "out": [str(x) for x in n.get("out", [])], "in": [str(x) for x in n.get("in", [])]}

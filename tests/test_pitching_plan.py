@@ -116,6 +116,21 @@ def test_set_plan_and_ai_back(mid):
     assert s.actives["T01"].relief_roles == s.manager._relief_roles(s.actives["T01"].relievers)
 
 
+def test_ai_back_restores_the_ai_arrangement_and_survives_save(mid):
+    """「AI に戻す」は、AI が決めていた起用(先発の順と役割)にそのまま戻る。保存して読み込んでも同じ。"""
+    g = _fresh(mid)
+    s = g.state.season
+    before = s.actives["T01"]
+    ai = ([p.id for p in before.starters], dict(before.relief_roles))
+    _, starters, roles = _my_plan(g)
+    g.roster_set_pitching(starters[::-1], {k: ("closer" if v == "mopup" and k == min(x for x, y in roles.items() if y == "mopup") else "middle") for k, v in roles.items()})
+    other = api.Game(load_game(save_game(g.state)), dirty=False)
+    for game in (g, other):
+        game.roster_pitching_auto()
+        a = game.state.season.actives["T01"]
+        assert ([p.id for p in a.starters], a.relief_roles) == ai
+
+
 def test_plan_is_rearranged_after_swap_with_notice(mid):
     g = _fresh(mid)
     _, starters, roles = _my_plan(g)

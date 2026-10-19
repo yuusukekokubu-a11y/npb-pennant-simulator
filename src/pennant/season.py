@@ -226,7 +226,7 @@ class Season:
                 self.demoted.pop(pid, None)
 
     def _replace_injured(self, team_id: str, hurt: list[str], day: int) -> None:
-        active = self.actives[team_id]
+        active = self.ai_active(team_id)  # 起用の計画は set_active で当てはめ直す(D-450)
         ids = {p.id for p in active.players}
         pool = [p for p in self.teams[team_id].players if p.id not in ids and not self.is_injured(p.id, day)]
         score = self._roster_score(team_id, keep=False)
@@ -435,9 +435,10 @@ class Season:
         bonus = float(self.roster_settings()["keep_bonus"])
         return lambda p: overall(p) + step * self.conditions.level(p.id, self.day) + (bonus if p.id in current else 0.0)
 
-    def set_active(self, team_id: str, active: ActiveRoster) -> None:
+    def set_active(self, team_id: str, active: ActiveRoster, arranged: bool = False) -> None:
         """一軍を変える。外した選手の日を覚え、試合の再現と保存のため顔ぶれを記録する(この日の試合から新しい顔ぶれ)。"""
-        active = self._arranged(team_id, active)
+        if not arranged:
+            active = self._arranged(team_id, active)
         before = {p.id for p in self.actives[team_id].players}
         after = {p.id for p in active.players}
         if team_id not in self.active_history:
@@ -462,7 +463,7 @@ class Season:
         old = self.actives[team_id]
         if [p.id for p in new.starters] == [p.id for p in old.starters] and [p.id for p in new.relievers] == [p.id for p in old.relievers] and [p.id for p in new.batters] == [p.id for p in old.batters] and new.relief_roles == old.relief_roles:
             return  # 変わらなければ記録しない
-        self.set_active(team_id, new)
+        self.set_active(team_id, new, arranged=True)
 
     def swap(self, team_id: str, out_id: str, in_id: str) -> None:
         """一軍の選手(out)と二軍の選手(in)を入れ替える(自球団の一軍登録。D-425)。投手は投手と、野手は野手と。
@@ -470,7 +471,7 @@ class Season:
         if self.complete:
             raise ValueError("シーズンが終わっているので、一軍は変えられません")
         team = self.teams[team_id]
-        active = self.actives[team_id]
+        active = self.ai_active(team_id)  # 起用の計画は set_active で当てはめ直す(D-450)
         ids = {p.id for p in active.players}
         out = next((p for p in active.players if p.id == out_id), None)
         new = next((p for p in team.players if p.id == in_id), None)
@@ -501,7 +502,19 @@ class Season:
     def _arranged(self, team_id: str, active: ActiveRoster) -> ActiveRoster:
         """自分で決めた投手の起用があれば、一軍に当てはめる(抜けた枠だけ AI が組み直す)。"""
         plan = self.pitching_plans.get(team_id)
-        return active if plan is None else pitching_plan.arrange(plan, active, self.day)
+        if plan is None:
+            return active
+        plan["ai"] = {"starters": [p.id for p in active.starters], "roles": dict(active.relief_roles)}  # AI ならこう並べる(AI に戻すとき用)
+        return pitching_plan.arrange(plan, active, self.day)
+
+    def ai_active(self, team_id: str) -> ActiveRoster:
+        """AI の起用のままの一軍(計画がなければ今の一軍)。手の入れ替え・けがの代わりは、これを元に作る。"""
+        active = self.actives[team_id]
+        ai = (self.pitching_plans.get(team_id) or {}).get("ai")
+        by_id = {p.id: p for p in active.starters + active.relievers}
+        if not ai or sorted(ai["starters"]) != sorted(p.id for p in active.starters) or sorted(ai["roles"]) != sorted(p.id for p in active.relievers):
+            return active
+        return ActiveRoster(starters=[by_id[x] for x in ai["starters"]], relievers=list(active.relievers), relief_roles=dict(ai["roles"]), batters=list(active.batters))
 
     def set_pitching_plan(self, team_id: str, starters: list[str], roles: dict[str, str]) -> None:
         """先発ローテーションの順と救援の役割を決める(今の一軍の投手だけ。抑えは 1 人)。"""
@@ -515,12 +528,17 @@ class Season:
         closers = sum(1 for r in roles.values() if r == "closer")
         if closers != 1:
             raise ValueError(f"抑えは 1 人にしてください(今は {closers} 人)")
+        base = self.ai_active(team_id)
         self.pitching_plans[team_id] = {"starters": list(starters), "roles": dict(roles), "set_day": self.day, "notice": None}
-        self.set_active(team_id, active)
+        self.set_active(team_id, base)
 
     def clear_pitching_plan(self, team_id: str) -> None:
-        """AI の起用に戻す:先発は総合 + 調子の順、役割は AI の決め方。"""
-        self.pitching_plans.pop(team_id, None)
+        """AI の起用に戻す:AI が決めていた起用(覚えていなければ、先発は総合 + 調子の順、役割は AI の決め方)。"""
+        base = self.ai_active(team_id)
+        had = (self.pitching_plans.pop(team_id, None) or {}).get("ai") is not None
+        if had and base is not self.actives[team_id]:
+            self.set_active(team_id, base)
+            return
         active = self.actives[team_id]
         score = self._roster_score(team_id, keep=False)
         starters = sorted(active.starters, key=lambda p: -score(p))

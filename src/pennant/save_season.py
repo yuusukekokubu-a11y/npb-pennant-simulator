@@ -127,6 +127,9 @@ def _restore_pitching(season: Season, season_d: dict, p) -> None:
             p.add(f"{where}.roles", f"救援の役割の形が違います(選手の ID → {' / '.join(RELIEF_ROLES)}。抑えは 1 人)")
             continue
         plan = {"starters": list(starters), "roles": dict(roles), "set_day": d.get("set_day") if isinstance(d.get("set_day"), int) else None, "notice": None}
+        ai = d.get("ai")
+        if isinstance(ai, dict) and isinstance(ai.get("starters"), list) and isinstance(ai.get("roles"), dict) and all(v in RELIEF_ROLES for v in ai["roles"].values()):
+            plan["ai"] = {"starters": [str(x) for x in ai["starters"]], "roles": {str(k): str(v) for k, v in ai["roles"].items()}}
         n = d.get("notice")
         if isinstance(n, dict) and isinstance(n.get("day"), int) and all(isinstance(n.get(k, []), list) for k in ("out", "in")):
             plan["notice"] = {"day": n["day"], "out": [str(x) for x in n.get("out", [])], "in": [str(x) for x in n.get("in", [])]}
