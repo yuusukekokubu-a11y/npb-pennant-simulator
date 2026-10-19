@@ -326,7 +326,13 @@ check(pitchSet.ngText.includes("抑えは 1 人") && userStarters[0] === aiStart
 // 保存して開き直しても、自分で決めた起用が続く。「AI に戻す」で、AI の起用(最初と同じ並び)に戻る
 const savedStarters = await starterNames();
 const savedRoles = await reliefRoles();
-const pitchFile = await saveFile("pitching");
+const pitchFile = await saveFile("pitching"); // 保存すると進行の画面に移る
+const openRosterAgain = async () => {
+  await page.waitForSelector("#screen-progress:not([hidden])");
+  await page.click("#open-roster");
+  await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelector("#roster-pitching-source"));
+};
+await openRosterAgain();
 const pitchAiBack = async (label) => {
   await page.click("#roster-pitching-auto");
   await page.waitForFunction(() => document.querySelector("#roster-pitching-source").textContent.includes("AI が決めた"));
@@ -338,8 +344,7 @@ await page.waitForSelector("#screen-progress:not([hidden])");
 page.once("dialog", (d) => d.accept().catch(() => {})); // 「AI に戻す」で未保存の変更があるので、開く前の確認を承諾する
 await page.setInputFiles("#open-file-top", pitchFile.path);
 await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("開きました"), null, { timeout: 60000 });
-await page.click("#open-roster");
-await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelector("#roster-pitching-source"));
+await openRosterAgain();
 check((await page.textContent("#roster-pitching-source")).includes("自分で決めた") && JSON.stringify(await starterNames()) === JSON.stringify(savedStarters) && JSON.stringify((await reliefRoles()).sort()) === JSON.stringify([...savedRoles].sort()), "保存して開き直しても、自分で決めた投手の起用(先発の順と役割)が続く");
 await pitchAiBack("開き直した後");
 await page.click("#screen-roster .back");
