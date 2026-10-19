@@ -412,6 +412,14 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **資金力**:`contracts.HUGE`(超大量)を足し、`ALL_TIERS` で保存の点検をする(版 24)。`assign_tiers(…, fixed)` は選んだ球団を除いた残りで数を合わせる(fixed がなければ今までと同じ割り当て)。超大量の基準額は `data/contracts.json` の `budget.tiers.huge`(120。古い設定にはないので、そのときは大の 100 倍)。単価を求める資金の合計は `ContractContext.total_cap` が `rate_funds` で超大量を大の上限に抑えて数える。設備の初期は大と同じ(`FacilitySettings.initial`)。
 - **画面**:新規開始の「詳しい設定」の `#place-fields`(リーグ名・球場名の欄)と `input[name=my-tier]`(自動・小・中・大・超大量)。説明バーは用語集の `setting.league_name`・`setting.stadium_name`・`setting.my_tier`。
 
+### 5.1.4 新規開始のテンプレート(D-462〜D-467)
+- **ファイル**:`src/pennant/data/templates/standard.sav`(セーブデータと同じ形。`Game.new` を決まったシード・観戦のみ・初期名・既定の仕組みで呼んだ直後の状態。保存日時は固定)と `standard.json`(`template_format`・`save_format_version`・`fingerprint_version`・`league_seed`・`season_seed`・紹介の `intro`)。`scripts/build_web.py` と `pyproject.toml` で pennant.zip とパッケージに入れる。
+- **計算本体**:`template.py`。`build_template()` が作り、`load_template()` が読み(セーブデータの点検をそのまま使う。1 回読んだら覚える)、`start_from_template()` が始める:名前を当てはめる → 自球団 → 資金力(規模の入れ替え)→ 仕組みの選択肢(外国人・育成なしなら取り除いて新人で埋める)→ 資金・設備・初期の年俸の求め直し(規模か顔ぶれが変わったときだけ。`contract_stage.fit_initial_salaries` を `initialize_contracts` と共用)→ シーズンをシーズンのシードから作り直す。画面からは `Game.from_template`(`api/progress.py`)・`api.template_info()`、橋渡しは `bridge.new_from_template`・`bridge.template_info`。
+- **シードの扱い**:テンプレートの紹介と名前の点検は、テンプレートのリーグのシードで今までの `preview`・`check`・`checkPlaces` をそのまま使う(初期名はリーグのシードだけで決まり、事前運転で変わらないため)。
+- **画面**:`#new-step-choice`(2 つのボタンと紹介)→ 今までの名前の段 → 設定の段。用意したリーグのときは「詳しい設定」のリーグのシード・基準値・スカウトの欄を隠す(`#new-template-hide`)。
+- **作り直しが必要な場合**:選手の生成・名前の部品・事前運転(加齢・引退・オフの手続き)・契約・試合の計算(試運転の基準値)・チーム方針の AI・保存形式のどれかを変えたとき。`python scripts/make_template.py` で作り直してコミットする。速いテスト `tests/test_template.py` は、保存形式の版(`SAVE_FORMAT_VERSION`)と指紋の版(`FINGERPRINT_VERSION`)が `standard.json` と同じことを確かめるので、どちらかを上げると作り直すまで落ちる。重いテストが「作り直したものと同じ」を確かめる(state.json を JSON として比べる。ZIP のバイト列は zlib の版で変わりうるので比べない)。
+- **時間**:用意したリーグで始める時間は PR の本文と下の実測に書く。
+
 ### 5.2 ブラウザの中で完結する方式(段階③。D-081)
 - Python をブラウザ上で実行する仕組み(Pyodide)で、計算本体のコードをそのまま動かす。
 - 計算は Web Worker(画面とは別に裏で計算を進めるブラウザの仕組み)で行い、計算中も画面が固まらないようにする。

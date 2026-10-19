@@ -129,6 +129,7 @@ pytest -m ""              # 全部
 ### Code の手元の手順(D-279)
 - 手元では、直した部分に関係するテストだけを回す(例:`pytest tests/test_fa.py -m ""`)。速いテスト全体・3 つの版・重いテストは、GitHub に任せる(手元では回さない。D-412)。
 - 保存形式の版(`SAVE_FORMAT_VERSION`)を上げるときは、古い版の番号をリポジトリ全体(重いテストを含む)で検索して、取り残しを直す(D-412)。
+- 新規開始のテンプレート(`src/pennant/data/templates/`)は、選手の作り方・事前運転・契約・試合の計算・保存形式などを変えたら、`python scripts/make_template.py` で作り直して同じ PR に入れる(保存形式の版か指紋の版を上げると、速いテストが作り直すまで落ちる。D-467)。
 - 通し確認(`scripts/check_browser.mjs`)は○×を 1 つずつその場で出す。GitHub の Actions の「e2e」(手動で始める仕組み。`.github/workflows/e2e.yml`)でも回せ、結果は実行のページの Summary に出る(D-413)。
 - 受け入れ条件の測定(`scripts/inspect_*.py`、ブラウザの通し確認など)は、テストとは別の作業として、今までどおり行う。
 - 30 年の安定の確認は、GitHub の Actions の「stability」(手動で始める仕組み。`.github/workflows/stability.yml`)でも回せる。Code の作業環境が片付けられても止まらない。結果は実行のページの Summary に出る(D-363)。手元で回すときは、Code の見張る形(バックグラウンドの作業として登録する形)で回す。
