@@ -44,6 +44,7 @@ src/pennant/
   fatigue.py          投手の疲労と回復(1日進める関数を含む)
   manager.py          一軍の選抜・スタメン・打順・休養・継投の簡易ルール(差し替えられる形)
   pitching_plan.py    自球団の投手の起用の計画(先発の順・救援の役割)を一軍に当てはめ、抜けた枠だけ組み直す(D-449、D-450)
+  staff.py            球団職員(監督・コーチ・スカウト):設定・職員の作り方・効き(コーチの伸びの倍率・スカウトのずれの倍率・監督の腕の段階と好み)・職員の年俸・職員の段階(市場・希望・締める・解任・入れ替え)・初期の職員・担当の記録(D-468〜D-479)
   policy.py           チーム方針(練習の重点・起用の方針・試合の作戦)の値と点検、AI の決め方(差し替えられる形 `SimplePolicyMaker`)、練習の伸びの倍率(D-454〜D-457)
   game.py             1試合の進行
   game_stats.py       試合の集計と、1試合の流れの文章化(開発者向けの確認用)
@@ -89,6 +90,7 @@ src/pennant/
     trade.py            トレード(画面・あなたから持ちかける・AI からの提案に答える・シーズン中の決まった日の AI の動き。D-378)
     active_draft.py     現役ドラフト(候補を出す・指名する・段階の情報。D-380)
     facilities.py       設備(全球団の段階・あなたの球団の段階を変える。D-383)
+    staff.py            球団職員(職員の段階の画面・希望・解任・締める・チームのページの職員と入れ替え・AI に戻す・記録室の監督。D-474〜D-477)
     offseason.py        オフの手続きの流れ(段階・次の手続きへ・おまかせ・オフの結果)
   ability_model.py    見せる能力(作り直し①):内部の能力への換算・1〜100 とランク・球速・弾道・球種の見せ方・伸びやすさと球種の生成(D-347〜D-351)
   condition.py        調子(5 段階。5 日ごとに、シード・選手・日だけで決まる。D-424)
@@ -113,6 +115,7 @@ src/pennant/
   fa.py               FA(一軍登録のシーズンの数え方・FA 権・宣言の確率・提示ラウンド制の FA 市場・AI の提示。F3-2c。D-258〜D-264、D-359)
   data/contracts.json         契約の設定(最低年俸・基準額・規模の倍率・順位による資金の増減・重み・能力の重み・減額の下限・年齢の割引・複数年の表・巡ごとの年俸・能力と WAR の対応。9 章)
   data/negotiation.json       FA の設定(選手が選ぶ点数 `choice`・宣言の確率・ラウンド・AI の方針・主力級の期待。9 章)
+  data/staff.json             球団職員の設定(役割・腕のランク・効き・年俸の表・市場の人数・AI の決まり。仮置き。9 章)
   data/draft.json             オフの手続きの設定(巡数、候補の数、市場の巡数、ずれの大きさ、評価(A〜E)の割合、スカウトの一言の言葉、AI の自由契約の上限。仮置き。9 章)
   history.py          シーズンごとの集計(履歴)の形(F2。D-182、D-189)
   data/offseason.json         引退の確率・打席ログを残すシーズン数(仮置き。9 章)
@@ -358,6 +361,14 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **事前運転と校正**(D-034 の完成形。D-190、D-197。`newgame.new_league(prerun=True)`):初期選手の生成 → `offseason.prerun(league, seed, ...)`(`run_offseason` を `prerun_years` 回。乱数は `derive_seed(リーグのシード, "prerun:<年>")`。新人の ID は `B<年>R<番号>`。履歴は作らない)→ `offseason.apply_calibration(league, calibration)`(強弱の項目の潜在能力に役割ごとの定数を足し、現在の能力を年齢カーブで出し直す)→ 試運転の基準値 → 1 シーズン目。校正の定数は `data/offseason.json` の `calibration`(`scripts/calibrate.py` で求める)。`GameState.calibration` に新規開始時の定数を持ち、その後の新人(`make_rookie(potential_shift=…)`)にも足す。引退の判定(能力の分)は、総合値から定数を引いた校正前の目盛りで行う。旧版のセーブデータは定数 0(校正なし)で続ける。保存形式は版 7。版 8(F3-1):`scout_level`(ずれの段階)、`scout_sd`(球団ごとの値)、`procedure`(オフの手続きの状態)、`transactions`(指名・自由契約の履歴)、選手の `scouting`(入団時の評価)。版 7 以前は、段階「中」・手続きなしとして読み、次の年度の確定から新しい手続きで進む。版 9(D-215):ずれの段階の設定が `{common, item}` の 2 つの値になり、球団ごとの値 `scout_sd` も同じ形。版 8 の 1 つの数 v は共通 0.8v・項目ごと 0.6v(合計は v のまま)として読み、設定の段階の値は今の設定ファイルに置き換える。版 8 の手続きと入団時の評価は方式の版 1 として読む(進行中の手続きは旧方式のまま終える)。
 
 - **チーム方針**(D-454〜D-457、D-461。`policy.py`・`models.Team.policy`・`api/teams.py`):方針は `Team.policy`(辞書。`practice_batter`・`practice_pitcher`・`usage`・`steal`・`bunt`・`manual`)に持ち、年をまたいで残る(シーズンではなく球団の情報なので)。空や足りないキーは既定(バランス・標準・普通)。AI の決め方は `PolicyMaker` の形(`decide(league, team) -> dict`)で差し替えられ、既定は `SimplePolicyMaker`(戦力・若手の割合・能力のまとまりを 12 球団で比べる)。`policy.refresh_ai(league)` が `manual` でない球団だけ決め直す。呼ぶのは、新規開始(事前運転と校正の後)と年度の確定(`api/progress.year_end` の、加齢・成長の前)。練習は `offseason.age_and_update(..., focus)` で、年齢による増える分にだけ `policy.practice_weights` の倍率を掛ける(選んだ項目 1.2 倍、ほかは伸びの合計が変わらない倍率、下限 0.5)。起用は `Season._roster_score` に方針の点を足し(若手 +3、勝ちにいくは今の一軍の有利なし)、二軍は `Farm.play_day` の `select_active` に若手 +8 の基準を渡す。作戦は試合ごとに `Season._play` で方針から読み、`TeamSetup.steal`・`bunt` と試合の前の状態に入れる。打順の計画の `steal` は版 32 で方針へ移した(打順の計画の保存の形には残すが、新しくは書かない)。
+
+- **球団職員(D-468〜D-480。`staff.py`・`data/staff.json`・`api/staff.py`・`web/js/staff.js`)**:
+  - 職員は辞書(`{id, family_name, given_name, age, role, skill, trait, salary, until, years, player_id?, origin}`)で、`Team.staff`(役割 → 職員)・`Team.staff_manual`(あなたが決めた)・`Team.staff_dead`(解任した職員の残りの年俸 `[{salary, until, ...}]`)、`League.staff_free`(職員の市場)・`League.staff_log`(担当の記録 `[{year, team_id, role, staff_id, name, player_id?}]`)に持つ。リーグに持つのは、オフの手続き・試合・年度の確定のどこからでも引けるようにするため。職員がいない球団(試験用・事前運転)は、すべて標準の効きで年俸 0。
+  - 効き:`staff.coach_factors(team)` が項目 → (伸びの倍率, 衰えの倍率) を返し、`offseason.age_and_update(..., coach=...)` が年齢による増減に掛ける(設備・練習の重点と掛け合わせ。揺れには掛けない。乱数の使い方は変わらない)。スカウトは `GameState.scout_sd_of` が段階の値(または球団ごとの値)に `staff.scout_factor(team)` を掛ける。監督の腕の段階 `staff.manager_level(team)` は `Season._game_plan` が打順の計画の `manager` に入れ(0 は書かない。試合の再現のため)、`SimpleManager.prepare` が `TeamSetup.manager_level` に写し、`game.py` の先発の降板と `choose_reliever` が使う。監督の好みは `SimplePolicyMaker.decide` の最後に当てる(`staff.manager_pref`)。
+  - 年俸:`staff.team_cost(team, season)`(次のシーズンも契約している職員の年俸 + 解任した職員の残り)を、`staff.league_costs(league, facility_settings, season)` が設備の維持費と足して `ContractContext.upkeep` に入れる(`contract_stage` の 2 か所・`newgame`・`template`)。
+  - 職員の段階:内部の段階 `PHASES` に `staff`(release の次、fa の前)を足し、画面の段階 `STAGES` も 9 つにする。`api/progress.year_end` が手続きを作った直後に `staff.start_stage`(契約切れ・AI の監督の解任・架空の候補・元選手の候補。乱数は derive_seed(手続きのシード, "staff:…"))を行い、`proc.staff_on` を真にする(事前運転の手続きでは偽なので段階を飛ばす)。締めるのは `staff.close_stage`(自由契約市場と同じ順番の方式)。`draft.complete` も職員の段階を AI の方針で締める。締めたら `proc._cache` を捨て(スカウトの腕で評価が変わるため。保存して読み込んでも同じ結果にする)、AI の球団のチーム方針を決め直す。
+  - 担当の記録:`year_end` のはじめに `staff.record_season` が、その年の各球団・各役割の職員を `League.staff_log` に足す。記録室の監督の通算は、担当の記録と履歴(`SeasonArchive.standings`・`postseason`)から求める。
+  - 新規開始:`newgame.new_league(prerun=True)` の校正の後、初期の契約の前に `staff.assign_initial(league, names, seed)`(乱数は derive_seed(リーグのシード, "staff"))。版 32 のセーブデータは、変換(`v32_to_v33`)で印を付け、`savegame.load_game` の最後に同じ関数で付ける。
 
 ## 5. 画面(入出力)
 
@@ -814,6 +825,20 @@ UI の整理②の実測(D-306〜D-321):
 | 練習の重点の倍率 | 選んだ項目の伸び 1.2 倍、ほかは伸びの合計が変わらない倍率(下限 0.5) | 「少し」寄せる(D-455)。1 項目を選ぶとほかは約 0.93〜0.96 倍、守備と走塁(4 項目)はミート・パワーが約 0.6 倍になる |
 | 起用の方針の点 | 若手を使う:25 歳以下に一軍 +3・二軍 +8 / 勝ちにいく:今の一軍の有利(4 点)を足さない | 若手は「少し」優先。二軍は人数に余裕があるので大きめ |
 | AI の決め方 | 戦力(上位 25 人の総合の合計)の上位 4 は勝ちにいく、下位 4 か 25 歳以下 5 割以上は若手を使う / 練習は最も下回るまとまり(1 点以上) / 盗塁・バントは走力・パワーの上位と下位 3 球団 | 依頼の例(若手が多い・戦力が低い球団は若手、高い球団は勝ちにいく、弱い項目を補う)をそのまま数にした |
+
+### 球団職員(`src/pennant/data/staff.json`。D-469〜D-475)
+
+| 項目 | 仮置きの値 | 理由 |
+| --- | --- | --- |
+| 腕のランク | S 90〜・A 80〜・B 70〜・C 60〜・D 50〜・E 〜49(内部は 30〜99) | 能力のランク(D-347)と同じ区切り。標準は 60(C の入口) |
+| コーチの効き | 伸び 1 点あたり +0.5%、衰え 1 点あたり −0.25%(腕 60 で標準) | S(90)で伸び +15%。設備の練習の 1 段階(15%)と同じくらい(D-473) |
+| スカウトの効き | ずれ × (1 − 0.007 ×(腕 − 60))、0.6〜1.4 | S で約 0.8 倍。ずれの「中」と「小」の間くらい |
+| 監督の腕の段階 | (腕 − 60)÷ 15 を四捨五入、−2〜+2 | S の上の方だけ +2。差は小さく |
+| 年俸 | S 6000 万・A 4000 万・B 2500 万・C 1500 万・D 1000 万・E 600 万円、監督は 2 倍 | 1 球団でおよそ 1 億円(設備 1 つの段階 3 の維持費より少し少ない) |
+| 腕の分布 | 初期 平均 60・標準偏差 12、市場の架空 平均 56、元選手 平均 58(+ 通算 WAR × 0.1、6 まで) | 雇われた職員の平均がおよそ 60(標準)になるように |
+| 市場 | 架空 役割ごとに 3 人、元選手 6 人まで(通算 WAR 5 以上)、40 人まで | 毎年 1〜3 球団ほどが入れ替える量 |
+| AI の監督の交代 | 最下位 40%・5 位 15% | 「成績が悪いと代えることがある」 |
+| 職員をやめる年齢 | 70 歳 | |
 
 ### バランス調整(D-386〜D-389)
 | 項目 | 仮置きの値 | 理由 |
