@@ -308,14 +308,14 @@ select { font: inherit; font-size: 0.95rem; padding: 8px; border: 1px solid var(
 .info strong { display: block; }
 .info:empty { display: none; }
 /* 操作の帯(D-482):表示の切り替え → 右寄せで「絞り込み」「並び」(押すと下に開く)。帯のすぐ下が表 */
-.tband { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--bg-deep); border: 1px solid var(--line); border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; padding: 6px; margin: var(--space-2) 0 0; position: relative; z-index: 4; }
+.tband { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--bg-deep); border: 1px solid var(--line); border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; padding: 4px 6px; margin: var(--space-1) 0 0; position: relative; z-index: 4; }
 .tband + * .table-wrap, .tband + .table-wrap { border-top-left-radius: 0; border-top-right-radius: 0; }
 .tband .seg.tseg { display: inline-flex; margin: 0; gap: 2px; background: var(--box); border-radius: 10px; padding: 3px; flex: 0 1 auto; }
 .tband .seg.tseg button { flex: 0 0 auto; background: transparent; box-shadow: none; min-height: 32px; padding: 2px 10px; font-size: 0.85rem; font-weight: 800; color: var(--muted); margin: 0; border-radius: 8px; }
 .tband .seg.tseg button[aria-pressed=true] { background: var(--gold); color: var(--gold-fg); }
-.tspacer { flex: 1 1 0; }
+.tband-right { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-left: auto; }
 details.chip { margin: 0; } /* 開いた中身は帯の幅の中に出す(画面の外にはみ出さない) */
-details.chip > summary { min-height: 34px; padding: 2px 10px; border: 1px solid var(--line); background: var(--box); border-radius: 8px; color: var(--fg); font-size: 0.82rem; font-weight: 700; list-style: none; gap: 4px; white-space: nowrap; }
+details.chip > summary { min-height: 32px; padding: 2px 10px; border: 1px solid var(--line); background: var(--box); border-radius: 8px; color: var(--fg); font-size: 0.82rem; font-weight: 700; list-style: none; gap: 4px; white-space: nowrap; }
 details.chip > summary::-webkit-details-marker { display: none; }
 details.chip > summary::after { content: "▾"; color: var(--muted); }
 details.chip[open] > summary { border-color: var(--accent); }
@@ -439,13 +439,13 @@ button.busy::before { content: ""; width: 16px; height: 16px; margin-right: 8px;
 .pick-split { container-type: inline-size; }
 .pick-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
 .pick-main { min-width: 0; }
-.pcard-box { position: sticky; top: calc(var(--topbar-h) + 4px); z-index: 5; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); box-shadow: var(--shadow); }
-.pcard-box.empty { position: static; box-shadow: none; }
+.pcard-box { position: sticky; top: calc(var(--topbar-h) + 4px); z-index: 5; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); box-shadow: var(--shadow); }
+.pcard-box.empty { display: none; } /* 狭い画面では、何も選んでいないときの案内を出さない(表の上端を 4 割以内に。D-270、D-485) */
 .right-pane .pcard-box { top: 0; }
 @container (min-width: 720px) {
   .pick-grid { grid-template-columns: minmax(0, 1fr) 20rem; }
   .pcard-box { order: 2; max-height: calc(100vh - var(--topbar-h) - 16px); }
-  .pcard-box.empty { position: sticky; }
+  .pcard-box.empty { display: block; position: sticky; box-shadow: none; }
   .pcard-empty { padding: 24px 12px; text-align: center; }
 }
 .pcard-empty { margin: 0; padding: 6px 12px; font-size: 0.82rem; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-s); }

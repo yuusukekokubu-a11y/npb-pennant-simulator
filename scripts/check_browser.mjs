@@ -11,6 +11,8 @@
 //   新規開始(球団名の検証・自球団の選択)→ 進行(1日・1週間・最後まで・止める)→ 順位表(Python の順位と同じか)
 //   → 保存 → ページの読み込み直し → 読み込み → 最後まで。最後の結果が、指紋 (d) と同じか。
 //   画面の文字に能力値・隠し情報の言葉がないか。通信先と、ブラウザの保存領域の状態。閉じる前の警告。
+//   表の統一(D-481〜D-489):行を押すと選手の札が出て中身が計算本体と同じ、表示を切り替えても列の数・幅・並び・選んだ選手が同じ、
+//   名前が下線のリンクでない、年俸の増減ボタンの色、札の位置(広い画面は表の右、狭い画面は表の上)。
 // Python は、保存したファイルを確かめるときだけ使う(PYTHONPATH=src)。
 
 import { execFileSync } from "node:child_process";
@@ -94,7 +96,7 @@ async function findBlocks() {
   const f = await page.evaluate(() => {
     const scr = [...document.querySelectorAll("main.screen")].find((m) => !m.hidden);
     if (!scr) return null;
-    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .allstar, .series, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions, #mine-card";
+    const skip = "table, #guide-body, .message, [role=alert], .offer-panel, .game-card, .allstar, .series, .log, #recent, .outlook-panel, .help-bar, #proc-autolog, details:not([open]), #player-info, #team-info, #stadium-info, #yearend-champions, #mine-card, .pcard-box, .tband";
     const blocks = [...scr.querySelectorAll("p, dl, dd, .info, .notice, .card")].filter((e) => e.offsetParent && !e.closest(skip) && !e.classList.contains("message") && e.textContent.trim().length > 50).map((e) => e.textContent.trim().slice(0, 30));
     return { screen: scr.id, blocks };
   });
@@ -113,6 +115,59 @@ async function day() {
   return m ? Number(m[1]) : -1;
 }
 const isDirty = () => page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
+
+// ---- 表の統一(D-481〜D-486):帯の「絞り込み」「並び」の中の欄は開いてから操作する。行を押すと選手の札 ----
+// 押す前に、押すものを含まない開いた帯の小さなボタンを閉じる(開いた中身が表の見出しなどを隠すため。人が外を押したときと同じ)
+const closeChips = (sel = null) => page.evaluate((s) => {
+  let target = null;
+  try { target = s ? document.querySelector(s) : null; } catch { target = null; }
+  for (const d of document.querySelectorAll("details.chip[open]")) if (!target || !d.contains(target)) d.open = false;
+}, sel);
+const rawClick = page.click.bind(page);
+page.click = async (sel, opts) => {
+  await closeChips(sel);
+  return rawClick(sel, opts);
+};
+async function openChip(sel) {
+  await page.waitForSelector(sel, { state: "attached" });
+  await page.$eval(sel, (e) => { const d = e.closest("details.chip"); if (d && !d.open) d.open = true; });
+}
+async function bandSelect(sel, value) {
+  await openChip(sel);
+  await page.selectOption(sel, value);
+}
+async function bandClick(sel) {
+  await openChip(sel);
+  await page.click(sel);
+}
+async function bandCheck(sel, on) {
+  await openChip(sel);
+  if (on) await page.check(sel);
+  else await page.uncheck(sel);
+}
+// 行を押す。狭い画面では上に選手の札が貼り付くので、行を画面の真ん中に出してから押す(D-485)
+async function rowClick(target) {
+  const loc = typeof target === "string" ? page.locator(target).first() : target;
+  await closeChips();
+  await loc.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await loc.locator("td").first().click(); // 名前の欄を押す(行の中の選ぶ欄・ボタンを押しても札は開かない。D-484)
+}
+// 個人成績のリーグを変え、帯のチームの欄が新しいリーグの球団に描き直されるまで待つ
+async function selectLeague(lg) {
+  const before = await page.$eval("#stats-team", (s) => [...s.options].map((o) => o.value).join());
+  await bandSelect("#stats-league", String(lg));
+  statsLeague = lg;
+  await page.waitForFunction((b) => { const s = document.querySelector("#stats-team"); return s && s.options.length === 7 && [...s.options].map((o) => o.value).join() !== b; }, before);
+}
+// 名前で行を選ぶ(名前は .pname。下線のリンクではない。D-484)
+const rowOf = (scope, name) => page.locator(`${scope} tbody tr`, { has: page.locator(`.pname:text-is(${JSON.stringify(name)})`) }).first();
+// 行を押して選手の札を出し、札の「選手のページを開く」で選手のページへ
+async function openPlayerFrom(row, host) {
+  await rowClick(row);
+  await page.waitForSelector(`#pcard-${host} .pcard-open`);
+  await page.click(`#pcard-${host} .pcard-open`);
+  await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelector("#player-name").textContent.length > 0);
+}
 
 async function standingsOnScreen(endLeague = null) {
   await page.click("#tabs button[data-tab=standings]");
@@ -293,17 +348,31 @@ const rosterCounts = await page.$$eval("#roster-body section:not(#roster-pitchin
 const condMarks = await page.$$eval("#roster-body .cond", (els) => els.map((e) => e.textContent.slice(0, 1)));
 check(rosterCounts.length === 4 && rosterCounts[0].includes("6 人") && rosterCounts[1].includes("8 人") && rosterCounts[2].includes("15 人") && condMarks.length > 29 && condMarks.every((m) => "↑↗→↘↓".includes(m)), `一軍登録の画面:${rosterCounts.join("・")}。調子のマーク(${[...new Set(condMarks)].join("")})`);
 check((await page.isChecked("#roster-auto")) && (await page.textContent("#roster-info")).includes("次の見直し"), `「AI に任せる」が最初からオン(${await page.textContent("#roster-info")})`);
-await page.click("#roster-relievers tbody tr:first-child td:last-child button");
+// 行を押すと札が出て、その下に「二軍に外す」(D-486)。外す選手を選ぶと、二軍の投手の札だけ「上げる」が押せる
+await rowClick("#roster-relievers tbody tr:first-child");
+await page.waitForSelector("#pcard-roster .roster-out");
+await page.click("#pcard-roster .roster-out");
 await page.waitForFunction(() => document.querySelector("#roster-message").textContent.includes("上げる"));
-const farmRows = await page.$$eval("#roster-farm tbody tr", (trs) => trs.map((tr) => [tr.children[3].textContent, tr.querySelector("td:last-child button")?.disabled]));
-const pitcherFarm = farmRows.filter((r) => r[1] !== undefined && /^(投手|先発|救援)/.test(r[0]));
-const batterFarm = farmRows.filter((r) => r[1] !== undefined && !/^(投手|先発|救援)/.test(r[0]));
-check(pitcherFarm.length > 0 && pitcherFarm.every((r) => r[1] === false) && batterFarm.every((r) => r[1] === true), `救援投手の「外す」を押すと、二軍の投手だけ「上げる」が押せる(投手 ${pitcherFarm.length} 人・野手 ${batterFarm.length} 人)`);
-await page.click("#roster-relievers tbody tr:first-child td:last-child button");
+const farmKinds = await page.$$eval("#roster-farm tbody tr", (trs) => trs.map((tr, i) => [i, tr.children[3].textContent, tr.children[4].textContent]));
+const farmCanUp = async (i) => {
+  await rowClick(`#roster-farm tbody tr:nth-child(${i + 1})`);
+  await page.waitForFunction((n) => { const c = document.querySelector("#pcard-roster .pcard"); const tr = document.querySelector(`#roster-farm tbody tr:nth-child(${n + 1})`); return c && tr && c.dataset.playerId === tr.dataset.pid; }, i);
+  const b = await page.$("#pcard-roster .roster-in");
+  return b ? !(await b.isDisabled()) : null;
+};
+const pFarm = farmKinds.find((r) => /^(投手|先発|救援)/.test(r[1]) && !r[2]);
+const bFarm = farmKinds.find((r) => !/^(投手|先発|救援)/.test(r[1]) && !r[2]);
+const pUp = pFarm ? await farmCanUp(pFarm[0]) : null;
+const bUp = bFarm ? await farmCanUp(bFarm[0]) : null;
+check(pUp === true && bUp === false, `救援投手を「二軍に外す」で選ぶと、二軍の投手の札だけ「上げる」が押せる(投手 ${pUp}・野手 ${bUp})`);
+await rowClick("#roster-relievers tbody tr:first-child");
+await page.waitForSelector("#pcard-roster .roster-out");
+await page.click("#pcard-roster .roster-out");
 await page.waitForFunction(() => document.querySelector("#roster-message").textContent === "");
 check(true, "もう一度押すと、選ぶのをやめられる");
+await page.click("#pcard-roster .pcard-close"); // 札を閉じる(上に貼り付いた札が、下の操作を隠さないように)
 // 投手の起用(D-449〜D-451):先発の番手を ▼ で入れ替え、救援の役割を選んで「この起用にする」。「AI に戻す」で元に戻る
-const starterNames = () => page.$$eval("#roster-starters tbody tr", (trs) => trs.map((tr) => tr.querySelector(".name-cell .link")?.textContent || ""));
+const starterNames = () => page.$$eval("#roster-starters tbody tr", (trs) => trs.map((tr) => tr.querySelector(".name-cell .pname")?.textContent || ""));
 const reliefRoles = () => page.$$eval("#roster-relievers select.pitch-role", (ss) => ss.map((s) => [s.dataset.playerId, s.value]));
 check((await page.textContent("#roster-pitching-source")).includes("AI") && (await page.isDisabled("#roster-pitching-save")) && (await page.$$eval("#roster-starters thead th", (ths) => ths.map((th) => th.textContent))).includes("番手") && (await reliefRoles()).filter((r) => r[1] === "closer").length === 1, `一軍登録の画面に投手の起用(「${await page.textContent("#roster-pitching-source")}」・番手の列・抑え 1 人の役割)`);
 const aiStarters = await starterNames();
@@ -359,7 +428,7 @@ const POLICY_KEYS = ["practice_batter", "practice_pitcher", "usage", "steal", "b
 const policyValues = () => page.evaluate((keys) => keys.map((k) => document.querySelector(`#policy-${k}`).value), POLICY_KEYS);
 const openPolicyTeam = async () => {
   await page.click("#tabs button[data-tab=standings]");
-  await page.click("#standings-body tr:first-child .link");
+  await rowClick("#standings-body tr:first-child"); // チームの行を押すとチームのページ(D-481)
   await page.waitForFunction(() => !document.querySelector("#screen-team").hidden && document.querySelector("#policy-source"));
 };
 await openPolicyTeam();
@@ -415,12 +484,16 @@ await page.waitForSelector("#open-trade:not([hidden])");
 await page.click("#open-trade");
 await page.waitForFunction(() => !document.querySelector("#screen-trade").hidden && document.querySelectorAll("#trade-mine tbody tr").length > 0 && document.querySelectorAll("#trade-theirs tbody tr").length > 0);
 check((await page.textContent("#trade-window")).includes("日目まで"), `トレードの画面:「${await page.textContent("#trade-window")}」`);
-const tradeRows = (sel) => page.$$eval(`${sel} tbody tr`, (trs) => trs.map((tr, i) => ({ i, name: tr.querySelector("button.link")?.textContent || "", v: Number((tr.children[3]?.textContent || "").replace(/[^0-9]/g, "")), locked: tr.querySelector("input").disabled })));
+const tradeRows = (sel) => page.$$eval(`${sel} tbody tr`, (trs) => trs.map((tr, i) => ({ i, name: tr.querySelector(".pname")?.textContent || "", v: Number((tr.children[4]?.textContent || "").replace(/[^0-9]/g, "")), locked: tr.children[1].textContent.startsWith("新") })));
 const mineBefore = (await tradeRows("#trade-mine")).map((r) => r.name);
 const giveRow = (await tradeRows("#trade-mine")).filter((r) => !r.locked).sort((a, b) => a.v - b.v)[0];
 const getRow = (await tradeRows("#trade-theirs")).filter((r) => !r.locked).sort((a, b) => b.v - a.v)[0];
-await page.locator("#trade-mine tbody tr").nth(giveRow.i).locator("input").check();
-await page.locator("#trade-theirs tbody tr").nth(getRow.i).locator("input").check();
+await rowClick(page.locator("#trade-mine tbody tr").nth(giveRow.i)); // 行を押して、札の「出す選手に入れる」(D-486)
+await page.click("#pcard-trade .trade-toggle");
+await page.waitForFunction((i) => document.querySelectorAll("#trade-mine tbody tr")[i].children[1].textContent === "出す", giveRow.i);
+await rowClick(page.locator("#trade-theirs tbody tr").nth(getRow.i));
+await page.click("#pcard-trade .trade-toggle");
+await page.waitForFunction((i) => document.querySelectorAll("#trade-theirs tbody tr")[i].children[1].textContent === "欲しい", getRow.i);
 await page.waitForFunction(() => !document.querySelector("#trade-propose").disabled, null, { timeout: 10000 }).catch(() => {});
 check(!(await page.isDisabled("#trade-propose")), `出す選手(${giveRow.name})と欲しい選手(${getRow.name})を選ぶと、持ちかけられる`);
 await page.click("#trade-propose");
@@ -482,11 +555,13 @@ async function statsOnScreen() {
     const more = page.locator("#stats-table .more");
     if (!(await more.count())) break;
     const before = await more.textContent();
+    await closeChips();
     await more.click();
     // 押したあとの作り直し(裏の計算を待つことがある)が終わるまで待つ
     await page.waitForFunction((b) => { const m = document.querySelector("#stats-table .more"); return !m || m.textContent !== b; }, before);
   }
-  return page.$$eval("#stats-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, ...[...tr.children].slice(1).map((td) => td.textContent)]));
+  // 名前(下線のリンクではない .pname)と各列の値。空の列(列の数をそろえるため。D-483)は除く
+  return page.$$eval("#stats-table tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .pname").textContent, ...[...tr.children].slice(1).filter((td) => !td.classList.contains("pad")).map((td) => td.textContent)]));
 }
 
 // 今の並び順(並び順の欄の指標と、押されている向きのボタン)。説明のブロックはないので、欄の表示で確かめる(D-310)
@@ -503,25 +578,41 @@ async function waitStats(text, timeout = 30000) {
 }
 // 表が計算本体の行(rows)と同じ人数・同じ先頭になるまで待つ(シーズンや種類を切り替えたあと)
 async function waitRows(rows) {
-  await page.waitForFunction(([n, top]) => { const m = document.querySelector("#stats-table .more"); const trs = document.querySelectorAll("#stats-table tbody tr"); const rest = m ? Number((m.textContent.match(/あと (\d+)/) || [0, 0])[1]) : 0; const first = trs[0] && trs[0].querySelector("td .link"); return document.querySelector("#stats-loading").hidden && trs.length + rest === n && (!top || (first && first.textContent === top)); }, [rows.length, rows.length ? rows[0][0] : null]);
+  await page.waitForFunction(([n, top]) => { const m = document.querySelector("#stats-table .more"); const trs = document.querySelectorAll("#stats-table tbody tr"); const rest = m ? Number((m.textContent.match(/あと (\d+)/) || [0, 0])[1]) : 0; const first = trs[0] && trs[0].querySelector("td .pname"); return document.querySelector("#stats-loading").hidden && trs.length + rest === n && (!top || (first && first.textContent === top)); }, [rows.length, rows.length ? rows[0][0] : null]);
 }
 // 用語集の解説(見出しの title と同じ文。D-311)
 const termTitle = (label) => JSON.parse(python(`import json\nfrom pennant.glossary import default_glossary, term_text\nprint(json.dumps(term_text(default_glossary().find(${JSON.stringify(label)})), ensure_ascii=False))`));
 
-// 画面の表と同じ形(名前、固定の列があればその値、各列の値)
+// 画面の表と同じ形(名前、並べた列(いつも名前のすぐ右。D-483)、残りの列)
 // 個人成績はいつも 1 つのリーグ(D-431)。最初は自球団のリーグで、画面で選んだリーグと同じ値を渡す
 let statsLeague = null;
-const pyStats = (args) => pyGame(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: statsLeague, ...args }));
-const headsOnScreen = () => page.$$eval("#stats-table th", (ths) => ths.map((th) => th.textContent.replace(/^[▲▼]/, "")));
+const PINNED = `sk = t["sort"]["key"]\nkeys = [sk] + [c["key"] for c in t["columns"] if c["key"] != sk]`;
+const pyStats = (args) => pyGame(`t = g.stats(**a)\n${PINNED}\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: statsLeague, ...args }));
+const headsOnScreen = () => page.$$eval("#stats-table th", (ths) => ths.map((th) => th.textContent.replace(/^[▲▼]/, "")).filter((h) => h !== ""));
+// 表の形(列の数・列の幅・並び順の見出し・選んだ選手・横のスクロール)。表示を切り替えても変わらないこと(D-483)
+const statsShape = () => page.evaluate(() => {
+  const ths = [...document.querySelectorAll("#stats-table thead th")];
+  const sel = document.querySelector("#stats-table tbody tr.sel");
+  return { n: ths.length, widths: ths.map((th) => Math.round(th.getBoundingClientRect().width)).join(","), sorted: (document.querySelector("#stats-table th.sorted") || {}).textContent || "", sel: sel ? sel.dataset.pid : null, order: [...document.querySelectorAll("#stats-table tbody tr")].slice(0, 10).map((tr) => tr.dataset.pid).join(","), scroll: document.querySelector("#stats-table .table-wrap").scrollLeft };
+});
 
 await page.click("#tabs button[data-tab=stats]");
-await page.waitForFunction(() => document.querySelector("#stats-league").options.length === 2);
+await page.waitForFunction(() => document.querySelector("#stats-league")?.options.length === 2);
 statsLeague = Number(await page.inputValue("#stats-league"));
 const myStatsLeague = statsLeague;
 const otherLeague = 1 - myStatsLeague;
 check(!(await page.$$eval("#stats-league option", (os) => os.map((o) => o.textContent))).includes("両リーグ"), `個人成績に両リーグをまとめた表はなく、最初は自球団のリーグ(D-431)`);
 let screenRows = await waitStats("打率(高い順)");
-check((await page.$eval("#stats-filter-box", (d) => !d.open)) && (await page.textContent("#stats-filter-text")).includes("規定到達者だけ"), `絞り込みは 1 つにまとめて閉じ、今の絞り込みを 1 行で出す(「${await page.textContent("#stats-filter-text")}」。D-401)`);
+check((await page.$eval("#stats-filter", (d) => !d.open)) && (await page.textContent("#stats-filter .chip-text")).includes("規定到達者だけ"), `絞り込みは帯の小さなボタン 1 つにまとめて閉じ、今の絞り込みをボタンの文字で出す(「${await page.textContent("#stats-filter .chip-text")}」。D-401、D-482)`);
+// 帯の並び(D-482):表示の切り替え → 右寄せで「絞り込み」→「並び」。帯のすぐ下が表(人数・注意書きの行はない)
+const bandLayout = await page.evaluate(() => {
+  const r = (s) => document.querySelector(s).getBoundingClientRect();
+  const band = r("#stats-band .tband");
+  const between = document.querySelector("#stats-band").nextElementSibling;
+  const before = (a, b) => a.top < b.top - 4 || (Math.abs(a.top - b.top) <= 4 && a.left < b.left); // 行が分かれても、読む順で前
+  return { order: before(r("#stats-kind"), r("#stats-filter")) && before(r("#stats-filter"), r("#stats-sort-chip")), right: band.right - r("#stats-sort-chip").right < 12, gap: Math.round(r("#stats-table .table-wrap").top - band.bottom), next: between && between.id };
+});
+check(bandLayout.order && bandLayout.right && bandLayout.gap >= 0 && bandLayout.gap < 4 && bandLayout.next === "stats-table", `表の上の帯:表示の切り替え →(右寄せ)絞り込み → 並び。帯のすぐ下が表(すき間 ${bandLayout.gap}px)`);
 check((await page.textContent("#stats-leader .leader-title")).endsWith("打率 1位") && (await page.textContent("#stats-leader .leader-name .link")) === screenRows[0][0], `表の上に、並べている指標の 1 位の選手のカード(${screenRows[0][0]}。D-400)`);
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic" })), `個人成績(打者・基本・打率の高い順・規定到達者)が、計算本体の集計と同じ(${screenRows.length}人)`);
 // 画面の測定(幅 390。D-310):個人成績の表の上端が、画面の上から 40% 以内
@@ -535,7 +626,56 @@ check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", ki
   await page.setViewportSize(vp);
   await page.waitForTimeout(300);
 }
-await page.$eval("#stats-filter-box", (d) => (d.open = true)); // 以下の確認では絞り込みを開いておく
+
+// ---- 表の統一(デザインの見直し。D-481〜D-488) ----
+// 名前は青い下線のリンクではない(行全体を押す。D-484)
+const linkLook = await page.evaluate(() => { const tb = document.querySelector("#stats-table"); return { a: tb.querySelectorAll("a").length, link: tb.querySelectorAll(".name-cell .link").length, underline: [...tb.querySelectorAll(".name-cell, .name-cell *")].some((e) => getComputedStyle(e).textDecorationLine.includes("underline")), rows: tb.querySelectorAll("tbody tr.pickable[tabindex='0']").length }; });
+check(linkLook.a === 0 && linkLook.link === 0 && !linkLook.underline && linkLook.rows > 0, `表の選手の名前は下線のリンクではなく、行全体が押せる(${linkLook.rows} 行。D-484)`);
+const hintShown = await page.isVisible("#pcard-stats .pcard-empty");
+const wideSplit = (await page.$eval("#screen-stats .pick-split", (e) => e.getBoundingClientRect().width)) >= 720;
+check((await page.textContent("#pcard-stats")).includes("行を押すと、ここに選手の札が出ます") && hintShown === wideSplit, `何も選んでいないときは、広い画面なら札の置き場に「行を押すと、ここに選手の札が出ます」、狭い画面では出さない(今は${hintShown ? "出ている" : "出ていない"}。D-485)`);
+// 行を押すと選手の札:名前・2 行目・能力・特殊能力が計算本体(player_card)と同じ(D-486)
+const secondId = await page.$eval("#stats-table tbody tr:nth-child(2)", (tr) => tr.dataset.pid);
+await rowClick("#stats-table tbody tr:nth-child(2)");
+await page.waitForFunction((id) => { const c = document.querySelector("#pcard-stats .pcard"); return c && c.dataset.playerId === id && c.querySelector(".ability"); }, secondId);
+const cardPy = pyGame(`c = g.player_card(a["id"])\nprint(json.dumps([c["name"], c["team_name"], c["position_label"], [[x["label"], x["text"]] for x in c["abilities"]], [x["label"] for x in c["skills"]]], ensure_ascii=False))`, JSON.stringify({ id: secondId }));
+const cardUi = await page.evaluate(() => { const c = document.querySelector("#pcard-stats .pcard"); return [c.querySelector(".pcard-name-text").textContent, c.querySelector(".pcard-info").textContent, [...c.querySelectorAll(".ability")].map((e) => [e.querySelector(".ability-label").textContent, e.querySelector(".ability-value").textContent]), [...c.querySelectorAll(".skills .skill:not(.none)")].map((e) => e.textContent)]; });
+check(cardUi[0] === cardPy[0] && cardUi[1].startsWith(`${cardPy[1]} / ${cardPy[2]}`) && JSON.stringify(cardUi[2]) === JSON.stringify(cardPy[3]) && JSON.stringify(cardUi[3]) === JSON.stringify(cardPy[4]) && (await page.$("#stats-table tbody tr.sel")), `行を押すと選手の札(${cardUi[0]}:${cardUi[1]})に能力 ${cardUi[2].length} 項目と特殊能力(${cardUi[3].join("・") || "なし"})が出て、計算本体と同じ。選んだ行に印(D-486)`);
+// 札の形:頭の 2 行目は折り返さない。能力と特殊能力の見出しの高さ・1 行目の上端・行の高さがそろう。ゲージのバーはない
+const cardShape = await page.evaluate(() => {
+  const c = document.querySelector("#pcard-stats .pcard");
+  const heads = [...c.querySelectorAll(".ability-panel .col-head")].map((h) => h.getBoundingClientRect());
+  const ab = c.querySelector(".ability").getBoundingClientRect();
+  const sk = c.querySelector(".skills > .skill").getBoundingClientRect();
+  const info = c.querySelector(".pcard-info");
+  return { headsTop: heads.length === 2 && Math.abs(heads[0].top - heads[1].top) < 1 && Math.abs(heads[0].height - heads[1].height) < 1, firstTop: Math.abs(ab.top - sk.top) < 1, rowH: Math.abs(ab.height - sk.height) < 1, gauge: c.querySelectorAll("progress, meter, .gauge, .bar").length, info: Math.round(info.getBoundingClientRect().height), oneLine: info.getBoundingClientRect().height < 2 * parseFloat(getComputedStyle(info).fontSize) * 1.3 };
+});
+check(cardShape.headsTop && cardShape.firstTop && cardShape.rowH && cardShape.gauge === 0 && cardShape.oneLine, `札の能力と特殊能力は、見出し・1 行目の上端・行の高さがそろい、ゲージのバーはない。頭の 2 行目は 1 行(${cardShape.info}px)`);
+// 札の位置(D-485):その画面の幅が 720px 以上なら表の右、狭ければ表の上
+const cardPos = await page.evaluate(() => { const c = document.querySelector("#pcard-stats").getBoundingClientRect(); const tb = document.querySelector("#stats-table .table-wrap").getBoundingClientRect(); const band = document.querySelector("#stats-band").getBoundingClientRect(); return { right: c.left >= tb.right - 1, above: c.bottom <= band.top + 1, w: Math.round(document.querySelector("#screen-stats .pick-split").getBoundingClientRect().width) }; });
+check(cardPos.w >= 720 ? cardPos.right : cardPos.above, `札の位置:画面の幅 ${cardPos.w}px で、${cardPos.w >= 720 ? "表の右" : "表の上"}に出る(D-485)`);
+// 表示を切り替えても、列の数・幅・並び順・選んだ選手・横のスクロールが変わらない(D-483)
+await page.$eval("#stats-table .table-wrap", (w) => { w.scrollLeft = 40; w.dispatchEvent(new Event("scroll")); });
+const shape0 = await statsShape();
+const shapes = [];
+for (const k of ["saber", "war", "ability", "basic"]) {
+  await page.click(`#stats-kind button[data-value=${k}]`);
+  await page.waitForFunction((kk) => document.querySelector(`#stats-kind button[data-value=${kk}]`).getAttribute("aria-pressed") === "true", k);
+  await waitStats("打率");
+  await page.waitForTimeout(150);
+  shapes.push([k, await statsShape()]);
+}
+const sameShape = shapes.every(([, s]) => s.n === shape0.n && s.widths === shape0.widths && s.sel === shape0.sel && s.order === shape0.order && s.sorted === shape0.sorted && s.scroll === shape0.scroll);
+check(sameShape && shape0.sel === secondId, `表示を 基本 → セイバー → WAR → 能力 → 基本 と切り替えても、列の数(${shape0.n})・列の幅・並び順(打率)・選んだ選手・横のスクロール(${shape0.scroll}px)が変わらない(D-483)${sameShape ? "" : JSON.stringify(shapes.map(([k, s]) => [k, s.n, s.sel === shape0.sel, s.order === shape0.order, s.widths === shape0.widths, s.scroll]))}`);
+// キーボードでも選べる。札の「×」で選ぶのをやめる
+const thirdId = await page.$eval("#stats-table tbody tr:nth-child(3)", (tr) => tr.dataset.pid);
+await page.focus("#stats-table tbody tr:nth-child(3)");
+await page.keyboard.press("Enter");
+await page.waitForFunction((id) => document.querySelector("#pcard-stats .pcard")?.dataset.playerId === id, thirdId);
+check(true, "キーボード(Enter)でも行を選べ、札がその選手に変わる(D-484)");
+await page.click("#pcard-stats .pcard-close");
+await page.waitForFunction(() => document.querySelector("#pcard-stats").textContent.includes("行を押すと"));
+check(!(await page.$("#stats-table tbody tr.sel")), "札の「×」で選ぶのをやめられる");
 check((await page.$eval("#screen-standings th:nth-child(6)", (th) => th.title)) === termTitle("勝率"), "順位表の見出し(勝率)にも、用語集の解説が付く");
 let heads = await headsOnScreen();
 check(heads.indexOf("OPS") === heads.indexOf("長打率") + 1, `基本の打者の表に、長打率の隣に OPS がある(列: ${heads.slice(1).join("・")})`);
@@ -551,16 +691,14 @@ check(heads[1] === "打率" && heads.filter((h) => h === "打率").length === 1 
 check(await page.$eval("#stats-table th:nth-child(2)", (th) => th.classList.contains("sticky2")), "固定列は、横にずらしても見えたまま(sticky)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "avg" })), "固定列つきの表が、計算本体と同じ");
 const sortOptions = await page.$$eval("#stats-sort option", (os) => os.map((o) => o.textContent));
-check(sortOptions.length === 21 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `並び順の欄に、基本・セイバーの全指標と能力(野手 7 項目と特殊能力。作り直し①・D-374)がある(${sortOptions.length}個)`);
-await page.selectOption("#stats-sort", "babip");
+check(sortOptions.length === 21 + 7 + 8 && ["OPS", "wOBA", "本塁打", "BABIP", "WAR", "守備", "ミート", "弾道", "特殊能力"].every((x) => sortOptions.includes(x)), `帯の「並び」に、基本・セイバーの全指標・WAR の列・能力(野手 7 項目と特殊能力)がある(${sortOptions.length}個。D-483)`);
+await bandSelect("#stats-sort", "babip");
 screenRows = await waitStats("BABIP(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "desc" })), "並び順の欄で BABIP を選ぶと並び替わる(計算本体と同じ)");
-await page.click("#stats-order button[data-value=asc]");
+await bandClick("#stats-order button[data-value=asc]");
 screenRows = await waitStats("BABIP(低い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber", sort: "babip", order: "asc" })), "「低い順」を押すと逆の順になる");
-await page.selectOption("#stats-league", String(otherLeague));
-statsLeague = otherLeague;
-await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
+await selectLeague(otherLeague);
 await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("BABIP")));
 await waitStats("BABIP(低い順)");
@@ -568,7 +706,7 @@ check((await page.inputValue("#stats-league")) === String(otherLeague) && (await
 await page.click("#stats-role button[data-value=pitcher]");
 screenRows = await waitStats("防御率(低い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "basic" })) && (await page.inputValue("#stats-league")) === String(otherLeague), "打者から投手に切り替えると、投手の既定の並び順(防御率の低い順)に戻る(絞り込みは保つ)");
-await page.selectOption("#stats-league", String(myStatsLeague));
+await bandSelect("#stats-league", String(myStatsLeague));
 statsLeague = myStatsLeague;
 await page.click("#stats-role button[data-value=batter]");
 await waitStats("打率(高い順)");
@@ -581,23 +719,21 @@ await page.click("#stats-table th button.sort >> text=本塁打");
 screenRows = await waitStats("本塁打(少ない順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc" })), "もう一度押すと逆の順になる");
 // 規定到達者の絞り込みを外す・リーグとチームで絞り込む
-await page.uncheck("#stats-qualified");
+await bandCheck("#stats-qualified", false);
 const all = pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false });
 await waitRows(all);
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(all), `規定到達者の絞り込みを外すと、試合に出た全員(${all.length}人)`);
-await page.selectOption("#stats-league", String(otherLeague));
-statsLeague = otherLeague;
-await page.waitForFunction(() => document.querySelector("#stats-team").options.length === 7);
+await selectLeague(otherLeague);
 const teamId = await page.$eval("#stats-team", (s) => s.options[2].value);
-await page.selectOption("#stats-team", teamId);
-await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length < 40);
+await bandSelect("#stats-team", teamId);
+await waitRows(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false, team_id: teamId })); // 選んだチームの表に描き直されるまで
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc", qualified: false, team_id: teamId })), `リーグ・チームで絞り込める(${screenRows.length}人)`);
-await page.selectOption("#stats-team", "");
-await page.selectOption("#stats-league", String(myStatsLeague));
+await bandSelect("#stats-team", "");
+await bandSelect("#stats-league", String(myStatsLeague));
 statsLeague = myStatsLeague;
-await page.check("#stats-qualified");
+await bandCheck("#stats-qualified", true);
 await waitRows(pyStats({ role: "batter", kind: "basic", sort: "HR", order: "asc" }));
 // 規定到達の判定が、実装⑤の定義(試合数 × 3.1、× 1.0)どおりか
 const qual = pyGame(`
@@ -608,25 +744,25 @@ p = sorted(p for p, c in rec.pitchers.items() if c["OUTS"] >= rec.teams[rec.pitc
 print(json.dumps([b == sorted(g.select_players("batter")), p == sorted(g.select_players("pitcher")), len(b), len(p)]))`);
 check(qual[0] && qual[1], `規定到達の判定が、規定打席(試合数×3.1)・規定投球回(試合数×1.0)どおり(打者 ${qual[2]}人・投手 ${qual[3]}人)`);
 // 守備の表(D-431):ポジションを選んで並べる。捕手は盗塁阻止・捕逸も。上位 30 人で、続きは「もっと見る」
-const pyFielding = (args) => pyGame(`t = g.fielding_stats(**a)\nprint(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: statsLeague, ...args }));
+const pyFielding = (args) => pyGame(`t = g.fielding_stats(**a)\n${PINNED}\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: statsLeague, ...args }));
 await page.click("#stats-role button[data-value=fielder]");
-await page.waitForFunction(() => !document.querySelector("#stats-position-row").hidden && document.querySelector("#stats-kind").hidden && [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("守備イニング")));
+await page.waitForFunction(() => document.querySelector("#stats-position") && !document.querySelector("#stats-kind") && [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("守備イニング")));
 const fieldAll = pyFielding({ position: "all", qualified: false });
-await page.uncheck("#stats-qualified");
+await bandCheck("#stats-qualified", false);
 await waitRows(fieldAll);
 check((await page.$$eval("#stats-table tbody tr", (trs) => trs.length)) <= 30 && (await page.isVisible("#stats-table .more")), `守備の表は上位 30 人を出し、続きは「もっと見る」(全 ${fieldAll.length} 人)`);
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(fieldAll), `守備の表(すべて・守備の得点の高い順)が、計算本体と同じ(列: ${(await headsOnScreen()).slice(1).join("・")})`);
-await page.check("#stats-qualified");
-await page.selectOption("#stats-position", "C");
+await bandCheck("#stats-qualified", true);
+await bandSelect("#stats-position", "C");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("盗塁阻止率")));
 const fieldC = pyFielding({ position: "C" });
 await waitRows(fieldC);
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(fieldC) && fieldC.length > 0, `捕手の表に 盗塁企図・盗塁阻止・盗塁阻止率・捕逸が出て、計算本体と同じ(規定到達 ${fieldC.length} 人)`);
-await page.selectOption("#stats-position", "all");
+await bandSelect("#stats-position", "all");
 await page.click("#stats-role button[data-value=batter]");
-await page.waitForFunction(() => !document.querySelector("#stats-kind").hidden && document.querySelector("#stats-position-row").hidden);
+await page.waitForFunction(() => document.querySelector("#stats-kind") && !document.querySelector("#stats-position"));
 await waitStats("打率(高い順)");
 heads = await headsOnScreen();
 check(heads.includes("盗塁") && heads.includes("犠打"), `打撃の基本の表に盗塁と犠打がある(列: ${heads.slice(1).join("・")})`);
@@ -646,8 +782,8 @@ await page.click("#stats-role button[data-value=batter]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("wRC+")));
 screenRows = await waitStats("wRC+(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "saber" })), `打者のセイバー(wOBA・wRC+・OPS+。wRC+ の高い順)が、計算本体と同じ(${screenRows.length}人)`);
-const baseNote = await page.textContent("#stats-baseline");
-check(await page.isVisible("#stats-baseline") && baseNote === "シーズン途中の値(ここまで)。", `表の近くに、1 行の注意書きだけが出る(「${baseNote}」。基準値の混ぜ方は用語集に。D-310)`);
+const baseNote = await page.getAttribute("#stats-note", "title");
+check(await page.isVisible("#stats-note") && baseNote === "シーズン途中の値(ここまで)。" && (await page.textContent("#stats-note")).startsWith("途中の値"), `注意書きは帯の中の小さな印(「${await page.textContent("#stats-note")}」。全文は「${baseNote}」。基準値の混ぜ方は用語集に。D-310、D-482)`);
 await page.click("#stats-table th button.sort >> text=OPS+");
 await waitStats("OPS+(高い順)");
 check((await page.$eval("#stats-table th.sorted", (th) => th.title)).includes("球場補正"), "OPS+ の見出しの解説に、球場補正つきであることが出る(用語集)");
@@ -666,13 +802,16 @@ results.push(`  (WAR の前の並び順: ${await sortState()})`);
 const warStart = Date.now();
 await page.click("#stats-kind button[data-value=war]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("WAR")), null, { timeout: 180000 });
+await waitStats("wRC+(高い順)", 180000);
+check(true, "「WAR」に切り替えても、前の並び順(wRC+ の高い順。名前の隣の固定列)が保たれる(D-483)");
+await bandSelect("#stats-sort", "war"); // 帯の「並び」で WAR を選ぶ
 screenRows = await waitStats("WAR(高い順)", 180000);
 const warSeconds = (Date.now() - warStart) / 1000;
 results.push(`  WAR の計算と表示にかかった時間(打者、初回): ${warSeconds.toFixed(1)} 秒`);
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "war" })), `打者の WAR(WAR の高い順。打席・内訳つき)が、計算本体と同じ(${screenRows.length}人。${warSeconds.toFixed(1)} 秒)`);
 heads = await headsOnScreen();
-check(heads.slice(1).join("・") === "打席・WAR・打撃・走塁・守備・ポジション補正・控え水準", `打者の WAR の列(${heads.slice(1).join("・")})`);
-check((await page.textContent("#stats-baseline")) === "シーズン途中の値(ここまで)。", "WAR の表の近くに「シーズン途中の値(ここまで)」の 1 行が出る");
+check(heads.slice(1).join("・") === "WAR・打席・打撃・走塁・守備・ポジション補正・控え水準", `打者の WAR の列(並べた WAR は名前のすぐ右。${heads.slice(1).join("・")})`);
+check((await page.getAttribute("#stats-note", "title")) === "シーズン途中の値(ここまで)。", "WAR の表の帯に「シーズン途中の値(ここまで)」の印が出る");
 check((await page.$$eval("#stats-table th", (ths) => ths.filter((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("控え水準")).map((th) => th.title)))[0] === termTitle("控え水準"), "WAR の用語(控え水準など)の解説は、見出しの title(用語集)で見られる");
 const warGroups = await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label));
 check(warGroups.some((g) => g.startsWith("WAR")), "並び順の欄に WAR の列の区分が出る");
@@ -680,18 +819,17 @@ await page.click("#stats-table th button.sort >> text=守備");
 screenRows = await waitStats("守備(高い順)");
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "war", sort: "fielding" })), "守備の得点で並べ替えても、計算本体と同じ");
 await page.click("#stats-kind button[data-value=basic]");
-await waitStats("打率");
-check(true, "WAR の列で並べていても、「基本」に戻すと打率の既定に戻る");
+screenRows = await waitStats("守備(高い順)");
+check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "batter", kind: "basic", sort: "fielding" })) && (await headsOnScreen())[1] === "守備", "WAR の列(守備)で並べたまま「基本」に切り替えても、並び順(守備の高い順。名前の隣の固定列)が保たれる(D-483)");
 await page.click("#stats-kind button[data-value=war]");
 await waitStats("守備(高い順)");
-check(true, "「WAR」に戻すと、守備の得点の並び順が保たれる(D-131)");
+check(true, "「WAR」に戻しても、守備の得点の並び順が保たれる(D-131)");
 await page.click("#stats-role button[data-value=pitcher]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("WAR(失点版)")), null, { timeout: 60000 });
 screenRows = await waitStats("WAR(失点版)(高い順)", 60000);
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats({ role: "pitcher", kind: "war" })), `投手の WAR(失点版の高い順。投球回・失点版・FIP 版)が、計算本体と同じ(${screenRows.length}人)`);
 // 選手のページの WAR と、チームのページの WAR の合計
-await page.click("#stats-table tbody tr:first-child td.sticky .link");
-await page.waitForFunction(() => document.querySelector("#player-name").textContent.length > 0);
+await openPlayerFrom(page.locator("#stats-table tbody tr").first(), "stats");
 await page.click("#player-kind button[data-value=war]");
 await page.waitForFunction(() => document.querySelectorAll("#player-season td").length === 3);
 const warPid = pyGame(`print(json.dumps(g.stats("pitcher", "war", league=a["lg"])["rows"][0]["player_id"]))`, JSON.stringify({ lg: statsLeague }));
@@ -734,17 +872,17 @@ await page.click("#stats-kind button[data-value=ability]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("スタミナ")) && document.querySelectorAll("#stats-table tbody tr").length > 0);
 const pyAbility = pyGame(`
 t = g.ability_table("pitcher", sort="fip", order="asc", league=a["lg"])
-keys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]
+${PINNED}
 print(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ lg: statsLeague }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyAbility), `「能力」の表が、並び順(FIP の低い順。固定列)を保ったまま出る(計算本体と同じ。${screenRows.length}人)`);
 check(screenRows.every((r) => /^\d{3}km\/h$/.test(r[2]) && /^[SABCDEFG] \d{1,3}$/.test(r[3]) && /^[SABCDEFG] \d{1,3}$/.test(r[4])), "能力は 球速 km/h・ランクと 1〜100 で表示(D-347)");
 check((await page.$$eval("#stats-sort optgroup", (gs) => gs.map((g) => g.label))).includes("能力"), "並び順の欄に能力の項目が出る");
 await grab();
-await page.selectOption("#stats-sort", "stamina");
+await bandSelect("#stats-sort", "stamina");
 await waitStats("スタミナ(高い順)");
-check((await headsOnScreen())[1] !== "FIP", "並び順の欄で能力の項目を選ぶと、その項目で並び替わり、固定列は消える");
-await page.selectOption("#stats-sort", "fip");
+check((await headsOnScreen())[1] === "スタミナ" && !(await headsOnScreen()).includes("FIP"), "帯の「並び」で能力の項目を選ぶと、その項目が名前の隣の固定列になって並び替わる(D-483)");
+await bandSelect("#stats-sort", "fip");
 await waitStats("FIP(低い順)");
 
 // 選手のページ
@@ -752,25 +890,25 @@ await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => [...document.querySelectorAll("#stats-table th")].some((th) => th.textContent.replace(/^[▲▼]/, "").startsWith("登板")));
 await waitStats("FIP(低い順)"); // 能力 → 基本 と切り替えても、FIP の低い順(固定列)が保たれる
 const pitcherName = (await statsOnScreen())[0][0];
-await page.click("#stats-table tbody tr:first-child .link");
+await openPlayerFrom(page.locator("#stats-table tbody tr").first(), "stats");
 await page.waitForFunction((n) => document.querySelector("#player-name").firstChild?.textContent === n, pitcherName);
 await page.waitForSelector("#player-games table");
 const pid = pyGame(`print(json.dumps(g.stats("pitcher", sort="fip", order="asc", league=a["lg"])["rows"][0]["player_id"]))`, JSON.stringify({ lg: statsLeague }));
 const pyPlayer = pyGame(`d = g.player(a["id"])\nprint(json.dumps({"season": [d["season"]["tables"]["basic"]["values"][c["key"]] for c in d["season"]["tables"]["basic"]["columns"]], "games": [x["day"] for x in d["games"]]}, ensure_ascii=False))`, JSON.stringify({ id: pid }));
 const seasonOnScreen = await page.$$eval("#player-season td", (tds) => tds.map((td) => td.textContent));
 check(JSON.stringify(seasonOnScreen) === JSON.stringify(pyPlayer.season), `選手のページのシーズン通算が、計算本体と同じ(${pitcherName})`);
-const gameDays = await page.$$eval("#player-games tbody td.sticky .link", (ls) => ls.map((l) => Number(l.textContent.replace("日目", ""))));
+const gameDays = await page.$$eval("#player-games tbody td.sticky .pname", (ls) => ls.map((l) => Number(l.textContent.replace("日目", ""))));
 check(JSON.stringify(gameDays) === JSON.stringify(pyPlayer.games.slice(0, 20)), `試合ごとの成績が新しい順(${gameDays.length}試合)`);
 const abilitiesPy = pyGame(`print(json.dumps([[x["label"], x["text"]] for x in g.player(a["id"])["player"]["abilities"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
 const abilitiesOnScreen = await page.$$eval("#player-abilities .ability", (els) => els.map((e) => [e.querySelector(".ability-label").textContent, e.querySelector(".ability-value").textContent]));
 check(JSON.stringify(abilitiesOnScreen) === JSON.stringify(abilitiesPy), `選手のページの上に能力が出る(${abilitiesPy.map((x) => x.join(" ")).join("・")})`);
 const skillsPy = pyGame(`print(json.dumps([x["label"] for x in g.player(a["id"])["player"]["skills"]], ensure_ascii=False))`, JSON.stringify({ id: pid }));
-const skillsOnScreen = await page.$$eval("#player-skills .skill", (els) => els.map((e) => e.textContent));
+const skillsOnScreen = await page.$$eval("#player-skills .skill:not(.none)", (els) => els.map((e) => e.textContent));
 check(JSON.stringify(skillsOnScreen) === JSON.stringify(skillsPy) && (skillsPy.length || (await page.textContent("#player-skills")).includes("なし")), `選手のページに特殊能力が出る(${skillsPy.join("・") || "なし"})`);
 await grab();
 
 // 試合のページ(文章ログが、確認用の形式と同じ内容か)
-await page.click("#player-games tbody tr:first-child td.sticky .link");
+await rowClick("#player-games tbody tr:first-child"); // 行を押すと試合のページ(D-484)
 await page.waitForFunction(() => document.querySelectorAll("#game-log li").length > 20);
 const gameNo = pyGame(`print(json.dumps(g.player(a["id"])["games"][0]["game_no"]))`, JSON.stringify({ id: pid }));
 const logOnScreen = await page.$$eval("#game-log li", (lis) => lis.map((li) => li.textContent));
@@ -1027,7 +1165,7 @@ async function measureDecision(label) {
       const t = e.getBoundingClientRect().top;
       if (!rows.some((x) => Math.abs(x - t) < 12)) rows.push(t);
     }
-    const blocks = [...scr.querySelectorAll("p, dl, .info, .contract-box")].filter((e) => e.offsetParent && e.getBoundingClientRect().bottom <= tableTop && e.id !== "proc-message" && e.textContent.trim().length > 0);
+    const blocks = [...scr.querySelectorAll("p, dl, .info, .contract-box")].filter((e) => e.offsetParent && !e.closest(".pcard-box, .tband") && e.getBoundingClientRect().bottom <= tableTop && e.id !== "proc-message" && e.textContent.trim().length > 0);
     const lis = [...document.querySelectorAll("#proc-steps li")].map((l) => Math.round(l.getBoundingClientRect().top));
     return { tableTop, ratio: tableTop / window.innerHeight, rows: rows.length, blocks: blocks.map((b) => b.id || b.className), tabsOneLine: new Set(lis).size === 1 };
   });
@@ -1038,8 +1176,8 @@ async function measureDecision(label) {
 }
 await measureDecision("契約");
 // 契約の表(D-272・D-284・D-358):自球団の全選手。列は 名前・WAR・状態・新しい年俸・増減・ポジション・年齢・今の契約・出場。初期は WAR の低い順
-const rosterHeads = async () => page.$$eval("#proc-body thead th", (ths) => ths.map((t) => t.textContent.replace(/^[▲▼]/, "")));
-const rosterCells = async (labels) => page.$$eval("#proc-body tbody tr:not(.detail)", (trs, labels) => { const heads = [...document.querySelectorAll("#proc-body thead th")].map((t) => t.textContent.replace(/^[▲▼]/, "")); return trs.map((tr) => [tr.querySelector("td .link").textContent, ...labels.map((l) => tr.children[heads.indexOf(l)].textContent)]); }, labels);
+const rosterHeads = async () => page.$$eval("#proc-body thead th", (ths) => ths.map((t) => t.textContent.replace(/^[▲▼]/, "")).filter((h) => h !== "")); // 空の列(D-483)は除く
+const rosterCells = async (labels) => page.$$eval("#proc-body tbody tr:not(.detail)", (trs, labels) => { const heads = [...document.querySelectorAll("#proc-body thead th")].map((t) => t.textContent.replace(/^[▲▼]/, "")); return trs.map((tr) => [tr.querySelector("td .pname").textContent, ...labels.map((l) => tr.children[heads.indexOf(l)].textContent)]); }, labels);
 const contractPy = (args) => pyAfter(`t = g.contract_table(**a)
 print(json.dumps([[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"]] + [[t["sort"]["label"], t["order"], [c["label"] for c in t["columns"]]]], ensure_ascii=False))`, JSON.stringify(args));
 let cHead = await rosterHeads();
@@ -1054,11 +1192,11 @@ check((await page.textContent("#proc-info")).startsWith(wantInfo()) && !(await p
 check((await page.textContent("#proc-budget")).startsWith("総年俸") && (await page.textContent("#proc-budget")).includes("資金の") && !(await page.$("#renew-auto")), `状態バーに総年俸と資金の使用率が出て、「自動案で更改」のボタンはない(「${await page.textContent("#proc-budget")}」)`);
 check(!(await page.textContent("#proc-body")).includes("志望"), "契約の画面に志望の重みは出ない(D-245、D-338)");
 // 状態の絞り込み「更改済」:更改した選手だけ。選手を押すと、更改の結果(前の年俸 → 新しい年俸)と「自由契約にする」だけのパネル
-await page.selectOption("#contract-status", "accepted");
+await bandSelect("#contract-status", "accepted");
 await page.waitForFunction(() => document.querySelector("#contract-status").value === "accepted" && [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("更改済")));
 check((await page.$$("#proc-body tbody tr:not(.detail)")).length === rnPy[0].accepted, `状態で「更改済」に絞り込むと、更改した選手だけが出る(${rnPy[0].accepted} 人)`);
 const [keptName, keptPid, keptOld, keptNew] = pyAfter(`print(json.dumps(next([r["name"], r["player_id"], r["renewal"]["old_text"], r["renewal"]["new_text"]] for r in g.contract_table("all", status="accepted")["rows"] if r["can_release"]), ensure_ascii=False))`); // 最低人数を割らない選手
-await page.click(`#proc-body tbody tr .name-cell .link:text-is("${keptName}")`);
+await rowClick(rowOf("#proc-body", keptName)); // 行を押すと札の下に更改の結果と「自由契約にする」(D-486)
 await page.waitForSelector(`#offer-panel[data-player-id="${keptPid}"] #offer-release`); // 前に開いていたパネルが残っている間に読まないよう、押した選手のパネルを待つ
 const panelText = await page.textContent("#offer-panel");
 check(!(await page.$("#offer-send")) && !(await page.$("#offer-salary")) && panelText.includes(`更改:${keptOld} → ${keptNew}`), `更改した選手のパネルは、更改の結果(「${panelText.slice(0, 40)}…」)と「自由契約にする」だけ(提示はない)`);
@@ -1073,9 +1211,9 @@ rnPy = statusPy();
 check((await page.isDisabled("#proc-next")) === !rnPy[4], `「次の手続きへ」は資金を超えている間だけ押せない(超過 ${Number(rnPy[3]).toLocaleString()} 万円)`);
 for (let i = 0; i < 40 && (rnPy[3] > 0 || rnPy[5] < 20000 || rnPy[2] > 61); i++) { // 超過を解消し、あとのドラフト・FA・市場の分の資金(2 億円)と枠(FA 1・ドラフト 6・市場 1)も空ける
   const [pid, name] = pyAfter(`print(json.dumps(next([r["player_id"], r["name"]] for r in g.contract_table("all", sort="contract", order="desc")["rows"] if r["can_release"] and r["in_team"]), ensure_ascii=False))`);
-  await page.selectOption("#contract-status", "all");
+  await bandSelect("#contract-status", "all");
   await page.waitForFunction(() => document.querySelector("#contract-status").value === "all");
-  await page.click(`#proc-body tbody tr .name-cell .link:text-is("${name}")`);
+  await rowClick(rowOf("#proc-body", name));
   await page.waitForSelector(`#offer-panel[data-player-id="${pid}"] #offer-release`);
   const before = await page.textContent("#proc-info");
   await page.click("#offer-release");
@@ -1085,11 +1223,11 @@ for (let i = 0; i < 40 && (rnPy[3] > 0 || rnPy[5] < 20000 || rnPy[2] > 61); i++)
 }
 check(rnPy[3] === 0 && !(await page.isDisabled("#proc-next")), `資金の中に収めると「次の手続きへ」が押せる(資金の残り ${Number(rnPy[5]).toLocaleString()} 万円)`);
 // ポジション「投手」:種類(基本・セイバー・WAR)を選べる。見出しのタップで並べ替え
-await page.selectOption("#contract-status", "all");
-await page.selectOption("#contract-group", "pitcher");
+await bandSelect("#contract-status", "all");
+await bandSelect("#contract-group", "pitcher");
 await page.waitForSelector("#contract-kind");
-await page.selectOption("#contract-kind", "saber");
-await page.waitForFunction(() => document.querySelector("#contract-kind").value === "saber" && document.querySelector("#proc-body thead").textContent.includes("FIP"));
+await page.click("#contract-kind button[data-value=saber]"); // 種類は帯の表示の切り替え(D-482)
+await page.waitForFunction(() => document.querySelector("#contract-kind button[data-value=saber]").getAttribute("aria-pressed") === "true" && document.querySelector("#proc-body thead").textContent.includes("FIP"));
 cPy = contractPy({ group: "pitcher", kind: "saber" });
 cRows = await rosterCells(cPy.at(-1)[2]);
 cHead = await rosterHeads();
@@ -1101,7 +1239,7 @@ check(true, "見出しの「年齢」をタップすると、年齢の低い順�
 await page.click("#screen-procedure .back");
 await page.click("#open-offseason");
 await page.waitForFunction(() => !document.querySelector("#screen-procedure").hidden && document.querySelector("#contract-group") && document.querySelector("#contract-group").value === "pitcher");
-check((await page.inputValue("#contract-kind")) === "saber" && (await rosterHeads()).some((h) => h.startsWith("年齢")) && (await page.$eval("#proc-body thead th.sorted", (th) => th.textContent.replace(/^[▲▼]/, ""))).startsWith("年齢"), "進行の画面に戻って開き直しても、絞り込み・種類・並び順は保たれる");
+check((await page.getAttribute("#contract-kind button[data-value=saber]", "aria-pressed")) === "true" && (await rosterHeads()).some((h) => h.startsWith("年齢")) && (await page.$eval("#proc-body thead th.sorted", (th) => th.textContent.replace(/^[▲▼]/, ""))).startsWith("年齢"), "進行の画面に戻って開き直しても、絞り込み・種類・並び順は保たれる");
 // 全員が決まると「次の手続きへ」が押せる。AI 球団の自由契約は、契約の段階の終わりに行われる(D-272)
 await page.waitForFunction(() => !document.querySelector("#proc-next").disabled);
 const aiBefore = pyAfter(`print(json.dumps([g.state.procedure.ai_release_done, len([x for x in g.state.procedure.released if x["team_id"] != g.state.my_team_id])]))`);
@@ -1151,7 +1289,7 @@ faStart[1] = pyAfter(`v = g.offseason_view()\nprint(json.dumps(v["fa"]["counts"]
 // 判断の画面の表(①b):計算本体の decision_table と同じ行・列か(画面は並べ替えた列を名前のすぐ右に固定する)
 const decisionPy = (args, n = 12) => pyAfter(`t = g.decision_table(**a)
 print(json.dumps([[c["label"] for c in t["columns"]], t["sort"]["label"], [[r["name"]] + [r["values"][c["key"]] for c in t["columns"]] for r in t["rows"][:${n}]]], ensure_ascii=False))`, JSON.stringify(args));
-const decisionUi = async (n = 12) => page.$$eval("#proc-body tbody tr:not(.detail)", (trs, n) => { const heads = [...document.querySelectorAll("#proc-body thead th")].map((t) => t.textContent.replace(/^[▲▼]/, "")); return trs.slice(0, n).map((tr) => Object.fromEntries(heads.map((h, i) => [h, i === 0 ? tr.querySelector("td .link").textContent : tr.children[i].textContent]))); }, n);
+const decisionUi = async (n = 12) => page.$$eval("#proc-body tbody tr:not(.detail)", (trs, n) => { const heads = [...document.querySelectorAll("#proc-body thead th")].map((t) => t.textContent.replace(/^[▲▼]/, "")); return trs.slice(0, n).map((tr) => Object.fromEntries(heads.map((h, i) => [h, i === 0 ? tr.querySelector("td .pname").textContent : tr.children[i].textContent]))); }, n);
 async function sameAsPy(args, label) {
   const [cols, sortLabel, rows] = decisionPy(args);
   const heads = await rosterHeads();
@@ -1178,27 +1316,37 @@ if (faStart[0] === "fa") {
   await page.click("#proc-bar .bar-text");
   await page.waitForFunction(() => !document.querySelector("#outlook-panel"));
   // 絞り込み 1 本(投手)と種類(セイバー)
-  await page.selectOption("#fa-group", "pitcher");
+  await bandSelect("#fa-group", "pitcher");
   await page.waitForFunction(() => document.querySelector("#fa-kind"));
-  await page.selectOption("#fa-kind", "saber");
+  await page.click("#fa-kind button[data-value=saber]");
   await page.waitForFunction(() => document.querySelector("#proc-body thead") && document.querySelector("#proc-body thead").textContent.includes("FIP") || document.querySelector("#fa-empty"));
   if (await page.$("#proc-body tbody tr")) await sameAsPy({ stage: "fa", group: "pitcher", kind: "saber" }, "FA の投手・セイバー");
-  await page.selectOption("#fa-group", "all");
+  await bandSelect("#fa-group", "all");
   await page.waitForFunction(() => !document.querySelector("#fa-kind") && document.querySelector("#proc-body tbody tr"));
   // 資金の残りで出せる選手(算定年俸が資金の残り以下)を選ぶ(作り直し②。資金を超える提示はできない)
   const [faName] = pyAfter(`b = g.budget_info(g.state.my_team_id)
 room = b["cap"] - b["total"]
 t = g.decision_table("fa")
 print(json.dumps(next(([r["name"]] for r in sorted(t["rows"], key=lambda r: r["deal"]["calc_salary"]) if r["deal"]["calc_salary"] <= room // 3), [min(t["rows"], key=lambda r: r["deal"]["calc_salary"])["name"]]), ensure_ascii=False))`); // あとのドラフト・市場の分の資金を残す
-  await page.click(`#proc-body tbody tr .link:text-is("${faName}")`);
-  await page.waitForSelector("#fa-panel");
+  await rowClick(rowOf("#proc-body", faName)); // 行を押すと選手の札、その下に提示の操作(D-486)
+  await page.waitForSelector("#pcard-proc #fa-panel");
   const faPid = await page.getAttribute("#fa-panel", "data-player-id");
   check(Boolean(await page.$("#offer-plus10")) && !(await page.textContent("#fa-panel")).includes("志望"), "FA の提示のパネル:年俸と ±% のボタンが出る。志望の重みは出ない");
   // 名前を押したパネルの上に、その選手の本当の能力(見せる能力と特殊能力)、その下に提示の操作(画面の小さな直し。D-416)
   const faAbPy = pyAfter(`p = g.state.season.players[a["id"]]\nprint(json.dumps([x["label"] for x in g.player_abilities(p)], ensure_ascii=False))`, JSON.stringify({ id: faPid }));
-  const faAbUi = await page.$$eval("#fa-panel .ability-panel .ability", (ds) => ds.map((d) => d.textContent));
-  const faOrder = await page.evaluate(() => { const a = document.querySelector("#fa-panel .ability-panel"); const b = document.querySelector("#fa-panel #fa-send"); return Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)); });
-  check(faAbUi.length === faAbPy.length && faAbUi.every((x, i) => x.startsWith(faAbPy[i]) && /\d/.test(x)) && faOrder && (await page.$("#fa-panel .skills")), `FA の提示のパネルの上に、その選手の能力(${faAbUi.length} 項目と特殊能力)が出て、その下に提示の操作がある`);
+  const faAbUi = await page.$$eval("#pcard-proc .ability-panel .ability", (ds) => ds.map((d) => d.textContent));
+  const faOrder = await page.evaluate(() => { const a = document.querySelector("#pcard-proc .ability-panel"); const b = document.querySelector("#pcard-proc #fa-send"); return Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)); });
+  check(faAbUi.length === faAbPy.length && faAbUi.every((x, i) => x.startsWith(faAbPy[i]) && /\d/.test(x)) && faOrder && (await page.$("#pcard-proc .skills")), `FA の選手の札に、その選手の能力(${faAbUi.length} 項目と特殊能力)が出て、その下に提示の操作がある(D-486)`);
+  // 年俸の増減ボタン(D-487):−10%・−5% は赤、+5%・+10% は緑。年俸の欄を挟んで並ぶ
+  const pct = await page.evaluate(() => ["offer-minus10", "offer-minus5", "offer-plus5", "offer-plus10"].map((id) => { const b = document.getElementById(id); return [getComputedStyle(b).backgroundColor, Math.round(b.getBoundingClientRect().left)]; }).concat([[null, Math.round(document.getElementById("offer-salary").getBoundingClientRect().left)]]));
+  check(pct[0][0] === "rgb(184, 55, 63)" && pct[1][0] === "rgb(184, 55, 63)" && pct[2][0] === "rgb(31, 122, 69)" && pct[3][0] === "rgb(31, 122, 69)" && pct[1][1] < pct[4][1] && pct[4][1] < pct[2][1], `年俸の増減ボタン:増やすは緑・減らすは赤(${pct.slice(0, 4).map((x) => x[0]).join(" / ")})、年俸の欄を挟む`);
+  const s0 = Number(await page.inputValue("#offer-salary"));
+  await page.click("#offer-plus10");
+  const s1 = Number(await page.inputValue("#offer-salary"));
+  await page.click("#offer-minus10");
+  const s2 = Number(await page.inputValue("#offer-salary"));
+  check(s1 > s0 && s2 < s1, `+10% で年俸が上がり、−10% で下がる(${s0.toLocaleString()} → ${s1.toLocaleString()} → ${s2.toLocaleString()} 万円)`);
+  await page.fill("#offer-salary", String(s0)); // 提示は算定年俸のまま(この後の流れを今までと同じにする)
   await page.selectOption("#fa-years", "2");
   const faSalary = Number(await page.inputValue("#offer-salary"));
   await page.click("#fa-send");
@@ -1224,8 +1372,8 @@ const fo0 = await sameAsPy({ stage: "foreign" }, "外国人市場");
 check(["見立て", "年齢", "ポジション", "加入後の序列", "年俸", "状態"].every((h) => fo0.heads.includes(h)) && !fo0.heads.includes("評価") && !fo0.heads.includes("スカウトの一言") && (await page.textContent("#proc-info")).includes("一軍 4 まで"), `外国人市場の列は見立ての総合(評価と一言はない。D-418。列:${fo0.heads.join("・")})。状態バーに一軍は 4 人まで`);
 const [foName] = pyAfter(`t = g.decision_table("foreign")
 print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、年俸の最も安い候補
-await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${foName}")`);
-await page.waitForSelector("#foreign-panel");
+await rowClick(rowOf("#proc-body", foName));
+await page.waitForSelector("#pcard-proc #foreign-panel");
 const foPid = await page.getAttribute("#foreign-panel", "data-player-id");
 await page.click("#foreign-send");
 await page.waitForFunction(() => document.querySelector("#proc-info").textContent.includes("希望 1") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 30000 });
@@ -1246,7 +1394,7 @@ await measureDecision("ドラフト");
 check(Boolean(await page.$("#draft-pass")) && !(await page.$("#draft-advance")), "1 巡目の入札の間は、状態バーに「パス」(「自分の番まで」はない)");
 const dr0 = await sameAsPy({ stage: "draft" }, "ドラフト(1 巡目の入札)");
 check(JSON.stringify(dr0.heads) === JSON.stringify(["選手", "見立て", "年齢", "出身", "ポジション", "加入後の序列"]), `ドラフトの列は 名前・見立て・年齢・出身・ポジション・加入後の序列(評価と一言はない。D-418。列:${dr0.heads.join("・")})`);
-check(!(await page.$("#proc-body select[aria-label='並び順']")) && (await page.inputValue("#draft-show")) === "open", "並べ替えのドロップダウンはなく、絞り込みの既定は「未指名だけ」");
+check((await page.$("#proc-body .tband #draft-sort-chip")) && (await page.inputValue("#draft-show")) === "open", "並べ替えは見出しのタップか帯の「並び」(D-482)。絞り込みの既定は「未指名だけ」");
 const thinPy = pyAfter(`t = g.decision_table("draft")\nprint(json.dumps(sorted(t["thin"])))`);
 const thinUi = await page.$$eval("#proc-body tbody .thin", (s) => s.length);
 check(thinPy.length === 0 || thinUi > 0, `手薄なポジション(${thinPy.join("・") || "なし"})に ◆ の印`);
@@ -1255,15 +1403,15 @@ await page.waitForFunction(() => document.querySelector("#proc-body thead th.sti
 await sameAsPy({ stage: "draft", sort: "age", order: "asc" }, "ドラフトを年齢の見出しで並べ替え(年齢が名前の右に固定)");
 await page.click("#proc-body thead th button:has-text('見立て')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.replace(/^[▲▼]/, "").startsWith("見立て"));
-await page.selectOption("#draft-group", "catcher");
+await bandSelect("#draft-group", "catcher");
 await page.waitForFunction(() => [...document.querySelectorAll("#proc-body tbody tr:not(.detail)")].every((tr) => tr.textContent.includes("捕手")) && [...document.querySelectorAll("#proc-body thead th")].some((th) => th.textContent.includes("ミート")));
 const drC = await sameAsPy({ stage: "draft", group: "catcher", sort: "ability", order: "desc" }, "ドラフト(捕手。見立ての能力の各項目)");
 check(["見立て", "弾道", "ミート", "パワー", "走力", "肩力", "守備力", "捕球", "特殊能力"].every((h) => drC.heads.includes(h)), `ポジションの絞り込み 1 本で捕手だけになり、見立ての能力の各項目と特殊能力の列が出る(D-418。列:${drC.heads.join("・")})`);
-await page.selectOption("#draft-group", "all");
+await bandSelect("#draft-group", "all");
 await page.waitForFunction(() => document.querySelectorAll("#proc-body tbody tr:not(.detail)").length > 50);
-await page.click("#proc-body .name-cell .link >> nth=0");
-await page.waitForSelector("#draft-panel");
-check(!(await page.textContent("#draft-panel")).includes("±") && (await page.textContent("#draft-panel")).includes("スカウトの見立て") && (await page.$$eval("#draft-panel .ability", (a) => a.length)) >= 4 && Boolean(await page.$("#draft-panel .skills")) && (await page.textContent("#draft-pick")) === "1 巡目に入札する", "名前を押すと、見立ての能力と特殊能力(ふれ幅はない)と「1 巡目に入札する」が出る");
+await rowClick("#proc-body tbody tr:first-child");
+await page.waitForSelector("#pcard-proc #draft-panel");
+check(!(await page.textContent("#pcard-proc")).includes("±") && (await page.textContent("#pcard-proc")).includes("スカウトの見立て") && (await page.$$eval("#pcard-proc .ability", (a) => a.length)) >= 4 && Boolean(await page.$("#pcard-proc .skills")) && (await page.textContent("#draft-pick")) === "1 巡目に入札する" && !(await page.$("#pcard-proc .pcard-open")), "行を押すと、札に見立ての能力と特殊能力(ふれ幅はない)と「1 巡目に入札する」が出る(候補には選手のページがない)");
 const pk0 = Date.now();
 let bids = 0;
 for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位。D-369)
@@ -1271,9 +1419,9 @@ for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位�
   let pickId = null;
   for (let tries = 0; ; tries += 1) {
     await page.waitForTimeout(300);
-    if (!(await page.$("#draft-panel"))) await page.click("#proc-body .name-cell .link >> nth=0");
-    await page.waitForSelector("#draft-panel");
-    pickId = await page.getAttribute("#draft-panel", "data-player-id");
+    if (!(await page.$("#pcard-proc #draft-panel"))) await rowClick("#proc-body tbody tr:first-child");
+    await page.waitForSelector("#pcard-proc #draft-panel");
+    pickId = await page.getAttribute("#pcard-proc #draft-panel", "data-player-id");
     try {
       await page.click("#draft-pick", { timeout: 5000 });
       break;
@@ -1286,8 +1434,8 @@ for (;;) { // 外れたら、残りの候補から入札し直す(外れ 1 位�
   bids += 1;
   if ((await page.textContent("#proc-info")).startsWith("2/10 巡") || bids > 12) break;
   check((await page.textContent("#proc-message")).includes("外れたので"), `抽選に外れたら、もう一度入札する(${await page.textContent("#proc-message")})`);
-  await page.click("#proc-body .name-cell .link >> nth=0");
-  await page.waitForSelector("#draft-panel");
+  await rowClick("#proc-body tbody tr:first-child");
+  await page.waitForSelector("#pcard-proc #draft-panel");
 }
 const lotPy = pyAfter(`print(json.dumps([[x["name"], x["winner_name"], len(x["teams"])] for x in g.offseason_view()["lottery"]], ensure_ascii=False))`);
 await page.click("#draft-lottery summary");
@@ -1296,10 +1444,10 @@ check((await page.textContent("#proc-info")).startsWith("2/10 巡") && (await pa
 const lotBids = lotPy.reduce((s, x) => s + x[2], 0);
 check(JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) && lotBids >= 1, `1 巡目の入札の結果(${lotPy.length} 人・入札 ${lotBids} 件・抽選 ${lotPy.filter((x) => x[2] > 1).length} 回)が計算本体と同じ${JSON.stringify(lotUi) === JSON.stringify(lotPy.map((x) => x[0])) ? "" : `(画面 ${lotUi.length} 行)`}`);
 await page.click("#draft-lottery summary");
-await page.selectOption("#draft-show", "all");
+await bandSelect("#draft-show", "all");
 await page.waitForFunction(() => document.querySelector("#proc-body thead").textContent.includes("状態"));
 check((await page.textContent("#proc-body")).includes("指名("), "「指名済みも」で、指名された候補も(状態つきで)見られる");
-await page.selectOption("#draft-show", "open");
+await bandSelect("#draft-show", "open");
 await page.waitForFunction(() => !document.querySelector("#proc-body thead").textContent.includes("状態"));
 await page.click("#proc-stage-auto");
 await page.waitForFunction(() => document.querySelector("#proc-title").textContent === "市場" && document.querySelector("#auto-log"), null, { timeout: 60000 });
@@ -1313,10 +1461,10 @@ await page.click("#auto-log summary");
 await measureDecision("市場");
 const mk0 = await sameAsPy({ stage: "market" }, "市場");
 check(["WAR", "総合", "年齢", "ポジション", "加入後の序列", "算定年俸", "出場", "前の所属", "状態"].every((h, i) => mk0.heads[i + 1] === h), `市場の列(能力の総合が見られる。列:${mk0.heads.join("・")})`);
-await page.selectOption("#market-group", "pitcher");
+await bandSelect("#market-group", "pitcher");
 await page.waitForFunction(() => document.querySelector("#market-kind") && document.querySelector("#proc-body thead").textContent.includes("WAR(失点版)"));
 const mkP = await sameAsPy({ stage: "market", group: "pitcher", kind: "war" }, "市場の投手(成績の種類の初期値は WAR。D-240)");
-await page.selectOption("#market-group", "all");
+await bandSelect("#market-group", "all");
 await page.waitForFunction(() => !document.querySelector("#market-kind"));
 await page.click("#proc-body thead th button:has-text('前の所属')");
 await page.waitForFunction(() => document.querySelector("#proc-body thead th.sticky2").textContent.replace(/^[▲▼]/, "").startsWith("前の所属"));
@@ -1324,8 +1472,8 @@ const mkF = await decisionUi(400);
 check(mkF.length > 0 && !mkF.some((r) => r["前の所属"] === "候補") && mkF.some((r) => r["WAR"] !== "—" && /^[SABCDEFG] \d+$/.test(r["総合"])), "指名されなかった候補は市場にいない(D-398)。手放された選手は能力の総合と成績が見られる");
 const [mkName] = pyAfter(`t = g.decision_table("market")
 print(json.dumps([min(t["rows"], key=lambda r: (r["deal"]["calc_salary"], r["player_id"]))["name"]], ensure_ascii=False))`); // 資金の残りで出せるよう、算定年俸の最も安い選手
-await page.click(`#proc-body tbody tr:not(.detail) .name-cell .link:text-is("${mkName}")`);
-await page.waitForSelector("#market-panel");
+await rowClick(rowOf("#proc-body", mkName));
+await page.waitForSelector("#pcard-proc #market-panel");
 const mkPid = await page.getAttribute("#market-panel", "data-player-id");
 check(Boolean(await page.$("#market-send")) && !(await page.$("#offer-salary")) && (await page.textContent("#market-panel")).includes("自動"), "市場のパネル:年俸は自動(入力欄はない)と「獲得を希望する」");
 await page.click("#market-send");
@@ -1351,14 +1499,16 @@ await page.waitForFunction(() => document.querySelector("#proc-title").textConte
 procOps.push(["offseason_next", []]);
 const adPy = pyAfter(`a = g.offseason_view()["active_draft"]
 print(json.dumps([[p["name"] for p in a["eligible"]], a["recommended"], [p["name"] for p in a["eligible"] if p["player_id"] in a["recommended"]]], ensure_ascii=False))`);
-const adUi = await page.$$eval("#active-eligible tbody tr", (trs) => trs.map((tr) => [tr.querySelector("button.link").textContent, tr.querySelector("input").checked]));
+const adUi = await page.$$eval("#active-eligible tbody tr", (trs) => trs.map((tr) => [tr.querySelector(".pname").textContent, tr.children[1].textContent.startsWith("出す")]));
 check(adPy[1].length === 2 && JSON.stringify(adUi.map((x) => x[0])) === JSON.stringify(adPy[0]) && JSON.stringify(adUi.filter((x) => x[1]).map((x) => x[0])) === JSON.stringify(adPy[2]), `現役ドラフト:出せる選手 ${adPy[0].length} 人の表と、AI のおすすめ 2 人(${adPy[2].join("・")})に最初から印`);
 await page.click("#active-offer");
 await page.waitForFunction(() => document.querySelector("#active-picks") || document.querySelector("#active-choices") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
 procOps.push(["active_draft_offer", [adPy[1]]]);
 if (await page.$("#active-choices")) {
   const [adPick] = pyAfter(`print(json.dumps([g.offseason_view()["active_draft"]["recommended_pick"]]))`);
-  await page.click("#active-choices tr.selected .active-pick");
+  await rowClick("#active-choices tr.selected");
+  await page.waitForSelector("#pcard-proc .active-pick");
+  await page.click("#pcard-proc .active-pick");
   await page.waitForFunction(() => !document.querySelector("#active-choices") || document.querySelector("#proc-message").className.includes("ng"), null, { timeout: 60000 });
   procOps.push(["active_draft_pick", [adPick]]);
 }
@@ -1376,15 +1526,15 @@ await page.click("#proc-auto");
 await page.waitForFunction(() => !document.querySelector("#screen-offseason").hidden && document.querySelectorAll("#offseason-retired tbody tr").length > 0, null, { timeout: 120000 });
 check(true, `「おまかせ」で残りを自動で進め、オフの結果の画面になる(${((Date.now() - au0) / 1000).toFixed(1)} 秒)`);
 const offPy = pyYear2(`print(json.dumps([summary["counts"]["retired"], summary["counts"]["rookies"], summary["counts"]["players"], [r["name"] for r in summary["retired"]], [r["name"] for r in summary["rookies"]]], ensure_ascii=False))`);
-const retiredOnScreen = await page.$$eval("#offseason-retired tbody tr td .link", (as) => as.map((a) => a.textContent));
-const rookiesOnScreen = await page.$$eval("#offseason-rookies tbody tr td .link", (as) => as.map((a) => a.textContent));
+const retiredOnScreen = await page.$$eval("#offseason-retired tbody tr td .pname", (as) => as.map((a) => a.textContent));
+const rookiesOnScreen = await page.$$eval("#offseason-rookies tbody tr td .pname", (as) => as.map((a) => a.textContent));
 const countsText = await page.textContent("#offseason-counts");
 check(JSON.stringify(retiredOnScreen) === JSON.stringify(offPy[3]) && JSON.stringify(rookiesOnScreen) === JSON.stringify(offPy[4]) && countsText.includes(`引退 ${offPy[0]}人`) && countsText.includes(`新人 ${offPy[1]}人`) && countsText.includes(`${offPy[2]}人`), `オフの結果(引退 ${offPy[0]}人・入団 ${offPy[1]}人・選手 ${offPy[2]}人)が、計算本体で同じ操作をした結果と同じ`);
 const changesPy = pyYear2(`x = g.offseason_changes(None)\nprint(json.dumps([len(x["players"]), x["players"][0]["mean_change"]]))`);
 const changeRows = await page.$$eval("#offseason-changes tbody tr", (trs) => trs.length);
 check(changesPy[0] > 700 && changeRows > 0 && /^[+-]\d+\.\d$/.test(changesPy[1]), `オフの結果に、残った選手(${changesPy[0]}人)の能力の増減が出る(作り直し①。先頭 ${changesPy[1]})`);
 // 入団した新人の選手ページに、能力が出る(プロのスカウト評価は見せない。D-352)
-await page.click("#offseason-rookies tbody tr td .link >> nth=0");
+await openPlayerFrom(page.locator("#offseason-rookies tbody tr").first(), "offseason");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelectorAll("#player-abilities .ability").length > 0);
 check((await page.locator("#player-scouting-box").count()) === 0, "入団した選手のページに能力が出て、スカウト評価の箱はない");
 await page.click("#screen-player .back");
@@ -1411,9 +1561,9 @@ check(reviewHead.length === 9 && !reviewHead.some((h) => h.includes("真の")), 
 check(reviewOnScreen.every((r) => /^ドラフト \d+ 巡(\(抽選\))?$|^育成ドラフト \d+ 巡$/.test(r[1]) && /^([SA-G] \d+|—)$/.test(r[2])), "ドラフトの欄はドラフト・育成ドラフトの入団だけ(外国人・市場は混ざらない。D-422)、入団時の見立ては「ランク 数字」(D-420)");
 await grab();
 // 入団時の見立て(D-420):ドラフトで入った選手のページに、見立てと今の数字が並ぶ
-const draftRow = await page.$$eval("#records-body tbody tr", (trs) => trs.findIndex((tr) => tr.children[1].textContent.startsWith("ドラフト") && tr.querySelector("td .link")));
+const draftRow = await page.$$eval("#records-body tbody tr", (trs) => trs.findIndex((tr) => tr.children[1].textContent.startsWith("ドラフト") && tr.classList.contains("pickable")));
 if (draftRow >= 0) {
-  await page.click(`#records-body tbody tr >> nth=${draftRow} >> td .link`);
+  await openPlayerFrom(page.locator("#records-body tbody tr").nth(draftRow), "records");
   await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && !document.querySelector("#player-entry-box").hidden, null, { timeout: 30000 });
   const entryHead = await page.textContent("#player-entry summary");
   await page.click("#player-entry summary");
@@ -1444,7 +1594,7 @@ check(JSON.stringify(movesUi) === JSON.stringify(movesPy) && movesUi.some((r) =>
 await page.click("#records-section button[data-value=standings]");
 await page.waitForFunction(() => document.querySelectorAll("#records-body h2").length >= 3);
 const stPy = pyYear2(`v = g.record_standings()\nprint(json.dumps([[r["team_name"] for r in lg["rows"]] for lg in v["leagues"]] + [[c["team_name"] + str(c["count"]) for c in v["champions"] if c["count"]]], ensure_ascii=False))`);
-const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map((t) => [...t.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td .link") ? tr.querySelector("td .link").textContent + (tr.children[1].textContent.endsWith("回") && tr.children[1].textContent !== "0 回" ? tr.children[1].textContent.replace(" 回", "") : "") : "")));
+const stUi = await page.$$eval("#records-body .table-wrap table", (ts) => ts.map((t) => [...t.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("td .pname") ? tr.querySelector("td .pname").textContent + (tr.children[1].textContent.endsWith("回") && tr.children[1].textContent !== "0 回" ? tr.children[1].textContent.replace(" 回", "") : "") : "")));
 check(JSON.stringify(stUi.slice(0, 2)) === JSON.stringify(stPy.slice(0, 2)) && JSON.stringify(stUi[2].filter((x) => /\d$/.test(x))) === JSON.stringify(stPy[2]), `歴代の順位と優勝:1シーズン目の順位表と、球団ごとの優勝回数が計算本体と同じ`);
 const ilRec = pyYear2(`v = g.record_standings()\nprint(json.dumps([v["interleague"]["champion"], len(v["allstar"])], ensure_ascii=False))`);
 const recText = await page.textContent("#records-body");
@@ -1467,7 +1617,7 @@ await page.waitForFunction(() => document.querySelector('#records-controls selec
 await page.selectOption('#records-controls select[aria-label="打者・投手の選択"]', "pitcher");
 await page.waitForFunction(() => document.querySelector('#records-controls select[aria-label="記録の選択"] option:checked').textContent === "勝利");
 const ldPy = pyYear2(`v = g.record_leaders("pitcher", "W")\nprint(json.dumps([[r["name"], r["value_text"]] for r in v["rows"]], ensure_ascii=False))`);
-const ldUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, tr.children[1].textContent]));
+const ldUi = await page.$$eval("#records-body tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .pname").textContent, tr.children[1].textContent]));
 check(JSON.stringify(ldUi) === JSON.stringify(ldPy), `通算記録(投手・勝利):上位 ${ldUi.length} 人が計算本体と同じ(1 位 ${ldUi[0] ? ldUi[0].join(" ") : ""})`);
 // 記録室の「監督」(D-477):監督ごとの通算の勝敗・優勝が計算本体と同じ。コーチ・スカウトの所属の履歴
 await page.click("#records-section button[data-value=managers]");
@@ -1480,20 +1630,20 @@ await grab();
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=basic]");
 await page.waitForFunction(() => document.querySelectorAll("#stats-table tbody tr").length > 0 || document.querySelector("#stats-table").textContent.includes("条件に合う選手"));
-await page.$eval("#stats-filter-box", (d) => (d.open = true)); // 絞り込みを開く(D-401)
+await openChip("#stats-season"); // 帯の「絞り込み」を開く(D-482)
 const seasonOptions = await page.$$eval("#stats-season option", (os) => os.map((o) => o.textContent));
 check(seasonOptions.length === 3 && seasonOptions[1] === "1シーズン目" && seasonOptions[2] === "通算" && (await page.isVisible("#stats-season")), `成績の画面に、シーズンの選択(${seasonOptions.join("・")})が出る`);
-const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\nkeys = ([t["extra_column"]["key"]] if t["extra_column"] else []) + [c["key"] for c in t["columns"]]\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: myStatsLeague, ...args }));
-await page.selectOption("#stats-season", "1");
+const pyStats2 = (args) => pyYear2(`t = g.stats(**a)\n${PINNED}\nprint(json.dumps([[r["name"]] + [r["values"][k] for k in keys] for r in t["rows"]], ensure_ascii=False))`, JSON.stringify({ league: myStatsLeague, ...args }));
+await bandSelect("#stats-season", "1");
 await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "basic", season: "1" })), `1シーズン目を選ぶと、確定した1シーズン目の成績が出る(${screenRows.length}人。計算本体と同じ)`);
 await page.click("#stats-kind button[data-value=war]");
 await waitRows(pyStats2({ role: "batter", kind: "war", season: "1" }));
-check(await page.isHidden("#stats-baseline"), "確定したシーズンには、注意書きが出ない");
+check(!(await page.$("#stats-note")), "確定したシーズンには、注意書きの印が出ない");
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "1" })), `1シーズン目の WAR も、確定した値(${screenRows.length}人)`);
-await page.selectOption("#stats-season", "career");
+await bandSelect("#stats-season", "career");
 await waitRows(pyStats2({ role: "batter", kind: "war", season: "career" }));
 screenRows = await statsOnScreen();
 check(JSON.stringify(screenRows) === JSON.stringify(pyStats2({ role: "batter", kind: "war", season: "career" })), `通算の WAR(各シーズンの合計)が、計算本体と同じ(${screenRows.length}人)`);
@@ -1501,20 +1651,20 @@ await page.click("#stats-kind button[data-value=saber]");
 // 「基本」で使っていた並び順(打率)は、切り替えても保たれる(D-131)ので、名前の隣に打率の固定列が出る
 await waitRows(pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" }));
 await waitStats("打率");
-check((await page.textContent("#stats-baseline")) === "通算の指標は参考値(シーズンごとの値の加重平均)。", "通算のセイバーには「参考値」の 1 行が出る");
+check((await page.getAttribute("#stats-note", "title")) === "通算の指標は参考値(シーズンごとの値の加重平均)。" && (await page.textContent("#stats-note")).startsWith("参考値"), "通算のセイバーには、帯に「参考値」の印が出る");
 screenRows = await statsOnScreen();
 const careerSaber = pyStats2({ role: "batter", kind: "saber", season: "career", sort: "avg" });
 const careerDiff = screenRows.findIndex((r, i) => JSON.stringify(r) !== JSON.stringify(careerSaber[i]));
 check(careerDiff < 0 && screenRows.length === careerSaber.length, `通算のセイバー(元の数の合計から今の基準値で計算。打率の並び順を保ったまま)が、計算本体と同じ(${screenRows.length}人)${careerDiff >= 0 ? `(違い: ${JSON.stringify(screenRows[careerDiff])} / ${JSON.stringify(careerSaber[careerDiff])})` : ""}`);
-await page.selectOption("#stats-season", "current");
-await page.waitForFunction(() => document.querySelector("#stats-season").value === "current" && document.querySelector("#stats-baseline").textContent === "シーズン途中の値(ここまで)。");
+await bandSelect("#stats-season", "current");
+await page.waitForFunction(() => document.querySelector("#stats-season").value === "current" && document.querySelector("#stats-note") && document.querySelector("#stats-note").title === "シーズン途中の値(ここまで)。");
 check(true, "2シーズン目の今シーズンには「シーズン途中の値(ここまで)」の 1 行が出る(球場補正の推定のことは用語集に)");
 // 選手のページ:年度別の成績
-await page.selectOption("#stats-season", "1");
+await bandSelect("#stats-season", "1");
 await page.click("#stats-kind button[data-value=basic]");
 await waitRows(pyStats2({ role: "batter", kind: "basic", season: "1" }));
 await waitStats("打率");
-await page.click("#stats-table tbody tr:first-child td .link");
+await openPlayerFrom(page.locator("#stats-table tbody tr").first(), "stats");
 await page.waitForFunction(() => !document.querySelector("#screen-player").hidden && document.querySelectorAll("#player-history tbody tr").length > 0);
 const topId = pyYear2(`print(json.dumps(g.stats("batter", "basic", season="1", league=a["lg"])["rows"][0]["player_id"]))`, JSON.stringify({ lg: myStatsLeague }));
 const histPy = pyYear2(`h = g.player(a["id"])["history"]\nprint(json.dumps([[r["label"] if r["season"] == "career" else str(r["year"])] + [r["tables"]["basic"][c["key"]] for c in h["columns"]["basic"]] for r in h["rows"]], ensure_ascii=False))`, JSON.stringify({ id: topId }));
@@ -1524,7 +1674,7 @@ check(histSame, `選手のページに年度別の成績(${histOnScreen.length}�
 await page.click("#screen-player .back");
 // 球場のページ:2シーズン目は、推定した球場補正が出る
 await page.click("#tabs button[data-tab=standings]");
-await page.click("#standings-body tr:first-child .link");
+await rowClick("#standings-body tr:first-child");
 await page.waitForFunction(() => document.querySelector("#team-info .link") !== null);
 await page.click("#team-info .link");
 await page.waitForFunction(() => document.querySelectorAll("#stadium-estimate td").length > 0);
@@ -1551,15 +1701,20 @@ check(leakedY2.length === 0, `年度の確定の前後に届いたメッセー�
 // 一軍登録(D-425):2シーズン目に、救援投手を二軍の投手と入れ替える。外した選手は「あと 10 日」になり、上げた選手は一軍に入る
 await page.click("#open-roster");
 await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelectorAll("#roster-body tbody tr").length > 29);
-const relieverOut = await page.textContent("#roster-relievers tbody tr:first-child td .link");
-await page.click("#roster-relievers tbody tr:first-child td:last-child button");
+const relieverOut = await page.textContent("#roster-relievers tbody tr:first-child td .pname");
+await rowClick("#roster-relievers tbody tr:first-child");
+await page.waitForSelector("#pcard-roster .roster-out");
+await page.click("#pcard-roster .roster-out");
 await page.waitForFunction(() => document.querySelector("#roster-message").textContent.includes("上げる"));
-const upIndex = await page.$$eval("#roster-farm tbody tr", (trs) => trs.findIndex((tr) => { const b = tr.querySelector("td:last-child button"); return b && !b.disabled; }));
-const pitcherUp = await page.textContent(`#roster-farm tbody tr:nth-child(${upIndex + 1}) td .link`);
-await page.click(`#roster-farm tbody tr:nth-child(${upIndex + 1}) td:last-child button`);
+// 二軍の投手で、けが・外した日数のない選手を選び、札の「上げる」で入れ替える(D-486)
+const upIndex = await page.$$eval("#roster-farm tbody tr", (trs) => trs.findIndex((tr) => /^(投手|先発|救援)/.test(tr.children[3].textContent) && tr.children[4].textContent === ""));
+const pitcherUp = await page.textContent(`#roster-farm tbody tr:nth-child(${upIndex + 1}) td .pname`);
+await rowClick(`#roster-farm tbody tr:nth-child(${upIndex + 1})`);
+await page.waitForSelector("#pcard-roster .roster-in:not([disabled])");
+await page.click("#pcard-roster .roster-in");
 await page.waitForFunction(() => document.querySelector("#roster-message").className.includes("ok") || document.querySelector("#roster-message").className.includes("ng"));
-const relieversNow = await page.$$eval("#roster-relievers tbody td .link", (as) => as.map((a) => a.textContent));
-const farmNow = await page.$$eval("#roster-farm tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .link").textContent, tr.querySelector("td:last-child").textContent]));
+const relieversNow = await page.$$eval("#roster-relievers tbody td .pname", (as) => as.map((a) => a.textContent));
+const farmNow = await page.$$eval("#roster-farm tbody tr", (trs) => trs.map((tr) => [tr.querySelector("td .pname").textContent, tr.children[4].textContent]));
 check(relieversNow.includes(pitcherUp) && !relieversNow.includes(relieverOut) && farmNow.some((r) => r[0] === relieverOut && r[1].includes("あと 10 日")) && (await page.textContent("#roster-recent")).includes(pitcherUp), `${relieverOut} を下げて ${pitcherUp} を上げると入れ替わり、下げた選手は「あと 10 日」(「${await page.textContent("#roster-message")}」)`);
 await page.click("#roster-auto");
 await page.waitForFunction(() => document.querySelector("#roster-message").textContent.includes("やめました"));
@@ -1644,7 +1799,7 @@ await page.click(".adv[data-days='1']");
 await page.waitForFunction(() => document.querySelector("#day-text").textContent.startsWith("1シーズン目 1日目"));
 await page.click("#tabs button[data-tab=stats]");
 await page.click("#stats-kind button[data-value=saber]");
-await page.waitForFunction(() => document.querySelector("#stats-baseline").textContent === "シーズン途中の値(ここまで)。");
+await page.waitForFunction(() => document.querySelector("#stats-note") && document.querySelector("#stats-note").title === "シーズン途中の値(ここまで)。");
 check(fastSeconds < trialSeconds, `「既定値を使う(速い)」なら、すぐ始まる(${fastSeconds.toFixed(1)} 秒。事前運転 25 年を含む。試運転ありは ${trialSeconds.toFixed(1)} 秒)`);
 await grab();
 

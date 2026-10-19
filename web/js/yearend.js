@@ -3,7 +3,7 @@
 import { $, STATS_PAGE, freshProc, state } from "./core.js";
 import { call, query } from "./backend.js";
 import { current, openPage, renderCurrent, showScreen } from "./screens.js";
-import { nameCell, table } from "./parts.js";
+import { el, nameCell, table } from "./parts.js";
 import { renderProgress, setDirty } from "./progress.js";
 import { buildStatsFilters } from "./stats.js";
 import { awardTables } from "./records.js";

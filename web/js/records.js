@@ -152,7 +152,7 @@ async function renderEntries(token) {
     { key: "games", label: "出場" },
     { key: "war", label: "WAR 累計" },
   ];
-  const rows = d.rows.map((x) => ({ ...x, values: { route: x.route_label, position: x.position_label, age: x.age !== null ? `${x.age}歳` : x.entry_age !== null ? `(${x.entry_age}歳)` : "", entry: x.entry_text, now: x.now_text, status: x.status_label, games: String(x.games), war: x.war } }));
+  const rows = d.rows.map((x) => ({ ...x, player_id: x.in_league ? x.player_id : null, values: { route: x.route_label, position: x.position_label, age: x.age !== null ? `${x.age}歳` : x.entry_age !== null ? `(${x.entry_age}歳)` : "", entry: x.entry_text, now: x.now_text, status: x.status_label, games: String(x.games), war: x.war } }));
   $("records-body").replaceChildren(
     rows.length
       ? table({ firstLabel: "選手", columns: cols, rows, first: (x) => nameCell(x.name), rowClass: (x) => (x.status === "left" ? "muted" : ""), fluid: true, pick: "records" })
@@ -174,7 +174,7 @@ async function renderMoves(token) {
   const cols = [{ key: "label", label: "種類" }, { key: "from", label: "前の所属" }, { key: "to", label: "新しい所属" }, { key: "position", label: "ポジション" }, { key: "age", label: "年齢" }];
   $("records-body").replaceChildren(
     d.rows.length
-      ? table({ firstLabel: "選手", columns: cols, rows: d.rows.map((x) => ({ ...x, values: { label: x.label, from: x.from_team_name, to: x.to_team_name, position: x.position_label, age: x.age ? `${x.age}歳` : "" } })),
+      ? table({ firstLabel: "選手", columns: cols, rows: d.rows.map((x) => ({ ...x, player_id: x.linkable ? x.player_id : null, values: { label: x.label, from: x.from_team_name, to: x.to_team_name, position: x.position_label, age: x.age ? `${x.age}歳` : "" } })),
         first: (x) => nameCell(x.name), rowClass: (x) => (x.is_mine ? "mine" : ""), fluid: true, pick: "records" })
       : el("p", { className: "info" }, "この条件の出入りはありません。"),
   );

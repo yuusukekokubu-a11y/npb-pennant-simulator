@@ -31,6 +31,7 @@ export async function renderProcedure(token) {
   if (token !== state.token) return;
   const v = r.value;
   const ps = state.proc;
+  if (ps.phase !== v.phase && state.pick) state.pick.proc = null; // 段階が変わったら、選手の札を閉じる(D-485)
   ps.phase = v.phase;
   ps.stage = v.stage;
   // 段階のタブは 9 つ(契約・職員・FA・外国人・ドラフト・市場・トレード・現役ドラフト・完了。D-376、D-378、D-380、D-474)。今の段階の名前を大きく出す(D-271)

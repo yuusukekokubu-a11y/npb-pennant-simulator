@@ -24,8 +24,12 @@ const picks = () => state.pick || (state.pick = {});
 export const isPicked = (name, id) => picks()[name] === id;
 
 // 表を作るときに、行とその行の操作を覚える(parts.js の table)
+// 同じ選手が操作のない表(履歴など)にもいるときは、操作のある行を残す
 export function registerRow(name, row, actions) {
-  host(name).rows.set(row.player_id, { row, actions });
+  const rows = host(name).rows;
+  const got = rows.get(row.player_id);
+  if (got && got.actions && !actions) return;
+  rows.set(row.player_id, { row, actions });
 }
 
 // 札を描き直す(同じ描き直しの中で何度呼ばれても 1 回)

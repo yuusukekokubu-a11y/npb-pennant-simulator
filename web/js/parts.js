@@ -139,10 +139,12 @@ export function band({ id, views = [], view = null, onView = null, viewsId = nul
     box.append(el("div", { className: "seg tseg", role: "group", "aria-label": "表示の切り替え", id: viewsId || `${id}-views` },
       ...views.map((v) => el("button", { type: "button", dataset: { value: v.key }, "aria-pressed": String(v.key === view), onclick: () => onView(v.key) }, v.label))));
   }
-  box.append(el("span", { className: "tspacer" }));
-  if (note) box.append(el("span", { className: "tnote", id: `${id}-note`, title: note, "aria-label": note, tabIndex: 0, onclick: (e) => e.currentTarget.classList.toggle("open") }, noteMark(note), el("span", { className: "tnote-full" }, note)));
-  if (filters.length) box.append(chip(`${id}-filter`, "絞り込み", filterText, filters));
-  if (sortControls.length) box.append(chip(`${id}-sort`, "並び", sortText, sortControls));
+  // 右寄せのまとまり(狭い画面で 2 行目に回っても右寄せ)
+  const right = el("div", { className: "tband-right" });
+  if (note) right.append(el("span", { className: "tnote", id: `${id}-note`, title: note, "aria-label": note, tabIndex: 0, onclick: (e) => e.currentTarget.classList.toggle("open") }, noteMark(note), el("span", { className: "tnote-full" }, note)));
+  if (filters.length) right.append(chip(`${id}-filter`, "絞り込み", filterText, filters));
+  if (sortControls.length) right.append(chip(`${id}-sort-chip`, "並び", sortText, sortControls)); // 中の指標の選ぶ欄が `${id}-sort`
+  box.append(right);
   return box;
 }
 
@@ -164,7 +166,11 @@ function chip(id, label, text, controls) {
 
 // 帯の外を押したら、開いている小さなボタンを閉じる
 document.addEventListener("pointerdown", (e) => {
-  for (const d of document.querySelectorAll("details.chip[open]")) if (!d.contains(e.target)) d.open = false;
+  for (const d of document.querySelectorAll("details.chip[open]")) {
+    if (d.contains(e.target)) continue;
+    d.open = false;
+    if (state.bands) state.bands[d.id] = false; // 描き直しの前に閉じたことを覚える
+  }
 });
 
 // 帯の中の選ぶ欄(ラベルつき)
