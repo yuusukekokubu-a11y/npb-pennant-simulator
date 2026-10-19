@@ -1830,6 +1830,8 @@ my = g.state.my_team_id
 print(g.state.tier_next.get(my), g.state.budget_tiers[my], g.state.tier_start[my], g.state.budget_tiers["T02"])
 `, tierSave.path).trim().split(" ");
 check(tierPy.join(" ") === "small huge huge small", `変えた資金力は保存され、計算本体でも次のオフからの変更になっている(${tierPy.join(" ")}。2 番目の球団は新規開始で選んだ小)`);
+await page.click("#tabs button[data-tab=myteam]"); // 保存すると進行の画面に移るので、チームのページを開き直す
+await page.waitForFunction(() => document.querySelector("#tier-source") && document.querySelector("#tier-source").textContent.startsWith("★"));
 await page.click("#tier-reset");
 await page.waitForFunction(() => document.querySelector("#tier-source").textContent === "新規開始のときの資金力");
 check((await page.$eval("#tier-pick", (e) => e.value)) === "huge", "「新規開始のときの資金力に戻す」で、まだ効いていない変更を取り消せる");
