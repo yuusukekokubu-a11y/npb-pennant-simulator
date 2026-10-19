@@ -194,8 +194,10 @@ def test_screen_war_matches_the_script_and_survives_save_load():
     again = api.Game(load_game(save_game(g.state)), dirty=False)
     assert war_record(again.war_lines()) == war_record(g.war_lines())
     assert again.stats("batter", "war") == s
-    # 並び順に使えない列は、既定(WAR の高い順)に戻す
-    assert g.stats("batter", "war", sort="avg")["sort"]["key"] == "war"
+    # 基本・セイバーの列で並べたまま切り替えても、その並び順を保つ(名前の隣の固定列。D-483)。使えない列は既定(WAR の高い順)
+    by_avg = g.stats("batter", "war", sort="avg")
+    assert by_avg["sort"]["key"] == "avg" and by_avg["extra_column"]["key"] == "avg" and all("avg" in r["values"] for r in by_avg["rows"])
+    assert g.stats("batter", "war", sort="no_such_column")["sort"]["key"] == "war"
     # 公開用の情報に、能力値・隠し情報は入らない
     import json
 
