@@ -172,6 +172,8 @@ _ROSTER = {  # 一軍登録(D-425)
     "view": lambda a: _game.roster_view(),
     "swap": lambda a: _game.roster_swap(str(a["out_id"]), str(a["in_id"])),
     "auto": lambda a: _game.roster_set_auto(bool(a.get("auto", True))),
+    "pitching": lambda a: _game.roster_set_pitching(list(a.get("starters", [])), dict(a.get("roles", {}))),  # 投手の起用(D-449)
+    "pitching_auto": lambda a: _game.roster_pitching_auto(),
 }
 
 

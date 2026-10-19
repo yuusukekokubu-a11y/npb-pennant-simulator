@@ -285,7 +285,7 @@ await page.click("#screen-lineup .back");
 await page.waitForSelector("#open-roster:not([hidden])");
 await page.click("#open-roster");
 await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelectorAll("#roster-body tbody tr").length > 29);
-const rosterCounts = await page.$$eval("#roster-body h2", (hs) => hs.map((h) => h.textContent));
+const rosterCounts = await page.$$eval("#roster-body section:not(#roster-pitching) h2", (hs) => hs.map((h) => h.textContent));
 const condMarks = await page.$$eval("#roster-body .cond", (els) => els.map((e) => e.textContent.slice(0, 1)));
 check(rosterCounts.length === 4 && rosterCounts[0].includes("6 人") && rosterCounts[1].includes("8 人") && rosterCounts[2].includes("15 人") && condMarks.length > 29 && condMarks.every((m) => "↑↗→↘↓".includes(m)), `一軍登録の画面:${rosterCounts.join("・")}。調子のマーク(${[...new Set(condMarks)].join("")})`);
 check((await page.isChecked("#roster-auto")) && (await page.textContent("#roster-info")).includes("次の見直し"), `「AI に任せる」が最初からオン(${await page.textContent("#roster-info")})`);
@@ -298,6 +298,56 @@ check(pitcherFarm.length > 0 && pitcherFarm.every((r) => r[1] === false) && batt
 await page.click("#roster-relievers tbody tr:first-child td:last-child button");
 await page.waitForFunction(() => document.querySelector("#roster-message").textContent === "");
 check(true, "もう一度押すと、選ぶのをやめられる");
+// 投手の起用(D-449〜D-451):先発の番手を ▼ で入れ替え、救援の役割を選んで「この起用にする」。「AI に戻す」で元に戻る
+const starterNames = () => page.$$eval("#roster-starters tbody tr", (trs) => trs.map((tr) => tr.querySelector(".name-cell .link")?.textContent || ""));
+const reliefRoles = () => page.$$eval("#roster-relievers select.pitch-role", (ss) => ss.map((s) => [s.dataset.playerId, s.value]));
+check((await page.textContent("#roster-pitching-source")).includes("AI") && (await page.isDisabled("#roster-pitching-save")) && (await page.$$eval("#roster-starters thead th", (ths) => ths.map((th) => th.textContent))).includes("番手") && (await reliefRoles()).filter((r) => r[1] === "closer").length === 1, `一軍登録の画面に投手の起用(「${await page.textContent("#roster-pitching-source")}」・番手の列・抑え 1 人の役割)`);
+const aiStarters = await starterNames();
+const setPitching = async () => {
+  await page.click("#roster-starters tbody tr:first-child [data-down]");
+  await page.waitForFunction(() => document.querySelector("#roster-pitching-source").textContent.includes("変えた内容"));
+  const roles0 = await reliefRoles();
+  const closerId = roles0.find((r) => r[1] === "closer")[0];
+  const middleId = roles0.find((r) => r[1] === "middle")[0];
+  await page.selectOption(`#roster-relievers select[data-player-id="${closerId}"]`, "setup");
+  await page.waitForFunction((id) => document.querySelector(`#roster-relievers select[data-player-id="${id}"]`).value === "setup", closerId);
+  await page.click("#roster-pitching-save");
+  await page.waitForFunction(() => document.querySelector("#roster-message").className.includes("ng"));
+  const ngText = await page.textContent("#roster-message");
+  await page.selectOption(`#roster-relievers select[data-player-id="${middleId}"]`, "closer");
+  await page.waitForFunction((id) => document.querySelector(`#roster-relievers select[data-player-id="${id}"]`).value === "closer", middleId);
+  await page.click("#roster-pitching-save");
+  await page.waitForFunction(() => document.querySelector("#roster-pitching-source").textContent.includes("自分で決めた"));
+  return { ngText, closerId: middleId };
+};
+let pitchSet = await setPitching();
+const userStarters = await starterNames();
+check(pitchSet.ngText.includes("抑えは 1 人") && userStarters[0] === aiStarters[1] && userStarters[1] === aiStarters[0] && (await reliefRoles()).find((r) => r[0] === pitchSet.closerId)[1] === "closer", `▼ で 1・2 番手を入れ替え、抑えを変えて「この起用にする」(抑えが 0 人だと「${pitchSet.ngText}」)`);
+// 保存して開き直しても、自分で決めた起用が続く。「AI に戻す」で、AI の起用(最初と同じ並び)に戻る
+const savedStarters = await starterNames();
+const savedRoles = await reliefRoles();
+const pitchFile = await saveFile("pitching"); // 保存すると進行の画面に移る
+const openRosterAgain = async () => {
+  await page.waitForSelector("#screen-progress:not([hidden])");
+  await page.click("#open-roster");
+  await page.waitForFunction(() => !document.querySelector("#screen-roster").hidden && document.querySelector("#roster-pitching-source"));
+};
+await openRosterAgain();
+const pitchAiBack = async (label) => {
+  await page.click("#roster-pitching-auto");
+  await page.waitForFunction(() => document.querySelector("#roster-pitching-source").textContent.includes("AI が決めた"));
+  check(JSON.stringify(await starterNames()) === JSON.stringify(aiStarters) && (await reliefRoles()).filter((r) => r[1] === "closer").length === 1, `「AI に戻す」で、最初の AI の起用に戻る(${label})`);
+};
+await pitchAiBack("保存の前");
+await page.click("#screen-roster .back");
+await page.waitForSelector("#screen-progress:not([hidden])");
+page.once("dialog", (d) => d.accept().catch(() => {})); // 「AI に戻す」で未保存の変更があるので、開く前の確認を承諾する
+await page.setInputFiles("#open-file-top", pitchFile.path);
+await page.waitForFunction(() => document.querySelector("#progress-message").textContent.includes("開きました"), null, { timeout: 60000 });
+await openRosterAgain();
+await page.waitForFunction(() => document.querySelector("#roster-pitching-source").textContent.includes("自分で決めた"), null, { timeout: 30000 }).catch(() => {}); // 前に開いたときの表が描き直されるまで待つ
+check((await page.textContent("#roster-pitching-source")).includes("自分で決めた") && JSON.stringify(await starterNames()) === JSON.stringify(savedStarters) && JSON.stringify((await reliefRoles()).sort()) === JSON.stringify([...savedRoles].sort()), "保存して開き直しても、自分で決めた投手の起用(先発の順と役割)が続く");
+await pitchAiBack("開き直した後");
 await page.click("#screen-roster .back");
 // トレード(D-378):画面を開き、釣り合わない交換を持ちかけると断られて、何も変わらない
 await page.waitForSelector("#open-trade:not([hidden])");
@@ -335,7 +385,6 @@ check(!(await page.isDisabled(".adv[data-days='1']")), "止めたあと、また
 const runLog = await page.evaluate(() => window.__runLog);
 const shownFor = runLog.length >= 2 ? runLog[1].t - runLog[0].t : 0;
 check(runLog.length === 2 && runLog[1].hidden && shownFor >= 590, `出したあとは、最低 0.6 秒は表示を続ける(${(shownFor / 1000).toFixed(2)} 秒表示)`);
-
 // ---- 4. 順位表(Python の順位と同じか) ----
 const shown = await standingsOnScreen();
 const first = await saveFile("stopped");

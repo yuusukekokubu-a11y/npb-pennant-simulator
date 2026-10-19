@@ -104,7 +104,7 @@ def test_version_24_save_is_read_with_the_old_roster(mid):
             z.writestr(name, b)
     state = load_game(buf.getvalue())
     s = state.season
-    assert SAVE_FORMAT_VERSION == 30 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form and s.running_start == 20  # 版 25 への変換で、盗塁なども読んだ日から(D-433)
+    assert SAVE_FORMAT_VERSION == 31 and s.legacy_roster and s.conditions.start == 20 and s.legacy_form and s.running_start == 20  # 版 25 への変換で、盗塁なども読んだ日から(D-433)
     s.play_days(6)
     assert s.day == 26
 

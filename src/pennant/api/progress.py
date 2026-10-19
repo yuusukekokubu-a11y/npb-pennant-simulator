@@ -216,6 +216,7 @@ class ProgressMixin:
             "postseason": self.postseason_view(),
             "post_days_max": 30,  # ポストシーズンの日数の目安(進み具合のバー用)
             "injuries": self.my_injuries(),  # 自球団のけが(D-445)
+            "pitching_notice": self.pitching_notice(),  # 投手の起用を組み直した知らせ(D-450)
             "farm": season.farm is not None,
         }
 
