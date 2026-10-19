@@ -420,10 +420,12 @@ web/dev/                             開発者向けの測定ページ(技術検
 - **短い待ち**:`screens.renderCurrent` が描き直しを `waitVeil` で包み、0.3 秒を超えたら `#wait-veil`(上の帯の下を暗くしてボール。押す操作は通す)を出す。
 - **スクロールの棒**:`html { scrollbar-gutter: stable; }` で、棒の場所を常に空ける。
 
-### 5.1.3 リーグ名・球場名と自球団の資金力(D-409、D-410)
+### 5.1.3 リーグ名・球場名と 12 球団の資金力(D-409、D-410、D-490〜D-494)
 - **名前**:`newgame.check_place_names`(欄ごとの問題。リーグ名の重複も)と `apply_place_names`(当てはめ。空欄は初期名のまま)。`new_league(league_names, stadium_names)` が球団名と一緒に事前運転の前に当てはめる。画面は `api.check_place_names(seed, …)`(`bridge.check_places`・`worker` の `checkPlaces`)で入力のたびに点検する。名前は `League.league_names` と `Team.stadium` にそのまま入り、保存の形は変わらない。読み込みでは `savegame._saved_name_problem` で点検する(空・画面に出せない文字・長さ)。
 - **資金力**:`contracts.HUGE`(超大量)を足し、`ALL_TIERS` で保存の点検をする(版 24)。`assign_tiers(…, fixed)` は選んだ球団を除いた残りで数を合わせる(fixed がなければ今までと同じ割り当て)。超大量の基準額は `data/contracts.json` の `budget.tiers.huge`(120。古い設定にはないので、そのときは大の 100 倍)。単価を求める資金の合計は `ContractContext.total_cap` が `rate_funds` で超大量を大の上限に抑えて数える。設備の初期は大と同じ(`FacilitySettings.initial`)。
-- **画面**:新規開始の「詳しい設定」の `#place-fields`(リーグ名・球場名の欄)と `input[name=my-tier]`(自動・小・中・大・超大量)。説明バーは用語集の `setting.league_name`・`setting.stadium_name`・`setting.my_tier`。
+- **12 球団の資金力**(D-490、D-491):`Game.new(team_tiers=…)`・`Game.from_template(team_tiers=…)` は球団の順の 12 個(`auto`・`small`・`medium`・`large`・`huge`。空欄と `None` は自動)を受け取る。点検と、自球団の資金力(`my_tier`。前からの呼び方。`team_tiers` で自球団の行が自動のときだけ使う)との合わせ方は `contracts.fixed_tiers`。新しく作るときは `assign_tiers(…, fixed)`(fixed を 12 球団に広げただけで、割り当ての順は今までと同じ)。テンプレートは `template.set_tiers(state, fixed)`(D-466 の `set_tier` を広げた形。自動の球団はテンプレートの規模を残し、いつもの数を超える規模から総年俸の少ない球団を外して、足りない規模へ総年俸の多い順に入れる)。
+- **始めた後の変更**(D-493、D-494):`GameState.tier_start`(新規開始のときの規模)と `tier_next`(次のオフからの規模。まだ効いていないものだけ)を持つ。年度の確定でオフの手続きを作った直後(職員の段階と契約の始めより前)に `contracts.apply_tier_changes` が `tier_next` を `budget_tiers` に移し、変わった球団の資金を新しい規模の基準額に置き直す(その後の `update_funds` が順位で増減する)。画面からは `api/teams.py` の `team_tier`(チームのページの `budget.tier_choice`)・`set_team_tier`・`reset_team_tier`、橋渡しは `bridge.team_tier`(`worker` の `team_tier`)。「あなたが決めた」は「次のオフからの規模(なければ今の規模)が新規開始のときと違う」。
+- **画面**:新規開始の「詳しい設定」の `#place-fields`(リーグ名・球場名の欄)。設定の段の `#tier-fields`(球団の資金力の表。`select[data-team]` を 12 個。名前の段から設定の段へ進むたびに、名前の段の球団名と自球団で作り直し、選んだ値は残す)。チームのページの資金の欄の `#tier-pick`・`#tier-save`・`#tier-reset`・`#tier-source`。説明バーは用語集の `setting.league_name`・`setting.stadium_name`・`setting.team_tiers`。
 
 ### 5.1.4 新規開始のテンプレート(D-462〜D-467)
 - **ファイル**:`src/pennant/data/templates/standard.sav`(セーブデータと同じ形。`Game.new` を決まったシード・観戦のみ・初期名・既定の仕組みで呼んだ直後の状態。保存日時は固定)と `standard.json`(`template_format`・`save_format_version`・`fingerprint_version`・`league_seed`・`season_seed`・紹介の `intro`)。`scripts/build_web.py` と `pyproject.toml` で pennant.zip とパッケージに入れる。
