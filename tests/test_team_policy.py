@@ -165,7 +165,11 @@ def test_usage_policy_changes_the_roster_score(mid):
 def test_ai_decides_all_teams_and_you_can_change_any_team(mid):
     g = _fresh(mid)
     pols = [policymod.policy_of(t) for t in g.state.league.teams]
-    assert all(not p["manual"] for p in pols) and Counter(p["usage"] for p in pols)["win"] == 4
+    from pennant.staff import manager_pref
+
+    plain = [p for t, p in zip(g.state.league.teams, pols) if (manager_pref(t) or ("",))[0] != "usage"]  # 監督の好みで起用を決めた球団を除く(D-470)
+    assert all(not p["manual"] for p in pols) and Counter(p["usage"] for p in plain)["win"] <= 4
+    assert all(p[manager_pref(t)[0]] == manager_pref(t)[1] for t, p in zip(g.state.league.teams, pols) if manager_pref(t))  # 監督の好みが入る
     view = g.team("T07")["policy"]
     assert [f["key"] for f in view["fields"]] == ["practice_batter", "practice_pitcher", "usage", "steal", "bunt"] and not view["manual"]
     v = g.set_team_policy("T07", {"bunt": "many", "practice_batter": "power"})
@@ -196,7 +200,7 @@ def test_save_load_continues_the_same_and_replays_bunts(mid):
     g = _fresh(mid)
     g.set_team_policy("T02", {"bunt": "many", "steal": "aggressive", "usage": "youth"})
     a, b = _fresh(g), _fresh(g)
-    assert policymod.policy_of(a._team("T02"))["manual"] and SAVE_FORMAT_VERSION == 32
+    assert policymod.policy_of(a._team("T02"))["manual"] and SAVE_FORMAT_VERSION == 33
     a.advance(10)
     b = _fresh(b)
     b.advance(10)
