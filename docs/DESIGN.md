@@ -395,7 +395,7 @@ web/dev/                             開発者向けの測定ページ(技術検
   - 初回は Python 一式(約12MB)をダウンロードするので、段階ごとの進み具合を表示する。
   - 画面の色は「ナイター」の 1 つ(作り直し④。D-399)。`prefers-color-scheme` は使わない。設定はどこにも保存しない(ブラウザの保存領域を使わない)。
   - 通信の制限(Content-Security-Policy)は、技術検証のページと同じにする。
-- 表中心。スマホは縦持ちで、表は左端の名前の列を固定して横スクロール。用語には短い解説を付ける。
+- 表中心。横画面専用(D-495)で、表は左端の名前の列を固定して横スクロール。用語には短い解説を付ける。
 - 確認用の開発者向けスクリプト(`scripts/`)は残す。
 - **ブラウザでの通しの確認**(`scripts/check_browser.mjs`。開発者が手元で実行。CI では動かさない):スマホの大きさ(412×924)で、新規開始 → 進行(止めるを含む)→ 順位表 → 成績の並べ替え → 選手のページ → 試合のページ → 答え合わせモードのオン・オフ → 保存 → 読み込み直し → 読み込み → 最後まで、を自動で操作し、最後の結果が指紋 (d) と同じか、順位表が計算本体と同じか、隠し情報の言葉が画面にないか、通信先と保存領域を確かめる。
 - **開発者向けの測定ページ**(`web/dev/`。D-111):技術検証の測定ページ。計算本体などは一つ上(`../pennant.zip`)から読む。指紋の確認は別のボタン。
@@ -455,6 +455,13 @@ web/dev/                             開発者向けの測定ページ(技術検
   - 列の枠の数 `slots`:その表のどの表示(個人成績は基本・セイバー・WAR・能力、守備はどのポジション、FA・市場・契約は全員・投手・野手 × 基本・セイバー・WAR)でも足りる数。
 - **色**:`--up`(増やす。緑)・`--down`(減らす。赤)、選んだ行 `--sel-row`・`--sel-line`(水色の帯)、行の高さ `--row-h`。
 - **通し確認**:行を押すと札が出て、能力・特殊能力が計算本体と同じ。表示を切り替えても列の数・幅・並び・選んだ選手が同じ。表の名前に下線のリンクがない。増減のボタンの色。札と帯の位置(広い画面は表の右、狭い画面は上)。
+
+### 5.1.6 横画面専用と PWA(D-495〜D-498)
+- **縦の案内**:`index.html` の `#rotate-notice`(題・スマホの絵・1 行)。`style.css` で `@media (orientation: portrait) and (pointer: coarse)` のときだけ全画面に出し、ほかの画面の上にかぶせる(下は何も変えないので、持ち替えればそのまま続き)。`<html class="allow-portrait">`(URL の `portrait=allow`。`js/core.js`)のときは出さない。
+- **PWA**:`manifest.webmanifest`(`display: fullscreen`・`orientation: landscape`・`start_url`/`scope` は `./`・アイコン 192/512 の `any maskable`)。`sw.js` は同じ場所の GET を `fetch` でそのまま返すだけ(`caches` は使わない)。登録は `app.js` の最後(対応していないブラウザ・登録の失敗は無視)。`index.html` に manifest・`theme-color`・iPhone 用の印。CSP に `manifest-src 'self'`。
+- **アイコン**:`web/icons/icon.svg` が元。`node scripts/make_icons.mjs` で `icon-192.png`・`icon-512.png`・`apple-touch-icon.png`(180px)を作る(Playwright のブラウザで描く)。絵を変えたら作り直して同じ PR に入れる。
+- **横持ちの並び**:`js/core.js` が `(min-width: 900px), (orientation: landscape) and (max-height: 600px)` のとき `<html class="side-nav">` を付ける。CSS の左の縦のタブ・本体の左の余白・上の帯は `.side-nav` で書く(D-402 の `.wide` から移した)。高さ 600px 以下の横向きでは `--nav-w` を 72px、`--topbar-h` を 46px にする。表の全列表示と左右 2 列は `.wide`(幅 900px 以上)のまま。
+- **公開**:`scripts/build_web.py` が `manifest.webmanifest`・`sw.js`・`icons/` も `_site/` に写す。
 
 ### 5.2 ブラウザの中で完結する方式(段階③。D-081)
 - Python をブラウザ上で実行する仕組み(Pyodide)で、計算本体のコードをそのまま動かす。

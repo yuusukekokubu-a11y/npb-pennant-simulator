@@ -88,7 +88,8 @@ def test_build_contains_code_and_fictional_data_only(tmp_path):
     info = build.build(tmp_path / "site")
     site = tmp_path / "site"
     for name in ("index.html", "app.js", "worker.js", "bridge.py", "pennant.zip", "sample-save.sav", "sample-save.json", "expected-fingerprints.json",
-                 "dev/index.html", "dev/app.js", "dev/worker.js", "dev/bench.py", "js/core.js"):
+                 "dev/index.html", "dev/app.js", "dev/worker.js", "dev/bench.py", "js/core.js",
+                 "manifest.webmanifest", "sw.js", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/icon.svg"):
         assert (site / name).exists()
     # 画面の処理(js/)は、web/js/ の全部をそのまま写す(保守②)
     assert sorted(f.name for f in (site / "js").iterdir()) == sorted(f.name for f in (WEB / "js").glob("*.js"))
@@ -143,6 +144,7 @@ def test_content_security_policy_limits_connections(page):
     rules = dict((part.split()[0], part.split()[1:]) for part in csp.split(";") if part.strip())
     assert rules["default-src"] == ["'none'"]
     assert rules["connect-src"] == ["'self'", "https://cdn.jsdelivr.net"]
+    assert rules.get("manifest-src", ["'self'"]) == ["'self'"]  # manifest はこのページ自身のものだけ(D-496)
     assert set(rules["script-src"]) <= {"'self'", "https://cdn.jsdelivr.net", "'wasm-unsafe-eval'"}
 
 
@@ -334,3 +336,53 @@ def test_tables_follow_one_system():
     assert "--up: #1f7a45" in root and "--down: #b8373f" in root
     # 書体は外から読まない(D-488。通信先の制限)
     assert "fonts.googleapis" not in css and "@import" not in css and "url(http" not in css
+
+
+# ---- 横画面専用と PWA(D-495〜D-498) ----
+
+
+def _png_size(path: Path) -> tuple[int, int]:
+    """PNG の頭(IHDR)から幅と高さを読む。"""
+    import struct
+
+    head = path.read_bytes()[:24]
+    assert head[:8] == b"\x89PNG\r\n\x1a\n"
+    return struct.unpack(">II", head[16:24])
+
+
+def test_pwa_manifest_is_landscape_fullscreen():
+    """manifest は全画面・横向き・このページの中だけ。アイコンは 192px と 512px(D-496)。"""
+    import json
+
+    manifest = json.loads((WEB / "manifest.webmanifest").read_text(encoding="utf-8"))
+    assert manifest["display"] == "fullscreen" and manifest["orientation"] == "landscape"
+    assert manifest["start_url"] == "./" and manifest["scope"] == "./"
+    assert {icon["sizes"] for icon in manifest["icons"]} == {"192x192", "512x512"}
+    for icon in manifest["icons"]:
+        assert not icon["src"].startswith(("http", "/"))
+        w, h = (int(n) for n in icon["sizes"].split("x"))
+        assert _png_size(WEB / icon["src"]) == (w, h)
+    assert _png_size(WEB / "icons" / "apple-touch-icon.png") == (180, 180)
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert '<link rel="manifest" href="manifest.webmanifest">' in html and '<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">' in html
+
+
+def test_service_worker_stores_nothing():
+    """Service Worker は、このページのファイルを取り次ぐだけで、何も保存しない(D-084、D-407、D-496)。"""
+    sw = (WEB / "sw.js").read_text(encoding="utf-8")
+    for word in ("caches", "indexedDB", "localStorage", "importScripts", "https://"):
+        assert word not in sw, word
+    assert "event.respondWith(fetch(request))" in sw and "self.location.origin" in sw
+    assert 'navigator.serviceWorker.register("sw.js")' in (WEB / "app.js").read_text(encoding="utf-8")
+
+
+def test_portrait_notice_and_side_nav():
+    """縦向きのタッチの端末だけ案内を出し(portrait=allow で出さない)、横持ちのスマホは左の縦のタブ(D-495、D-497、D-498)。
+    実際の見え方は通し確認(scripts/check_browser.mjs)で確かめる。"""
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'id="rotate-notice"' in html and "横にしてください" in html
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "@media (orientation: portrait) and (pointer: coarse)" in css and "html:not(.allow-portrait) .rotate-notice" in css
+    assert ".wide .tabs" not in css and ".side-nav .tabs" in css  # 左の縦のタブは side-nav の印で(広い画面にも付く)
+    core = (WEB / "js" / "core.js").read_text(encoding="utf-8")
+    assert '"portrait") === "allow"' in core and "(orientation: landscape) and (max-height: 600px)" in core

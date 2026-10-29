@@ -18,6 +18,7 @@
   /* 順位のメダル(D-400) */
   --medal-1: radial-gradient(circle at 35% 30%, #fff3b0, #f2b705); --medal-2: radial-gradient(circle at 35% 30%, #ffffff, #b8c1cc); --medal-3: radial-gradient(circle at 35% 30%, #ffd9b3, #c97a3a);
   --nav-w: 88px; /* 広い画面の左のタブの幅(D-402) */
+  --nav-w-full: calc(var(--nav-w) + env(safe-area-inset-left, 0px)); /* 左の切り欠き(カメラの穴)の分を足した幅(D-497) */
   --topbar-h: 57px; /* 上の帯の高さ(狭い画面で選手の札を貼り付ける位置。D-485) */
   /* 表の統一(D-483、D-488):行の高さ・幅を決めた表の列の幅・選んだ行 */
   --row-h: 40px; --col-w: 3.6rem; --sel-row: #24356e; --sel-line: var(--accent);
@@ -414,7 +415,7 @@ label.radio input { width: 20px; height: 20px; margin-top: 3px; flex: none; }
 button.busy { opacity: 1; cursor: progress; }
 button.busy::before { content: ""; width: 16px; height: 16px; margin-right: 8px; border-radius: 50%; background: #fff; border: 2px dashed #d23b3b; animation: spin 1s linear infinite; flex: none; }
 .wait-veil { position: fixed; inset: 57px 0 0 0; z-index: 4; background: rgba(14, 22, 48, 0.6); display: grid; place-items: center; pointer-events: none; }
-.wide .wait-veil { left: var(--nav-w); }
+.side-nav .wait-veil { left: var(--nav-w-full); }
 .wait-pill { display: flex; align-items: center; gap: 10px; background: var(--box2); padding: 10px 18px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; box-shadow: var(--shadow); }
 .wait-ball { width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.1); position: relative; animation: spin 1s linear infinite; }
 .wait-ball::before, .wait-ball::after { content: ""; position: absolute; top: 3px; bottom: 3px; width: 8px; border: 1.5px solid #d23b3b; border-color: transparent #d23b3b transparent transparent; border-radius: 50%; }
@@ -422,13 +423,23 @@ button.busy::before { content: ""; width: 16px; height: 16px; margin-right: 8px;
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .wait-ball, .ls-row { animation: none; } }
 
-/* 広い画面(D-402):タブを左の縦の列にし、選手・チーム・試合・球場のページを元の画面の右に並べる */
-.wide .tabs { top: 57px; bottom: 0; right: auto; width: var(--nav-w); flex-direction: column; justify-content: flex-start; padding: 12px 4px; box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3); }
-.wide .tabs button { flex: none; min-height: 64px; }
-.wide body.in-game { padding-left: var(--nav-w); }
-.wide .topbar { margin-left: calc(-1 * var(--nav-w)); }
-.wide .topbar-inner { max-width: none; padding-left: 20px; }
-.wide .screen { padding-bottom: 32px; }
+/* 左の縦のタブ(広い画面と横持ちのスマホ。<html class="side-nav">。D-402、D-497)。左右の切り欠き(カメラの穴)の分も空ける */
+.side-nav .tabs { top: var(--topbar-h); bottom: 0; right: auto; width: var(--nav-w-full); flex-direction: column; justify-content: flex-start; padding: 12px 4px 12px calc(4px + env(safe-area-inset-left, 0px)); box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3); }
+.side-nav .tabs button { flex: none; min-height: 64px; }
+.side-nav body.in-game { padding-left: var(--nav-w-full); }
+.side-nav .topbar { margin-left: calc(-1 * var(--nav-w-full)); }
+.side-nav .topbar-inner { max-width: none; padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(14px + env(safe-area-inset-right, 0px)); }
+.side-nav .screen { padding-bottom: 32px; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+/* 横持ちのスマホ(横向きで高さ 600px 以下。D-497):タブの列を細く、上の帯とタブのボタンを低くして、縦の場所を表に回す */
+@media (orientation: landscape) and (max-height: 600px) {
+  html:root { --nav-w: 72px; --topbar-h: 46px; } /* 変数の正本は上の :root。ここはその上書き(:root より強い書き方) */
+  .topbar-inner { min-height: 45px; padding-top: 3px; padding-bottom: 3px; }
+  .icon-btn { width: 38px; min-height: 38px; height: 38px; }
+  .side-nav .tabs { padding-top: 4px; padding-bottom: 4px; overflow-y: auto; }
+  .side-nav .tabs button { min-height: 48px; }
+  .side-nav .tabs .tab-icon { height: 26px; }
+}
+/* 広い画面(D-402):選手・チーム・試合・球場のページを元の画面の右に並べる */
 .wide body.dual { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
 .wide body.dual > .topbar { grid-column: 1 / -1; }
 .wide body.dual > main.screen { max-width: 860px; width: 100%; }
@@ -471,3 +482,17 @@ button.busy::before { content: ""; width: 16px; height: 16px; margin-right: 8px;
 .pcard-act p { margin: 2px 0; }
 .pcard-act .row > * { flex: 1 1 auto; }
 .pcard-open { width: 100%; margin: 10px 0 0; min-height: 40px; }
+
+/* 横画面専用(D-495):縦向きのタッチの端末では、案内だけを全画面に出す。下の画面は何も変えない(持ち替えればそのまま続き)。
+   PC(マウス)は窓が縦長でも出さない。URL に portrait=allow を付けると出さない(試験用。<html class="allow-portrait">。D-498) */
+.rotate-notice { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  html:not(.allow-portrait) .rotate-notice { display: grid; position: fixed; inset: 0; z-index: 1000; background: var(--bg); place-content: center; justify-items: center; gap: var(--space-2); padding: 24px max(24px, env(safe-area-inset-right, 0px)) 24px max(24px, env(safe-area-inset-left, 0px)); text-align: center; }
+  html:not(.allow-portrait) body { overflow: hidden; }
+}
+.rotate-title { margin: 8px 0 0; font-size: 1.35rem; font-weight: 800; }
+.rotate-notice p { margin: 0; }
+.rotate-phone { position: relative; width: 52px; height: 88px; border: 4px solid var(--gold); border-radius: 12px; }
+.rotate-phone::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 14px; height: 4px; margin-left: -7px; border-radius: 2px; background: var(--gold); }
+@media (prefers-reduced-motion: no-preference) { .rotate-phone { animation: rotate-hint 2.4s ease-in-out infinite; } }
+@keyframes rotate-hint { 0%, 25% { transform: rotate(0deg); } 55%, 100% { transform: rotate(-90deg); } }

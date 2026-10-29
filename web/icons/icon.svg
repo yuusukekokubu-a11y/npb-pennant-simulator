@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- PWA のアイコンの元(D-496)。ナイターの紺に、野球のボール。文字は入れない。四隅を丸く切られても絵が欠けないよう、ボールは真ん中の 6 割に収める -->
+  <rect width="512" height="512" fill="#0e1630"/>
+  <circle cx="256" cy="256" r="158" fill="#f7c948"/>
+  <circle cx="256" cy="256" r="146" fill="#f4f1e8"/>
+  <g fill="none" stroke="#d23b3b" stroke-width="10" stroke-linecap="round">
+    <path d="M153 153 C 214 206, 214 306, 153 359"/>
+    <path d="M359 153 C 298 206, 298 306, 359 359"/>
+  </g>
+  <g fill="none" stroke="#d23b3b" stroke-width="6" stroke-linecap="round">
+    <path d="M176 186 l20 -8 M188 214 l21 -4 M193 244 l22 -1 M193 274 l22 2 M187 303 l21 5 M175 331 l20 9"/>
+    <path d="M336 186 l-20 -8 M324 214 l-21 -4 M319 244 l-22 -1 M319 274 l-22 2 M325 303 l-21 5 M337 331 l-20 9"/>
+  </g>
+</svg>

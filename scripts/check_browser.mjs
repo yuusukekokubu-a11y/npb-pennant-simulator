@@ -13,6 +13,8 @@
 //   画面の文字に能力値・隠し情報の言葉がないか。通信先と、ブラウザの保存領域の状態。閉じる前の警告。
 //   表の統一(D-481〜D-489):行を押すと選手の札が出て中身が計算本体と同じ、表示を切り替えても列の数・幅・並び・選んだ選手が同じ、
 //   名前が下線のリンクでない、年俸の増減ボタンの色、札の位置(広い画面は表の右、狭い画面は表の上)。
+//   横画面専用(D-495〜D-498):印なしの縦のスマホでは「横にしてください」の案内が出る。横持ちのスマホ(844×390)では案内が出ず、タブが左の縦の列。
+//   PWA の manifest とアイコンが読める。
 // Python は、保存したファイルを確かめるときだけ使う(PYTHONPATH=src)。
 
 import { execFileSync } from "node:child_process";
@@ -21,7 +23,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const URL0 = process.argv[2] || "http://127.0.0.1:8765/?pyodide=local";
+const URL_ARG = process.argv[2] || "http://127.0.0.1:8765/?pyodide=local";
+// 縦の大きさでも今までどおり確かめるため、縦の案内(横画面専用)を出さない印 portrait=allow を付ける(D-498)
+const URL0 = (() => { const u = new URL(URL_ARG); u.searchParams.set("portrait", "allow"); return u.href; })();
 const ROOT = new URL("..", import.meta.url).pathname;
 const NAME = "ZZテスト球団QX"; // 入力する球団名(通信やファイル名に出ないことを確かめる)
 const expected = JSON.parse(readFileSync(join(ROOT, "tests/data/fingerprints.json"), "utf8"));
@@ -1926,6 +1930,38 @@ print(json.dumps([a.season.seed, b.season.seed, fa(a), fa(b), min(len(t.players)
 check(blankPy[0] !== blankPy[1], `シーズンのシードを空欄にすると、同じリーグでも始めるたびに違うシーズンになる(${blankPy[0]} と ${blankPy[1]})`);
 check(blankPy[2] === 0 && blankPy[3] > 0 && blankPy[4] >= 60 && blankPy[5] === false, `「外国人・育成」を外すと、外国人と育成の選手がいない(支配下は最少でも ${blankPy[4]} 人。外したときの外国人・育成 ${blankPy[2]} 人、外さないとき ${blankPy[3]} 人)`);
 await grab();
+
+// ---- 横画面専用と PWA(D-495〜D-498) ----
+{
+  // 印(portrait=allow)なしで、縦のスマホの大きさで開くと、案内だけが出る。横にすると消える
+  const phone = await browser.newContext({ viewport: { width: 412, height: 924 }, isMobile: true, hasTouch: true });
+  const p2 = await phone.newPage();
+  await p2.goto(URL_ARG);
+  const notice = () => p2.$eval("#rotate-notice", (e) => { const r = e.getBoundingClientRect(); return getComputedStyle(e).display !== "none" && r.width >= window.innerWidth && r.height >= window.innerHeight; });
+  const portraitShown = await notice();
+  await p2.setViewportSize({ width: 924, height: 412 });
+  await p2.waitForTimeout(300);
+  const landscapeShown = await notice();
+  check(portraitShown && !landscapeShown, `縦のスマホでは「横にしてください」の案内が全画面に出て、横にすると消える(D-495)`);
+  const pwa = await p2.evaluate(async () => {
+    const m = await (await fetch(document.querySelector("link[rel=manifest]").href)).json();
+    const icons = await Promise.all(m.icons.map(async (i) => (await fetch(new URL(i.src, location.href))).ok));
+    return { display: m.display, orientation: m.orientation, icons: icons.every(Boolean) && icons.length === 2 };
+  });
+  check(pwa.display === "fullscreen" && pwa.orientation === "landscape" && pwa.icons, `PWA の manifest(${pwa.display}・${pwa.orientation})とアイコンが読める(D-496)`);
+  await phone.close();
+  // 遊んでいる画面を横持ちのスマホの大きさにすると、案内は出ず、タブが左の縦の列になる(D-497)
+  const vp = page.viewportSize();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(400);
+  const side = await page.evaluate(() => {
+    const t = document.querySelector(".tabs").getBoundingClientRect();
+    return { cls: document.documentElement.classList.contains("side-nav"), left: t.left, tall: t.height > t.width, notice: getComputedStyle(document.getElementById("rotate-notice")).display };
+  });
+  check(side.cls && side.left === 0 && side.tall && side.notice === "none", `横持ちのスマホ(844×390)では、タブが左の縦の列になる(D-497)`);
+  await page.setViewportSize(vp);
+  await page.waitForTimeout(300);
+}
 
 // ---- 7. 隠し情報・通信・保存領域 ----
 const allText = texts.join("\n") + (await page.evaluate(() => document.documentElement.textContent));
