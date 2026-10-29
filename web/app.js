@@ -108,3 +108,7 @@ for (const b of $("player-kind").children) {
 
 
 boot();
+
+// ---- PWA(D-496) ----
+// ホーム画面から開けるように、裏方のスクリプト(sw.js。何も保存しない)を登録する。対応していないブラウザ・登録の失敗は無視する
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

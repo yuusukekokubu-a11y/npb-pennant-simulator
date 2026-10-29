@@ -61,17 +61,24 @@ export const state = {
   token: 0, // 表示の作り直しの番号(古い結果を捨てるため)
 };
 
+// 縦の案内(横画面専用。D-495)を出さない印。URL に portrait=allow を付けたときだけ(試験用。D-498)
+if (new URLSearchParams(location.search).get("portrait") === "allow") document.documentElement.classList.add("allow-portrait");
+
 // 広い画面かどうか(D-223):幅が WIDE_MIN_WIDTH 以上なら <html> に wide の印を付け、fluid の表を横スクロールなしにする(CSS)
 const wideQuery = window.matchMedia(`(min-width: ${WIDE_MIN_WIDTH}px)`);
+// 左の縦のタブにするか(D-402、D-497):広い画面か、横持ちのスマホ(横向きで高さ 600px 以下)なら <html> に side-nav の印
+const sideNavQuery = window.matchMedia(`(min-width: ${WIDE_MIN_WIDTH}px), (orientation: landscape) and (max-height: 600px)`);
 const wideListeners = [];
 export const isWide = () => wideQuery.matches;
 export const onWideChange = (f) => wideListeners.push(f);
 function applyWide() {
   document.documentElement.classList.toggle("wide", wideQuery.matches);
+  document.documentElement.classList.toggle("side-nav", sideNavQuery.matches);
   for (const f of wideListeners) f();
 }
 applyWide();
 wideQuery.addEventListener("change", applyWide);
+sideNavQuery.addEventListener("change", applyWide);
 
 // 球団のマークの色(D-400):球団の番号(T01〜T12)ごとの 12 色。画面だけの飾りで、保存しない
 const TEAM_COLORS = ["#2f9e44", "#e8590c", "#1971c2", "#c2255c", "#0b7285", "#5f3dc4", "#d6336c", "#4263eb", "#862e9c", "#e67700", "#087f5b", "#a61e4d"];

@@ -3,15 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 通信先の制限:このページ自身と、Pyodide の配布元(cdn.jsdelivr.net)だけ。それ以外には通信できない -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<!-- 通信先の制限:このページ自身と、Pyodide の配布元(cdn.jsdelivr.net)だけ。それ以外には通信できない(manifest はこのページ自身のもの。D-496) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net; manifest-src 'self'; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <!-- ブラウザがタブの小さな絵(favicon.ico)を取りに行かないようにする -->
 <link rel="icon" href="data:,">
 <title>ペナントレース シミュレーター</title>
+<!-- PWA(ホーム画面から開くアプリ。横画面専用。D-495、D-496) -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1630">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ペナント">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<!-- 横画面専用(D-495):縦向きのタッチの端末でだけ、全画面に出す(下の画面はそのまま残り、持ち替えれば続きから) -->
+<div class="rotate-notice" id="rotate-notice">
+  <div class="rotate-phone" aria-hidden="true"></div>
+  <p class="rotate-title">横にしてください</p>
+  <p class="muted">このゲームは横画面専用です。<br>持ち替えると、そのまま続きから遊べます。</p>
+</div>
 
 <!-- 上の帯(ゲーム中だけ表示) -->
 <header class="topbar" id="topbar" hidden>

@@ -6,6 +6,7 @@
 
 _site/ の中身:
     index.html・app.js・worker.js・bridge.py      遊ぶための画面(web/ のファイルをそのまま写す)
+    manifest.webmanifest・sw.js・icons/          PWA(ホーム画面から開くアプリ。D-496。web/ のファイルをそのまま写す)
     js/                                          画面の処理(app.js が読み込む ES モジュール。web/js/ をそのまま写す。保守②)
     dev/                                         開発者向けの測定ページ(web/dev/ をそのまま写す。D-111)
     pennant.zip                                  計算本体(src/pennant の .py と data/*.json、テンプレートの data/templates/)。両方の画面が読み込んで使う
@@ -27,7 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 PACKAGE = ROOT / "src" / "pennant"
-WEB_FILES = ("index.html", "style.css", "app.js", "worker.js", "bridge.py")
+WEB_FILES = ("index.html", "style.css", "app.js", "worker.js", "bridge.py", "manifest.webmanifest", "sw.js")  # manifest と sw.js は PWA(D-496)
+WEB_ICONS = "icons"  # PWA のアイコン(D-496)。元の絵 icon.svg と、scripts/make_icons.mjs で作った PNG
 WEB_MODULES = "js"  # app.js が読み込む画面の処理(ES モジュール:import と export でつなぐ JavaScript のファイル)
 DEV_FILES = ("index.html", "app.js", "worker.js", "bench.py")
 FIXED_TIME = (2020, 1, 1, 0, 0, 0)  # zip の中の日時を固定する(同じ中身なら同じファイルになる)
@@ -36,6 +38,11 @@ FIXED_TIME = (2020, 1, 1, 0, 0, 0)  # zip の中の日時を固定する(同じ�
 def web_module_files() -> list[str]:
     """web/js/ の .js(公開でも同じ場所 js/ に置く)。"""
     return [f"{WEB_MODULES}/{f.name}" for f in sorted((WEB / WEB_MODULES).glob("*.js"))]
+
+
+def web_icon_files() -> list[str]:
+    """web/icons/ のファイル(公開でも同じ場所 icons/ に置く。D-496)。"""
+    return [f"{WEB_ICONS}/{f.name}" for f in sorted((WEB / WEB_ICONS).iterdir()) if f.suffix in (".svg", ".png")]
 
 
 def package_files() -> list[Path]:
@@ -67,6 +74,9 @@ def build(out: Path, pyodide_dir: Path | None = None) -> dict:
     (out / WEB_MODULES).mkdir()
     for name in web_module_files():
         shutil.copy2(WEB / name, out / name)
+    (out / WEB_ICONS).mkdir()
+    for name in web_icon_files():
+        shutil.copy2(WEB / name, out / name)
     (out / "dev").mkdir()
     for name in DEV_FILES:
         shutil.copy2(WEB / "dev" / name, out / "dev" / name)
@@ -75,7 +85,7 @@ def build(out: Path, pyodide_dir: Path | None = None) -> dict:
     shutil.copy2(ROOT / "tests" / "data" / "sample-save.sav", out / "sample-save.sav")
     shutil.copy2(ROOT / "tests" / "data" / "sample-save.json", out / "sample-save.json")
     shutil.copy2(ROOT / "tests" / "data" / "fingerprints.json", out / "expected-fingerprints.json")
-    info = {"web_files": list(WEB_FILES) + web_module_files(), "dev_files": ["dev/" + n for n in DEV_FILES], "package_files": names, "local_pyodide": pyodide_dir is not None}
+    info = {"web_files": list(WEB_FILES) + web_module_files() + web_icon_files(), "dev_files": ["dev/" + n for n in DEV_FILES], "package_files": names, "local_pyodide": pyodide_dir is not None}
     if pyodide_dir is not None:
         shutil.copytree(pyodide_dir, out / "pyodide")
     (out / "build.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")

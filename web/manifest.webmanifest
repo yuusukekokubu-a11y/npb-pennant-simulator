@@ -1,0 +1,16 @@
+{
+  "name": "ペナントレース シミュレーター",
+  "short_name": "ペナント",
+  "description": "架空の12球団のペナントレースを、試合ごとに計算して進めます。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0e1630",
+  "theme_color": "#0e1630",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
