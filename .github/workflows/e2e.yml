@@ -19,7 +19,8 @@ permissions:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 のブラウザが入る版に固定する(ubuntu-latest が 26.04 になり、ブラウザを入れられなくなった)
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       # 使う部品(Action)は、書き換えられないよう commit の番号で固定する(test.yml と同じ)
